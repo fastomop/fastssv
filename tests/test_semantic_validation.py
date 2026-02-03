@@ -174,8 +174,9 @@ class CombinedSemanticValidationTests(unittest.TestCase):
         sql = """
         SELECT co.condition_concept_id, c.concept_name
         FROM condition_occurrence co
+        JOIN concept_ancestor ca ON co.condition_concept_id = ca.descendant_concept_id
         JOIN concept c ON co.condition_concept_id = c.concept_id
-        WHERE co.condition_concept_id = 201826
+        WHERE ca.ancestor_concept_id = 201826
         AND co.condition_concept_id > 0
         AND c.standard_concept = 'S'
         AND c.invalid_reason IS NULL
@@ -191,6 +192,128 @@ class CombinedSemanticValidationTests(unittest.TestCase):
         self.assertTrue(any("parse error" in e.lower() or "error" in e.lower() for e in errors))
 
 
+class HierarchyExpansionTests(unittest.TestCase):
+    """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
+
+    def _validate_hierarchy(self, sql: str, dialect: str = "postgres") -> list[str]:
+        """Run only the hierarchy expansion rule."""
+        from fastssv.core.base import Severity
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("semantic.hierarchy_expansion_required")()
+        violations = rule.validate(sql, dialect)
+
+        results = []
+        for v in violations:
+            prefix = "Warning: " if v.severity == Severity.WARNING else ""
+            results.append(f"{prefix}{v.message}")
+        return results
+
+    def test_drug_filter_without_ancestor_should_error(self) -> None:
+        """Filtering drug_concept_id without concept_ancestor should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_concept_id = 1234567
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_ancestor" in e for e in errors))
+        self.assertTrue(any("drug_exposure.drug_concept_id" in e for e in errors))
+
+    def test_condition_filter_without_ancestor_should_error(self) -> None:
+        """Filtering condition_concept_id without concept_ancestor should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_ancestor" in e for e in errors))
+        self.assertTrue(any("condition_occurrence.condition_concept_id" in e for e in errors))
+
+    def test_in_clause_without_ancestor_should_error(self) -> None:
+        """IN clause on drug_concept_id without concept_ancestor should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_concept_id IN (1234, 5678, 9012)
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertTrue(len(errors) > 0)
+
+    def test_with_concept_ancestor_should_pass(self) -> None:
+        """Query using concept_ancestor for hierarchy should pass."""
+        sql = """
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 1234567
+        """
+        errors = self._validate_hierarchy(sql)
+        # Should pass (uses concept_ancestor)
+        main_errors = [e for e in errors if not e.startswith("Warning:")]
+        self.assertEqual(main_errors, [])
+
+    def test_with_concept_ancestor_cte_should_pass(self) -> None:
+        """Query using concept_ancestor via CTE should pass."""
+        sql = """
+        WITH drug_hierarchy AS (
+            SELECT descendant_concept_id AS concept_id
+            FROM concept_ancestor
+            WHERE ancestor_concept_id = 1234567
+        )
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN drug_hierarchy dh ON de.drug_concept_id = dh.concept_id
+        """
+        errors = self._validate_hierarchy(sql)
+        main_errors = [e for e in errors if not e.startswith("Warning:")]
+        self.assertEqual(main_errors, [])
+
+    def test_zero_concept_id_should_be_exempt(self) -> None:
+        """Filtering on concept_id = 0 should not trigger the rule."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_concept_id = 0
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertEqual(errors, [])
+
+    def test_no_filter_should_not_trigger(self) -> None:
+        """Query without filtering on drug/condition concept_id should not trigger."""
+        sql = """
+        SELECT drug_concept_id, person_id
+        FROM drug_exposure
+        WHERE person_id = 12345
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertEqual(errors, [])
+
+    def test_other_concept_columns_should_not_trigger(self) -> None:
+        """Filtering on other concept_id columns should not trigger."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_concept_id = 3012345
+        """
+        errors = self._validate_hierarchy(sql)
+        self.assertEqual(errors, [])
+
+    def test_wrong_join_direction_should_warn(self) -> None:
+        """Joining on ancestor_concept_id instead of descendant should warn."""
+        # This query filters on drug_concept_id AND uses concept_ancestor,
+        # but joins in the wrong direction (ancestor_concept_id instead of descendant)
+        sql = """
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN concept_ancestor ca ON de.drug_concept_id = ca.ancestor_concept_id
+        WHERE de.drug_concept_id = 1234567
+        """
+        errors = self._validate_hierarchy(sql)
+        # Should have a warning about join direction
+        warnings = [e for e in errors if e.startswith("Warning:")]
+        self.assertTrue(len(warnings) > 0)
+        self.assertTrue(any("direction" in w.lower() for w in warnings))
+
+
 class EdgeCasesTests(unittest.TestCase):
     """Edge cases for semantic validation."""
 
@@ -198,10 +321,11 @@ class EdgeCasesTests(unittest.TestCase):
         """Query with CTE should be handled correctly."""
         sql = """
         WITH diabetic_patients AS (
-            SELECT person_id, condition_concept_id
-            FROM condition_occurrence
-            WHERE condition_concept_id = 201826
-            AND condition_concept_id > 0
+            SELECT co.person_id, co.condition_concept_id
+            FROM condition_occurrence co
+            JOIN concept_ancestor ca ON co.condition_concept_id = ca.descendant_concept_id
+            WHERE ca.ancestor_concept_id = 201826
+            AND co.condition_concept_id > 0
         )
         SELECT dp.*, c.concept_name
         FROM diabetic_patients dp
