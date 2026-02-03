@@ -178,6 +178,7 @@ class CombinedSemanticValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         AND co.condition_concept_id > 0
         AND c.standard_concept = 'S'
+        AND c.invalid_reason IS NULL
         """
         errors = validate_omop_semantic_rules(sql)
         self.assertEqual(errors, [])
@@ -206,6 +207,7 @@ class EdgeCasesTests(unittest.TestCase):
         FROM diabetic_patients dp
         JOIN concept c ON dp.condition_concept_id = c.concept_id
         WHERE c.standard_concept = 'S'
+        AND c.invalid_reason IS NULL
         """
         errors = validate_omop_semantic_rules(sql)
         # May have warnings but shouldn't have main errors
@@ -237,6 +239,220 @@ class EdgeCasesTests(unittest.TestCase):
         """
         errors = validate_standard_concept_mapping(sql)
         # The subquery has standard_concept = 'S', so this should pass
+        self.assertEqual(errors, [])
+
+
+class InvalidReasonEnforcementTests(unittest.TestCase):
+    """Tests for invalid_reason enforcement rule."""
+
+    def _run_invalid_reason_rule(self, sql: str) -> list[str]:
+        """Run invalid_reason enforcement rule and return formatted violations."""
+        from fastssv.core.base import Severity
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("semantic.invalid_reason_enforcement")()
+        violations = rule.validate(sql)
+
+        # Convert to legacy string format
+        results = []
+        for v in violations:
+            prefix = "Warning: " if v.severity == Severity.WARNING else ""
+            results.append(f"{prefix}OMOP Semantic Rule Violation: {v.message}")
+
+        return results
+
+    # Tests for tables WITH invalid_reason column (ERROR if missing)
+
+    def test_concept_table_without_invalid_reason_filter(self) -> None:
+        """Query on concept table without invalid_reason should ERROR."""
+        sql = """
+        SELECT concept_id, concept_name
+        FROM concept
+        WHERE domain_id = 'Drug'
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept" in e and "invalid_reason" in e for e in errors))
+        # Should be ERROR, not warning
+        self.assertTrue(all(not e.startswith("Warning:") for e in errors))
+
+    def test_concept_table_with_invalid_reason_is_null(self) -> None:
+        """Query with invalid_reason IS NULL should pass."""
+        sql = """
+        SELECT concept_id, concept_name
+        FROM concept
+        WHERE domain_id = 'Drug'
+        AND invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    def test_concept_table_with_invalid_reason_is_not_null(self) -> None:
+        """Query explicitly checking for invalid concepts should pass."""
+        sql = """
+        SELECT concept_id, concept_name, invalid_reason
+        FROM concept
+        WHERE invalid_reason IS NOT NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    def test_concept_relationship_without_invalid_reason(self) -> None:
+        """Query on concept_relationship without invalid_reason should ERROR."""
+        sql = """
+        SELECT concept_id_1, concept_id_2
+        FROM concept_relationship
+        WHERE relationship_id = 'Maps to'
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_relationship" in e for e in errors))
+
+    def test_concept_relationship_with_invalid_reason(self) -> None:
+        """Query on concept_relationship with invalid_reason should pass."""
+        sql = """
+        SELECT concept_id_1, concept_id_2
+        FROM concept_relationship
+        WHERE relationship_id = 'Maps to'
+        AND invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    # Tests for derived tables WITHOUT invalid_reason column (WARNING)
+
+    def test_concept_ancestor_without_concept_join(self) -> None:
+        """Query on concept_ancestor without concept join should WARN."""
+        sql = """
+        SELECT descendant_concept_id
+        FROM concept_ancestor
+        WHERE ancestor_concept_id = 201826
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_ancestor" in e for e in errors))
+        # Should be WARNING, not error
+        self.assertTrue(any(e.startswith("Warning:") for e in errors))
+
+    def test_concept_ancestor_with_concept_join(self) -> None:
+        """Query on concept_ancestor with proper concept join should pass."""
+        sql = """
+        SELECT ca.descendant_concept_id
+        FROM concept_ancestor ca
+        JOIN concept c ON c.concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 201826
+        AND c.invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    def test_concept_synonym_without_concept_join(self) -> None:
+        """Query on concept_synonym without concept join should WARN."""
+        sql = """
+        SELECT concept_id, concept_synonym_name
+        FROM concept_synonym
+        WHERE concept_synonym_name LIKE '%diabetes%'
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_synonym" in e for e in errors))
+        self.assertTrue(any(e.startswith("Warning:") for e in errors))
+
+    def test_drug_strength_without_concept_join(self) -> None:
+        """Query on drug_strength without concept join should WARN."""
+        sql = """
+        SELECT drug_concept_id, ingredient_concept_id
+        FROM drug_strength
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("drug_strength" in e for e in errors))
+
+    # Tests for clinical tables (NO check needed)
+
+    def test_clinical_table_no_invalid_reason_needed(self) -> None:
+        """Query on clinical table should not require invalid_reason."""
+        sql = """
+        SELECT person_id, condition_concept_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    def test_multiple_clinical_tables_no_check(self) -> None:
+        """Query on multiple clinical tables should not require invalid_reason."""
+        sql = """
+        SELECT co.person_id, de.drug_concept_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    # Edge cases
+
+    def test_invalid_reason_in_join_on_clause(self) -> None:
+        """invalid_reason filter in JOIN ON clause should pass."""
+        sql = """
+        SELECT co.condition_concept_id
+        FROM condition_occurrence co
+        JOIN concept c
+            ON co.condition_concept_id = c.concept_id
+            AND c.invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        self.assertEqual(errors, [])
+
+    def test_mixed_vocabulary_and_clinical_tables(self) -> None:
+        """Query mixing vocabulary and clinical tables should still check."""
+        sql = """
+        SELECT co.person_id, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        # Should still flag missing invalid_reason on concept table
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept" in e for e in errors))
+
+    def test_subquery_with_concept_table(self) -> None:
+        """Subquery using concept table should be checked."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id IN (
+            SELECT concept_id FROM concept
+            WHERE vocabulary_id = 'SNOMED'
+        )
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        # Should flag the concept table in the subquery
+        self.assertTrue(len(errors) > 0)
+
+    def test_cte_with_concept_ancestor(self) -> None:
+        """CTE using concept_ancestor should be checked."""
+        sql = """
+        WITH descendants AS (
+            SELECT descendant_concept_id
+            FROM concept_ancestor
+            WHERE ancestor_concept_id = 201826
+        )
+        SELECT * FROM descendants
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        # Should warn about concept_ancestor
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("concept_ancestor" in e for e in errors))
+
+    def test_no_vocabulary_tables_used(self) -> None:
+        """Query without any vocabulary tables should not be checked."""
+        sql = """
+        SELECT person_id, condition_start_date
+        FROM condition_occurrence
+        WHERE condition_start_date > '2020-01-01'
+        """
+        errors = self._run_invalid_reason_rule(sql)
         self.assertEqual(errors, [])
 
 
