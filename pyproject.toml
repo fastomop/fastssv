@@ -5,6 +5,8 @@ description = "FastOMOP Semantic Static Validator - A semantic validation framew
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+	"dotenv>=0.9.9",
+	"langfuse>=3.12.1",
 	"sqlglot>=24.6.0",
 ]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -109,8 +110,10 @@ def build_validation_result(
 
     is_valid = len(errors) == 0
 
-    # Normalize query: collapse whitespace and newlines
-    clean_query = " ".join(sql.strip().split())
+    # Strip comments, then collapse whitespace and newlines
+    no_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    no_comments = re.sub(r"--[^\n]*", "", no_comments)
+    clean_query = " ".join(no_comments.strip().split())
 
     result: Dict[str, Any] = {}
 
