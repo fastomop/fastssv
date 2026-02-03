@@ -10,6 +10,7 @@ Rules:
 
 # Import all rule modules to trigger registration
 from . import (
+    invalid_reason,
     hierarchy_expansion,
     join_path,
     maps_to_direction,
@@ -22,5 +23,6 @@ __all__ = [
     "unmapped_concept",
     "join_path",
     "maps_to_direction",
+    "invalid_reason",
     "hierarchy_expansion",
 ]
