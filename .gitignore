@@ -44,3 +44,6 @@ htmlcov/
 .env
 .env.local
 .claude
+
+# Large data caches
+scripts/raw_observations.json

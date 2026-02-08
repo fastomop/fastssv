@@ -6,6 +6,7 @@ Rules:
 - join_path: Validates proper JOIN paths between clinical and vocabulary tables
 - maps_to_direction: Checks 'Maps to' relationship direction
 - temporal_constraint_mapping: Ensures temporal constraints are anchored to observation_period
+- hierarchy_expansion: Ensures drug/condition concept filters use concept_ancestor
 """
 
 # Import all rule modules to trigger registration
@@ -14,6 +15,8 @@ from . import (
     maps_to_direction,
     standard_concept,
     temporal_constraint_mapping,
+    invalid_reason,
+    hierarchy_expansion,
     unmapped_concept,
 )
 
@@ -23,4 +26,6 @@ __all__ = [
     "join_path",
     "maps_to_direction",
     "temporal_constraint_mapping",
+    "invalid_reason",
+    "hierarchy_expansion",
 ]
