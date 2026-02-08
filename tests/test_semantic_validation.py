@@ -192,6 +192,15 @@ class CombinedSemanticValidationTests(unittest.TestCase):
         self.assertTrue(any("parse error" in e.lower() or "error" in e.lower() for e in errors))
 
 
+class ObservationPeriodAnchoringTests(unittest.TestCase):
+    """Tests for observation period anchoring rule (temporal constraints)."""
+
+    def _validate_temporal(self, sql: str, dialect: str = "postgres") -> list[str]:
+        """Run only the observation period anchoring rule."""
+        from fastssv.core.base import Severity
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("semantic.observation_period_anchoring")()
 class HierarchyExpansionTests(unittest.TestCase):
     """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
 
@@ -209,6 +218,90 @@ class HierarchyExpansionTests(unittest.TestCase):
             results.append(f"{prefix}{v.message}")
         return results
 
+    def test_temporal_filter_without_observation_period_should_error(self) -> None:
+        """Query with date filter but no observation_period should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_start_date >= '2020-01-01'
+        """
+        errors = self._validate_temporal(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("observation_period" in e for e in errors))
+
+    def test_temporal_filter_with_observation_period_should_pass(self) -> None:
+        """Query with date filter AND observation_period join should pass."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date >= '2020-01-01'
+        """
+        errors = self._validate_temporal(sql)
+        # Should pass (has observation_period join on person_id)
+        main_errors = [e for e in errors if not e.startswith("Warning:")]
+        self.assertEqual(main_errors, [])
+
+    def test_multiple_date_filters_without_observation_period(self) -> None:
+        """Query with multiple date filters should error without observation_period."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_exposure_start_date >= '2020-01-01'
+        AND drug_exposure_end_date <= '2020-12-31'
+        """
+        errors = self._validate_temporal(sql)
+        self.assertTrue(len(errors) > 0)
+
+    def test_date_comparison_between_tables(self) -> None:
+        """Query comparing dates between tables should require observation_period."""
+        sql = """
+        SELECT co.*, de.*
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE de.drug_exposure_start_date > co.condition_start_date
+        """
+        errors = self._validate_temporal(sql)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("observation_period" in e for e in errors))
+
+    def test_no_temporal_constraints_should_not_trigger(self) -> None:
+        """Query without temporal constraints should not trigger the rule."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 12345
+        """
+        errors = self._validate_temporal(sql)
+        self.assertEqual(errors, [])
+
+    def test_observation_period_in_cte_should_pass(self) -> None:
+        """Query using observation_period in CTE should pass."""
+        sql = """
+        WITH valid_patients AS (
+            SELECT co.*, op.observation_period_start_date, op.observation_period_end_date
+            FROM condition_occurrence co
+            JOIN observation_period op ON co.person_id = op.person_id
+            WHERE co.condition_start_date BETWEEN op.observation_period_start_date 
+                AND op.observation_period_end_date
+        )
+        SELECT * FROM valid_patients
+        WHERE condition_start_date >= '2020-01-01'
+        """
+        errors = self._validate_temporal(sql)
+        main_errors = [e for e in errors if not e.startswith("Warning:")]
+        self.assertEqual(main_errors, [])
+
+    def test_washout_period_pattern_should_require_observation_period(self) -> None:
+        """Washout period pattern (NOT EXISTS with date) should require observation_period."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        WHERE NOT EXISTS (
+            SELECT 1 FROM drug_exposure de
+            WHERE de.person_id = co.person_id
+            AND de.drug_exposure_start_date < co.condition_start_date
+        )
+        """
+        errors = self._validate_temporal(sql)
+        self.assertTrue(len(errors) > 0)
     def test_drug_filter_without_ancestor_should_error(self) -> None:
         """Filtering drug_concept_id without concept_ancestor should error."""
         sql = """
