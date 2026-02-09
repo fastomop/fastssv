@@ -13,6 +13,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
+    is_in_where_or_join_clause,
     is_string_literal,
     normalize_name,
     parse_sql,
@@ -87,7 +88,8 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
     def _resolve(col: exp.Column):
         """Return (table, alias, select) or (None, None, None) if not on concept table."""
         table, _ = resolve_table_col(col, aliases)
-        if table and table != "concept":
+        # Only apply rule when we can definitively resolve to 'concept' table
+        if table != "concept":
             return None, None, None
         alias = normalize_name(col.table) if col.table else None
         select = col.find_ancestor(exp.Select)
@@ -112,6 +114,9 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
 
     # --- concept_code = 'value' ---
     for eq in tree.find_all(exp.EQ):
+        # Only check EQ nodes in WHERE/JOIN ON predicates
+        if not is_in_where_or_join_clause(eq):
+            continue
         left, right = eq.left, eq.right
         if isinstance(right, exp.Column) and is_string_literal(left):
             left, right = right, left
@@ -123,6 +128,9 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
 
     # --- concept_code IN ('value', ...) ---
     for in_expr in tree.find_all(exp.In):
+        # Only check IN nodes in WHERE/JOIN ON predicates
+        if not is_in_where_or_join_clause(in_expr):
+            continue
         col = in_expr.this
         if not isinstance(col, exp.Column) or normalize_name(col.name) != "concept_code":
             continue
@@ -147,6 +155,10 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
             else:
                 continue
         elif not isinstance(node, STRING_MATCH_EXP_TYPES):
+            continue
+
+        # Only check LIKE/ILIKE/REGEXP nodes in WHERE/JOIN ON predicates
+        if not is_in_where_or_join_clause(check_node):
             continue
 
         left = check_node.this
