@@ -164,6 +164,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=["semantic", "vocabulary"],
         help="Rule categories to run (default: all).",
     )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="output/validation_report.json",
+        help="Output JSON report file path (default: output/validation_report.json).",
+    )
     args = parser.parse_args(argv)
 
     sql = _read_sql(args.sql_file)
@@ -180,7 +186,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             categories=args.categories,
         )
         validation_result = build_validation_result(sql, violations, args.dialect)
-        print(json.dumps(validation_result, indent=2))
+
+        # Write JSON report to file
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(validation_result, indent=2), encoding="utf-8")
+
+        # Print summary to CLI
+        status = "VALID" if validation_result["is_valid"] else "INVALID"
+        print(f"Validation {status}")
+        print(f"  Errors: {validation_result['error_count']}")
+        print(f"  Warnings: {validation_result['warning_count']}")
+        print(f"  Report saved to: {output_path.absolute()}")
+
         return 0 if validation_result["is_valid"] else 1
 
     # Multiple queries: validate each separately
@@ -209,7 +227,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "results": all_results,
     }
 
-    print(json.dumps(output, indent=2))
+    # Write JSON report to file
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+
+    # Print summary to CLI
+    status = "VALID" if not any_invalid else "INVALID"
+    print(f"Validation {status}")
+    print(f"  Total queries: {output['total_queries']}")
+    print(f"  Valid: {output['valid_queries']}")
+    print(f"  Invalid: {output['invalid_queries']}")
+    print(f"  Report saved to: {output_path.absolute()}")
 
     return 1 if any_invalid else 0
 

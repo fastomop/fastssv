@@ -45,5 +45,9 @@ htmlcov/
 .env.local
 .claude
 
-# Large data caches
-scripts/raw_observations.json
+# Generated output files and datasets
+output/
+# Track specific reference datasets for reproducibility
+!output/README.md
+!output/run_omop_query_dataset.sql
+!output/run_omop_query_dataset.json

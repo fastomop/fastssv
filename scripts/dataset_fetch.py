@@ -244,7 +244,11 @@ def process_raw_data(raw_data):
 
 
 if __name__ == "__main__":
-    raw_cache_file = Path(__file__).parent / "raw_observations.json"
+    # Use output directory in project root
+    output_dir = Path(__file__).parent.parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_cache_file = output_dir / "raw_observations.json"
 
     # Use cached raw data if available, otherwise fetch
     if Path(raw_cache_file).exists():
@@ -278,7 +282,7 @@ if __name__ == "__main__":
         print(f"SQL Query: {'Found' if result['sql_query'] else 'Not found'}")
         print(f"Trace ID: {result['trace_id']}")
 
-    output_file = Path(__file__).parent / "run_omop_query_dataset.json"
+    output_file = output_dir / "run_omop_query_dataset.json"
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {output_file}")
