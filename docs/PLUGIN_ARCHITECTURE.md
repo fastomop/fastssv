@@ -32,7 +32,7 @@ class Rule(ABC):
         pass
 ```
 
-### 2. RuleViolation Data Class
+### 2. RuleViolation Data Class (`core/base.py`)
 
 Violations are returned as structured objects:
 
@@ -40,25 +40,33 @@ Violations are returned as structured objects:
 from dataclasses import dataclass
 from enum import Enum
 
-class Severity(str, Enum):
-    ERROR = "ERROR"      # Blocks validation
-    WARNING = "WARNING"  # Informational only
+class Severity(Enum):
+    """Severity level for rule violations."""
+    ERROR = "error"      # Blocks validation
+    WARNING = "warning"  # Informational only
 
 @dataclass
 class RuleViolation:
-    rule_id: str          # e.g., "semantic.standard_concept_enforcement"
-    message: str          # Human-readable error message
-    severity: Severity    # ERROR or WARNING
-    location: str = ""    # Optional: location info
+    rule_id: str                    # e.g., "semantic.standard_concept_enforcement"
+    severity: Severity              # ERROR or WARNING
+    message: str                    # Human-readable error message
+    suggested_fix: str              # Recommendation for fixing the violation
+    location: Optional[str] = None  # Optional: location info
+    details: dict = field(default_factory=dict)  # Additional structured metadata
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "rule_id": self.rule_id,
-            "message": self.message,
             "severity": self.severity.value,
-            "location": self.location,
+            "issue": self.message,
+            "suggested_fix": self.suggested_fix,
         }
+        if self.location:
+            result["location"] = self.location
+        if self.details:
+            result["details"] = self.details
+        return result
 ```
 
 ### 3. Registry System (`core/registry.py`)
@@ -108,7 +116,7 @@ def get_all_rules() -> list[Type[Rule]]:
 Create a new Python file in the appropriate category directory:
 
 ```
-src/foem/rules/
+src/fastssv/rules/
 ├── semantic/
 │   └── my_new_rule.py    # For semantic rules
 └── vocabulary/
@@ -118,7 +126,7 @@ src/foem/rules/
 ### Step 2: Implement the Rule Class
 
 ```python
-# src/foem/rules/semantic/my_new_rule.py
+# src/fastssv/rules/semantic/my_new_rule.py
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.registry import register
@@ -164,9 +172,11 @@ class MyNewRule(Rule):
             violations.append(
                 RuleViolation(
                     rule_id=self.rule_id,
-                    message="Clear explanation of what went wrong and how to fix it",
                     severity=Severity.ERROR,  # or Severity.WARNING
-                    location="optional: table.column or line number"
+                    message="Clear explanation of what went wrong",
+                    suggested_fix="Specific recommendation for fixing this violation",
+                    location="optional: table.column or line number",  # Optional
+                    details={"key": "value"}  # Optional structured metadata
                 )
             )
 
@@ -183,12 +193,15 @@ class MyNewRule(Rule):
 Import the rule in the category's `__init__.py`:
 
 ```python
-# src/foem/rules/semantic/__init__.py
+# src/fastssv/rules/semantic/__init__.py
 
 from . import join_path
 from . import standard_concept
+from . import hierarchy_expansion
+from . import temporal_constraint_mapping
 from . import maps_to_direction
 from . import unmapped_concept
+from . import invalid_reason
 from . import my_new_rule  # Add this line
 ```
 
@@ -254,7 +267,7 @@ violations = validate_sql_structured(sql, categories=["semantic"])
 # Run specific rules
 violations = validate_sql_structured(
     sql,
-    rule_ids=["semantic.my_new_rule", "vocabulary.concept_string_filter"]
+    rule_ids=["semantic.my_new_rule", "vocabulary.concept_lookup_context"]
 )
 
 # Process violations
@@ -268,26 +281,30 @@ for v in violations:
 
 Rules that validate OMOP CDM schema and concept usage:
 
-- `semantic.join_path_validation` - Table join validation
-- `semantic.standard_concept_enforcement` - Standard concept enforcement
-- `semantic.maps_to_direction` - Relationship direction validation
-- `semantic.unmapped_concept_detection` - Unmapped concept detection
+- `semantic.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
+- `semantic.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
+- `semantic.hierarchy_expansion_required` - Concept hierarchy expansion via concept_ancestor
+- `semantic.observation_period_anchoring` - Temporal constraints anchored to observation_period
+- `semantic.maps_to_direction` - Maps-to relationship direction validation (source → standard)
+- `semantic.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
+- `semantic.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
 
 ### Vocabulary Rules (`vocabulary`)
 
 Rules that validate OMOP vocabulary lookup patterns:
 
-- `vocabulary.no_string_concept_id` - String concept ID detection
-- `vocabulary.concept_string_filter` - Concept table filtering
+- `vocabulary.no_string_identification` - String-based concept ID lookup detection
+- `vocabulary.concept_lookup_context` - Concept table string filter validation
+- `vocabulary.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)
 
 ### Adding New Categories
 
 To add a new category:
 
-1. Create directory: `src/foem/rules/new_category/`
+1. Create directory: `src/fastssv/rules/new_category/`
 2. Add `__init__.py`
 3. Add rule files
-4. Import in `src/foem/rules/__init__.py`:
+4. Import in `src/fastssv/rules/__init__.py`:
    ```python
    from . import semantic, vocabulary, new_category
    ```
@@ -306,14 +323,19 @@ To add a new category:
 
 Good violation messages follow this pattern:
 
-```
-[What's wrong] + [Why it matters] + [How to fix it]
+**Message field**: [What's wrong] + [Why it matters]
+**Suggested_fix field**: [How to fix it]
 
 Example:
-"Query uses STANDARD concept field 'drug_concept_id' without enforcing
-standard_concept = 'S'. This may include non-standard concepts in results.
-
-To fix, add: WHERE concept.standard_concept = 'S'"
+```python
+RuleViolation(
+    rule_id="semantic.standard_concept_enforcement",
+    severity=Severity.ERROR,
+    message="Query uses STANDARD concept field 'drug_concept_id' without enforcing "
+            "standard_concept = 'S'. This may include non-standard concepts in results.",
+    suggested_fix="Add WHERE clause: concept.standard_concept = 'S' OR use concept_relationship "
+                  "with relationship_id = 'Maps to'"
+)
 ```
 
 ### Severity Guidelines
