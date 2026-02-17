@@ -109,7 +109,7 @@ def _get_domain_id_values_for_alias(
       - concept_alias.domain_id = 'Value'  (or unqualified domain_id = 'Value')
       - concept_alias.domain_id IN ('Value1', 'Value2', ...)
 
-    Returns a set of normalised (lowercase) domain values.
+    Returns a set of normalized (lowercase) domain values.
     """
     values: Set[str] = set()
 
