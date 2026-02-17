@@ -7,6 +7,7 @@ Rules:
 - maps_to_direction: Checks 'Maps to' relationship direction
 - temporal_constraint_mapping: Ensures temporal constraints are anchored to observation_period
 - hierarchy_expansion: Ensures drug/condition concept filters use concept_ancestor
+- domain_segregation: Ensures clinical tables are joined to concepts from their expected domain
 """
 
 # Import all rule modules to trigger registration
@@ -18,6 +19,7 @@ from . import (
     invalid_reason,
     hierarchy_expansion,
     unmapped_concept,
+    domain_segregation,
 )
 
 __all__ = [
@@ -28,4 +30,5 @@ __all__ = [
     "temporal_constraint_mapping",
     "invalid_reason",
     "hierarchy_expansion",
+    "domain_segregation",
 ]
