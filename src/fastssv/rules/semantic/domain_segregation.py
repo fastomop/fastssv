@@ -105,7 +105,7 @@ def _get_domain_id_values_for_alias(
 ) -> Set[str]:
     """Extract domain_id filter values scoped to a specific concept table alias.
 
-    Recognises:
+    Recognizes:
       - concept_alias.domain_id = 'Value'  (or unqualified domain_id = 'Value')
       - concept_alias.domain_id IN ('Value1', 'Value2', ...)
 
