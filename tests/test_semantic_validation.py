@@ -201,15 +201,6 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         from fastssv.core.registry import get_rule
 
         rule = get_rule("semantic.observation_period_anchoring")()
-class HierarchyExpansionTests(unittest.TestCase):
-    """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
-
-    def _validate_hierarchy(self, sql: str, dialect: str = "postgres") -> list[str]:
-        """Run only the hierarchy expansion rule."""
-        from fastssv.core.base import Severity
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("semantic.hierarchy_expansion_required")()
         violations = rule.validate(sql, dialect)
 
         results = []
@@ -302,6 +293,25 @@ class HierarchyExpansionTests(unittest.TestCase):
         """
         errors = self._validate_temporal(sql)
         self.assertTrue(len(errors) > 0)
+
+
+class HierarchyExpansionTests(unittest.TestCase):
+    """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
+
+    def _validate_hierarchy(self, sql: str, dialect: str = "postgres") -> list[str]:
+        """Run only the hierarchy expansion rule."""
+        from fastssv.core.base import Severity
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("semantic.hierarchy_expansion_required")()
+        violations = rule.validate(sql, dialect)
+
+        results = []
+        for v in violations:
+            prefix = "Warning: " if v.severity == Severity.WARNING else ""
+            results.append(f"{prefix}{v.message}")
+        return results
+
     def test_drug_filter_without_ancestor_should_error(self) -> None:
         """Filtering drug_concept_id without concept_ancestor should error."""
         sql = """
