@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="FastSSV" width="300">
+</p>
+
 # FastSSV — FastOMOP Semantic Static Validator
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
