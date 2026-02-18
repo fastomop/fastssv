@@ -26,19 +26,23 @@ class UnifiedAPITests(unittest.TestCase):
     def test_validate_sql_all_validators(self) -> None:
         """Test running all validators."""
         # Query properly enforces standard concepts, handles concept_id = 0,
-        # uses concept_ancestor for hierarchy expansion, filters invalid_reason,
-        # and guards against cross-domain matches with domain_id
+        # uses concept_ancestor for hierarchy expansion, and restricts
+        # concept string columns (domain_id) inside a concept_id lookup CTE
         sql = """
+        WITH valid_drug_concepts AS (
+            SELECT concept_id
+            FROM concept
+            WHERE domain_id = 'Drug'
+            AND standard_concept = 'S'
+            AND invalid_reason IS NULL
+        )
         SELECT p.person_id, de.drug_concept_id
         FROM drug_exposure de
         JOIN person p ON de.person_id = p.person_id
         JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-        JOIN concept c ON de.drug_concept_id = c.concept_id
+        JOIN valid_drug_concepts vdc ON de.drug_concept_id = vdc.concept_id
         WHERE ca.ancestor_concept_id = 1234
         AND de.drug_concept_id > 0
-        AND c.standard_concept = 'S'
-        AND c.invalid_reason IS NULL
-        AND c.domain_id = 'Drug'
         """
         results = validate_sql(sql, validators="all")
 
