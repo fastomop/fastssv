@@ -8,6 +8,7 @@ Rules:
 - temporal_constraint_mapping: Ensures temporal constraints are anchored to observation_period
 - hierarchy_expansion: Ensures drug/condition concept filters use concept_ancestor
 - domain_segregation: Ensures clinical tables are joined to concepts from their expected domain
+- future_information_leakage: Detects cross-table date comparisons not bounded by observation_period_end_date
 """
 
 # Import all rule modules to trigger registration
@@ -20,6 +21,7 @@ from . import (
     hierarchy_expansion,
     unmapped_concept,
     domain_segregation,
+    future_information_leakage,
 )
 
 __all__ = [
@@ -31,4 +33,5 @@ __all__ = [
     "invalid_reason",
     "hierarchy_expansion",
     "domain_segregation",
+    "future_information_leakage",
 ]
