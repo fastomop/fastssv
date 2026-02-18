@@ -20,7 +20,7 @@ Correct pattern:
       AND m.unit_concept_id = 8554  -- % (UCUM)
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from sqlglot import exp
 
@@ -77,13 +77,41 @@ def _find_value_as_number_threshold(
             if table is None or normalize_name(table) == "measurement":
                 return True
 
+    # Also handle: value_as_number BETWEEN low AND high
+    for node in tree.find_all(exp.Between):
+        if not is_in_where_or_join_clause(node):
+            continue
+        col_node = node.this
+        if not isinstance(col_node, exp.Column):
+            continue
+        low = node.args.get("low")
+        high = node.args.get("high")
+        if not (isinstance(low, (exp.Literal, exp.Neg)) and isinstance(high, (exp.Literal, exp.Neg))):
+            continue
+        for side in (low, high):
+            literal = side if isinstance(side, exp.Literal) else side.this
+            if not (isinstance(literal, exp.Literal) and literal.is_number):
+                break
+        else:
+            table, col = resolve_table_col(col_node, aliases)
+            if normalize_name(col) != "value_as_number":
+                continue
+            if table is None or normalize_name(table) == "measurement":
+                return True
+
     return False
 
 
 def _has_unit_concept_constraint(tree: exp.Expression) -> bool:
-    """Return True if unit_concept_id is referenced anywhere in the query."""
+    """Return True if unit_concept_id participates in a WHERE or JOIN condition.
+
+    We intentionally require unit_concept_id to appear in a filtering/join context,
+    not just in the SELECT list. This aligns with the rule's goal of ensuring the
+    numeric threshold is evaluated under an explicit unit constraint, rather than
+    merely being aware of the column's existence.
+    """
     for col in tree.find_all(exp.Column):
-        if normalize_name(col.name) == "unit_concept_id":
+        if normalize_name(col.name) == "unit_concept_id" and is_in_where_or_join_clause(col):
             return True
     return False
 

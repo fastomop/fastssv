@@ -1032,8 +1032,31 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         violations = self._run_rule(sql)
         self.assertEqual(violations, [])
 
+    def test_between_without_unit_fires(self) -> None:
+        """BETWEEN filter on value_as_number without unit_concept_id -> violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number BETWEEN 5.0 AND 10.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_between_with_unit_passes(self) -> None:
+        """BETWEEN filter on value_as_number WITH unit_concept_id -> no violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number BETWEEN 5.0 AND 10.0
+          AND m.unit_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
     def test_string_comparison_not_flagged(self) -> None:
-        """String equality on value_as_number (odd but syntactically valid) not flagged."""
+        """Filtering on value_as_concept_id (not value_as_number) should not trigger the rule."""
         sql = """
         SELECT m.person_id
         FROM measurement m

@@ -324,4 +324,4 @@ class ObservationPeriodAnchoringRule(Rule):
         return violations
 
 
-__all__ = ["ObservationPeriodAnchoringRule", "CLINICAL_TABLES_WITH_DATES", "TEMPORAL_DATE_COLUMNS"]
+__all__ = ["ObservationPeriodAnchoringRule", "CLINICAL_TABLES_WITH_DATES", "TEMPORAL_DATE_COLUMNS", "is_date_column"]
