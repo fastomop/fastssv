@@ -1023,6 +1023,44 @@ class FutureInformationLeakageTests(unittest.TestCase):
         violations = self._run_rule(sql)
         self.assertEqual(violations, [])
 
+    def test_lt_direction_fires(self) -> None:
+        """LT (a < b) is semantically equivalent to GT (b > a) and must also trigger."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        JOIN condition_occurrence co ON de.person_id = co.person_id
+        WHERE de.drug_exposure_start_date < co.condition_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_end_date_only_in_select_still_fires(self) -> None:
+        """observation_period_end_date in SELECT list is not an upper bound — must still fire."""
+        sql = """
+        SELECT co.person_id,
+               op.observation_period_end_date
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_between_with_end_date_passes(self) -> None:
+        """BETWEEN ... AND observation_period_end_date is a valid upper bound."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+          AND co.condition_start_date BETWEEN op.observation_period_start_date
+                                          AND op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
 
 if __name__ == "__main__":
     unittest.main()

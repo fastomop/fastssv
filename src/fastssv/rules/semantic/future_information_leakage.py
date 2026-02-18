@@ -31,7 +31,7 @@ from fastssv.core.helpers import (
 from fastssv.core.registry import register
 from fastssv.rules.semantic.temporal_constraint_mapping import (
     CLINICAL_TABLES_WITH_DATES,
-    _is_date_column,
+    is_date_column,
 )
 
 
@@ -39,14 +39,17 @@ def _find_cross_table_date_comparisons(
     tree: exp.Expression,
     aliases: Dict[str, str],
 ) -> List[Tuple[str, str, str, str]]:
-    """Find GT/GTE comparisons between date columns from different clinical tables.
+    """Find temporal ordering comparisons between date columns from different clinical tables.
 
-    Returns list of (left_table, left_col, right_table, right_col) tuples.
+    Handles both GT/GTE (a > b) and LT/LTE (a < b, normalized so the later
+    event is always in the left position of the returned tuple).
+
+    Returns list of (later_table, later_col, earlier_table, earlier_col) tuples.
     """
     results: List[Tuple[str, str, str, str]] = []
     seen: set = set()
 
-    for node in tree.find_all((exp.GT, exp.GTE)):
+    for node in tree.find_all((exp.GT, exp.GTE, exp.LT, exp.LTE)):
         if not is_in_where_or_join_clause(node):
             continue
 
@@ -61,7 +64,7 @@ def _find_cross_table_date_comparisons(
         if not left_table or not right_table:
             continue
 
-        if not (_is_date_column(left_col) and _is_date_column(right_col)):
+        if not (is_date_column(left_col) and is_date_column(right_col)):
             continue
 
         # Must be from different clinical tables
@@ -73,7 +76,17 @@ def _find_cross_table_date_comparisons(
         if right_table not in CLINICAL_TABLES_WITH_DATES:
             continue
 
-        key = (left_table, left_col, right_table, right_col)
+        # Normalize so the "later" event is always first in the tuple.
+        # GT/GTE: left > right  → left is later
+        # LT/LTE: left < right  → right is later (swap)
+        if isinstance(node, (exp.LT, exp.LTE)):
+            later_table, later_col = right_table, right_col
+            earlier_table, earlier_col = left_table, left_col
+        else:
+            later_table, later_col = left_table, left_col
+            earlier_table, earlier_col = right_table, right_col
+
+        key = (later_table, later_col, earlier_table, earlier_col)
         if key not in seen:
             seen.add(key)
             results.append(key)
@@ -82,10 +95,33 @@ def _find_cross_table_date_comparisons(
 
 
 def _has_observation_period_end_bound(tree: exp.Expression) -> bool:
-    """Check if the query references observation_period_end_date anywhere."""
-    for col in tree.find_all(exp.Column):
-        if normalize_name(col.name) == "observation_period_end_date":
-            return True
+    """Check if the query has an actual upper-bound predicate using observation_period_end_date.
+
+    A bare reference in the SELECT list or an unrelated expression does not count.
+    Accepted patterns (must appear in WHERE or JOIN ON):
+        col <= op.observation_period_end_date
+        col <  op.observation_period_end_date
+        op.observation_period_end_date >= col
+        op.observation_period_end_date >  col
+        col BETWEEN x AND op.observation_period_end_date
+    """
+    # LT / LTE / GT / GTE with observation_period_end_date on either side
+    for node in tree.find_all((exp.LTE, exp.LT, exp.GTE, exp.GT)):
+        if not is_in_where_or_join_clause(node):
+            continue
+        for side in (node.left, node.right):
+            if isinstance(side, exp.Column) and normalize_name(side.name) == "observation_period_end_date":
+                return True
+
+    # BETWEEN: col BETWEEN x AND observation_period_end_date
+    for between in tree.find_all(exp.Between):
+        if not is_in_where_or_join_clause(between):
+            continue
+        high = between.args.get("high")
+        if high is not None and isinstance(high, exp.Column):
+            if normalize_name(high.name) == "observation_period_end_date":
+                return True
+
     return False
 
 
@@ -130,18 +166,18 @@ class FutureInformationLeakageRule(Rule):
             if _has_observation_period_end_bound(tree):
                 continue
 
-            for left_table, left_col, right_table, right_col in cross_comparisons:
+            for later_table, later_col, earlier_table, earlier_col in cross_comparisons:
                 violations.append(self.create_violation(
                     message=(
-                        f"Query compares {left_table}.{left_col} against "
-                        f"{right_table}.{right_col} without bounding the later event "
+                        f"Query compares {later_table}.{later_col} against "
+                        f"{earlier_table}.{earlier_col} without bounding the later event "
                         f"by observation_period_end_date. This uses future information "
                         f"beyond the patient's observable follow-up window, introducing "
                         f"temporal bias."
                     ),
                     details={
-                        "later_event": f"{left_table}.{left_col}",
-                        "index_event": f"{right_table}.{right_col}",
+                        "later_event": f"{later_table}.{later_col}",
+                        "index_event": f"{earlier_table}.{earlier_col}",
                         "missing": "observation_period_end_date upper bound",
                     },
                 ))
