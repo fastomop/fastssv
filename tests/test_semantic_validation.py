@@ -948,5 +948,100 @@ class DomainSegregationTests(unittest.TestCase):
         self.assertEqual(errors_only, [])
 
 
+class MeasurementUnitValidationTests(unittest.TestCase):
+    """Tests for the measurement unit validation rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.measurement_unit_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_value_as_number_without_unit_fires(self) -> None:
+        """Filtering value_as_number without unit_concept_id → violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number > 7.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.measurement_unit_validation")
+
+    def test_value_as_number_with_unit_passes(self) -> None:
+        """Filtering value_as_number WITH unit_concept_id → no violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number > 7.0
+          AND m.unit_concept_id = 8554
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_value_as_number_filter_not_flagged(self) -> None:
+        """Measurement query without numeric threshold → no violation."""
+        sql = """
+        SELECT m.person_id, m.value_as_number
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_non_measurement_table_not_flagged(self) -> None:
+        """Numeric comparison on non-measurement table → no violation."""
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence
+        WHERE condition_occurrence_id > 100
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_gte_comparison_without_unit_fires(self) -> None:
+        """GTE (>=) threshold without unit_concept_id also triggers the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.value_as_number >= 6.5
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_lt_comparison_without_unit_fires(self) -> None:
+        """LT (<) threshold without unit_concept_id also triggers the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3020891
+          AND m.value_as_number < 60.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_unit_in_join_on_satisfies_rule(self) -> None:
+        """unit_concept_id referenced in a JOIN ON clause satisfies the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        JOIN concept c ON m.unit_concept_id = c.concept_id
+        WHERE m.value_as_number > 7.0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_string_comparison_not_flagged(self) -> None:
+        """String equality on value_as_number (odd but syntactically valid) not flagged."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.value_as_concept_id = 4181412
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
