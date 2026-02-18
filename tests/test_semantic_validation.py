@@ -699,7 +699,7 @@ class DomainSegregationTests(unittest.TestCase):
             results.append(f"{prefix}{v.message}")
         return results
 
-    # --- Correct domain filter → no violation ---
+    # --- Correct domain filter -> no violation ---
 
     def test_condition_occurrence_correct_domain(self) -> None:
         """condition_occurrence joined to concept with domain_id = 'Condition' should pass."""
@@ -781,7 +781,7 @@ class DomainSegregationTests(unittest.TestCase):
         errors = self._run_rule(sql)
         self.assertEqual(errors, [])
 
-    # --- Wrong domain filter → ERROR ---
+    # --- Wrong domain filter -> ERROR ---
 
     def test_condition_occurrence_wrong_domain_procedure(self) -> None:
         """condition_occurrence filtered with domain_id = 'Procedure' should ERROR."""
@@ -847,7 +847,7 @@ class DomainSegregationTests(unittest.TestCase):
         errors_only = [e for e in errors if e.startswith("Error:")]
         self.assertTrue(len(errors_only) > 0)
 
-    # --- No domain filter → WARNING ---
+    # --- No domain filter -> WARNING ---
 
     def test_no_domain_filter_warns(self) -> None:
         """concept join without domain_id filter should produce a WARNING."""
@@ -876,7 +876,7 @@ class DomainSegregationTests(unittest.TestCase):
         warnings = [e for e in errors if e.startswith("Warning:")]
         self.assertTrue(len(warnings) > 0)
 
-    # --- No concept table → no violation ---
+    # --- No concept table -> no violation ---
 
     def test_no_concept_table_no_violation(self) -> None:
         """Query without concept table should not trigger the rule."""
@@ -926,7 +926,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        # type_concept_id is not in CLINICAL_TABLE_DOMAIN → no domain segregation violation
+        # type_concept_id is not in CLINICAL_TABLE_DOMAIN -> no domain segregation violation
         errors_only = [e for e in errors if e.startswith("Error:")]
         self.assertEqual(errors_only, [])
 
@@ -943,10 +943,127 @@ class DomainSegregationTests(unittest.TestCase):
         JOIN condition_concepts cc ON co.condition_concept_id = cc.concept_id
         """
         errors = self._run_rule(sql)
-        # The clinical table joins a CTE, not concept directly → no domain_segregation violation
+        # The clinical table joins a CTE, not concept directly -> no domain_segregation violation
         errors_only = [e for e in errors if e.startswith("Error:")]
         self.assertEqual(errors_only, [])
 
+
+class MeasurementUnitValidationTests(unittest.TestCase):
+    """Tests for the measurement unit validation rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.measurement_unit_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_value_as_number_without_unit_fires(self) -> None:
+        """Filtering value_as_number without unit_concept_id -> violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number > 7.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.measurement_unit_validation")
+
+    def test_value_as_number_with_unit_passes(self) -> None:
+        """Filtering value_as_number WITH unit_concept_id -> no violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number > 7.0
+          AND m.unit_concept_id = 8554
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_value_as_number_filter_not_flagged(self) -> None:
+        """Measurement query without numeric threshold -> no violation."""
+        sql = """
+        SELECT m.person_id, m.value_as_number
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_non_measurement_table_not_flagged(self) -> None:
+        """Numeric comparison on non-measurement table -> no violation."""
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence
+        WHERE condition_occurrence_id > 100
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_gte_comparison_without_unit_fires(self) -> None:
+        """GTE (>=) threshold without unit_concept_id also triggers the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.value_as_number >= 6.5
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_lt_comparison_without_unit_fires(self) -> None:
+        """LT (<) threshold without unit_concept_id also triggers the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3020891
+          AND m.value_as_number < 60.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_unit_in_join_on_satisfies_rule(self) -> None:
+        """unit_concept_id referenced in a JOIN ON clause satisfies the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        JOIN concept c ON m.unit_concept_id = c.concept_id
+        WHERE m.value_as_number > 7.0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_between_without_unit_fires(self) -> None:
+        """BETWEEN filter on value_as_number without unit_concept_id -> violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number BETWEEN 5.0 AND 10.0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_between_with_unit_passes(self) -> None:
+        """BETWEEN filter on value_as_number WITH unit_concept_id -> no violation."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+          AND m.value_as_number BETWEEN 5.0 AND 10.0
+          AND m.unit_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_string_comparison_not_flagged(self) -> None:
+        """Filtering on value_as_concept_id (not value_as_number) should not trigger the rule."""
+        sql = """
+        SELECT m.person_id
+        FROM measurement m
+        WHERE m.value_as_concept_id = 4181412
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
 
 class FutureInformationLeakageTests(unittest.TestCase):
     """Tests for the future information leakage rule."""
@@ -957,7 +1074,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         return rule.validate(sql, dialect)
 
     def test_cross_table_date_comparison_without_bound_fires(self) -> None:
-        """Cross-table date comparison without observation_period_end_date → violation."""
+        """Cross-table date comparison without observation_period_end_date -> violation."""
         sql = """
         SELECT co.person_id
         FROM condition_occurrence co
@@ -969,7 +1086,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         self.assertEqual(violations[0].rule_id, "semantic.future_information_leakage")
 
     def test_cross_table_date_comparison_with_bound_passes(self) -> None:
-        """Cross-table date comparison WITH observation_period_end_date bound → no violation."""
+        """Cross-table date comparison WITH observation_period_end_date bound -> no violation."""
         sql = """
         SELECT co.person_id
         FROM condition_occurrence co
@@ -1035,7 +1152,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         self.assertTrue(len(violations) > 0)
 
     def test_end_date_only_in_select_still_fires(self) -> None:
-        """observation_period_end_date in SELECT list is not an upper bound — must still fire."""
+        """observation_period_end_date in SELECT list is not an upper bound -- must still fire."""
         sql = """
         SELECT co.person_id,
                op.observation_period_end_date

@@ -94,7 +94,7 @@ def is_date_column(col_name: str) -> bool:
     )
 
 
-# Private alias for backward compatibility within this module
+# Private alias kept for backward compatibility within this module
 _is_date_column = is_date_column
 
 
@@ -324,4 +324,4 @@ class ObservationPeriodAnchoringRule(Rule):
         return violations
 
 
-__all__ = ["ObservationPeriodAnchoringRule", "CLINICAL_TABLES_WITH_DATES", "TEMPORAL_DATE_COLUMNS"]
+__all__ = ["ObservationPeriodAnchoringRule", "CLINICAL_TABLES_WITH_DATES", "TEMPORAL_DATE_COLUMNS", "is_date_column"]

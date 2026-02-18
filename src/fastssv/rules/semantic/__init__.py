@@ -9,6 +9,7 @@ Rules:
 - hierarchy_expansion: Ensures drug/condition concept filters use concept_ancestor
 - domain_segregation: Ensures clinical tables are joined to concepts from their expected domain
 - future_information_leakage: Detects cross-table date comparisons not bounded by observation_period_end_date
+- measurement_unit_validation: Ensures value_as_number filters include a unit_concept_id constraint
 """
 
 # Import all rule modules to trigger registration
@@ -22,6 +23,7 @@ from . import (
     unmapped_concept,
     domain_segregation,
     future_information_leakage,
+    measurement_unit_validation,
 )
 
 __all__ = [
@@ -34,4 +36,5 @@ __all__ = [
     "hierarchy_expansion",
     "domain_segregation",
     "future_information_leakage",
+    "measurement_unit_validation",
 ]
