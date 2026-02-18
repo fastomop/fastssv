@@ -6,6 +6,7 @@ Rules:
 - join_path: Validates proper JOIN paths between clinical and vocabulary tables
 - maps_to_direction: Checks 'Maps to' relationship direction
 - temporal_constraint_mapping: Ensures temporal constraints are anchored to observation_period
+- invalid_reason: Ensures vocabulary table queries filter out invalid/deprecated concepts
 - hierarchy_expansion: Ensures drug/condition concept filters use concept_ancestor
 - domain_segregation: Ensures clinical tables are joined to concepts from their expected domain
 - future_information_leakage: Detects cross-table date comparisons not bounded by observation_period_end_date
