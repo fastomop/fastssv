@@ -56,9 +56,15 @@ class UnifiedAPITests(unittest.TestCase):
         """
         results = validate_sql(sql, validators=["semantic"])
 
-        # Validators should be in results
+        # Result dict has all expected keys
         self.assertIn("semantic_errors", results)
+        self.assertIn("vocabulary_errors", results)
         self.assertIn("all_errors", results)
+
+        # Only semantic validators ran — no vocabulary errors should be present
+        self.assertEqual(results["vocabulary_errors"], [])
+        self.assertEqual(results["semantic_errors"], [])
+        self.assertEqual(results["all_errors"], [])
 
     def test_validate_sql_different_dialects(self) -> None:
         """Test validation with different SQL dialects."""
@@ -70,7 +76,8 @@ class UnifiedAPITests(unittest.TestCase):
         # Should work with different dialects
         for dialect in ["postgres", "mysql", "sqlite", "duckdb"]:
             results = validate_sql(sql, validators="all", dialect=dialect)
-            self.assertEqual(results["all_errors"], [])
+            self.assertEqual(results["semantic_errors"], [], f"Unexpected semantic errors for dialect {dialect}")
+            self.assertEqual(results["all_errors"], [], f"Unexpected errors for dialect {dialect}")
 
 
 if __name__ == "__main__":
