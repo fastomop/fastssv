@@ -83,7 +83,7 @@ DATE_FUNCTION_NAMES = {
 }
 
 
-def _is_date_column(col_name: str) -> bool:
+def is_date_column(col_name: str) -> bool:
     """Check if column name looks like a date/temporal column."""
     col_lower = normalize_name(col_name)
     return (
@@ -92,6 +92,10 @@ def _is_date_column(col_name: str) -> bool:
         col_lower.endswith("_datetime") or
         col_lower.endswith("_time")
     )
+
+
+# Private alias for backward compatibility within this module
+_is_date_column = is_date_column
 
 
 def _is_date_literal(node: exp.Expression) -> bool:

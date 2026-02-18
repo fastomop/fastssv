@@ -948,5 +948,119 @@ class DomainSegregationTests(unittest.TestCase):
         self.assertEqual(errors_only, [])
 
 
+class FutureInformationLeakageTests(unittest.TestCase):
+    """Tests for the future information leakage rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.future_information_leakage")()
+        return rule.validate(sql, dialect)
+
+    def test_cross_table_date_comparison_without_bound_fires(self) -> None:
+        """Cross-table date comparison without observation_period_end_date → violation."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.future_information_leakage")
+
+    def test_cross_table_date_comparison_with_bound_passes(self) -> None:
+        """Cross-table date comparison WITH observation_period_end_date bound → no violation."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+          AND co.condition_start_date <= op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_single_table_date_filter_not_flagged(self) -> None:
+        """Single-table temporal filter (same table both sides) should not trigger."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > op.observation_period_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_date_comparison_not_flagged(self) -> None:
+        """Query with no temporal activity at all should not trigger."""
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_gte_comparison_without_bound_fires(self) -> None:
+        """GTE (>=) cross-table date comparison also triggers the rule."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        WHERE de.drug_exposure_start_date >= vo.visit_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_date_comparison_against_literal_not_flagged(self) -> None:
+        """Comparing a date column against a literal value should not trigger."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_start_date > '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_lt_direction_fires(self) -> None:
+        """LT (a < b) is semantically equivalent to GT (b > a) and must also trigger."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        JOIN condition_occurrence co ON de.person_id = co.person_id
+        WHERE de.drug_exposure_start_date < co.condition_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_end_date_only_in_select_still_fires(self) -> None:
+        """observation_period_end_date in SELECT list is not an upper bound — must still fire."""
+        sql = """
+        SELECT co.person_id,
+               op.observation_period_end_date
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_between_with_end_date_passes(self) -> None:
+        """BETWEEN ... AND observation_period_end_date is a valid upper bound."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+          AND co.condition_start_date BETWEEN op.observation_period_start_date
+                                          AND op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
