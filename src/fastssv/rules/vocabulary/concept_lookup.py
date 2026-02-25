@@ -49,11 +49,13 @@ def _is_inside_concept_id_lookup(col_node: exp.Column, aliases: Dict[str, str]) 
     Returns True if this column is used inside a SELECT that:
     1. Outputs concept_id (directly or via alias)
     2. Is selecting from a vocabulary table
+    3. Joins concept table to clinical table via *_concept_id
 
     Example allowed contexts:
       SELECT concept_id FROM concept WHERE concept_code = 'E11'
       SELECT c.concept_id AS cid FROM concept c WHERE c.concept_name LIKE '%diabetes%'
       EXISTS (SELECT 1 FROM concept c WHERE c.concept_id = x.some_concept_id AND c.standard_concept='S')
+      JOIN concept c ON table.x_concept_id = c.concept_id WHERE c.domain_id = 'Condition'
     """
     select = col_node.find_ancestor(exp.Select)
     if not select:
@@ -100,6 +102,27 @@ def _is_inside_concept_id_lookup(col_node: exp.Column, aliases: Dict[str, str]) 
                         if a_name == "concept_id":
                             if b_name.endswith("_concept_id") or b_name == "concept_id":
                                 return True
+
+    # Check if concept table is joined to a clinical table via *_concept_id
+    # This allows filtering concept attributes when joining to clinical tables
+    # Example: JOIN concept c ON table.x_concept_id = c.concept_id WHERE c.domain_id = 'X'
+    for join in select.find_all(exp.Join):
+        join_on = join.args.get("on")
+        if join_on:
+            for eq in join_on.find_all(exp.EQ):
+                left, right = eq.left, eq.right
+                for side_a, side_b in [(left, right), (right, left)]:
+                    if isinstance(side_a, exp.Column) and isinstance(side_b, exp.Column):
+                        a_table, a_col = resolve_table_col(side_a, aliases)
+                        b_table, b_col = resolve_table_col(side_b, aliases)
+
+                        # Check if one side is concept.concept_id and other is a *_concept_id
+                        if (a_table in vocab_tables and a_col == "concept_id" and
+                            (b_col.endswith("_concept_id") or b_col == "concept_id")):
+                            return True
+                        if (b_table in vocab_tables and b_col == "concept_id" and
+                            (a_col.endswith("_concept_id") or a_col == "concept_id")):
+                            return True
 
     # Check if SELECT contains concept_id in its projection
     for proj in select.expressions or []:
