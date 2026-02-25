@@ -249,27 +249,33 @@ class ObservationPeriodAnchoringRule(Rule):
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
-        
+
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
-        
+
         for tree in trees:
             if tree is None:
                 continue
-            
+
             aliases = extract_aliases(tree)
-            
+
             # Find temporal constraints in the query
             temporal_constraints = _extract_temporal_constraints(tree, aliases)
-            
+
             # Also check for date functions
             has_date_functions = _has_date_function(tree)
-            
-            if not temporal_constraints and not has_date_functions:
-                # No temporal constraints found, rule doesn't apply
-                continue
-            
+
+            # Check if query is counting distinct patients from clinical tables
+            counts_patients = False
+            for func in tree.find_all(exp.Count):
+                # Check if it's COUNT(DISTINCT person_id) or similar
+                if func.find(exp.Distinct):
+                    for col in func.find_all(exp.Column):
+                        if normalize_name(col.name) == "person_id":
+                            counts_patients = True
+                            break
+
             # Get the clinical tables involved
             clinical_tables = {t for t, _, _ in temporal_constraints}
             
@@ -277,31 +283,54 @@ class ObservationPeriodAnchoringRule(Rule):
             for table in aliases.values():
                 if table in CLINICAL_TABLES_WITH_DATES:
                     clinical_tables.add(table)
-            
+
+            # Determine if rule should apply
+            # Apply if: (1) explicit temporal constraints, OR (2) counting patients from clinical tables
+            rule_applies = (temporal_constraints or has_date_functions or
+                          (counts_patients and clinical_tables))
+
+            if not rule_applies:
+                # Rule doesn't apply to this query
+                continue
+
             # Check if observation_period is used and properly joined
             uses_op = _uses_observation_period(tree)
-            
+
             if not uses_op:
                 # Build informative message
                 constraint_details = []
                 for table, col, _ in temporal_constraints:
                     constraint_details.append(f"{table}.{col}")
-                
+
                 # Deduplicate
                 constraint_details = sorted(set(constraint_details))
-                
-                message = (
-                    f"Query has temporal constraints but does not join to observation_period. "
-                    f"Temporal filters on: {', '.join(constraint_details) if constraint_details else 'date functions'}. "
-                    f"Events outside a patient's observation window may be incomplete."
-                )
-                
+
+                if temporal_constraints or has_date_functions:
+                    message = (
+                        f"Query has temporal constraints but does not join to observation_period. "
+                        f"Temporal filters on: {', '.join(constraint_details) if constraint_details else 'date functions'}. "
+                        f"Events outside a patient's observation window may be incomplete."
+                    )
+                    severity = Severity.ERROR
+                elif counts_patients and clinical_tables:
+                    message = (
+                        f"Query counts distinct patients from clinical table(s) {sorted(clinical_tables)} "
+                        f"without joining to observation_period. "
+                        f"This may include records outside patients' observation windows, "
+                        f"leading to incomplete or misleading counts."
+                    )
+                    severity = Severity.WARNING
+                else:
+                    continue  # Shouldn't reach here, but safety check
+
                 violations.append(self.create_violation(
                     message=message,
+                    severity=severity,
                     details={
                         "temporal_columns": constraint_details,
                         "clinical_tables": sorted(clinical_tables),
                         "has_date_functions": has_date_functions,
+                        "counts_patients": counts_patients,
                     }
                 ))
             else:
