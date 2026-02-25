@@ -26,6 +26,13 @@ def _split_queries(sql: str) -> List[str]:
 
     Handles semicolons inside strings and comments.
     """
+    def has_sql_content(text: str) -> bool:
+        """Check if text has actual SQL content (not just comments/whitespace)."""
+        # Strip comments
+        no_block_comments = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        no_comments = re.sub(r"--[^\n]*", "", no_block_comments)
+        return bool(no_comments.strip())
+
     queries = []
     current = []
     in_single_quote = False
@@ -81,7 +88,8 @@ def _split_queries(sql: str) -> List[str]:
         if char == ';' and not in_single_quote and not in_double_quote:
             current.append(char)
             query = ''.join(current).strip()
-            if query and query != ';':
+            # Only add if it has actual SQL content (not just comments)
+            if query and query != ';' and has_sql_content(query):
                 queries.append(query)
             current = []
             i += 1
@@ -92,7 +100,8 @@ def _split_queries(sql: str) -> List[str]:
 
     # Handle last query (might not end with semicolon)
     remaining = ''.join(current).strip()
-    if remaining:
+    # Only add if it has actual SQL content (not just comments)
+    if remaining and has_sql_content(remaining):
         queries.append(remaining)
 
     return queries
