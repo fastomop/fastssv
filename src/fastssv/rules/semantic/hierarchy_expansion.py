@@ -1,10 +1,14 @@
-"""Hierarchy Expansion Required Rule.
+"""Hierarchy Expansion Recommendation Rule.
 
 OMOP semantic rule:
-When filtering on drug_concept_id or condition_concept_id, MUST use
+When filtering on drug_concept_id or condition_concept_id, consider using
 concept_ancestor table to capture all descendants (child concepts).
 
-A single concept_id (e.g., "Metformin") misses specific formulations
+Whether hierarchy expansion is needed depends on analytical intent:
+- If querying an ingredient/class, use concept_ancestor to get all formulations
+- If querying a specific clinical drug product, direct filtering may be correct
+
+A single concept_id (e.g., "Metformin ingredient") misses specific formulations
 (Metformin 500mg, Metformin XR, etc.). Hierarchy expansion ensures complete capture.
 """
 
@@ -193,20 +197,22 @@ def _verify_concept_ancestor_join_direction(
 
 @register
 class HierarchyExpansionRule(Rule):
-    """Ensures queries filtering on drug/condition concepts use concept_ancestor."""
-    
+    """Recommends using concept_ancestor for hierarchy expansion when appropriate."""
+
     rule_id = "semantic.hierarchy_expansion_required"
-    name = "Hierarchy Expansion Required"
+    name = "Hierarchy Expansion Recommended"
     description = (
-        "Ensures queries filtering on drug_concept_id or condition_concept_id use "
-        "concept_ancestor table to capture all descendant concepts. A single concept_id "
-        "misses specific formulations/subtypes."
+        "Recommends using concept_ancestor table when filtering on drug_concept_id or "
+        "condition_concept_id to capture descendant concepts. Whether hierarchy expansion "
+        "is needed depends on analytical intent - querying a specific clinical drug product "
+        "may not need expansion, but querying an ingredient/class typically does."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING
     suggested_fix = (
-        "Use concept_ancestor to include descendants: "
+        "If querying an ingredient/class, use concept_ancestor to include descendants: "
         "JOIN concept_ancestor ca ON table.concept_id = ca.descendant_concept_id "
-        "WHERE ca.ancestor_concept_id = <your_target_concept>"
+        "WHERE ca.ancestor_concept_id = <your_target_concept>. "
+        "If querying a specific product, direct filtering may be correct."
     )
     
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -239,15 +245,17 @@ class HierarchyExpansionRule(Rule):
                 filtered_columns.add((table, column))
             
             if not uses_ancestor:
-                # Main violation: filtering without hierarchy expansion
+                # Recommendation: consider hierarchy expansion
                 columns_str = ", ".join(
                     sorted(f"{t}.{c}" for t, c in filtered_columns)
                 )
                 violations.append(self.create_violation(
                     message=(
                         f"Query filters on {columns_str} without using concept_ancestor "
-                        f"for hierarchy expansion. This will miss descendant concepts "
-                        f"(e.g., specific drug formulations or condition subtypes)."
+                        f"for hierarchy expansion. If querying an ingredient or drug class, "
+                        f"this will miss descendant concepts (e.g., specific formulations). "
+                        f"If querying a specific clinical drug product, this may be correct. "
+                        f"Consider whether hierarchy expansion is needed for your use case."
                     ),
                     details={
                         "filtered_columns": sorted(
