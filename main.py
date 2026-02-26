@@ -21,6 +21,46 @@ def _read_sql(sql_file: str | None) -> str:
     raise SystemExit("Provide a SQL file path or pipe SQL via stdin.")
 
 
+def _clean_llm_output(sql: str) -> str:
+    """Clean SQL from LLM output by removing markdown and explanatory text.
+
+    Handles:
+    - Markdown code fences (```sql, ```postgresql, ```)
+    - Explanatory text before and after SQL
+    - Extra whitespace
+
+    Args:
+        sql: Raw SQL text potentially containing markdown and explanations
+
+    Returns:
+        Cleaned SQL query text
+    """
+    # Try to extract SQL from markdown code fences first
+    # Pattern: ```sql ... ``` or ```postgresql ... ``` or ``` ... ```
+    fence_pattern = r'```(?:sql|postgresql)?\s*\n(.*?)\n```'
+    fence_match = re.search(fence_pattern, sql, re.DOTALL)
+
+    if fence_match:
+        # Extract content between code fences
+        sql = fence_match.group(1)
+    else:
+        # No code fences, remove any stray backticks
+        sql = re.sub(r'```(?:sql|postgresql)?\s*', '', sql)
+        sql = re.sub(r'```', '', sql)
+
+    # Find the last semicolon position
+    last_semicolon = sql.rfind(';')
+
+    if last_semicolon != -1:
+        # Keep everything up to and including the last semicolon
+        sql = sql[:last_semicolon + 1]
+
+    # Remove any trailing backticks or markdown artifacts
+    sql = re.sub(r'`+\s*$', '', sql)
+
+    return sql.strip()
+
+
 def _split_queries(sql: str) -> List[str]:
     """Split SQL content into individual queries by semicolon.
 
@@ -182,6 +222,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     sql = _read_sql(args.sql_file)
+
+    # Clean LLM output (remove markdown, explanations)
+    sql = _clean_llm_output(sql)
 
     # Split into individual queries
     queries = _split_queries(sql)

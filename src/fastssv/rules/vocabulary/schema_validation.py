@@ -5,7 +5,7 @@ Validates that columns referenced in SQL queries exist in the OMOP CDM schema.
 Catches common errors like using concept_ancestor columns on concept_relationship table.
 """
 
-from typing import Dict, List, Set
+from typing import List, Set
 
 from sqlglot import exp
 
