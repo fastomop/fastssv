@@ -1,0 +1,148 @@
+[
+  {
+    "rule_id": "OMOP_101",
+    "group": "concept_set_construction",
+    "name": "concept_set_requires_descendant_expansion",
+    "description": "When defining concept sets for cohort queries, descendant concepts should be retrieved using concept_ancestor unless explicitly restricted to the exact concept.",
+    "logic": "If a concept set query filters only on a single concept_id without checking concept_ancestor for descendants and the use case implies hierarchical inclusion, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "concept",
+      "concept_ancestor"
+    ]
+  },
+  {
+    "rule_id": "OMOP_102",
+    "group": "concept_set_construction",
+    "name": "concept_set_filters_invalid_concepts",
+    "description": "Concept sets should exclude invalid concepts.",
+    "logic": "Ensure concept.invalid_reason IS NULL when retrieving concept sets.",
+    "severity": "warning",
+    "tables_involved": [
+      "concept"
+    ]
+  },
+  {
+    "rule_id": "OMOP_103",
+    "group": "concept_set_construction",
+    "name": "concept_set_standard_only_for_clinical_queries",
+    "description": "Clinical queries should use standard concepts rather than source concepts.",
+    "logic": "If concept sets include concepts where standard_concept IS NULL and the query targets clinical tables, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "concept"
+    ]
+  },
+  {
+    "rule_id": "OMOP_110",
+    "group": "era_generation_rules",
+    "name": "condition_era_requires_persistence_window",
+    "description": "Condition eras are typically constructed using a persistence window (commonly 30 days) to merge adjacent condition occurrences.",
+    "logic": "If condition eras are generated without applying a persistence window between condition_end_date and next condition_start_date, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "condition_occurrence"
+    ]
+  },
+  {
+    "rule_id": "OMOP_111",
+    "group": "era_generation_rules",
+    "name": "drug_era_gap_days_logic",
+    "description": "Drug eras should merge exposures if the gap between them is below the persistence window.",
+    "logic": "If drug era construction does not check gap_days or persistence window logic, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "drug_exposure"
+    ]
+  },
+  {
+    "rule_id": "OMOP_120",
+    "group": "observation_period_logic",
+    "name": "event_within_any_observation_period",
+    "description": "Clinical events should fall within at least one observation_period record for the person.",
+    "logic": "Ensure event_date BETWEEN observation_period_start_date AND observation_period_end_date.",
+    "severity": "warning",
+    "tables_involved": [
+      "observation_period"
+    ]
+  },
+  {
+    "rule_id": "OMOP_121",
+    "group": "observation_period_logic",
+    "name": "multiple_observation_periods_supported",
+    "description": "Persons can have multiple observation periods; queries should account for this possibility.",
+    "logic": "If queries assume a single observation_period per person without aggregation or proper join conditions, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "observation_period"
+    ]
+  },
+  {
+    "rule_id": "OMOP_130",
+    "group": "measurement_unit_normalization",
+    "name": "measurement_units_should_be_standardized",
+    "description": "Measurement comparisons should be performed on standardized units.",
+    "logic": "If queries compare measurement.value_as_number across records without filtering or grouping by unit_concept_id, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "measurement"
+    ]
+  },
+  {
+    "rule_id": "OMOP_131",
+    "group": "measurement_unit_normalization",
+    "name": "unit_conversion_required_for_cross_unit_comparison",
+    "description": "If measurements with different unit_concept_id values are compared directly, unit normalization or conversion should be applied.",
+    "logic": "Detect comparisons across multiple unit_concept_id values without normalization.",
+    "severity": "warning",
+    "tables_involved": [
+      "measurement"
+    ]
+  },
+  {
+    "rule_id": "OMOP_140",
+    "group": "episode_logic",
+    "name": "episode_requires_episode_concept_filter",
+    "description": "Episode queries should filter by episode_concept_id to specify episode type.",
+    "logic": "If episode table is queried without filtering episode_concept_id, flag a warning.",
+    "severity": "warning",
+    "tables_involved": [
+      "episode"
+    ]
+  },
+  {
+    "rule_id": "OMOP_141",
+    "group": "episode_logic",
+    "name": "episode_event_join_validation",
+    "description": "episode_event should join to the correct event table based on event_field_concept_id.",
+    "logic": "Ensure episode_event.event_id joins to the correct domain table using event_field_concept_id mapping.",
+    "severity": "error",
+    "tables_involved": [
+      "episode_event"
+    ]
+  },
+  {
+    "rule_id": "OMOP_150",
+    "group": "fact_relationship_validation",
+    "name": "fact_relationship_requires_relationship_concept",
+    "description": "fact_relationship rows should specify a valid relationship concept.",
+    "logic": "Ensure relationship_concept_id references a valid concept in the Concept table.",
+    "severity": "error",
+    "tables_involved": [
+      "fact_relationship",
+      "concept"
+    ]
+  },
+  {
+    "rule_id": "OMOP_151",
+    "group": "fact_relationship_validation",
+    "name": "fact_relationship_domain_pair_validation",
+    "description": "fact_relationship should link compatible domain records.",
+    "logic": "Validate that domain_concept_id_1 and domain_concept_id_2 correspond to valid OMOP domains.",
+    "severity": "warning",
+    "tables_involved": [
+      "fact_relationship",
+      "concept"
+    ]
+  }
+]
