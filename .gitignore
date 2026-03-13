@@ -51,3 +51,5 @@ output/
 !output/README.md
 !output/run_omop_query_dataset.sql
 !output/run_omop_query_dataset.json
+
+temp/
