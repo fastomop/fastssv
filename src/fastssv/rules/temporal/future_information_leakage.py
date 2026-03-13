@@ -29,7 +29,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
 )
 from fastssv.core.registry import register
-from .temporal_constraint_mapping import (
+from .observation_period_anchoring import (
     CLINICAL_TABLES_WITH_DATES,
     is_date_column,
 )
