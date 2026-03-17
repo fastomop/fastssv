@@ -1179,5 +1179,149 @@ class FutureInformationLeakageTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class TypeConceptIdMisuseTests(unittest.TestCase):
+    """Tests for the type_concept_id misuse rule (OMOP_014)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.type_concept_id_misuse")()
+        return rule.validate(sql, dialect)
+
+    def test_condition_type_concept_id_filter_fires(self) -> None:
+        """Filtering on condition_type_concept_id should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_type_concept_id = 32817
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.type_concept_id_misuse")
+        self.assertTrue("condition_type_concept_id" in violations[0].message)
+        self.assertTrue("provenance" in violations[0].message.lower())
+
+    def test_drug_type_concept_id_filter_fires(self) -> None:
+        """Filtering on drug_type_concept_id should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_type_concept_id = 38000177
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("drug_type_concept_id" in violations[0].message)
+        self.assertTrue("drug_concept_id" in violations[0].message)
+
+    def test_visit_type_concept_id_filter_fires(self) -> None:
+        """Filtering on visit_type_concept_id should error (OMOP_013 covered)."""
+        sql = """
+        SELECT * FROM visit_occurrence
+        WHERE visit_type_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("visit_type_concept_id" in violations[0].message)
+        self.assertTrue("visit_concept_id" in violations[0].message)
+
+    def test_measurement_type_concept_id_in_clause_fires(self) -> None:
+        """Filtering with IN clause on measurement_type_concept_id should error."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_type_concept_id IN (32817, 32818)
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("measurement_type_concept_id" in violations[0].message)
+
+    def test_procedure_type_concept_id_comparison_fires(self) -> None:
+        """Using comparison operators on procedure_type_concept_id should error."""
+        sql = """
+        SELECT * FROM procedure_occurrence
+        WHERE procedure_type_concept_id != 32817
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_type_concept_id_in_join_on_fires(self) -> None:
+        """Using type_concept_id in JOIN ON clause should error."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_type_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("JOIN ON" in violations[0].message or "join" in violations[0].message.lower())
+
+    def test_type_concept_id_in_having_fires(self) -> None:
+        """Using type_concept_id in HAVING clause should error."""
+        sql = """
+        SELECT condition_type_concept_id, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_type_concept_id
+        HAVING condition_type_concept_id = 32817
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_correct_primary_concept_id_usage_passes(self) -> None:
+        """Using primary concept_id (not type) should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_correct_visit_concept_id_usage_passes(self) -> None:
+        """Using visit_concept_id (not visit_type_concept_id) should pass."""
+        sql = """
+        SELECT * FROM visit_occurrence
+        WHERE visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_type_concept_id_in_select_list_passes(self) -> None:
+        """Selecting type_concept_id (not filtering) should pass."""
+        sql = """
+        SELECT person_id, condition_type_concept_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_type_concept_id_in_group_by_passes(self) -> None:
+        """Using type_concept_id in GROUP BY (not filtering) should pass."""
+        sql = """
+        SELECT condition_type_concept_id, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_type_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_multiple_type_concept_id_filters_fires_multiple(self) -> None:
+        """Multiple type_concept_id filters should produce multiple violations."""
+        sql = """
+        SELECT co.*, de.*
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_type_concept_id = 32817
+        AND de.drug_type_concept_id = 38000177
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) >= 2)
+
+    def test_no_clinical_tables_not_flagged(self) -> None:
+        """Query without clinical tables should not trigger."""
+        sql = """
+        SELECT concept_id, concept_name
+        FROM concept
+        WHERE domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
