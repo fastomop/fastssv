@@ -1774,5 +1774,128 @@ class ConceptDomainValidationTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class SourceConceptIdWarningTests(unittest.TestCase):
+    """Tests for the source_concept_id warning rule (OMOP_022)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.source_concept_id_warning")()
+        return rule.validate(sql, dialect)
+
+    def test_condition_source_concept_id_filter_warns(self) -> None:
+        """Filtering on condition_source_concept_id should warn."""
+        sql = """
+        SELECT DISTINCT person_id
+        FROM condition_occurrence
+        WHERE condition_source_concept_id = 44836914
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("condition_source_concept_id" in violations[0].message)
+        self.assertTrue("condition_concept_id" in violations[0].message)
+
+    def test_drug_source_concept_id_filter_warns(self) -> None:
+        """Filtering on drug_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM drug_exposure
+        WHERE drug_source_concept_id = 123456
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("drug_source_concept_id" in violations[0].message)
+
+    def test_procedure_source_concept_id_in_clause_warns(self) -> None:
+        """Using IN clause with procedure_source_concept_id should warn."""
+        sql = """
+        SELECT *
+        FROM procedure_occurrence
+        WHERE procedure_source_concept_id IN (111, 222, 333)
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("procedure_source_concept_id" in violations[0].message)
+
+    def test_standard_concept_id_does_not_warn(self) -> None:
+        """Using standard *_concept_id should not warn."""
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_source_concept_id_in_select_not_flagged(self) -> None:
+        """Selecting source_concept_id (not filtering) should not warn."""
+        sql = """
+        SELECT person_id, condition_source_concept_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_source_concept_id_in_group_by_not_flagged(self) -> None:
+        """GROUP BY source_concept_id should not warn."""
+        sql = """
+        SELECT condition_source_concept_id, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_source_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_measurement_source_concept_id_warns(self) -> None:
+        """Filtering on measurement_source_concept_id should warn."""
+        sql = """
+        SELECT *
+        FROM measurement
+        WHERE measurement_source_concept_id = 999
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_observation_source_concept_id_warns(self) -> None:
+        """Filtering on observation_source_concept_id should warn."""
+        sql = """
+        SELECT *
+        FROM observation
+        WHERE observation_source_concept_id = 888
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_multiple_source_concept_id_filters_warns_multiple(self) -> None:
+        """Multiple source_concept_id filters should generate multiple warnings."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_source_concept_id = 111
+        AND de.drug_source_concept_id = 222
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) >= 2)
+
+    def test_source_concept_id_comparison_operators_warn(self) -> None:
+        """Various comparison operators on source_concept_id should warn."""
+        sql = """
+        SELECT DISTINCT person_id
+        FROM condition_occurrence
+        WHERE condition_source_concept_id != 0
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_no_clinical_tables_not_flagged(self) -> None:
+        """Query without clinical tables should not trigger."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
