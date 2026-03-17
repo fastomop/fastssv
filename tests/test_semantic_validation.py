@@ -1558,6 +1558,41 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         violations = self._run_rule(sql)
         self.assertEqual(violations, [])
 
+    def test_concept_relationship_with_is_not_null_fires(self) -> None:
+        """IS NOT NULL doesn't specify relationship type, should error."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE cr.relationship_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("cross-product" in violations[0].message.lower())
+
+    def test_concept_relationship_with_not_equals_fires(self) -> None:
+        """!= doesn't specify relationship type, should error."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE cr.relationship_id != 'Subsumes'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("cross-product" in violations[0].message.lower())
+
+    def test_concept_relationship_with_is_null_fires(self) -> None:
+        """IS NULL doesn't specify relationship type, should error."""
+        sql = """
+        SELECT * FROM concept_relationship cr
+        WHERE cr.relationship_id IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,12 +34,15 @@ def _collect_relationship_filters(
 ) -> Dict[str, bool]:
     """
     Track which concept_relationship aliases have relationship_id filters.
+    Only accepts filters that specify relationship types (EQ, IN).
+    Rejects NEQ and IS NULL/IS NOT NULL as they don't prevent cross-products.
     Returns: {alias: has_filter}
     """
     alias_filter_map = {alias: False for alias in cr_aliases}
 
     for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.NEQ, exp.In, exp.Is)):
+        # Only accept operators that specify relationship types
+        if not isinstance(node, (exp.EQ, exp.In)):
             continue
 
         left = node.this
