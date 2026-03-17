@@ -9,7 +9,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~20 core rules
+- Implemented: ~21 core rules
 - Coverage: ~8-10%
 
 ---
@@ -60,8 +60,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `joins/join_path_validation.py`*
 - [x] **OMOP_021**: measurement_value_as_number_with_unit
   - *Implemented as: `domain_specific/measurement/measurement_unit_validation.py`*
-- [ ] **OMOP_022**: source_concept_id_not_for_primary_filtering
-  - *Suggested group: `concept_standardization/`*
+- [x] **OMOP_022**: source_concept_id_not_for_primary_filtering
+  - *Implemented as: `concept_standardization/source_concept_id_warning.py`*
 - [ ] **OMOP_023**: death_table_primary_key_is_person_id
   - *Suggested group: `domain_specific/death/`*
 - [ ] **OMOP_024**: cohort_subject_id_joins_to_person_id

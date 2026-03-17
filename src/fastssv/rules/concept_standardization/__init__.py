@@ -9,6 +9,7 @@ from .invalid_reason_enforcement import InvalidReasonEnforcementRule
 from .hierarchy_expansion import HierarchyExpansionRule
 from .era_table_standard_concepts import EraTableStandardConceptsRule
 from .concept_domain_validation import ConceptDomainValidationRule
+from .source_concept_id_warning import SourceConceptIdWarningRule
 
 __all__ = [
     "StandardConceptEnforcementRule",
@@ -16,4 +17,5 @@ __all__ = [
     "HierarchyExpansionRule",
     "EraTableStandardConceptsRule",
     "ConceptDomainValidationRule",
+    "SourceConceptIdWarningRule",
 ]
