@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~21 core rules
-- Coverage: ~8-10%
+- Implemented: ~28 core rules
+- Coverage: ~12%
 
 ---
 
@@ -24,10 +24,10 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `joins/join_path_validation.py`*
 - [x] **OMOP_003**: source_value_not_used_for_filtering
   - *Implemented as: `anti_patterns/no_string_identification.py`*
-- [-] **OMOP_004**: person_join_uses_person_id
-  - *Not implemented: Type mismatch (integer vs varchar) makes this join fail naturally in most databases*
-- [-] **OMOP_005**: visit_occurrence_join_uses_visit_occurrence_id
-  - *Not implemented: Same type mismatch issue as OMOP_004*
+- [x] **OMOP_004**: person_join_uses_person_id
+  - *Implemented as: `data_quality/column_type_validation.py`*
+- [x] **OMOP_005**: visit_occurrence_join_uses_visit_occurrence_id
+  - *Implemented as: `data_quality/column_type_validation.py`*
 - [x] **OMOP_006**: concept_ancestor_for_hierarchical_queries
   - *Implemented as: `concept_standardization/hierarchy_expansion.py`*
 - [x] **OMOP_007**: concept_ancestor_join_columns
@@ -62,18 +62,18 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `domain_specific/measurement/measurement_unit_validation.py`*
 - [x] **OMOP_022**: source_concept_id_not_for_primary_filtering
   - *Implemented as: `concept_standardization/source_concept_id_warning.py`*
-- [ ] **OMOP_023**: death_table_primary_key_is_person_id
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **OMOP_024**: cohort_subject_id_joins_to_person_id
-  - *Suggested group: `domain_specific/cohort/`*
-- [ ] **OMOP_025**: vocabulary_id_as_string_not_integer
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_026**: domain_id_as_string_not_integer
-  - *Suggested group: `data_quality/`*
+- [x] **OMOP_023**: death_table_primary_key_is_person_id
+  - *Covered by: `data_quality/schema_validation.py` - Detects non-existent 'death_id' column in death table*
+- [x] **OMOP_024**: cohort_subject_id_joins_to_person_id
+  - *Implemented as: `data_quality/column_type_validation.py`*
+- [x] **OMOP_025**: vocabulary_id_as_string_not_integer
+  - *Implemented as: `data_quality/column_type_validation.py`*
+- [x] **OMOP_026**: domain_id_as_string_not_integer
+  - *Implemented as: `data_quality/column_type_validation.py`*
 - [x] **OMOP_027**: maps_to_relationship_for_source_to_standard
   - *Implemented as: `joins/maps_to_direction.py`*
-- [ ] **OMOP_028**: condition_era_not_same_as_condition_occurrence
-  - *Suggested group: `domain_specific/condition/`*
+- [x] **OMOP_028**: condition_era_not_same_as_condition_occurrence
+  - *Covered by: `data_quality/schema_validation.py` - Detects non-existent columns in condition_era (e.g., condition_source_value, visit_occurrence_id, provider_id)*
 - [ ] **OMOP_029**: drug_era_not_same_as_drug_exposure
   - *Suggested group: `domain_specific/drug/`*
 - [ ] **OMOP_030**: clinical_table_to_concept_multiple_aliases
