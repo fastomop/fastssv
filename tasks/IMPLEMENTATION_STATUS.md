@@ -9,7 +9,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~17 core rules
+- Implemented: ~18 core rules
 - Coverage: ~8-10%
 
 ---
@@ -38,8 +38,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `data_quality/schema_validation.py`*
 - [x] **OMOP_010**: concept_zero_exclusion
   - *Implemented as: `data_quality/unmapped_concept_handling.py`*
-- [-] **OMOP_011**: era_tables_use_standard_concepts_only
-  - *Not implemented: Data quality constraint, not a query pattern. Era tables contain standard concepts by construction; queries filtering for non-standard concepts would simply return 0 rows.*
+- [x] **OMOP_011**: era_tables_use_standard_concepts_only
+  - *Implemented as: `concept_standardization/era_table_standard_concepts.py`*
 - [x] **OMOP_012**: observation_period_required_for_cohort
   - *Implemented as: `temporal/observation_period_anchoring.py`*
 - [x] **OMOP_013**: visit_concept_id_for_visit_type_filtering

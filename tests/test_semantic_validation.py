@@ -1323,5 +1323,116 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class EraTableStandardConceptsTests(unittest.TestCase):
+    """Tests for the era table standard concepts rule (OMOP_011)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.era_table_standard_concepts")()
+        return rule.validate(sql, dialect)
+
+    def test_era_table_filter_for_null_standard_concept_warns(self) -> None:
+        """Filtering era table for non-standard concepts should warn."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.standard_concept IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.era_table_standard_concepts")
+        self.assertTrue("0 rows" in violations[0].message)
+
+    def test_era_table_filter_for_not_standard_warns(self) -> None:
+        """Filtering era table for standard_concept != 'S' should warn."""
+        sql = """
+        SELECT ce.*
+        FROM condition_era ce
+        JOIN concept c ON ce.condition_concept_id = c.concept_id
+        WHERE c.standard_concept != 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("0 rows" in violations[0].message)
+
+    def test_era_table_standard_filter_acceptable(self) -> None:
+        """standard_concept = 'S' filter should NOT be flagged (even if redundant)."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_era_table_without_concept_join_passes(self) -> None:
+        """Era table query without concept join should pass."""
+        sql = """
+        SELECT drug_concept_id, COUNT(*)
+        FROM drug_era
+        GROUP BY drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_era_table_with_concept_no_standard_filter_passes(self) -> None:
+        """Era table joined to concept without standard filter should pass."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_condition_era_with_standard_filter_acceptable(self) -> None:
+        """condition_era with standard_concept = 'S' should NOT be flagged."""
+        sql = """
+        SELECT ce.*, c.concept_name
+        FROM condition_era ce
+        JOIN concept c ON ce.condition_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        AND c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_non_era_table_not_affected(self) -> None:
+        """Non-era tables should not trigger this rule."""
+        sql = """
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.standard_concept IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_dose_era_covered(self) -> None:
+        """dose_era table should also be covered for non-standard concept filters."""
+        sql = """
+        SELECT de.*
+        FROM dose_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.standard_concept IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("0 rows" in violations[0].message)
+
+    def test_multiple_era_tables_not_flagged_without_filters(self) -> None:
+        """Multiple era tables without standard filters should pass."""
+        sql = """
+        SELECT ce.*, de.*
+        FROM condition_era ce
+        JOIN drug_era de ON ce.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
