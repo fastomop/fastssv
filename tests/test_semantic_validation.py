@@ -1897,5 +1897,218 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class SchemaValidationTests(unittest.TestCase):
+    """Tests for schema validation rule (OMOP_008, 009, 023, 028)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run schema validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("vocabulary.schema_validation")()
+        return rule.validate(sql)
+
+    # OMOP_023: death_id column doesn't exist in death table
+    def test_omop_023_death_id_column_does_not_exist(self) -> None:
+        """Referencing non-existent death_id column should error."""
+        sql = """
+        SELECT death_id, person_id, death_date
+        FROM death
+        WHERE death_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("death_id", violations[0].message)
+        self.assertIn("does not exist", violations[0].message.lower())
+        self.assertIn("death", violations[0].message)
+
+    # OMOP_028: condition_source_value doesn't exist in condition_era
+    def test_omop_028_condition_source_value_in_condition_era(self) -> None:
+        """Referencing condition_source_value from condition_era should error."""
+        sql = """
+        SELECT condition_source_value
+        FROM condition_era
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_source_value", violations[0].message)
+        self.assertIn("does not exist", violations[0].message.lower())
+        self.assertIn("condition_era", violations[0].message)
+
+    def test_omop_028_visit_occurrence_id_in_condition_era(self) -> None:
+        """Referencing visit_occurrence_id from condition_era should error."""
+        sql = """
+        SELECT person_id, visit_occurrence_id
+        FROM condition_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("condition_era", violations[0].message)
+
+    def test_omop_028_provider_id_in_condition_era(self) -> None:
+        """Referencing provider_id from condition_era should error."""
+        sql = """
+        SELECT person_id, provider_id
+        FROM condition_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("provider_id", violations[0].message)
+        self.assertIn("condition_era", violations[0].message)
+
+    def test_valid_death_columns(self) -> None:
+        """Referencing valid death table columns should pass."""
+        sql = """
+        SELECT person_id, death_date, cause_concept_id
+        FROM death
+        WHERE person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_valid_condition_era_columns(self) -> None:
+        """Referencing valid condition_era columns should pass."""
+        sql = """
+        SELECT condition_era_id, person_id, condition_concept_id,
+               condition_era_start_date, condition_era_end_date,
+               condition_occurrence_count
+        FROM condition_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class ColumnTypeValidationTests(unittest.TestCase):
+    """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run column type validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.column_type_validation")()
+        return rule.validate(sql)
+
+    # OMOP_004: person_id to person_source_value join
+    def test_omop_004_person_id_to_source_value_join(self) -> None:
+        """Joining person_id (integer) to person_source_value (varchar) should error."""
+        sql = """
+        SELECT p1.person_id, p2.person_source_value
+        FROM person p1
+        JOIN person p2 ON p1.person_id = p2.person_source_value
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("person_source_value", violations[0].message)
+        self.assertIn("integer", violations[0].message.lower())
+        self.assertIn("varchar", violations[0].message.lower())
+
+    # OMOP_005: visit_occurrence_id to varchar join
+    def test_omop_005_visit_occurrence_id_to_varchar_join(self) -> None:
+        """Joining visit_occurrence_id (integer) to varchar column should error."""
+        sql = """
+        SELECT v.visit_occurrence_id, v.visit_source_value
+        FROM visit_occurrence v1
+        JOIN visit_occurrence v2 ON v1.visit_occurrence_id = v2.visit_source_value
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("visit_source_value", violations[0].message)
+
+    # OMOP_024: cohort.subject_id to person.person_source_value join
+    def test_omop_024_subject_id_to_person_source_value_join(self) -> None:
+        """Joining subject_id (integer) to person_source_value (varchar) should error."""
+        sql = """
+        SELECT c.subject_id, p.person_source_value
+        FROM cohort c
+        JOIN person p ON c.subject_id = p.person_source_value
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("subject_id", violations[0].message)
+        self.assertIn("person_source_value", violations[0].message)
+
+    # OMOP_025: vocabulary_id (varchar) with integer literal
+    def test_omop_025_vocabulary_id_with_integer_literal(self) -> None:
+        """Filtering vocabulary_id (varchar) with integer literal should error."""
+        sql = """
+        SELECT * FROM concept c WHERE c.vocabulary_id = 1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("vocabulary_id", violations[0].message)
+        self.assertIn("varchar", violations[0].message.lower())
+        self.assertIn("integer", violations[0].message.lower())
+
+    # OMOP_026: domain_id (varchar) with integer literal
+    def test_omop_026_domain_id_with_integer_literal(self) -> None:
+        """Filtering domain_id (varchar) with integer literal should error."""
+        sql = """
+        SELECT * FROM concept c WHERE c.domain_id = 19
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("domain_id", violations[0].message)
+        self.assertIn("varchar", violations[0].message.lower())
+        self.assertIn("integer", violations[0].message.lower())
+
+    def test_vocabulary_id_in_clause_with_integers(self) -> None:
+        """Filtering vocabulary_id with IN clause containing integers should error."""
+        sql = """
+        SELECT * FROM concept c WHERE c.vocabulary_id IN (1, 2, 3)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("vocabulary_id", violations[0].message)
+
+    def test_correct_vocabulary_id_with_string(self) -> None:
+        """Filtering vocabulary_id with string literal should pass."""
+        sql = """
+        SELECT * FROM concept WHERE vocabulary_id = 'SNOMED'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_correct_domain_id_with_string(self) -> None:
+        """Filtering domain_id with string literal should pass."""
+        sql = """
+        SELECT * FROM concept WHERE domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_correct_person_id_join(self) -> None:
+        """Joining person_id (integer) to person_id (integer) should pass."""
+        sql = """
+        SELECT p.person_id, v.person_id
+        FROM person p
+        JOIN visit_occurrence v ON p.person_id = v.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_integer_column_with_integer_literal(self) -> None:
+        """Filtering integer column with integer literal should pass."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_date_compatibility(self) -> None:
+        """Date columns should be compatible with each other."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN observation_period op
+          ON co.condition_start_date = op.observation_period_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,8 +6,10 @@ Foundational data integrity checks.
 
 from .unmapped_concept_handling import UnmappedConceptHandlingRule
 from .schema_validation import SchemaValidationRule
+from .column_type_validation import ColumnTypeValidationRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
     "SchemaValidationRule",
+    "ColumnTypeValidationRule",
 ]

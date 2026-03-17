@@ -42,11 +42,19 @@ class SchemaValidationRule(Rule):
 
             aliases = extract_aliases(tree)
 
+            # If there's only one table, use it for unqualified columns
+            table_list = list(aliases.values())
+            single_table = table_list[0] if len(table_list) == 1 else None
+
             # Track which columns we've already reported to avoid duplicates
             reported: Set[tuple] = set()
 
             for col in tree.find_all(exp.Column):
                 table_name, col_name = resolve_table_col(col, aliases)
+
+                # If table is empty and we have a single table, use it
+                if not table_name and single_table:
+                    table_name = single_table
 
                 if not table_name:
                     continue
