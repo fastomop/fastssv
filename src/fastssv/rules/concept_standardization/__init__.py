@@ -8,10 +8,12 @@ from .standard_concept_enforcement import StandardConceptEnforcementRule
 from .invalid_reason_enforcement import InvalidReasonEnforcementRule
 from .hierarchy_expansion import HierarchyExpansionRule
 from .domain_segregation import DomainSegregationRule
+from .era_table_standard_concepts import EraTableStandardConceptsRule
 
 __all__ = [
     "StandardConceptEnforcementRule",
     "InvalidReasonEnforcementRule",
     "HierarchyExpansionRule",
     "DomainSegregationRule",
+    "EraTableStandardConceptsRule",
 ]
