@@ -1434,5 +1434,130 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
+    """Tests for the concept_relationship requires relationship_id rule (OMOP_016)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.concept_relationship_requires_relationship_id")()
+        return rule.validate(sql, dialect)
+
+    def test_concept_relationship_without_filter_fires(self) -> None:
+        """Using concept_relationship without relationship_id filter should error."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE c1.concept_code = 'E11.9'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].rule_id, "semantic.concept_relationship_requires_relationship_id")
+        self.assertTrue("cross-product" in violations[0].message.lower())
+
+    def test_concept_relationship_with_on_clause_filter_passes(self) -> None:
+        """relationship_id filter in JOIN ON clause should pass."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+          AND cr.relationship_id = 'Maps to'
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE c1.concept_code = 'E11.9'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_concept_relationship_with_where_clause_filter_passes(self) -> None:
+        """relationship_id filter in WHERE clause should pass."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE c1.concept_code = 'E11.9'
+        AND cr.relationship_id = 'Maps to'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_concept_relationship_with_in_clause_passes(self) -> None:
+        """relationship_id filter using IN clause should pass."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE cr.relationship_id IN ('Maps to', 'Is a')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_concept_relationship_is_a_relationship_passes(self) -> None:
+        """Using 'Is a' relationship with filter should pass."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+          AND cr.relationship_id = 'Is a'
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_concept_relationship_table_not_flagged(self) -> None:
+        """Query without concept_relationship table should not trigger."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.concept_code = 'E11.9'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_concept_relationship_in_subquery_without_filter_fires(self) -> None:
+        """concept_relationship in subquery without filter should error."""
+        sql = """
+        SELECT * FROM concept
+        WHERE concept_id IN (
+            SELECT cr.concept_id_2
+            FROM concept_relationship cr
+            WHERE cr.concept_id_1 = 12345
+        )
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_concept_relationship_in_cte_without_filter_fires(self) -> None:
+        """concept_relationship in CTE without filter should error."""
+        sql = """
+        WITH mapped_concepts AS (
+            SELECT cr.concept_id_2
+            FROM concept_relationship cr
+            WHERE cr.concept_id_1 = 12345
+        )
+        SELECT c.concept_name
+        FROM concept c
+        JOIN mapped_concepts mc ON c.concept_id = mc.concept_id_2
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_concept_relationship_with_multiple_filters_passes(self) -> None:
+        """Multiple conditions including relationship_id should pass."""
+        sql = """
+        SELECT c2.concept_name
+        FROM concept c1
+        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        WHERE cr.relationship_id = 'Maps to'
+        AND cr.invalid_reason IS NULL
+        AND c1.concept_code = 'E11.9'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()

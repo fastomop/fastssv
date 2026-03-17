@@ -9,7 +9,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~18 core rules
+- Implemented: ~19 core rules
 - Coverage: ~8-10%
 
 ---
@@ -46,10 +46,10 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Covered by OMOP_014: `anti_patterns/type_concept_id_misuse.py`*
 - [x] **OMOP_014**: type_concept_id_not_for_clinical_filtering
   - *Implemented as: `anti_patterns/type_concept_id_misuse.py`*
-- [ ] **OMOP_015**: drug_exposure_date_range_uses_correct_columns
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_016**: concept_relationship_join_requires_relationship_id
-  - *Suggested group: `joins/`*
+- [-] **OMOP_015**: drug_exposure_date_range_uses_correct_columns
+  - *Not implemented: High complexity, high false positive risk. Detecting user intent for date calculations is ambiguous - legitimate use cases include comparing drug duration vs visit duration. Better handled by code review.*
+- [x] **OMOP_016**: concept_relationship_join_requires_relationship_id
+  - *Implemented as: `joins/concept_relationship_requires_relationship_id.py`*
 - [x] **OMOP_017**: concept_relationship_invalid_reason_filter
   - *Implemented as: `concept_standardization/invalid_reason_enforcement.py`*
 - [x] **OMOP_018**: concept_invalid_reason_filter
