@@ -685,13 +685,13 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
 
 
 class DomainSegregationTests(unittest.TestCase):
-    """Tests for the domain segregation rule."""
+    """Tests for the domain segregation rule (now merged into concept_domain_validation)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.domain_segregation")()
+        rule = get_rule("semantic.concept_domain_validation")()
         violations = rule.validate(sql, dialect)
         results = []
         for v in violations:
@@ -1592,6 +1592,186 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         self.assertTrue(len(violations) > 0)
+
+
+class ConceptDomainValidationTests(unittest.TestCase):
+    """Tests for the concept domain validation rule (OMOP_066 + OMOP_019)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.concept_domain_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_condition_with_correct_domain_passes(self) -> None:
+        """Condition domain for condition_concept_id should pass."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_condition_with_wrong_domain_fires(self) -> None:
+        """Drug domain for condition_concept_id should error."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("condition_concept_id" in violations[0].message.lower())
+        self.assertTrue("drug" in violations[0].message.lower())
+        self.assertTrue("condition" in violations[0].message.lower())
+
+    def test_drug_with_correct_domain_passes(self) -> None:
+        """Drug domain for drug_concept_id should pass."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_drug_with_wrong_domain_fires(self) -> None:
+        """Procedure domain for drug_concept_id should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id = 'Procedure'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("drug_concept_id" in violations[0].message.lower())
+
+    def test_gender_with_correct_domain_passes(self) -> None:
+        """Gender domain for gender_concept_id should pass (OMOP_019)."""
+        sql = """
+        SELECT p.*, c.concept_name
+        FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        WHERE c.domain_id = 'Gender'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_gender_with_wrong_domain_fires(self) -> None:
+        """Race domain for gender_concept_id should error (OMOP_019)."""
+        sql = """
+        SELECT p.*, c.concept_name
+        FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        WHERE c.domain_id = 'Race'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertTrue("gender_concept_id" in violations[0].message.lower())
+
+    def test_race_with_correct_domain_passes(self) -> None:
+        """Race domain for race_concept_id should pass."""
+        sql = """
+        SELECT p.*, c.concept_name
+        FROM person p
+        JOIN concept c ON p.race_concept_id = c.concept_id
+        WHERE c.domain_id = 'Race'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_domain_filter_warns_for_main_tables(self) -> None:
+        """No domain filter on main clinical tables should trigger WARNING."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_no_domain_filter_passes_for_auxiliary_columns(self) -> None:
+        """No domain filter on auxiliary columns (gender, race, etc.) should not warn."""
+        sql = """
+        SELECT p.*, c.concept_name
+        FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_domain_filter_in_join_on_clause(self) -> None:
+        """Domain filter in ON clause should be detected."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+            AND c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_reversed_join_condition_detected(self) -> None:
+        """Reversed join (concept.concept_id = table.*_concept_id) should work."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON c.concept_id = co.condition_concept_id
+        WHERE c.domain_id = 'Procedure'
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_multiple_domain_in_clause_fires(self) -> None:
+        """IN clause with wrong domains should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id IN ('Condition', 'Procedure')
+        """
+        violations = self._run_rule(sql)
+        self.assertTrue(len(violations) > 0)
+
+    def test_measurement_with_unit_domain(self) -> None:
+        """Unit domain for unit_concept_id should pass."""
+        sql = """
+        SELECT m.*, c.concept_name
+        FROM measurement m
+        JOIN concept c ON m.unit_concept_id = c.concept_id
+        WHERE c.domain_id = 'Unit'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_route_concept_with_route_domain(self) -> None:
+        """Route domain for route_concept_id should pass."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.route_concept_id = c.concept_id
+        WHERE c.domain_id = 'Route'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
+
+    def test_no_concept_join_not_flagged(self) -> None:
+        """Query without concept table join should not trigger."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence
+        WHERE condition_concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(violations, [])
 
 
 if __name__ == "__main__":

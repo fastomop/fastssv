@@ -9,7 +9,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~19 core rules
+- Implemented: ~20 core rules
 - Coverage: ~8-10%
 
 ---
@@ -54,8 +54,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `concept_standardization/invalid_reason_enforcement.py`*
 - [x] **OMOP_018**: concept_invalid_reason_filter
   - *Implemented as: `concept_standardization/invalid_reason_enforcement.py`*
-- [ ] **OMOP_019**: gender_concept_id_validates_standard_gender
-  - *Suggested group: `concept_standardization/`*
+- [x] **OMOP_019**: gender_concept_id_validates_standard_gender
+  - *Covered by: `concept_standardization/concept_domain_validation.py`*
 - [x] **OMOP_020**: cross_table_join_requires_shared_key
   - *Implemented as: `joins/join_path_validation.py`*
 - [x] **OMOP_021**: measurement_value_as_number_with_unit
@@ -155,7 +155,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_065**: observation_table_heterogeneous_domain
   - *Suggested group: `domain_specific/observation/`*
 - [x] **OMOP_066**: concept_domain_id_matches_target_table
-  - *Implemented as: `concept_standardization/domain_segregation.py`*
+  - *Implemented as: `concept_standardization/concept_domain_validation.py` (comprehensive merged rule covering all 35+ concept_id columns)*
 - [ ] **OMOP_067**: no_union_different_concept_id_types
   - *Suggested group: `data_quality/`*
 - [ ] **OMOP_068**: specimen_table_not_for_lab_results
