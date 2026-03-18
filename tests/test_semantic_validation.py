@@ -2657,5 +2657,114 @@ class CostTableDomainValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class CareSiteJoinValidationTests(unittest.TestCase):
+    """Tests for care_site join path validation rule (OMOP_039)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run care_site join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.care_site_join_validation")()
+        return rule.validate(sql)
+
+    # OMOP_039: Clinical tables must join to location through care_site
+
+    def test_omop_039_visit_occurrence_direct_to_location(self) -> None:
+        """Visit_occurrence joined directly to location should warn."""
+        sql = """
+        SELECT * FROM visit_occurrence vo
+        JOIN location l ON vo.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid direct join to location detected", violations[0].message)
+        self.assertIn("care_site", violations[0].message)
+
+    def test_omop_039_proper_path_through_care_site(self) -> None:
+        """Proper join path through care_site should pass."""
+        sql = """
+        SELECT * FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        JOIN location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_039_person_to_location_allowed(self) -> None:
+        """Person joined to location is valid (home address)."""
+        sql = """
+        SELECT * FROM person p
+        JOIN location l ON p.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_039_condition_occurrence_bypass(self) -> None:
+        """Condition_occurrence bypassing care_site should warn."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN location l ON co.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid direct join to location detected", violations[0].message)
+
+    def test_omop_039_care_site_to_location(self) -> None:
+        """Care_site to location join is valid."""
+        sql = """
+        SELECT * FROM care_site cs
+        JOIN location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_039_reversed_join_order(self) -> None:
+        """Reversed join order (location → visit) should still warn."""
+        sql = """
+        SELECT * FROM location l
+        JOIN visit_occurrence vo ON l.location_id = vo.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid direct join to location detected", violations[0].message)
+
+    def test_omop_039_procedure_occurrence_bypass(self) -> None:
+        """Procedure_occurrence bypassing care_site should warn."""
+        sql = """
+        SELECT * FROM procedure_occurrence po
+        JOIN location l ON po.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid direct join to location detected", violations[0].message)
+
+    def test_omop_039_no_location_table(self) -> None:
+        """Query without location table should not trigger."""
+        sql = """
+        SELECT * FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_039_visit_detail_bypass(self) -> None:
+        """Visit_detail bypassing care_site should warn."""
+        sql = """
+        SELECT * FROM visit_detail vd
+        JOIN location l ON vd.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid direct join to location detected", violations[0].message)
+
+    def test_omop_039_person_reversed_join(self) -> None:
+        """Person to location reversed join should pass."""
+        sql = """
+        SELECT * FROM location l
+        JOIN person p ON l.location_id = p.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
