@@ -2282,5 +2282,115 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class VisitDetailJoinValidationTests(unittest.TestCase):
+    """Tests for visit_detail join validation rule (OMOP_034)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run visit_detail join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.visit_detail_join_validation")()
+        return rule.validate(sql)
+
+    # OMOP_034: Visit detail should join to visit_occurrence via visit_occurrence_id
+
+    def test_omop_034_join_only_on_person_id(self) -> None:
+        """visit_detail JOIN visit_occurrence only on person_id should warn."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN visit_occurrence vo ON vd.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("many-to-many", violations[0].message.lower())
+
+    def test_correct_join_on_visit_occurrence_id(self) -> None:
+        """visit_detail JOIN visit_occurrence on visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_on_both_person_id_and_visit_occurrence_id(self) -> None:
+        """Join on both person_id AND visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN visit_occurrence vo
+          ON vd.person_id = vo.person_id
+         AND vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_left_join_only_on_person_id(self) -> None:
+        """LEFT JOIN only on person_id should also warn."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        LEFT JOIN visit_occurrence vo ON vd.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_visit_detail_without_visit_occurrence_join(self) -> None:
+        """visit_detail joined to other tables should not trigger."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN person p ON vd.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_reverse_order_join(self) -> None:
+        """visit_occurrence JOIN visit_detail should also be detected."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN visit_detail vd ON vo.person_id = vd.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_reverse_order_correct_join(self) -> None:
+        """visit_occurrence JOIN visit_detail on visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN visit_detail vd ON vo.visit_occurrence_id = vd.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_multiple_joins_with_incorrect_visit_detail_join(self) -> None:
+        """Complex query with incorrect visit_detail join should be detected."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN visit_detail vd ON p.person_id = vd.person_id
+        JOIN visit_occurrence vo ON vd.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_multiple_joins_with_correct_visit_detail_join(self) -> None:
+        """Complex query with correct visit_detail join should pass."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN visit_detail vd ON p.person_id = vd.person_id
+        JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
