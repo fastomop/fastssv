@@ -2524,5 +2524,138 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         self.assertIn("'Y'", violations[0].message)
 
 
+class CostTableDomainValidationTests(unittest.TestCase):
+    """Tests for cost table domain validation rule (OMOP_038)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run cost table domain validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.cost_table_domain_validation")()
+        return rule.validate(sql)
+
+    # OMOP_038: cost table joins require cost_domain_id filter
+
+    def test_omop_038_drug_exposure_missing_domain_filter(self) -> None:
+        """Cost joined to drug_exposure without domain filter should error."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Missing cost_domain_id filter", violations[0].message)
+        self.assertIn("'drug'", violations[0].message)
+
+    def test_omop_038_drug_exposure_with_domain_filter(self) -> None:
+        """Cost joined to drug_exposure with correct domain filter should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_drug_exposure_wrong_domain(self) -> None:
+        """Cost joined to drug_exposure with wrong domain should error."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = 'Procedure'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Cost domain mismatch", violations[0].message)
+        self.assertIn("'drug'", violations[0].message)
+
+    def test_omop_038_procedure_missing_filter(self) -> None:
+        """Cost joined to procedure_occurrence without filter should error."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN procedure_occurrence po ON c.cost_event_id = po.procedure_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'procedure'", violations[0].message)
+
+    def test_omop_038_procedure_with_filter(self) -> None:
+        """Cost joined to procedure_occurrence with correct filter should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN procedure_occurrence po ON c.cost_event_id = po.procedure_occurrence_id
+        WHERE c.cost_domain_id = 'Procedure'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_condition_with_filter(self) -> None:
+        """Cost joined to condition_occurrence with correct filter should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN condition_occurrence co ON c.cost_event_id = co.condition_occurrence_id
+        WHERE c.cost_domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_case_insensitive_domain(self) -> None:
+        """Domain filter should be case insensitive."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = 'drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_unqualified_column_with_filter(self) -> None:
+        """Unqualified cost_domain_id should work when cost table present."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_reversed_join_order(self) -> None:
+        """Reversed join order (clinical → cost) should still validate."""
+        sql = """
+        SELECT * FROM drug_exposure de
+        JOIN cost c ON de.drug_exposure_id = c.cost_event_id
+        WHERE c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_in_clause_with_correct_domain(self) -> None:
+        """IN clause with correct domain should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id IN ('Drug')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_no_cost_table(self) -> None:
+        """Query without cost table should not trigger."""
+        sql = """
+        SELECT * FROM drug_exposure de WHERE de.drug_type_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_038_cost_domain_in_select_with_filter(self) -> None:
+        """cost_domain_id in SELECT with WHERE filter should pass."""
+        sql = """
+        SELECT c.cost_domain_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
