@@ -2392,5 +2392,137 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class StandardConceptValueValidationTests(unittest.TestCase):
+    """Tests for standard_concept value validation rule (OMOP_037)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run standard_concept value validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.standard_concept_value_validation")()
+        return rule.validate(sql)
+
+    # OMOP_037: standard_concept only accepts 'S', 'C', or NULL
+
+    def test_omop_037_invalid_value_y(self) -> None:
+        """Using 'Y' for standard_concept should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = 'Y'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid standard_concept value", violations[0].message)
+        self.assertIn("'Y'", violations[0].message)
+
+    def test_omop_037_invalid_value_n(self) -> None:
+        """Using 'N' for standard_concept should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = 'N'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'N'", violations[0].message)
+
+    def test_omop_037_invalid_string_number_1(self) -> None:
+        """Using string '1' for standard_concept should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = '1'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'1'", violations[0].message)
+
+    def test_omop_037_invalid_string_number_0(self) -> None:
+        """Using string '0' for standard_concept should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = '0'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'0'", violations[0].message)
+
+    def test_omop_037_invalid_in_clause(self) -> None:
+        """Using invalid values in IN clause should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept IN ('Y', 'N')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Invalid standard_concept values", violations[0].message)
+
+    def test_omop_037_invalid_mixed_in_clause(self) -> None:
+        """Mixed valid and invalid values in IN clause should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept IN ('S', 'Y')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'Y'", violations[0].message)
+
+    def test_valid_value_s(self) -> None:
+        """Using 'S' for standard_concept should pass."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_valid_value_c(self) -> None:
+        """Using 'C' for standard_concept should pass."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = 'C'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_valid_in_clause(self) -> None:
+        """Using 'S' and 'C' in IN clause should pass."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept IN ('S', 'C')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_valid_is_null(self) -> None:
+        """Using IS NULL for standard_concept should pass."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_valid_is_not_null(self) -> None:
+        """Using IS NOT NULL for standard_concept should pass."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_standard_concept_in_select_not_flagged(self) -> None:
+        """Using standard_concept in SELECT clause should not trigger."""
+        sql = """
+        SELECT standard_concept FROM concept WHERE concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_case_insensitive_valid_values(self) -> None:
+        """Valid values should work regardless of case."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept = 's'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_invalid_not_equals(self) -> None:
+        """Invalid value in != comparison should error."""
+        sql = """
+        SELECT * FROM concept WHERE standard_concept != 'Y'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("'Y'", violations[0].message)
+
+
 if __name__ == "__main__":
     unittest.main()
