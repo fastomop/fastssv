@@ -157,8 +157,8 @@ def _collect_domain_filters(
             if not table and not cost_aliases:
                 continue
 
-            # Use table if qualified, otherwise use first cost alias
-            alias = normalize_name(table) if table else next(iter(cost_aliases))
+            # Use table if qualified, otherwise use normalized 'cost'
+            alias = normalize_name(table) if table else COST
 
             result.setdefault(alias, set())
 

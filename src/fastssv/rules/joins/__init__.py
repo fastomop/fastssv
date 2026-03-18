@@ -9,6 +9,7 @@ from .maps_to_direction import MapsToDirectionRule
 from .concept_relationship_requires_relationship_id import ConceptRelationshipRequiresRelationshipIdRule
 from .visit_detail_join_validation import VisitDetailJoinValidationRule
 from .cost_table_domain_validation import CostTableDomainValidationRule
+from .care_site_join_validation import CareSiteJoinValidationRule
 
 __all__ = [
     "JoinPathValidationRule",
@@ -16,4 +17,5 @@ __all__ = [
     "ConceptRelationshipRequiresRelationshipIdRule",
     "VisitDetailJoinValidationRule",
     "CostTableDomainValidationRule",
+    "CareSiteJoinValidationRule",
 ]

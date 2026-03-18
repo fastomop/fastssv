@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 49 rules (including covered rules)
-- Coverage: 14.0%
+- Implemented: 50 rules (including covered rules)
+- Coverage: 14.3%
 - Last updated: March 2026
 
 ---
@@ -95,8 +95,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `concept_standardization/standard_concept_value_validation.py`*
 - [x] **OMOP_038**: cost_table_requires_domain_join
   - *Implemented as: `joins/cost_table_domain_validation.py`*
-- [ ] **OMOP_039**: care_site_join_via_care_site_id
-  - *Suggested group: `joins/`*
+- [x] **OMOP_039**: care_site_join_via_care_site_id
+  - *Implemented as: `joins/care_site_join_validation.py`*
 - [ ] **OMOP_040**: concept_ancestor_self_referencing_included
   - *Suggested group: `concept_standardization/`*
 
