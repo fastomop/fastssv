@@ -1980,6 +1980,68 @@ class SchemaValidationTests(unittest.TestCase):
         violations = self._run_rule(sql)
         self.assertEqual(len(violations), 0)
 
+    # OMOP_029: drug_era doesn't have drug_exposure columns
+    def test_omop_029_days_supply_in_drug_era(self) -> None:
+        """Referencing days_supply from drug_era should error."""
+        sql = """
+        SELECT days_supply
+        FROM drug_era
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("days_supply", violations[0].message)
+        self.assertIn("does not exist", violations[0].message.lower())
+        self.assertIn("drug_era", violations[0].message)
+
+    def test_omop_029_quantity_in_drug_era(self) -> None:
+        """Referencing quantity from drug_era should error."""
+        sql = """
+        SELECT person_id, quantity
+        FROM drug_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message)
+        self.assertIn("drug_era", violations[0].message)
+
+    def test_omop_029_route_concept_id_in_drug_era(self) -> None:
+        """Referencing route_concept_id from drug_era should error."""
+        sql = """
+        SELECT person_id, route_concept_id
+        FROM drug_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("route_concept_id", violations[0].message)
+        self.assertIn("drug_era", violations[0].message)
+
+    def test_omop_029_sig_in_drug_era(self) -> None:
+        """Referencing sig from drug_era should error."""
+        sql = """
+        SELECT sig
+        FROM drug_era
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("sig", violations[0].message)
+        self.assertIn("drug_era", violations[0].message)
+
+    def test_valid_drug_era_columns(self) -> None:
+        """Referencing valid drug_era columns should pass."""
+        sql = """
+        SELECT drug_era_id, person_id, drug_concept_id,
+               drug_era_start_date, drug_era_end_date,
+               drug_exposure_count, gap_days
+        FROM drug_era
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
 
 class ColumnTypeValidationTests(unittest.TestCase):
     """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026)."""
@@ -2105,6 +2167,116 @@ class ColumnTypeValidationTests(unittest.TestCase):
         FROM condition_occurrence co
         JOIN observation_period op
           ON co.condition_start_date = op.observation_period_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
+    """Tests for observation_period date range logic rule (OMOP_033)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run observation_period date range logic rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.observation_period_date_range_logic")()
+        return rule.validate(sql)
+
+    # OMOP_033: Reversed BETWEEN logic
+    def test_omop_033_reversed_between_logic(self) -> None:
+        """Testing observation_period dates BETWEEN event dates should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE op.observation_period_start_date BETWEEN co.condition_start_date
+                                                   AND co.condition_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("reversed", violations[0].message.lower())
+        self.assertIn("observation_period_start_date", violations[0].message)
+        self.assertIn("condition_start_date", violations[0].message)
+
+    def test_reversed_logic_with_drug_exposure(self) -> None:
+        """Reversed BETWEEN with drug_exposure should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN observation_period op ON de.person_id = op.person_id
+        WHERE op.observation_period_end_date BETWEEN de.drug_exposure_start_date
+                                                 AND de.drug_exposure_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("observation_period_end_date", violations[0].message)
+
+    def test_reversed_logic_with_visit_occurrence(self) -> None:
+        """Reversed BETWEEN with visit_occurrence should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN observation_period op ON vo.person_id = op.person_id
+        WHERE op.observation_period_start_date BETWEEN vo.visit_start_date
+                                                   AND vo.visit_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("reversed", violations[0].message.lower())
+
+    def test_correct_between_logic(self) -> None:
+        """Correct BETWEEN logic with event date tested should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date BETWEEN op.observation_period_start_date
+                                          AND op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_correct_logic_drug_exposure(self) -> None:
+        """Correct BETWEEN logic with drug_exposure should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN observation_period op ON de.person_id = op.person_id
+        WHERE de.drug_exposure_start_date BETWEEN op.observation_period_start_date
+                                              AND op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_no_between_clause_not_flagged(self) -> None:
+        """Query without BETWEEN clause should not trigger."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date >= op.observation_period_start_date
+          AND co.condition_start_date <= op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_between_without_observation_period_not_flagged(self) -> None:
+        """BETWEEN without observation_period should not trigger."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        WHERE co.condition_start_date BETWEEN '2020-01-01' AND '2020-12-31'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_correct_logic_with_measurement(self) -> None:
+        """Correct BETWEEN logic with measurement should pass."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN observation_period op ON m.person_id = op.person_id
+        WHERE m.measurement_date BETWEEN op.observation_period_start_date
+                                     AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
         self.assertEqual(len(violations), 0)

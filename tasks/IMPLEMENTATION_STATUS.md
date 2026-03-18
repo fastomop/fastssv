@@ -9,7 +9,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~28 core rules
+- Implemented: ~30 core rules
 - Coverage: ~12%
 
 ---
@@ -74,22 +74,22 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `joins/maps_to_direction.py`*
 - [x] **OMOP_028**: condition_era_not_same_as_condition_occurrence
   - *Covered by: `data_quality/schema_validation.py` - Detects non-existent columns in condition_era (e.g., condition_source_value, visit_occurrence_id, provider_id)*
-- [ ] **OMOP_029**: drug_era_not_same_as_drug_exposure
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_030**: clinical_table_to_concept_multiple_aliases
-  - *Suggested group: `joins/`*
-- [ ] **OMOP_031**: date_column_type_mismatch
-  - *Suggested group: `data_quality/`*
+- [x] **OMOP_029**: drug_era_not_same_as_drug_exposure
+  - *Covered by: `data_quality/schema_validation.py` - Detects non-existent columns in drug_era (e.g., days_supply, quantity, route_concept_id, sig)*
+- [-] **OMOP_030**: clinical_table_to_concept_multiple_aliases
+  - *Not implemented: SQL syntax error - PostgreSQL 9.3+ throws "table name specified more than once" error at parse time. Database naturally catches duplicate table aliases before query execution.*
+- [-] **OMOP_031**: date_column_type_mismatch
+  - *Not implemented: Best practice / style warning. PostgreSQL handles implicit casting between DATE and DATETIME correctly. Marginal benefit for implementation complexity. Could be added later as a code quality enhancement.*
 - [x] **OMOP_032**: concept_code_requires_vocabulary_id
   - *Implemented as: `anti_patterns/concept_code_requires_vocabulary_id.py`*
-- [ ] **OMOP_033**: observation_period_date_range_logic
-  - *Suggested group: `temporal/`*
+- [x] **OMOP_033**: observation_period_date_range_logic
+  - *Implemented as: `temporal/observation_period_date_range_logic.py`*
 - [ ] **OMOP_034**: visit_detail_joins_to_visit_occurrence
   - *Suggested group: `joins/`*
-- [ ] **OMOP_035**: concept_class_id_as_string
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_036**: drug_strength_join_for_dosage_info
-  - *Suggested group: `domain_specific/drug/`*
+- [x] **OMOP_035**: concept_class_id_as_string
+  - *Covered by: `data_quality/column_type_validation.py` - Detects integer literals used with VARCHAR column concept_class_id*
+- [x] **OMOP_036**: drug_strength_join_for_dosage_info
+  - *Covered by: `data_quality/schema_validation.py` - Detects non-existent columns (amount_value, numerator_value, denominator_value) on drug_exposure table*
 - [ ] **OMOP_037**: standard_concept_values_are_s_or_c
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_038**: cost_table_requires_domain_join
