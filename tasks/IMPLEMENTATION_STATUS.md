@@ -9,8 +9,9 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: ~30 core rules
-- Coverage: ~12%
+- Implemented: 47 rules (including covered rules)
+- Coverage: 13.4%
+- Last updated: March 2026
 
 ---
 
@@ -84,8 +85,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `anti_patterns/concept_code_requires_vocabulary_id.py`*
 - [x] **OMOP_033**: observation_period_date_range_logic
   - *Implemented as: `temporal/observation_period_date_range_logic.py`*
-- [ ] **OMOP_034**: visit_detail_joins_to_visit_occurrence
-  - *Suggested group: `joins/`*
+- [x] **OMOP_034**: visit_detail_joins_to_visit_occurrence
+  - *Implemented as: `joins/visit_detail_join_validation.py`*
 - [x] **OMOP_035**: concept_class_id_as_string
   - *Covered by: `data_quality/column_type_validation.py` - Detects integer literals used with VARCHAR column concept_class_id*
 - [x] **OMOP_036**: drug_strength_join_for_dosage_info
