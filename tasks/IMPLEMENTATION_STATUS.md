@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 47 rules (including covered rules)
-- Coverage: 13.4%
+- Implemented: 48 rules (including covered rules)
+- Coverage: 13.7%
 - Last updated: March 2026
 
 ---
@@ -91,8 +91,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Covered by: `data_quality/column_type_validation.py` - Detects integer literals used with VARCHAR column concept_class_id*
 - [x] **OMOP_036**: drug_strength_join_for_dosage_info
   - *Covered by: `data_quality/schema_validation.py` - Detects non-existent columns (amount_value, numerator_value, denominator_value) on drug_exposure table*
-- [ ] **OMOP_037**: standard_concept_values_are_s_or_c
-  - *Suggested group: `concept_standardization/`*
+- [x] **OMOP_037**: standard_concept_values_are_s_or_c
+  - *Implemented as: `concept_standardization/standard_concept_value_validation.py`*
 - [ ] **OMOP_038**: cost_table_requires_domain_join
   - *Suggested group: `domain_specific/cost/`*
 - [ ] **OMOP_039**: care_site_join_via_care_site_id
