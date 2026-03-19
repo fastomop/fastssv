@@ -3039,5 +3039,105 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class NegativeConceptIdValidationTests(unittest.TestCase):
+    """Tests for negative concept_id validation rule (OMOP_050)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.negative_concept_id_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_050_negative_equality_fails(self) -> None:
+        """Negative concept_id in equality should error."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = -1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("negative", violations[0].message.lower())
+        self.assertIn("-1", violations[0].message)
+
+    def test_omop_050_negative_in_clause_fails(self) -> None:
+        """Negative concept_id in IN clause should error."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE drug_concept_id IN (-1, -2, 123)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("negative", violations[0].message.lower())
+        self.assertIn("-1", violations[0].message)
+        self.assertIn("-2", violations[0].message)
+
+    def test_omop_050_negative_less_than_fails(self) -> None:
+        """Negative concept_id in < comparison should error."""
+        sql = """
+        SELECT * FROM measurement WHERE measurement_concept_id < -10
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("negative", violations[0].message.lower())
+        self.assertIn("-10", violations[0].message)
+
+    def test_omop_050_negative_between_fails(self) -> None:
+        """Negative concept_id in BETWEEN should error."""
+        sql = """
+        SELECT * FROM observation WHERE observation_concept_id BETWEEN -5 AND 100
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("between", violations[0].message.lower())
+        self.assertIn("-5", violations[0].message)
+
+    def test_omop_050_positive_values_pass(self) -> None:
+        """Positive concept_id values should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_050_zero_passes(self) -> None:
+        """Zero (unmapped) should pass."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE drug_concept_id = 0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_050_multiple_columns_fails(self) -> None:
+        """Multiple columns with negative values should error."""
+        sql = """
+        SELECT * FROM person WHERE gender_concept_id = -1 AND race_concept_id = -2
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_omop_050_auxiliary_concepts_fails(self) -> None:
+        """Negative values in auxiliary concept columns should error."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE route_concept_id = -100
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("negative", violations[0].message.lower())
+
+    def test_omop_050_greater_than_negative_fails(self) -> None:
+        """Negative concept_id in > comparison should error."""
+        sql = """
+        SELECT * FROM procedure_occurrence WHERE procedure_concept_id > -1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("negative", violations[0].message.lower())
+
+    def test_omop_050_in_clause_only_positive_passes(self) -> None:
+        """IN clause with only positive values should pass."""
+        sql = """
+        SELECT * FROM measurement WHERE measurement_concept_id IN (123, 456, 789)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
