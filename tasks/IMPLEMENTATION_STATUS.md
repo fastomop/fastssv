@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 51 rules (including covered rules)
-- Coverage: 14.6%
+- Implemented: 53 rules (including covered rules)
+- Coverage: 15.1%
 - Last updated: March 2026
 
 ---
@@ -108,14 +108,14 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Status: SKIPPED - Complex dialect-specific function detection. Medium-high implementation complexity for WARNING severity. Consider for future.*
 - [x] **OMOP_043**: inner_join_to_visit_loses_records
   - *Implemented as: `joins/visit_occurrence_inner_join_validation.py`*
-- [ ] **OMOP_044**: drug_era_contains_ingredient_level_concepts
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_045**: measurement_value_as_concept_id_check
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_046**: no_cartesian_join_clinical_tables_on_person_id_only
-  - *Suggested group: `joins/`*
-- [ ] **OMOP_047**: provider_specialty_via_concept_join
-  - *Suggested group: `domain_specific/provider/`*
+- [x] **OMOP_044**: drug_era_contains_ingredient_level_concepts
+  - *Implemented as: `domain_specific/drug/drug_era_concept_class_validation.py`*
+- [-] **OMOP_045**: measurement_value_as_concept_id_check
+  - *Not implemented: Requires external concept metadata to distinguish qualitative (categorical) from quantitative (numeric) measurements. High false positive risk without domain knowledge database. Better handled by data profiling tools and ETL validation.*
+- [-] **OMOP_046**: no_cartesian_join_clinical_tables_on_person_id_only
+  - *Not implemented: Medium false positive risk - some Cartesian joins are intentional (aggregate queries, co-occurrence analysis). Complex to detect all forms of temporal constraints. High impact but better handled by query analyzers and EXPLAIN plans. Could be revisited with opt-in mode and smart heuristics.*
+- [x] **OMOP_047**: provider_specialty_via_concept_join
+  - *Covered by OMOP_003: `anti_patterns/no_string_identification.py` - Extended to include provider.specialty_source_value and provider.gender_source_value*
 - [ ] **OMOP_048**: condition_status_concept_id_for_diagnosis_status
   - *Suggested group: `domain_specific/condition/`*
 - [ ] **OMOP_049**: observation_table_not_for_lab_results

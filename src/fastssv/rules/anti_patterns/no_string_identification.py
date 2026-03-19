@@ -46,6 +46,9 @@ SOURCE_VALUE_COLUMNS = {
     ("person", "race_source_value"),
     ("person", "ethnicity_source_value"),
     ("death", "cause_source_value"),
+    # Provider
+    ("provider", "specialty_source_value"),
+    ("provider", "gender_source_value"),
     # Specimen
     ("specimen", "specimen_source_value"),
     ("specimen", "unit_source_value"),

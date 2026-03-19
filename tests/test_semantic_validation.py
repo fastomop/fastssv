@@ -2900,5 +2900,144 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class DrugEraConceptClassValidationTests(unittest.TestCase):
+    """Tests for drug_era concept class validation rule (OMOP_044)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.drug_era_concept_class_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_044_clinical_drug_filter_fails(self) -> None:
+        """Filtering drug_era for 'Clinical Drug' should error."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Clinical Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Clinical Drug", violations[0].message)
+        self.assertIn("0 rows", violations[0].message)
+
+    def test_omop_044_branded_drug_filter_fails(self) -> None:
+        """Filtering drug_era for 'Branded Drug' should error."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Branded Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Branded Drug", violations[0].message)
+        self.assertIn("0 rows", violations[0].message)
+
+    def test_omop_044_clinical_drug_form_filter_fails(self) -> None:
+        """Filtering drug_era for 'Clinical Drug Form' should error."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Clinical Drug Form'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Clinical Drug Form", violations[0].message)
+        self.assertIn("0 rows", violations[0].message)
+
+    def test_omop_044_ingredient_filter_passes(self) -> None:
+        """Filtering drug_era for 'Ingredient' should pass."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Ingredient'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_044_neq_ingredient_fails(self) -> None:
+        """Filtering drug_era for concept_class_id != 'Ingredient' should error."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id != 'Ingredient'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("!= 'Ingredient'", violations[0].message)
+
+    def test_omop_044_in_clause_with_invalid_values_fails(self) -> None:
+        """IN clause with invalid concept classes should error."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id IN ('Clinical Drug', 'Branded Drug')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Branded Drug", violations[0].message)
+        self.assertIn("Clinical Drug", violations[0].message)
+
+    def test_omop_044_in_clause_with_ingredient_passes(self) -> None:
+        """IN clause with only 'Ingredient' should pass."""
+        sql = """
+        SELECT de.*
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id IN ('Ingredient')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_044_no_concept_join_passes(self) -> None:
+        """drug_era query without concept join should pass."""
+        sql = """
+        SELECT drug_concept_id, COUNT(*)
+        FROM drug_era
+        GROUP BY drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_044_concept_join_no_class_filter_passes(self) -> None:
+        """drug_era joined to concept without concept_class_id filter should pass."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_044_reversed_join_order_fails(self) -> None:
+        """Reversed join order (concept -> drug_era) should still error."""
+        sql = """
+        SELECT de.*
+        FROM concept c
+        JOIN drug_era de ON c.concept_id = de.drug_concept_id
+        WHERE c.concept_class_id = 'Clinical Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("Clinical Drug", violations[0].message)
+
+    def test_omop_044_non_drug_era_table_not_affected(self) -> None:
+        """Non-drug_era tables should not trigger this rule."""
+        sql = """
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Clinical Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
