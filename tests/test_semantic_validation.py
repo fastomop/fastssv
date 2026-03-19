@@ -3139,5 +3139,134 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class DrugExposureQuantityMisuseTests(unittest.TestCase):
+    """Tests for drug_exposure quantity misuse rule (OMOP_055)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.drug_exposure_quantity_misuse")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_055_dateadd_with_quantity_fails(self) -> None:
+        """DATEADD using quantity should error."""
+        sql = """
+        SELECT person_id,
+               DATEADD(day, quantity, drug_exposure_start_date) AS estimated_end
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+        self.assertIn("days_supply", violations[0].message.lower())
+
+    def test_omop_055_date_add_with_quantity_fails(self) -> None:
+        """DATE_ADD using quantity should error."""
+        sql = """
+        SELECT person_id,
+               DATE_ADD(drug_exposure_start_date, INTERVAL quantity DAY) AS end_date
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+        self.assertIn("days_supply", violations[0].message.lower())
+
+    def test_omop_055_datediff_with_quantity_fails(self) -> None:
+        """DATEDIFF using quantity should error."""
+        sql = """
+        SELECT person_id,
+               DATEDIFF(day, drug_exposure_start_date, quantity) AS duration
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+
+    def test_omop_055_add_operator_with_quantity_fails(self) -> None:
+        """Date arithmetic using + operator with quantity should error."""
+        sql = """
+        SELECT person_id,
+               drug_exposure_start_date + quantity AS end_date
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+        self.assertIn("days_supply", violations[0].message.lower())
+
+    def test_omop_055_sub_operator_with_quantity_fails(self) -> None:
+        """Date arithmetic using - operator with quantity should error."""
+        sql = """
+        SELECT person_id,
+               drug_exposure_end_date - quantity AS start_date
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+
+    def test_omop_055_interval_with_quantity_fails(self) -> None:
+        """INTERVAL expression with quantity should error."""
+        sql = """
+        SELECT person_id,
+               drug_exposure_start_date + INTERVAL quantity DAY
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("quantity", violations[0].message.lower())
+
+    def test_omop_055_days_supply_passes(self) -> None:
+        """Using days_supply instead of quantity should pass."""
+        sql = """
+        SELECT person_id,
+               DATEADD(day, days_supply, drug_exposure_start_date) AS estimated_end
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_055_date_diff_between_dates_passes(self) -> None:
+        """DATEDIFF between date columns should pass."""
+        sql = """
+        SELECT person_id,
+               DATEDIFF(day, drug_exposure_start_date, drug_exposure_end_date) AS duration
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_055_quantity_in_non_date_context_passes(self) -> None:
+        """Using quantity in non-date context should pass."""
+        sql = """
+        SELECT person_id, quantity, days_supply
+        FROM drug_exposure
+        WHERE quantity > 30
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_055_no_quantity_column_passes(self) -> None:
+        """Query without quantity column should pass."""
+        sql = """
+        SELECT person_id, drug_concept_id
+        FROM drug_exposure
+        WHERE days_supply > 30
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_055_other_table_quantity_passes(self) -> None:
+        """Quantity from non-drug_exposure table should pass."""
+        sql = """
+        SELECT person_id,
+               DATEADD(day, product.quantity, order_date) AS delivery_date
+        FROM orders o
+        JOIN product p ON o.product_id = p.id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

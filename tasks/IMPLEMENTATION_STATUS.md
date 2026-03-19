@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 56 rules (including covered rules)
-- Coverage: 16.0%
+- Implemented: 58 rules (including covered rules)
+- Coverage: 16.6%
 - Last updated: March 2026
 
 ---
@@ -125,20 +125,20 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ### Advanced Validation Rules (OMOP_051-100)
 
-- [ ] **OMOP_051**: payer_plan_period_date_overlap_with_events
-  - *Suggested group: `domain_specific/payer_plan/`*
-- [ ] **OMOP_052**: visit_end_date_not_before_start_date_filter
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **OMOP_053**: note_nlp_joins_to_note_not_person
-  - *Suggested group: `joins/`*
-- [ ] **OMOP_054**: concept_synonym_for_name_search
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_055**: drug_exposure_quantity_not_for_duration
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_056**: race_ethnicity_concept_ids_are_standard
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_057**: group_by_must_include_non_aggregated_columns
-  - *Suggested group: `data_quality/`*
+- [-] **OMOP_051**: payer_plan_period_date_overlap_with_events
+  - *Not implemented: Similar to OMOP_046 - person_id-only joins to payer_plan_period without date constraints. Medium false positive risk (aggregate queries, coverage analysis). Complex temporal constraint detection. WARNING severity. Could be revisited with opt-in mode and smart heuristics for high-impact payer-specific use cases.*
+- [-] **OMOP_052**: visit_end_date_not_before_start_date_filter
+  - *Status: SKIPPED - Detects logically impossible date ranges (visit_end_date < visit_start_date). High complexity: requires date parsing, constraint tracking across multiple comparison operators, and handling of multiple date field pairs. Limited coverage (only static literals, not dynamic dates/functions). Rare error in practice (caught during testing). WARNING severity. Complexity outweighs benefit - better handled by integration testing.*
+- [x] **OMOP_053**: note_nlp_joins_to_note_not_person
+  - *Covered by OMOP_009: `data_quality/schema_validation.py` - Detects non-existent column 'person_id' in note_nlp table (ERROR). The schema validation catches attempts to join on note_nlp.person_id since that column doesn't exist.*
+- [-] **OMOP_054**: concept_synonym_for_name_search
+  - *Status: SKIPPED - WARNING severity, informational best practice. Suggests using concept_synonym table when searching concept.concept_name with LIKE. Low impact (doesn't break queries, just incomplete concept discovery). Medium complexity (detecting LIKE patterns and checking if concept_synonym is also queried). Better handled by query result analysis or data profiling tools.*
+- [x] **OMOP_055**: drug_exposure_quantity_not_for_duration
+  - *Implemented as: `domain_specific/drug/drug_exposure_quantity_misuse.py`*
+- [-] **OMOP_056**: race_ethnicity_concept_ids_are_standard
+  - *Status: SKIPPED - Requires external concept metadata (whitelist of valid race/ethnicity concept IDs). Medium-high complexity. WARNING severity. Better handled with concept metadata database integration or data quality profiling.*
+- [-] **OMOP_057**: group_by_must_include_non_aggregated_columns
+  - *Status: SKIPPED - General SQL syntax rule already enforced by database. High complexity to implement comprehensive GROUP BY validation with many edge cases. Database throws syntax error for invalid GROUP BY clauses. No value in duplicating database validation.*
 - [ ] **OMOP_058**: source_to_concept_map_requires_source_vocabulary_id
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_059**: preceding_visit_occurrence_id_self_join
