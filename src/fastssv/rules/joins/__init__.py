@@ -10,6 +10,7 @@ from .concept_relationship_requires_relationship_id import ConceptRelationshipRe
 from .visit_detail_join_validation import VisitDetailJoinValidationRule
 from .cost_table_domain_validation import CostTableDomainValidationRule
 from .care_site_join_validation import CareSiteJoinValidationRule
+from .visit_occurrence_inner_join_validation import VisitOccurrenceInnerJoinValidationRule
 
 __all__ = [
     "JoinPathValidationRule",
@@ -18,4 +19,5 @@ __all__ = [
     "VisitDetailJoinValidationRule",
     "CostTableDomainValidationRule",
     "CareSiteJoinValidationRule",
+    "VisitOccurrenceInnerJoinValidationRule",
 ]

@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 50 rules (including covered rules)
-- Coverage: 14.3%
+- Implemented: 51 rules (including covered rules)
+- Coverage: 14.6%
 - Last updated: March 2026
 
 ---
@@ -97,17 +97,17 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `joins/cost_table_domain_validation.py`*
 - [x] **OMOP_039**: care_site_join_via_care_site_id
   - *Implemented as: `joins/care_site_join_validation.py`*
-- [ ] **OMOP_040**: concept_ancestor_self_referencing_included
-  - *Suggested group: `concept_standardization/`*
+- [-] **OMOP_040**: concept_ancestor_self_referencing_included
+  - *Status: SKIPPED - Code style rule (both patterns produce correct results). Low priority compared to error-prevention rules.*
 
 ### Query Performance & Best Practices
 
-- [ ] **OMOP_041**: select_star_on_large_clinical_tables
-  - *Suggested group: `anti_patterns/`*
-- [ ] **OMOP_042**: person_age_from_year_of_birth_not_birth_datetime
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **OMOP_043**: inner_join_to_visit_loses_records
-  - *Suggested group: `joins/`*
+- [-] **OMOP_041**: select_star_on_large_clinical_tables
+  - *Status: SKIPPED - Performance/style rule, not correctness. High false positive risk. Better handled by query analyzers.*
+- [-] **OMOP_042**: person_age_from_year_of_birth_not_birth_datetime
+  - *Status: SKIPPED - Complex dialect-specific function detection. Medium-high implementation complexity for WARNING severity. Consider for future.*
+- [x] **OMOP_043**: inner_join_to_visit_loses_records
+  - *Implemented as: `joins/visit_occurrence_inner_join_validation.py`*
 - [ ] **OMOP_044**: drug_era_contains_ingredient_level_concepts
   - *Suggested group: `domain_specific/drug/`*
 - [ ] **OMOP_045**: measurement_value_as_concept_id_check
@@ -1042,7 +1042,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 4. Vocabulary best practices (VOCAB_002-042)
 
 ### Lower Priority (Performance & Nice-to-Have)
-1. Performance optimizations (OMOP_041, OMOP_602)
+1. Performance optimizations (OMOP_602) [OMOP_041 skipped]
 2. Advanced temporal rules (OMOP_538-559)
 3. Episode & fact_relationship (OMOP_240-259)
 4. GAP rules (GAP_001-041)

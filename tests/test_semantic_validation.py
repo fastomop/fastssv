@@ -2766,5 +2766,139 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
+    """Tests for visit_occurrence INNER JOIN validation rule (OMOP_043)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run visit_occurrence INNER JOIN validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.visit_occurrence_inner_join_validation")()
+        return rule.validate(sql)
+
+    # OMOP_043: INNER JOIN to visit_occurrence loses records
+
+    def test_omop_043_condition_inner_join(self) -> None:
+        """Condition INNER JOIN to visit should warn."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("may drop events", violations[0].message)
+
+    def test_omop_043_condition_left_join(self) -> None:
+        """Condition LEFT JOIN to visit should pass."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_043_drug_exposure_inner_join(self) -> None:
+        """Drug exposure INNER JOIN to visit should warn."""
+        sql = """
+        SELECT de.*
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("may drop events", violations[0].message)
+
+    def test_omop_043_measurement_inner_join(self) -> None:
+        """Measurement INNER JOIN to visit should warn."""
+        sql = """
+        SELECT m.*
+        FROM measurement m
+        JOIN visit_occurrence vo ON m.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_043_inner_join_with_visit_filter(self) -> None:
+        """INNER JOIN with WHERE clause filtering visit_occurrence_id shows intentional message."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE vo.visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("explicit filtering", violations[0].message)
+
+    def test_omop_043_procedure_left_join(self) -> None:
+        """Procedure LEFT JOIN to visit should pass."""
+        sql = """
+        SELECT po.*
+        FROM procedure_occurrence po
+        LEFT JOIN visit_occurrence vo ON po.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_043_right_join(self) -> None:
+        """RIGHT JOIN should pass (unusual but not wrong)."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        RIGHT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_043_no_visit_occurrence(self) -> None:
+        """Query without visit_occurrence should not trigger."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_043_inner_join_to_person(self) -> None:
+        """INNER JOIN to person (not visit) should not trigger."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_043_reversed_join_order(self) -> None:
+        """Reversed join order (visit → condition) should still warn."""
+        sql = """
+        SELECT vo.*
+        FROM visit_occurrence vo
+        JOIN condition_occurrence co ON vo.visit_occurrence_id = co.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_043_observation_inner_join(self) -> None:
+        """Observation INNER JOIN to visit should warn."""
+        sql = """
+        SELECT o.*
+        FROM observation o
+        JOIN visit_occurrence vo ON o.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_043_full_outer_join(self) -> None:
+        """FULL OUTER JOIN should pass."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        FULL OUTER JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
