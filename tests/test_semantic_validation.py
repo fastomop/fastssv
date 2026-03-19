@@ -3268,5 +3268,150 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class SourceToConceptMapValidationTests(unittest.TestCase):
+    """Tests for source_to_concept_map validation rule (OMOP_058)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.source_to_concept_map_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_058_source_code_without_vocabulary_id_fails(self) -> None:
+        """Filtering by source_code without source_vocabulary_id should error."""
+        sql = """
+        SELECT target_concept_id
+        FROM source_to_concept_map
+        WHERE source_code = '250.00'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("source_code", violations[0].message.lower())
+        self.assertIn("source_vocabulary_id", violations[0].message.lower())
+
+    def test_omop_058_both_filters_passes(self) -> None:
+        """Filtering by both source_code and source_vocabulary_id should pass."""
+        sql = """
+        SELECT target_concept_id
+        FROM source_to_concept_map
+        WHERE source_code = '250.00'
+          AND source_vocabulary_id = 'ICD9CM'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_no_source_code_filter_passes(self) -> None:
+        """Query without source_code filter should pass."""
+        sql = """
+        SELECT *
+        FROM source_to_concept_map
+        WHERE target_concept_id > 0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_vocabulary_id_only_passes(self) -> None:
+        """Filtering by source_vocabulary_id alone should pass."""
+        sql = """
+        SELECT *
+        FROM source_to_concept_map
+        WHERE source_vocabulary_id = 'ICD9CM'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_in_clause_without_vocabulary_id_fails(self) -> None:
+        """IN clause on source_code without source_vocabulary_id should error."""
+        sql = """
+        SELECT target_concept_id
+        FROM source_to_concept_map
+        WHERE source_code IN ('250.00', '250.01', '250.02')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("source_code", violations[0].message.lower())
+
+    def test_omop_058_in_clause_with_vocabulary_id_passes(self) -> None:
+        """IN clause with source_vocabulary_id should pass."""
+        sql = """
+        SELECT target_concept_id
+        FROM source_to_concept_map
+        WHERE source_code IN ('250.00', '250.01')
+          AND source_vocabulary_id = 'ICD9CM'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_like_without_vocabulary_id_fails(self) -> None:
+        """LIKE on source_code without source_vocabulary_id should error."""
+        sql = """
+        SELECT target_concept_id
+        FROM source_to_concept_map
+        WHERE source_code LIKE '250%'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_058_qualified_columns_fails(self) -> None:
+        """Qualified column names should also be detected."""
+        sql = """
+        SELECT stcm.target_concept_id
+        FROM source_to_concept_map stcm
+        WHERE stcm.source_code = 'A123'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_058_qualified_columns_passes(self) -> None:
+        """Qualified column names with both filters should pass."""
+        sql = """
+        SELECT stcm.target_concept_id
+        FROM source_to_concept_map stcm
+        WHERE stcm.source_code = 'A123'
+          AND stcm.source_vocabulary_id = 'SNOMED'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_join_condition_fails(self) -> None:
+        """Join conditions should also be checked."""
+        sql = """
+        SELECT t.target_concept_id
+        FROM my_table m
+        JOIN source_to_concept_map t ON m.code = t.source_code
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_058_join_with_vocabulary_id_passes(self) -> None:
+        """Join with source_vocabulary_id filter should pass."""
+        sql = """
+        SELECT t.target_concept_id
+        FROM my_table m
+        JOIN source_to_concept_map t
+          ON m.code = t.source_code
+         AND t.source_vocabulary_id = 'ICD10CM'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_other_tables_not_affected(self) -> None:
+        """Other tables should not trigger this rule."""
+        sql = """
+        SELECT concept_id
+        FROM concept
+        WHERE concept_code = '250.00'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_058_no_table_reference_passes(self) -> None:
+        """Query without source_to_concept_map table should pass."""
+        sql = """
+        SELECT * FROM person WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

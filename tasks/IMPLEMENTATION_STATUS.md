@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 58 rules (including covered rules)
-- Coverage: 16.6%
+- Implemented: 59 rules (including covered rules)
+- Coverage: 16.9%
 - Last updated: March 2026
 
 ---
@@ -139,8 +139,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Status: SKIPPED - Requires external concept metadata (whitelist of valid race/ethnicity concept IDs). Medium-high complexity. WARNING severity. Better handled with concept metadata database integration or data quality profiling.*
 - [-] **OMOP_057**: group_by_must_include_non_aggregated_columns
   - *Status: SKIPPED - General SQL syntax rule already enforced by database. High complexity to implement comprehensive GROUP BY validation with many edge cases. Database throws syntax error for invalid GROUP BY clauses. No value in duplicating database validation.*
-- [ ] **OMOP_058**: source_to_concept_map_requires_source_vocabulary_id
-  - *Suggested group: `concept_standardization/`*
+- [x] **OMOP_058**: source_to_concept_map_requires_source_vocabulary_id
+  - *Implemented as: `concept_standardization/source_to_concept_map_validation.py`*
 - [ ] **OMOP_059**: preceding_visit_occurrence_id_self_join
   - *Suggested group: `joins/`*
 - [ ] **OMOP_060**: measurement_operator_concept_id_usage
