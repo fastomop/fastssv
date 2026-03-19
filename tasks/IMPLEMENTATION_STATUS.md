@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 53 rules (including covered rules)
-- Coverage: 15.1%
+- Implemented: 56 rules (including covered rules)
+- Coverage: 16.0%
 - Last updated: March 2026
 
 ---
@@ -116,12 +116,12 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Not implemented: Medium false positive risk - some Cartesian joins are intentional (aggregate queries, co-occurrence analysis). Complex to detect all forms of temporal constraints. High impact but better handled by query analyzers and EXPLAIN plans. Could be revisited with opt-in mode and smart heuristics.*
 - [x] **OMOP_047**: provider_specialty_via_concept_join
   - *Covered by OMOP_003: `anti_patterns/no_string_identification.py` - Extended to include provider.specialty_source_value and provider.gender_source_value*
-- [ ] **OMOP_048**: condition_status_concept_id_for_diagnosis_status
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **OMOP_049**: observation_table_not_for_lab_results
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **OMOP_050**: concept_id_negative_values_invalid
-  - *Suggested group: `data_quality/`*
+- [x] **OMOP_048**: condition_status_concept_id_for_diagnosis_status
+  - *Covered by OMOP_014: `anti_patterns/type_concept_id_misuse.py` - Flags ALL filtering on condition_type_concept_id as ERROR. While not specific about status vs type distinction, it catches the violation (using type_concept_id for any filtering). Specific detection would require concept metadata to identify status concept IDs.*
+- [x] **OMOP_049**: observation_table_not_for_lab_results
+  - *Partially covered by OMOP_066: `concept_standardization/concept_domain_validation.py` - Detects when observation table is joined to concept with domain_id = 'Measurement' (ERROR). Does not detect hardcoded concept IDs without concept join (would require concept metadata database). Most important cases are covered.*
+- [x] **OMOP_050**: concept_id_negative_values_invalid
+  - *Implemented as: `data_quality/negative_concept_id_validation.py`*
 
 ### Advanced Validation Rules (OMOP_051-100)
 
