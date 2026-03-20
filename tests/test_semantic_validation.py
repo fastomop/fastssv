@@ -3824,5 +3824,136 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         self.assertEqual(len(violations), 1)
 
 
+class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
+    """Tests for OMOP_067: no_union_different_concept_id_types."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.data_quality.union_concept_id_domain_indicator import (
+            UnionConceptIdDomainIndicatorRule,
+        )
+
+        rule = UnionConceptIdDomainIndicatorRule()
+        return rule.validate(sql, dialect)
+
+    def test_omop_067_union_different_domains_without_indicator_fails(self) -> None:
+        """UNION mixing condition and drug without domain indicator should warn."""
+        sql = """
+        SELECT condition_concept_id AS concept_id
+        FROM condition_occurrence
+        UNION ALL
+        SELECT drug_concept_id AS concept_id
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("domain indicator", violations[0].message.lower())
+
+    def test_omop_067_union_with_domain_indicator_passes(self) -> None:
+        """UNION with literal domain column should pass."""
+        sql = """
+        SELECT 'Condition' AS domain, condition_concept_id AS concept_id
+        FROM condition_occurrence
+        UNION ALL
+        SELECT 'Drug' AS domain, drug_concept_id AS concept_id
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_067_union_same_domain_passes(self) -> None:
+        """UNION from same domain table should pass."""
+        sql = """
+        SELECT condition_concept_id AS concept_id
+        FROM condition_occurrence
+        WHERE person_id = 123
+        UNION ALL
+        SELECT condition_concept_id AS concept_id
+        FROM condition_occurrence
+        WHERE person_id = 456
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_067_union_non_concept_id_passes(self) -> None:
+        """UNION not involving concept_id columns should pass."""
+        sql = """
+        SELECT person_id, observation_date
+        FROM condition_occurrence
+        UNION ALL
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_067_no_union_passes(self) -> None:
+        """Query without UNION should pass."""
+        sql = """
+        SELECT condition_concept_id FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_067_union_three_domains_fails(self) -> None:
+        """UNION mixing three domains without indicator should warn."""
+        sql = """
+        SELECT condition_concept_id AS concept_id FROM condition_occurrence
+        UNION ALL
+        SELECT drug_concept_id AS concept_id FROM drug_exposure
+        UNION ALL
+        SELECT procedure_concept_id AS concept_id FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_067_union_measurement_observation_fails(self) -> None:
+        """UNION mixing measurement and observation should warn."""
+        sql = """
+        SELECT measurement_concept_id AS concept_id
+        FROM measurement
+        UNION ALL
+        SELECT observation_concept_id AS concept_id
+        FROM observation
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_067_union_with_concept_join_passes(self) -> None:
+        """UNION with domain_id from concept table should pass."""
+        sql = """
+        SELECT c.domain_id, co.condition_concept_id AS concept_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        UNION ALL
+        SELECT c.domain_id, de.drug_concept_id AS concept_id
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_067_plain_union_without_all_fails(self) -> None:
+        """Plain UNION (not ALL) mixing domains should also warn."""
+        sql = """
+        SELECT condition_concept_id AS concept_id
+        FROM condition_occurrence
+        UNION
+        SELECT drug_concept_id AS concept_id
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_067_union_non_domain_tables_passes(self) -> None:
+        """UNION from non-domain tables should pass."""
+        sql = """
+        SELECT concept_id FROM concept WHERE domain_id = 'Condition'
+        UNION ALL
+        SELECT concept_id FROM concept WHERE domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
