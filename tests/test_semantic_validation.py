@@ -3668,5 +3668,161 @@ class ConditionEndDateNullHandlingTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class DrugStrengthValidityFilterTests(unittest.TestCase):
+    """Tests for OMOP_064: drug_strength_valid_start_end_date_filter."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.domain_specific.drug.drug_strength_validity_filter import (
+            DrugStrengthValidityFilterRule,
+        )
+
+        rule = DrugStrengthValidityFilterRule()
+        return rule.validate(sql, dialect)
+
+    def test_omop_064_no_validity_filter_fails(self) -> None:
+        """drug_strength without validity filter should warn."""
+        sql = """
+        SELECT amount_value, amount_unit_concept_id
+        FROM drug_strength
+        WHERE drug_concept_id = 19078461
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("invalid_reason", violations[0].message.lower())
+
+    def test_omop_064_with_invalid_reason_null_passes(self) -> None:
+        """drug_strength with invalid_reason IS NULL should pass."""
+        sql = """
+        SELECT amount_value, amount_unit_concept_id
+        FROM drug_strength
+        WHERE drug_concept_id = 19078461
+          AND invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_with_valid_end_date_comparison_passes(self) -> None:
+        """drug_strength with valid_end_date check should pass."""
+        sql = """
+        SELECT amount_value
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+          AND valid_end_date >= CURRENT_DATE
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_with_valid_start_date_comparison_passes(self) -> None:
+        """drug_strength with valid_start_date check should pass."""
+        sql = """
+        SELECT amount_value
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+          AND valid_start_date <= CURRENT_DATE
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_with_between_date_range_passes(self) -> None:
+        """drug_strength with BETWEEN date range should pass."""
+        sql = """
+        SELECT amount_value
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+          AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_join_without_validity_fails(self) -> None:
+        """JOIN to drug_strength without validity filter should warn."""
+        sql = """
+        SELECT de.drug_exposure_id, ds.amount_value
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        WHERE de.person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_064_join_with_invalid_reason_in_join_passes(self) -> None:
+        """JOIN with invalid_reason in JOIN condition should pass."""
+        sql = """
+        SELECT de.drug_exposure_id, ds.amount_value
+        FROM drug_exposure de
+        JOIN drug_strength ds
+          ON de.drug_concept_id = ds.drug_concept_id
+         AND ds.invalid_reason IS NULL
+        WHERE de.person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_join_with_invalid_reason_in_where_passes(self) -> None:
+        """JOIN with invalid_reason in WHERE should pass."""
+        sql = """
+        SELECT de.drug_exposure_id, ds.amount_value
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        WHERE de.person_id = 123
+          AND ds.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_no_drug_strength_table_passes(self) -> None:
+        """Query without drug_strength should pass."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_subquery_without_validity_fails(self) -> None:
+        """Subquery selecting from drug_strength without filter should warn."""
+        sql = """
+        SELECT * FROM (
+            SELECT drug_concept_id, amount_value
+            FROM drug_strength
+            WHERE amount_value > 0
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_064_multiple_conditions_with_validity_passes(self) -> None:
+        """Complex WHERE with validity filter should pass."""
+        sql = """
+        SELECT amount_value, numerator_value, denominator_value
+        FROM drug_strength
+        WHERE drug_concept_id IN (123, 456, 789)
+          AND amount_value IS NOT NULL
+          AND invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_invalid_reason_equality_filter_passes(self) -> None:
+        """Checking invalid_reason with equality should pass (intentional historical query)."""
+        sql = """
+        SELECT drug_concept_id, amount_value, invalid_reason
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+          AND invalid_reason = 'D'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_064_date_in_select_but_not_where_fails(self) -> None:
+        """Selecting validity columns without filtering should still warn."""
+        sql = """
+        SELECT drug_concept_id, amount_value, valid_start_date, valid_end_date
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
