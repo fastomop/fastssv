@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 61 rules (including covered rules)
-- Coverage: 17.4%
+- Implemented: 62 rules (including covered rules)
+- Coverage: 17.7%
 - Last updated: March 2026
 
 ---
@@ -149,10 +149,10 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Status: SKIPPED - Requires external concept metadata to determine if hardcoded concept_ids are standard or source concepts. Would detect queries using standard concepts in concept_id_1 with 'Maps to' relationship (should be source concepts). PARTIALLY COVERED by OMOP_027 (maps_to_direction) which detects wrong direction in JOIN patterns using schema knowledge. This rule would only add detection of hardcoded concept_ids in WHERE clauses, which requires querying the concept table. Low frequency (uncommon pattern) and high implementation complexity (metadata database integration).*
 - [x] **OMOP_062**: condition_end_date_may_be_null
   - *Implemented as: `domain_specific/condition/condition_end_date_null_handling.py`*
-- [ ] **OMOP_063**: distinct_person_count_not_row_count
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_064**: drug_strength_valid_start_end_date_filter
-  - *Suggested group: `domain_specific/drug/`*
+- [-] **OMOP_063**: distinct_person_count_not_row_count
+  - *Status: SKIPPED - This is an analytics best practice, not a semantic CDM violation. The rule would detect COUNT(*) vs COUNT(DISTINCT person_id) in prevalence queries, but this is more about query intent (counting patients vs events) which is highly context-dependent and subjective. Many legitimate use cases exist for counting total events. Better addressed through documentation, code review, and analytics training rather than static SQL validation. High false positive risk due to inability to determine query intent.*
+- [x] **OMOP_064**: drug_strength_valid_start_end_date_filter
+  - *Implemented as: `domain_specific/drug/drug_strength_validity_filter.py`*
 - [ ] **OMOP_065**: observation_table_heterogeneous_domain
   - *Suggested group: `domain_specific/observation/`*
 - [x] **OMOP_066**: concept_domain_id_matches_target_table
