@@ -3544,5 +3544,129 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class ConditionEndDateNullHandlingTests(unittest.TestCase):
+    """Tests for condition_end_date NULL handling rule (OMOP_062)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.condition_end_date_null_handling")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_062_datediff_without_null_handling_fails(self) -> None:
+        """DATEDIFF without NULL handling should warn."""
+        sql = """
+        SELECT DATEDIFF(day, condition_start_date, condition_end_date) AS duration
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("null", violations[0].message.lower())
+        self.assertIn("coalesce", violations[0].message.lower())
+
+    def test_omop_062_datediff_with_coalesce_passes(self) -> None:
+        """DATEDIFF with COALESCE should pass."""
+        sql = """
+        SELECT DATEDIFF(day, condition_start_date,
+                        COALESCE(condition_end_date, CURRENT_DATE)) AS duration
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_with_is_not_null_filter_passes(self) -> None:
+        """Query with IS NOT NULL filter should pass."""
+        sql = """
+        SELECT DATEDIFF(day, condition_start_date, condition_end_date) AS duration
+        FROM condition_occurrence
+        WHERE condition_end_date IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_date_arithmetic_without_null_handling_fails(self) -> None:
+        """Date arithmetic without NULL handling should warn."""
+        sql = """
+        SELECT condition_end_date - condition_start_date AS duration
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("null", violations[0].message.lower())
+
+    def test_omop_062_date_arithmetic_with_coalesce_passes(self) -> None:
+        """Date arithmetic with COALESCE should pass."""
+        sql = """
+        SELECT COALESCE(condition_end_date, CURRENT_DATE) - condition_start_date AS duration
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_no_date_calculation_passes(self) -> None:
+        """Query without date calculation should pass."""
+        sql = """
+        SELECT condition_concept_id, condition_start_date, condition_end_date
+        FROM condition_occurrence
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_date_add_without_null_handling_fails(self) -> None:
+        """DATE_ADD using condition_end_date should warn."""
+        sql = """
+        SELECT DATE_ADD(condition_end_date, INTERVAL 30 DAY) AS future_date
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_062_timestampdiff_without_null_handling_fails(self) -> None:
+        """TIMESTAMPDIFF without NULL handling should warn."""
+        sql = """
+        SELECT TIMESTAMPDIFF(DAY, condition_start_date, condition_end_date)
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_omop_062_multiple_functions_without_handling_fails(self) -> None:
+        """Multiple date functions without handling should warn for each."""
+        sql = """
+        SELECT
+            DATEDIFF(day, condition_start_date, condition_end_date) AS duration1,
+            condition_end_date - condition_start_date AS duration2
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_omop_062_condition_start_date_only_passes(self) -> None:
+        """Using only condition_start_date should pass."""
+        sql = """
+        SELECT DATEDIFF(day, condition_start_date, CURRENT_DATE) AS days_since
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_other_table_end_date_passes(self) -> None:
+        """End date from other tables should not trigger."""
+        sql = """
+        SELECT DATEDIFF(day, vo.visit_start_date, vo.visit_end_date)
+        FROM visit_occurrence vo
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_062_no_condition_table_passes(self) -> None:
+        """Query without condition_occurrence should pass."""
+        sql = """
+        SELECT * FROM person WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

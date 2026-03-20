@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 60 rules (including covered rules)
-- Coverage: 17.1%
+- Implemented: 61 rules (including covered rules)
+- Coverage: 17.4%
 - Last updated: March 2026
 
 ---
@@ -145,10 +145,10 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `joins/preceding_visit_occurrence_validation.py`*
 - [-] **OMOP_060**: measurement_operator_concept_id_usage
   - *Status: SKIPPED - WARNING severity. Detects queries filtering value_as_number without accounting for operator_concept_id ('<', '>', '=', etc.). Very high complexity and false positive risk - hard to determine if query SHOULD check operator_concept_id. Only affects 5-15% of measurements where operator is populated. Subjective detection ("accounting for" operator can mean many things: explicit filter, CASE statement, intentionally ignoring). Better handled through education, documentation, and data profiling rather than static SQL validation.*
-- [ ] **OMOP_061**: concept_relationship_bidirectional_awareness
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_062**: condition_end_date_may_be_null
-  - *Suggested group: `domain_specific/condition/`*
+- [-] **OMOP_061**: concept_relationship_bidirectional_awareness
+  - *Status: SKIPPED - Requires external concept metadata to determine if hardcoded concept_ids are standard or source concepts. Would detect queries using standard concepts in concept_id_1 with 'Maps to' relationship (should be source concepts). PARTIALLY COVERED by OMOP_027 (maps_to_direction) which detects wrong direction in JOIN patterns using schema knowledge. This rule would only add detection of hardcoded concept_ids in WHERE clauses, which requires querying the concept table. Low frequency (uncommon pattern) and high implementation complexity (metadata database integration).*
+- [x] **OMOP_062**: condition_end_date_may_be_null
+  - *Implemented as: `domain_specific/condition/condition_end_date_null_handling.py`*
 - [ ] **OMOP_063**: distinct_person_count_not_row_count
   - *Suggested group: `data_quality/`*
 - [ ] **OMOP_064**: drug_strength_valid_start_end_date_filter
