@@ -11,6 +11,7 @@ from .visit_detail_join_validation import VisitDetailJoinValidationRule
 from .cost_table_domain_validation import CostTableDomainValidationRule
 from .care_site_join_validation import CareSiteJoinValidationRule
 from .visit_occurrence_inner_join_validation import VisitOccurrenceInnerJoinValidationRule
+from .preceding_visit_occurrence_validation import PrecedingVisitOccurrenceValidationRule
 
 __all__ = [
     "JoinPathValidationRule",
@@ -20,4 +21,5 @@ __all__ = [
     "CostTableDomainValidationRule",
     "CareSiteJoinValidationRule",
     "VisitOccurrenceInnerJoinValidationRule",
+    "PrecedingVisitOccurrenceValidationRule",
 ]

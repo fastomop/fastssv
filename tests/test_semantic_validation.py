@@ -3413,5 +3413,136 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         self.assertEqual(len(violations), 0)
 
 
+class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
+    """Tests for preceding_visit_occurrence_id validation rule (OMOP_059)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.preceding_visit_occurrence_validation")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_059_join_to_different_table_fails(self) -> None:
+        """Joining preceding_visit_occurrence_id to visit_detail should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_detail", violations[0].message.lower())
+        self.assertIn("visit_occurrence", violations[0].message.lower())
+
+    def test_omop_059_join_to_wrong_column_fails(self) -> None:
+        """Joining to wrong column in visit_occurrence should error."""
+        sql = """
+        SELECT v1.*, v2.person_id
+        FROM visit_occurrence v1
+        JOIN visit_occurrence v2 ON v1.preceding_visit_occurrence_id = v2.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message.lower())
+        self.assertIn("visit_occurrence_id", violations[0].message.lower())
+
+    def test_omop_059_correct_self_join_passes(self) -> None:
+        """Correct self-join to visit_occurrence_id should pass."""
+        sql = """
+        SELECT v1.*, v2.visit_start_date AS prior_visit_date
+        FROM visit_occurrence v1
+        JOIN visit_occurrence v2
+          ON v1.preceding_visit_occurrence_id = v2.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_059_left_join_correct_passes(self) -> None:
+        """LEFT JOIN with correct columns should pass."""
+        sql = """
+        SELECT v1.*, v2.visit_concept_id AS prior_visit_type
+        FROM visit_occurrence v1
+        LEFT JOIN visit_occurrence v2
+          ON v1.preceding_visit_occurrence_id = v2.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_059_reversed_join_order_fails(self) -> None:
+        """Reversed join order with wrong column should still error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence v1
+        JOIN visit_occurrence v2 ON v2.visit_concept_id = v1.preceding_visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_concept_id", violations[0].message.lower())
+
+    def test_omop_059_no_preceding_column_passes(self) -> None:
+        """Query without preceding_visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_059_multiple_tables_join_to_wrong_fails(self) -> None:
+        """Complex query joining to wrong table should error."""
+        sql = """
+        SELECT vo.*, p.*, vd.*
+        FROM visit_occurrence vo
+        JOIN person p ON vo.person_id = p.person_id
+        JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_detail", violations[0].message.lower())
+
+    def test_omop_059_unqualified_table_name_passes(self) -> None:
+        """Unqualified table names with correct join should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo1
+        JOIN visit_occurrence vo2
+          ON vo1.preceding_visit_occurrence_id = vo2.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_059_join_to_person_table_fails(self) -> None:
+        """Joining to person table should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.preceding_visit_occurrence_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person", violations[0].message.lower())
+
+    def test_omop_059_other_visit_joins_not_affected(self) -> None:
+        """Other visit_occurrence joins should not trigger this rule."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.person_id = p.person_id
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_059_column_in_where_clause_not_flagged(self) -> None:
+        """Using preceding_visit_occurrence_id in WHERE should not be flagged."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence
+        WHERE preceding_visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
