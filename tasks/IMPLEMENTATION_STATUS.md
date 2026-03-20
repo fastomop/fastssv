@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 59 rules (including covered rules)
-- Coverage: 16.9%
+- Implemented: 60 rules (including covered rules)
+- Coverage: 17.1%
 - Last updated: March 2026
 
 ---
@@ -141,10 +141,10 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Status: SKIPPED - General SQL syntax rule already enforced by database. High complexity to implement comprehensive GROUP BY validation with many edge cases. Database throws syntax error for invalid GROUP BY clauses. No value in duplicating database validation.*
 - [x] **OMOP_058**: source_to_concept_map_requires_source_vocabulary_id
   - *Implemented as: `concept_standardization/source_to_concept_map_validation.py`*
-- [ ] **OMOP_059**: preceding_visit_occurrence_id_self_join
-  - *Suggested group: `joins/`*
-- [ ] **OMOP_060**: measurement_operator_concept_id_usage
-  - *Suggested group: `domain_specific/measurement/`*
+- [x] **OMOP_059**: preceding_visit_occurrence_id_self_join
+  - *Implemented as: `joins/preceding_visit_occurrence_validation.py`*
+- [-] **OMOP_060**: measurement_operator_concept_id_usage
+  - *Status: SKIPPED - WARNING severity. Detects queries filtering value_as_number without accounting for operator_concept_id ('<', '>', '=', etc.). Very high complexity and false positive risk - hard to determine if query SHOULD check operator_concept_id. Only affects 5-15% of measurements where operator is populated. Subjective detection ("accounting for" operator can mean many things: explicit filter, CASE statement, intentionally ignoring). Better handled through education, documentation, and data profiling rather than static SQL validation.*
 - [ ] **OMOP_061**: concept_relationship_bidirectional_awareness
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_062**: condition_end_date_may_be_null
