@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 62 rules (including covered rules)
-- Coverage: 17.7%
+- Implemented: 63 rules (including covered rules)
+- Coverage: 18.0%
 - Last updated: March 2026
 
 ---
@@ -153,12 +153,12 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Status: SKIPPED - This is an analytics best practice, not a semantic CDM violation. The rule would detect COUNT(*) vs COUNT(DISTINCT person_id) in prevalence queries, but this is more about query intent (counting patients vs events) which is highly context-dependent and subjective. Many legitimate use cases exist for counting total events. Better addressed through documentation, code review, and analytics training rather than static SQL validation. High false positive risk due to inability to determine query intent.*
 - [x] **OMOP_064**: drug_strength_valid_start_end_date_filter
   - *Implemented as: `domain_specific/drug/drug_strength_validity_filter.py`*
-- [ ] **OMOP_065**: observation_table_heterogeneous_domain
-  - *Suggested group: `domain_specific/observation/`*
+- [-] **OMOP_065**: observation_table_heterogeneous_domain
+  - *Status: SKIPPED - This is an analytics best practice, not a semantic violation. While the observation table is heterogeneous (surveys, social history, family history), requiring observation_concept_id filter is prescriptive about query patterns rather than catching semantic errors. Many legitimate use cases exist for querying observation without concept filters (metadata queries, exploratory analysis, data quality checks). Better addressed through analytics documentation and query guidelines rather than static SQL validation. High false positive risk for legitimate analytical queries.*
 - [x] **OMOP_066**: concept_domain_id_matches_target_table
   - *Implemented as: `concept_standardization/concept_domain_validation.py` (comprehensive merged rule covering all 35+ concept_id columns)*
-- [ ] **OMOP_067**: no_union_different_concept_id_types
-  - *Suggested group: `data_quality/`*
+- [x] **OMOP_067**: no_union_different_concept_id_types
+  - *Implemented as: `data_quality/union_concept_id_domain_indicator.py`*
 - [ ] **OMOP_068**: specimen_table_not_for_lab_results
   - *Suggested group: `domain_specific/specimen/`*
 - [ ] **OMOP_069**: cohort_definition_id_required_for_cohort_query

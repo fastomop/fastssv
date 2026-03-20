@@ -8,10 +8,12 @@ from .unmapped_concept_handling import UnmappedConceptHandlingRule
 from .schema_validation import SchemaValidationRule
 from .column_type_validation import ColumnTypeValidationRule
 from .negative_concept_id_validation import NegativeConceptIdValidationRule
+from .union_concept_id_domain_indicator import UnionConceptIdDomainIndicatorRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
     "SchemaValidationRule",
     "ColumnTypeValidationRule",
     "NegativeConceptIdValidationRule",
+    "UnionConceptIdDomainIndicatorRule",
 ]
