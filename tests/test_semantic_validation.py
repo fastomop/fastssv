@@ -4229,5 +4229,132 @@ class VocabularyTableProtectionTests(unittest.TestCase):
             self.assertIn(table, violations[0].message.lower())
 
 
+class ProviderJoinValidationTests(unittest.TestCase):
+    """Tests for the provider join validation rule (JOIN_001)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.provider_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_001_incorrect_person_id_to_provider_id(self) -> None:
+        """Joining person_id to provider_id should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN provider p ON co.person_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message.lower())
+        self.assertIn("provider_id", violations[0].message)
+
+    def test_join_001_incorrect_care_site_id_to_provider_id(self) -> None:
+        """Joining care_site_id to provider_id should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN provider p ON de.care_site_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("care_site_id", violations[0].message.lower())
+
+    def test_join_001_correct_provider_id_to_provider_id(self) -> None:
+        """Correct join using provider_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN provider p ON co.provider_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_001_multiple_clinical_tables(self) -> None:
+        """Test with multiple clinical tables."""
+        for table in ["drug_exposure", "procedure_occurrence", "measurement", "observation"]:
+            sql = f"""
+            SELECT *
+            FROM {table} t
+            JOIN provider p ON t.provider_id = p.provider_id
+            """
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 0,
+                           f"Expected no violations for {table}")
+
+    def test_join_001_reversed_join_order(self) -> None:
+        """Test reversed join order (provider → clinical)."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN condition_occurrence co ON p.provider_id = co.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_001_reversed_incorrect_join(self) -> None:
+        """Test reversed incorrect join order."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN condition_occurrence co ON p.provider_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_001_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect provider joins."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co1
+        JOIN provider p1 ON co1.provider_id = p1.provider_id
+        JOIN drug_exposure de ON de.person_id = co1.person_id
+        JOIN provider p2 ON de.person_id = p2.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("drug_exposure", violations[0].message)
+
+    def test_join_001_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence AS conditions
+        JOIN provider AS prov ON conditions.provider_id = prov.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_001_no_provider_table(self) -> None:
+        """Queries without provider table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_001_provider_to_care_site_not_flagged(self) -> None:
+        """Join between provider and care_site (non-clinical) should not be flagged."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN care_site cs ON p.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_001_visit_occurrence_to_provider(self) -> None:
+        """Visit occurrence should also validate provider joins."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN provider p ON vo.person_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
