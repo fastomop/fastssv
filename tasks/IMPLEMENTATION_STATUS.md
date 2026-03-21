@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 63 rules (including covered rules)
-- Coverage: 18.0%
+- Implemented: 64 rules (including covered rules)
+- Coverage: 18.3%
 - Last updated: March 2026
 
 ---
@@ -159,18 +159,18 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `concept_standardization/concept_domain_validation.py` (comprehensive merged rule covering all 35+ concept_id columns)*
 - [x] **OMOP_067**: no_union_different_concept_id_types
   - *Implemented as: `data_quality/union_concept_id_domain_indicator.py`*
-- [ ] **OMOP_068**: specimen_table_not_for_lab_results
-  - *Suggested group: `domain_specific/specimen/`*
-- [ ] **OMOP_069**: cohort_definition_id_required_for_cohort_query
-  - *Suggested group: `domain_specific/cohort/`*
-- [ ] **OMOP_070**: visit_occurrence_start_not_after_end
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **OMOP_071**: location_history_for_temporal_location
-  - *Suggested group: `domain_specific/location/`*
-- [ ] **OMOP_072**: drug_exposure_sig_not_for_dose_extraction
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_073**: episode_table_requires_episode_concept_id
-  - *Suggested group: `domain_specific/episode/`*
+- [-] **OMOP_068**: specimen_table_not_for_lab_results
+  - *Status: SKIPPED - Already covered by OMOP_009 (schema_validation). The specimen table does not have value_as_number, value_as_concept_id, or other measurement result columns. Attempting to query these non-existent columns is automatically caught as a schema violation. This rule would be redundant - it detects the same error with the same severity (ERROR) but with less general coverage. Better addressed through documentation about OMOP table purposes and enhanced error messaging in schema validation.*
+- [-] **OMOP_069**: cohort_definition_id_required_for_cohort_query
+  - *Status: SKIPPED - This is an analytics best practice, not a semantic violation. While the cohort table contains multiple cohort definitions, requiring cohort_definition_id filter is prescriptive about query patterns rather than catching semantic errors. Many legitimate use cases exist for querying cohort without cohort_definition_id filter (metadata queries, exploratory analysis, data quality checks, cross-cohort aggregate analysis). Better addressed through analytics documentation and query guidelines rather than static SQL validation. High false positive risk for legitimate analytical queries.*
+- [-] **OMOP_070**: visit_occurrence_start_not_after_end
+  - *Status: SKIPPED - Similar to OMOP_052. Detects logically impossible date ranges (visit_start_date > visit_end_date). Extremely rare error that is immediately caught during testing (query returns no records or wrong records). Medium complexity: requires handling column aliases, table qualifications, and distinguishing same-row comparisons from join comparisons. Implementation complexity outweighs benefit - better handled by integration testing and code review.*
+- [-] **OMOP_071**: location_history_for_temporal_location
+  - *Status: SKIPPED - This is an analytics best practice, not a semantic violation. While location_history provides temporal location tracking, many legitimate use cases exist for person.location_id (current demographics, mailing lists, current care site assignments, non-temporal analysis). Cannot determine query intent - using person.location_id may be intentional for current location rather than historical location. High false positive risk and high implementation complexity (tracking multi-table join paths, detecting temporal context). Better addressed through documentation, analytics training, and code review.*
+- [x] **OMOP_072**: drug_exposure_sig_not_for_dose_extraction
+  - *Implemented as: `domain_specific/drug/drug_exposure_sig_parsing.py`*
+- [-] **OMOP_073**: episode_table_requires_episode_concept_id
+  - *Status: SKIPPED - This is an analytics best practice, not a semantic violation. While the episode table is heterogeneous (disease episodes, treatment regimens, etc.), requiring episode_concept_id filter is prescriptive about query patterns rather than catching semantic errors. Many legitimate use cases exist for querying episode without concept filters (metadata queries, exploratory analysis, data quality checks, cross-episode aggregate analysis). The episode table is rarely used and users working with it are typically sophisticated enough to understand filtering requirements. Better addressed through analytics documentation and query guidelines rather than static SQL validation. High false positive risk for legitimate analytical queries. Consistent with OMOP_065 and OMOP_069 skip decisions.*
 - [ ] **OMOP_074**: measurement_range_low_high_for_abnormal_detection
   - *Suggested group: `domain_specific/measurement/`*
 - [ ] **OMOP_075**: device_exposure_unique_device_id_not_concept_id
