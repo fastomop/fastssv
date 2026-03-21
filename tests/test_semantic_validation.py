@@ -4106,5 +4106,128 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         self.assertIn("sig", violations[0].message.lower())
 
 
+class VocabularyTableProtectionTests(unittest.TestCase):
+    """Tests for vocabulary table protection rule (OMOP_081)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.vocabulary_table_protection")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_081_delete_from_concept_fails(self) -> None:
+        """DELETE from concept table should error."""
+        sql = """
+        DELETE FROM concept WHERE concept_id = 0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("DELETE", violations[0].message)
+        self.assertIn("concept", violations[0].message.lower())
+        self.assertIn("vocabulary", violations[0].message.lower())
+
+    def test_omop_081_update_concept_fails(self) -> None:
+        """UPDATE on concept table should error."""
+        sql = """
+        UPDATE concept SET concept_name = 'test' WHERE concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("UPDATE", violations[0].message)
+        self.assertIn("concept", violations[0].message.lower())
+
+    def test_omop_081_insert_into_vocabulary_fails(self) -> None:
+        """INSERT into vocabulary table should error."""
+        sql = """
+        INSERT INTO vocabulary (vocabulary_id, vocabulary_name)
+        VALUES ('CUSTOM', 'My Custom Vocabulary')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("INSERT", violations[0].message)
+        self.assertIn("vocabulary", violations[0].message.lower())
+
+    def test_omop_081_truncate_concept_ancestor_fails(self) -> None:
+        """TRUNCATE on concept_ancestor should error."""
+        sql = """
+        TRUNCATE TABLE concept_ancestor
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("TRUNCATE", violations[0].message)
+        self.assertIn("concept_ancestor", violations[0].message.lower())
+
+    def test_omop_081_drop_drug_strength_fails(self) -> None:
+        """DROP on drug_strength should error."""
+        sql = """
+        DROP TABLE drug_strength
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("DROP", violations[0].message)
+        self.assertIn("drug_strength", violations[0].message.lower())
+
+    def test_omop_081_delete_from_concept_relationship_fails(self) -> None:
+        """DELETE from concept_relationship should error."""
+        sql = """
+        DELETE FROM concept_relationship
+        WHERE relationship_id = 'Maps to'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("DELETE", violations[0].message)
+        self.assertIn("concept_relationship", violations[0].message.lower())
+
+    def test_omop_081_select_from_concept_passes(self) -> None:
+        """SELECT from concept should pass."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 0
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_081_delete_from_clinical_table_passes(self) -> None:
+        """DELETE from clinical tables (non-vocabulary) should pass."""
+        sql = """
+        DELETE FROM condition_occurrence WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_081_update_clinical_table_passes(self) -> None:
+        """UPDATE on clinical tables should pass."""
+        sql = """
+        UPDATE drug_exposure
+        SET quantity = 30
+        WHERE drug_exposure_id = 456
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_081_insert_into_cohort_passes(self) -> None:
+        """INSERT into non-vocabulary table should pass."""
+        sql = """
+        INSERT INTO cohort (subject_id, cohort_definition_id, cohort_start_date)
+        VALUES (123, 1, '2020-01-01')
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_081_all_vocabulary_tables_protected(self) -> None:
+        """All vocabulary tables should be protected."""
+        vocabulary_tables = [
+            "concept", "concept_relationship", "concept_ancestor",
+            "concept_synonym", "vocabulary", "domain",
+            "concept_class", "relationship", "drug_strength",
+            "source_to_concept_map"
+        ]
+
+        for table in vocabulary_tables:
+            sql = f"DELETE FROM {table} WHERE 1=1"
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 1,
+                           f"Expected violation for table {table}")
+            self.assertIn(table, violations[0].message.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

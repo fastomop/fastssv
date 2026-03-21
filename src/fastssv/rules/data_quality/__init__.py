@@ -9,6 +9,7 @@ from .schema_validation import SchemaValidationRule
 from .column_type_validation import ColumnTypeValidationRule
 from .negative_concept_id_validation import NegativeConceptIdValidationRule
 from .union_concept_id_domain_indicator import UnionConceptIdDomainIndicatorRule
+from .vocabulary_table_protection import VocabularyTableProtectionRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
@@ -16,4 +17,5 @@ __all__ = [
     "ColumnTypeValidationRule",
     "NegativeConceptIdValidationRule",
     "UnionConceptIdDomainIndicatorRule",
+    "VocabularyTableProtectionRule",
 ]

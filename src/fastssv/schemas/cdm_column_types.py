@@ -149,6 +149,28 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "dose_unit_source_value": VARCHAR,
     },
 
+    "device_exposure": {
+        "device_exposure_id": INTEGER,
+        "person_id": INTEGER,
+        "device_concept_id": INTEGER,
+        "device_exposure_start_date": DATE,
+        "device_exposure_start_datetime": DATETIME,
+        "device_exposure_end_date": DATE,
+        "device_exposure_end_datetime": DATETIME,
+        "device_type_concept_id": INTEGER,
+        "unique_device_id": VARCHAR,
+        "production_id": VARCHAR,
+        "quantity": INTEGER,
+        "provider_id": INTEGER,
+        "visit_occurrence_id": INTEGER,
+        "visit_detail_id": INTEGER,
+        "device_source_value": VARCHAR,
+        "device_source_concept_id": INTEGER,
+        "unit_concept_id": INTEGER,
+        "unit_source_value": VARCHAR,
+        "unit_source_concept_id": INTEGER,
+    },
+
     "death": {
         "person_id": INTEGER,
         "death_date": DATE,

@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 64 rules (including covered rules)
-- Coverage: 18.3%
+- Implemented: 74 rules (including covered rules)
+- Coverage: 21.1%
 - Last updated: March 2026
 
 ---
@@ -171,65 +171,65 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Implemented as: `domain_specific/drug/drug_exposure_sig_parsing.py`*
 - [-] **OMOP_073**: episode_table_requires_episode_concept_id
   - *Status: SKIPPED - This is an analytics best practice, not a semantic violation. While the episode table is heterogeneous (disease episodes, treatment regimens, etc.), requiring episode_concept_id filter is prescriptive about query patterns rather than catching semantic errors. Many legitimate use cases exist for querying episode without concept filters (metadata queries, exploratory analysis, data quality checks, cross-episode aggregate analysis). The episode table is rarely used and users working with it are typically sophisticated enough to understand filtering requirements. Better addressed through analytics documentation and query guidelines rather than static SQL validation. High false positive risk for legitimate analytical queries. Consistent with OMOP_065 and OMOP_069 skip decisions.*
-- [ ] **OMOP_074**: measurement_range_low_high_for_abnormal_detection
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_075**: device_exposure_unique_device_id_not_concept_id
-  - *Suggested group: `domain_specific/device/`*
-- [ ] **OMOP_076**: multiple_observation_periods_per_person
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_077**: refills_column_semantics
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_078**: concept_id_equality_not_concept_name_equality
-  - *Suggested group: `anti_patterns/`*
-- [ ] **OMOP_079**: condition_era_gap_days_not_available
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **OMOP_080**: cohort_date_columns_required
-  - *Suggested group: `domain_specific/cohort/`*
-- [ ] **OMOP_081**: delete_update_on_vocabulary_tables
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_082**: concept_ancestor_only_standard_concepts
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_083**: note_text_not_in_select_without_filter
-  - *Suggested group: `domain_specific/note/`*
-- [ ] **OMOP_084**: procedure_modifier_concept_id_usage
-  - *Suggested group: `domain_specific/procedure/`*
-- [ ] **OMOP_085**: dose_era_unit_concept_id_required
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_086**: relationship_id_as_string_not_integer
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_087**: episode_event_links_episode_to_clinical_tables
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_088**: note_event_id_polymorphic_join
-  - *Suggested group: `domain_specific/note/`*
-- [ ] **OMOP_089**: measurement_event_id_polymorphic_join
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_090**: observation_event_id_polymorphic_join
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **OMOP_091**: cost_total_charge_vs_total_cost_vs_total_paid
-  - *Suggested group: `domain_specific/cost/`*
-- [ ] **OMOP_092**: cost_paid_components_sum_to_total_paid
-  - *Suggested group: `domain_specific/cost/`*
-- [ ] **OMOP_093**: care_site_place_of_service_concept_for_facility_type
-  - *Suggested group: `domain_specific/care_site/`*
-- [ ] **OMOP_094**: death_cause_concept_id_domain_check
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **OMOP_095**: source_to_concept_map_invalid_reason_filter
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_096**: drug_strength_multiple_ingredients
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_097**: person_provider_id_is_primary_care_provider
-  - *Suggested group: `domain_specific/provider/`*
-- [ ] **OMOP_098**: verbatim_end_date_not_for_duration
-  - *Suggested group: `domain_specific/`*
-- [ ] **OMOP_099**: note_nlp_term_exists_filter
-  - *Suggested group: `domain_specific/note/`*
-- [ ] **OMOP_100**: note_nlp_term_temporal_filter
-  - *Suggested group: `domain_specific/note/`*
+- [-] **OMOP_074**: measurement_range_low_high_for_abnormal_detection
+  - *Status: SKIPPED - WARNING severity. Detects hardcoded thresholds on value_as_number without using range_low/range_high. Very high false positive risk - cannot determine query intent from SQL alone. Hardcoded thresholds have many legitimate uses: clinical practice guidelines (HbA1c >= 6.5 for diabetes), research protocols, quality metrics, population health thresholds. Determining whether a threshold is for "abnormal detection" vs "clinical classification" is subjective and context-dependent. Similar to OMOP_060 (operator_concept_id_usage) which was skipped for the same reasons. Better addressed through education, clinical documentation, and code review rather than static SQL validation.*
+- [-] **OMOP_075**: device_exposure_unique_device_id_not_concept_id
+  - *Status: SKIPPED - Already covered by existing rules and database validation. Part 1 (JOIN type mismatch VARCHAR to INTEGER) is automatically caught by column_type_validation.py (OMOP_025/026) now that device_exposure schema is defined. Part 2 (CAST to integer) would fail at database level with type errors. Databases naturally prevent VARCHAR=INTEGER joins. Low implementation value given device_exposure table is rarely used. The device_exposure schema has been added to cdm_column_types.py for completeness and will work with existing type validation rules.*
+- [-] **OMOP_076**: multiple_observation_periods_per_person
+  - *Status: SKIPPED - WARNING severity. Detects joins to observation_period on person_id without accounting for multiple periods. Very high false positive risk - cannot determine query intent from SQL alone. Many legitimate reasons to join on person_id only: intentional multiple-row results for period counting, gap analysis, GROUP BY aggregation, WHERE filtering, DISTINCT usage. The suggested fix (using MAX) is prescriptive and assumes latest period is always desired. Similar to OMOP_046 (cartesian joins on person_id) and OMOP_051 (payer_plan_period joins) which were skipped for the same reasons. Better addressed through documentation about observation_period cardinality, data profiling, and query result review rather than static SQL validation.*
+- [-] **OMOP_077**: refills_column_semantics
+  - *Status: SKIPPED - WARNING severity. Attempts to detect misunderstanding of drug_exposure.refills semantics (refills excludes original fill; total fills = refills + 1). Very high false positive risk - cannot determine user intent from SQL alone. Many legitimate uses of refills without +1 (counting refills only, refill pattern analysis, intermediate calculations). Alias name heuristics are unreliable and subjective. Comment detection is unreliable (comments stripped by parsers) and represents code style preference, not semantic error. Both patterns (refills alone vs refills + 1) can be correct depending on analytical question. This is an educational issue about OMOP semantics, better addressed through documentation, training, and code review rather than static SQL validation.*
+- [x] **OMOP_078**: concept_id_equality_not_concept_name_equality
+  - *Covered by: `anti_patterns/concept_name_lookup.py` - Detects filtering by concept.concept_name = 'string' or concept_name IN (...). The existing implementation is actually stricter/better than OMOP_078 - it always flags concept_name filtering (even with vocabulary_id), recommending concept_code + vocabulary_id or concept_id instead. Concept names are not unique and can change across vocabulary versions, making them unreliable identifiers even when scoped by vocabulary_id.*
+- [x] **OMOP_079**: condition_era_gap_days_not_available
+  - *Covered by: `data_quality/schema_validation.py` - Detects non-existent column 'gap_days' in condition_era table (ERROR). The gap_days column exists only on drug_era, not condition_era. Schema validation automatically catches attempts to reference gap_days from condition_era. Similar to OMOP_028 (condition_era non-existent columns) and OMOP_029 (drug_era non-existent columns).*
+- [-] **OMOP_080**: cohort_date_columns_required
+  - *Status: SKIPPED - WARNING severity. Attempts to detect when queries join cohort to clinical tables and use clinical event dates instead of cohort_start_date/cohort_end_date. Very high false positive risk - cannot determine query intent from SQL alone. Many legitimate reasons to use both cohort dates AND clinical dates: temporal analysis (days from cohort entry to event), validation queries (verify cohort entry matches first event), finding events during cohort membership. Detection would require unreliable heuristics (alias names, column presence checks). This is prescriptive about analytics patterns rather than catching semantic errors. Similar to OMOP_069 (cohort_definition_id_required) which was skipped for the same reasons. Better addressed through cohort definition documentation, analyst training, and results review rather than static SQL validation.*
+- [x] **OMOP_081**: delete_update_on_vocabulary_tables
+  - *Implemented as: `data_quality/vocabulary_table_protection.py`*
+- [-] **OMOP_082**: concept_ancestor_only_standard_concepts
+  - *Status: SKIPPED - Requires external concept metadata database. Detection requires querying the concept table to determine if hardcoded concept_ids have standard_concept = 'S'. Static SQL analysis cannot distinguish standard from source concepts without metadata lookup. Identical issue to OMOP_061 (concept_relationship_bidirectional_awareness) which was skipped for the same reason. The error is self-evident (query returns zero results), making it easy to catch during development. High implementation complexity (metadata database integration) for low benefit. Better addressed through documentation, query templates, and data exploration tools that help users identify standard concepts.*
+- [-] **OMOP_083**: note_text_not_in_select_without_filter
+  - *Status: SKIPPED - Performance/style rule, not semantic correctness. Nearly identical to OMOP_041 (select_star_on_large_clinical_tables) which was skipped. Very high false positive risk - many legitimate use cases for selecting note_text without person_id filter: data quality analysis, text mining with other filters, sample queries with LIMIT, metadata queries, NLP workflows. Detection heuristics are subjective and incomplete (what qualifies as "sufficient" filtering?). Performance issues are better handled by database timeouts, query execution plans, and query analyzers. Static SQL validation is not the appropriate layer for query performance optimization. Better addressed through database resource controls and query monitoring tools.*
+- [-] **OMOP_084**: procedure_modifier_concept_id_usage
+  - *Status: SKIPPED - Requires external concept metadata database. Detection requires querying the concept table to determine if hardcoded concept_ids have domain_id = 'Modifier' vs 'Procedure'. Static SQL analysis cannot distinguish concept domains without metadata lookup. Identical issue to OMOP_082 (concept_ancestor_only_standard_concepts), OMOP_061 (concept_relationship_bidirectional_awareness), and OMOP_056 (race_ethnicity_concept_ids_are_standard) which were skipped for the same reason. OMOP_066 (concept_domain_validation) can detect wrong domain when there's an explicit JOIN to concept table, but cannot detect hardcoded concept_ids. The error is caught during testing (no matches/wrong results). Better addressed through documentation and billing/coding training.*
+- [-] **OMOP_085**: dose_era_unit_concept_id_required
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - some queries may intentionally aggregate dose_value across units for meta-analysis, data quality checks, or exploratory analysis. The dose_era table is rarely used (specialized pharmacoepidemiology use case). Detection requires complex aggregation and GROUP BY analysis with marginal benefit given the specialized audience. Consistent with OMOP_060 (measurement_operator_concept_id_usage) and OMOP_074 (measurement_range_low_high_for_abnormal_detection) skip decisions. Better addressed through documentation, analyst training, and code review rather than static SQL validation.*
+- [x] **OMOP_086**: relationship_id_as_string_not_integer
+  - *Covered by: `data_quality/column_type_validation.py` (OMOP_025/026) - Detects type mismatches between VARCHAR columns and integer literals. Successfully catches `cr.relationship_id = 1` and `concept_relationship.relationship_id = 123`. Both concept_relationship.relationship_id and relationship.relationship_id are defined as VARCHAR in cdm_column_types.py schema. The rule detects violations when columns are qualified (with alias or full table name), which covers the vast majority of real-world OMOP queries.*
+- [-] **OMOP_087**: episode_event_links_episode_to_clinical_tables
+  - *Status: SKIPPED - Requires external concept metadata to verify that episode_event_field_concept_id value matches the joined clinical table. Cannot distinguish correct concept_id (1147127 for condition_occurrence) from incorrect concept_id without metadata lookup. Episode/episode_event tables are rarely used (specialized epidemiology use case for treatment regimens, disease episodes). Users of these tables are typically sophisticated researchers who understand polymorphic foreign key relationships. Error is caught during testing (wrong results/no matches). Similar issue to OMOP_082, OMOP_084 which were skipped for metadata dependency. Better addressed through episode table documentation and data quality testing.*
+- [-] **OMOP_088**: note_event_id_polymorphic_join
+  - *Status: SKIPPED - Requires external concept metadata to verify that note_event_field_concept_id value matches the joined clinical table. Cannot distinguish correct concept_id (1147330 for measurement) from incorrect concept_id without metadata lookup. Note table with polymorphic event linkage is rarely used (specialized NLP/clinical documentation use case). Users of these features are typically sophisticated researchers who understand polymorphic foreign key relationships. Error is caught during testing (wrong results/no matches). Identical issue to OMOP_087 (episode_event_links_episode_to_clinical_tables) which was skipped for the same reason. Better addressed through note table documentation and data quality testing.*
+- [-] **OMOP_089**: measurement_event_id_polymorphic_join
+  - *Status: SKIPPED - Requires external concept metadata to verify that meas_event_field_concept_id value matches the joined clinical table. Cannot distinguish correct concept_id (1147312 for visit_occurrence) from incorrect concept_id without metadata lookup. Measurement table polymorphic event linkage is an advanced feature rarely used in typical OMOP queries. Error is caught during testing (wrong results/no matches). Identical issue to OMOP_087 (episode_event_links_episode_to_clinical_tables) and OMOP_088 (note_event_id_polymorphic_join) which were skipped for the same reason. Better addressed through documentation and data quality testing.*
+- [-] **OMOP_090**: observation_event_id_polymorphic_join
+  - *Status: SKIPPED - Requires external concept metadata to verify that obs_event_field_concept_id value matches the joined clinical table. Cannot distinguish correct concept_id (1147082 for procedure_occurrence) from incorrect concept_id without metadata lookup. Observation table polymorphic event linkage is an advanced feature rarely used in typical OMOP queries. Error is caught during testing (wrong results/no matches). Identical issue to OMOP_087 (episode_event_links_episode_to_clinical_tables), OMOP_088 (note_event_id_polymorphic_join), and OMOP_089 (measurement_event_id_polymorphic_join) which were all skipped for the same reason. Better addressed through documentation and data quality testing.*
+- [-] **OMOP_091**: cost_total_charge_vs_total_cost_vs_total_paid
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - adding total_charge + total_paid may be intentional for specific financial analyses. Alias name checking is subjective and unreliable (similar to OMOP_077 which was skipped). Cost table is rarely used in research databases due to data sensitivity. Consistent with OMOP_060, OMOP_074, and OMOP_077 skip decisions for WARNING rules with intent ambiguity. Better addressed through financial analysis documentation, code review, and domain expertise rather than static SQL validation.*
+- [-] **OMOP_092**: cost_paid_components_sum_to_total_paid
+  - *Status: SKIPPED - While this is ERROR severity and represents a real mathematical error (double-counting total_paid with its components), the cost table is rarely used in OMOP research databases due to data sensitivity and availability restrictions. Error frequency is extremely low given minimal cost table usage. Detection requires moderate complexity (tracking arithmetic expressions across specific column combinations) with limited coverage of edge cases. Low return on investment given implementation effort versus rare occurrence. Better addressed through cost table documentation and code review for the small subset of health economics studies that use billing data.*
+- [-] **OMOP_093**: care_site_place_of_service_concept_for_facility_type
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - string matching on care_site_name is appropriate when searching for a specific facility by name (e.g., 'Johns Hopkins'), but inappropriate when classifying facility types (which should use place_of_service_concept_id). Without context, we cannot distinguish between these two use cases. Care_site table is infrequently used in typical OMOP queries. Consistent with OMOP_060, OMOP_074, and OMOP_091 skip decisions for WARNING rules with intent ambiguity. Better addressed through documentation and code review rather than static SQL validation.*
+- [-] **OMOP_094**: death_cause_concept_id_domain_check
+  - *Status: SKIPPED - Requires external concept metadata to validate that hardcoded concept_ids have domain_id = 'Condition'. Cannot distinguish valid Condition concept_id (4329847) from invalid Drug concept_id (19078461) without metadata lookup. OMOP_066 (concept_domain_validation) provides partial coverage by detecting explicit JOINs to concept table with wrong domain filters, but cannot detect the primary use case of hardcoded concept_ids. Death table is rarely used in typical OMOP queries. Similar issue to OMOP_084, OMOP_082, and OMOP_056 which were skipped for metadata dependency. Better addressed through documentation and data quality testing.*
+- [x] **OMOP_095**: source_to_concept_map_invalid_reason_filter
+  - *Covered by: `concept_standardization/invalid_reason_enforcement.py` (OMOP_017/018) - Successfully detects queries on source_to_concept_map without invalid_reason filtering. Currently categorizes source_to_concept_map as a "derived" table, suggesting JOIN to concept table for filtering. However, source_to_concept_map has its own invalid_reason column (per cdm_column_types.py schema), so the suggested fix could be improved to recommend filtering source_to_concept_map.invalid_reason IS NULL directly. The detection itself works correctly.*
+- [-] **OMOP_096**: drug_strength_multiple_ingredients
+  - *Status: SKIPPED - WARNING severity with very high false positive risk. Cannot determine query intent from SQL alone - some queries intentionally want one row per ingredient (ingredient-level dose analysis), while others want one row per drug_exposure (exposure counting, requiring DISTINCT). The "correct" example doesn't use DISTINCT or GROUP BY, just includes ingredient_concept_id and a comment, making "acknowledgment" detection subjective and unreliable. Similar to OMOP_046 (cartesian joins), OMOP_076 (multiple observation_periods), and OMOP_063 (distinct person count) which were skipped for inability to determine if multi-row results are intentional. Better addressed through drug_strength table documentation, query result review, and analyst training.*
+- [-] **OMOP_097**: person_provider_id_is_primary_care_provider
+  - *Status: SKIPPED - WARNING severity with very high false positive risk. Cannot determine query intent from SQL alone. Joining person.provider_id to provider has many legitimate use cases (primary care provider analysis, patient panels, PCP demographics) that would be incorrectly flagged. Without understanding the analytical question (finding PCP vs finding event provider), we cannot distinguish between correct and incorrect usage of person.provider_id. The violation example requires reading comments to understand intent, which is unreliable. Similar to OMOP_091, OMOP_093, and OMOP_096 which were skipped for intent ambiguity. Better addressed through OMOP training about person.provider_id semantics and code review.*
+- [-] **OMOP_098**: verbatim_end_date_not_for_duration
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - using verbatim_end_date in date calculations is appropriate for data quality/ETL validation queries but inappropriate for analytical queries. Without understanding the purpose of the query (ETL audit vs patient analysis), we cannot distinguish between correct and incorrect usage. Verbatim fields are rarely populated in many OMOP implementations. Similar to OMOP_015 (drug_exposure_date_range), OMOP_074 (measurement_range_low_high), and OMOP_097 (person_provider_id) which were skipped for inability to determine intent. Better addressed through OMOP training about verbatim field semantics and code review.*
+- [-] **OMOP_099**: note_nlp_term_exists_filter
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - querying note_nlp without term_exists filter is appropriate for negation analysis research, NLP quality validation, and linguistic studies, but inappropriate for identifying affirmed clinical findings. Note_nlp table is rarely used (requires advanced NLP infrastructure and clinical notes access). Similar to OMOP_098, OMOP_097, and OMOP_096 which were skipped for inability to determine intent. Better addressed through NLP-specific documentation and training for researchers using clinical text analysis.*
+- [-] **OMOP_100**: note_nlp_term_temporal_filter
+  - *Status: SKIPPED - WARNING severity with high false positive risk. Cannot determine query intent from SQL alone - querying note_nlp without term_temporal filter is appropriate for temporal analysis research, NLP quality validation, and longitudinal linguistic studies, but inappropriate for identifying current clinical findings. Note_nlp table is rarely used (requires advanced NLP infrastructure and clinical notes access). Identical issue to OMOP_099 (note_nlp_term_exists_filter) which was skipped for the same reason. Better addressed through NLP-specific documentation and training for researchers using clinical text analysis.*
 
 ### Specialized Rules (OMOP_101-160)
 
-- [ ] **OMOP_101**: observation_qualifier_concept_id_for_context
-  - *Suggested group: `domain_specific/observation/`*
+- [-] **OMOP_101**: observation_qualifier_concept_id_for_context
+  - *Status: SKIPPED - Requires external concept metadata to validate that hardcoded concept_ids in qualifier_concept_id have appropriate domains ('Meas Value' or qualifier types). Cannot distinguish valid qualifier concept_id (4023515 for 'Severe') from invalid clinical concept_id (4058286) without metadata lookup. OMOP_066 (concept_domain_validation) provides partial coverage by detecting explicit JOINs to concept table with wrong domain filters, but cannot detect hardcoded concept_ids. Similar issue to OMOP_094 (death_cause_concept_id_domain_check), OMOP_084 (procedure_modifier_concept_id_usage), and OMOP_082 which were skipped for metadata dependency. Better addressed through documentation and data quality testing.*
 - [ ] **OMOP_102**: drug_exposure_route_concept_id_domain
   - *Suggested group: `domain_specific/drug/`*
 - [ ] **OMOP_103**: visit_occurrence_admitted_from_discharged_to_concepts
@@ -355,24 +355,24 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 - [x] **OMOP_200**: concept_set_requires_standard_concepts
   - *Partially covered by: `concept_standardization/standard_concept_enforcement.py`*
-- [ ] **OMOP_201**: concept_set_descendants_via_concept_ancestor
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_202**: concept_set_invalid_reason_filtered
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_203**: concept_set_domain_consistency
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_204**: concept_set_no_mixed_domains
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_205**: concept_set_classification_handling
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_206**: concept_set_vocabulary_filtering
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_207**: concept_set_synonym_search
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_208**: concept_set_descendant_self_handling
-  - *Suggested group: `concept_standardization/`*
-- [ ] **OMOP_209**: concept_set_mapping_from_source
-  - *Suggested group: `concept_standardization/`*
+- [x] **OMOP_201**: concept_set_descendants_via_concept_ancestor
+  - *Covered by: `concept_standardization/hierarchy_expansion.py` (OMOP_006) - Detects when queries filter on concept_id columns (drug_concept_id, condition_concept_id) without using concept_ancestor for descendant/hierarchical expansion. Both OMOP_006 and OMOP_201 enforce the same semantic principle: using concept_ancestor table for descendant expansion. The existing implementation covers the primary use cases.*
+- [x] **OMOP_202**: concept_set_invalid_reason_filtered
+  - *Covered by: `concept_standardization/invalid_reason_enforcement.py` (OMOP_017/018) - Detects queries on concept and concept_ancestor tables without invalid_reason IS NULL filtering. Successfully ensures that concept sets exclude invalid/deprecated concepts. Both OMOP_202 and OMOP_017/018 enforce the same semantic: filtering concept.invalid_reason IS NULL when querying vocabulary tables.*
+- [x] **OMOP_203**: concept_set_domain_consistency
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Validates that concept.domain_id matches the expected domain for each clinical table. Detects domain mismatches when concept_id columns are joined to concept table. Covers all 35+ concept_id columns across OMOP tables. Both OMOP_203 and OMOP_066 enforce the same semantic principle: ensuring concept sets contain only concepts from the appropriate domain.*
+- [-] **OMOP_204**: concept_set_no_mixed_domains
+  - *Status: SKIPPED - WARNING severity with very high false positive risk. Requires external concept metadata to determine if hardcoded concept_ids belong to different domains. Cannot distinguish intentional multi-domain concept sets (complex phenotypes, polymorphic queries) from accidental domain mixing. The phrase "unless explicitly labeled" is subjective and undetectable - cannot determine what qualifies as "explicit labeling" from SQL alone. "Concept set" definition is unclear (IN clause? UNION? CTE?). OMOP_067 (union_concept_id_domain_indicator) provides partial coverage for UNION queries. Better addressed through concept set documentation, phenotype definition review, and domain expertise rather than static SQL validation.*
+- [-] **OMOP_205**: concept_set_classification_handling
+  - *Status: SKIPPED - WARNING severity requiring external concept metadata. Detection requires querying the concept table to determine if hardcoded concept_ids have standard_concept = 'C' (classification). Cannot distinguish classification concepts from standard concepts without metadata lookup. Classification concepts are a specialized vocabulary feature rarely used in typical OMOP queries. Similar issue to OMOP_082, OMOP_084, OMOP_094, and OMOP_101 which were skipped for metadata dependency. Better addressed through concept set documentation, vocabulary training, and data quality testing.*
+- [x] **OMOP_206**: concept_set_vocabulary_filtering
+  - *Covered by: `anti_patterns/concept_code_requires_vocabulary_id.py` (OMOP_032) - Detects when concept_code is filtered without accompanying vocabulary_id filter. Successfully catches violations when columns are qualified (with alias or full table name), which covers the vast majority of real-world OMOP queries. Both OMOP_206 and OMOP_032 enforce the same semantic principle: concept_code is only unique within a vocabulary, so vocabulary_id must be specified.*
+- [-] **OMOP_207**: concept_set_synonym_search
+  - *Status: SKIPPED - WARNING severity, informational best practice. Identical to OMOP_054 (concept_synonym_for_name_search) which was skipped. Cannot determine query intent from SQL alone - excluding concept_synonym may be intentional (performance, specific concept targeting) or an oversight (incomplete discovery). Low impact (queries still work, just may miss some concept matches). Better addressed through concept discovery documentation, query result analysis, and data profiling tools rather than static SQL validation.*
+- [-] **OMOP_208**: concept_set_descendant_self_handling
+  - *Status: SKIPPED - WARNING severity, code style rule. Identical to OMOP_040 (concept_ancestor_self_referencing_included) which was skipped. Both patterns (including self via min_levels_of_separation >= 0 or excluding self via min_levels_of_separation > 0) produce correct results depending on analytical intent. Cannot determine from SQL alone whether self-inclusion is desired or not. Low priority compared to error-prevention rules. Better addressed through concept_ancestor documentation and query intent clarification.*
+- [x] **OMOP_209**: concept_set_mapping_from_source
+  - *Covered by: `joins/maps_to_direction.py` (OMOP_027) - Validates that 'Maps to' relationship is used correctly for source-to-standard concept mapping. Detects when relationship_id = 'Maps to' is used in wrong direction (source concepts in concept_id_1 should map to standard concepts in concept_id_2). Both OMOP_209 and OMOP_027 enforce the same semantic principle: source concepts should be mapped using 'Maps to' relationship.*
 
 ---
 
