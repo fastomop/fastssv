@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 74 rules (including covered rules)
-- Coverage: 21.1%
+- Implemented: 75 rules (including covered rules)
+- Coverage: 21.4%
 - Last updated: March 2026
 
 ---
@@ -874,8 +874,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ## JOIN Validation Rules (JOIN_001-031)
 
-- [ ] **JOIN_001**: clinical_to_provider_join_key
-  - *Suggested group: `joins/`*
+- [x] **JOIN_001**: clinical_to_provider_join_key
+  - *Implemented as: `joins/provider_join_validation.py`*
 - [ ] **JOIN_002**: clinical_to_care_site_join_key
   - *Suggested group: `joins/`*
 - [ ] **JOIN_003**: care_site_to_location_join_key
