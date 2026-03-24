@@ -2044,7 +2044,7 @@ class SchemaValidationTests(unittest.TestCase):
 
 
 class ColumnTypeValidationTests(unittest.TestCase):
-    """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026)."""
+    """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026, 105)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run column type validation rule."""
@@ -2170,6 +2170,39 @@ class ColumnTypeValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         self.assertEqual(len(violations), 0)
+
+    def test_omop_105_provider_npi_with_integer_literal(self) -> None:
+        """OMOP_105: provider.npi with integer literal should error."""
+        sql = """
+        SELECT * FROM provider p WHERE p.npi = 1234567890
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("npi", violations[0].message)
+        self.assertIn("varchar", violations[0].message.lower())
+        self.assertIn("integer", violations[0].message.lower())
+
+    def test_omop_105_provider_npi_with_string_literal(self) -> None:
+        """OMOP_105: provider.npi with string literal should pass."""
+        sql = """
+        SELECT * FROM provider p WHERE p.npi = '1234567890'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_omop_105_provider_npi_in_complex_query(self) -> None:
+        """OMOP_105: provider.npi in complex query with integer should error."""
+        sql = """
+        SELECT p.provider_name, COUNT(*) as visit_count
+        FROM provider p
+        JOIN visit_occurrence vo ON p.provider_id = vo.provider_id
+        WHERE p.npi = 1234567890
+          AND p.specialty_concept_id = 38004456
+        GROUP BY p.provider_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("npi", violations[0].message)
 
 
 class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
@@ -4354,6 +4387,4238 @@ class ProviderJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         self.assertEqual(len(violations), 1)
+
+
+class CareSiteIdJoinValidationTests(unittest.TestCase):
+    """Tests for the care site ID join validation rule (JOIN_002)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.care_site_id_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_002_incorrect_care_site_id_to_location_id(self) -> None:
+        """Joining care_site_id to location_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("location_id", violations[0].message.lower())
+        self.assertIn("care_site_id", violations[0].message)
+
+    def test_join_002_incorrect_care_site_id_to_provider_id(self) -> None:
+        """Joining care_site_id to provider_id should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN care_site cs ON de.care_site_id = cs.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("provider_id", violations[0].message.lower())
+
+    def test_join_002_correct_care_site_id_to_care_site_id(self) -> None:
+        """Correct join using care_site_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_multiple_tables_with_care_site_id(self) -> None:
+        """Test with multiple tables that have care_site_id."""
+        for table in ["condition_occurrence", "procedure_occurrence", "measurement", "observation"]:
+            sql = f"""
+            SELECT *
+            FROM {table} t
+            JOIN care_site cs ON t.care_site_id = cs.care_site_id
+            """
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 0,
+                           f"Expected no violations for {table}")
+
+    def test_join_002_reversed_join_order(self) -> None:
+        """Test reversed join order (care_site → clinical)."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN visit_occurrence vo ON cs.care_site_id = vo.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_reversed_incorrect_join(self) -> None:
+        """Test reversed incorrect join order."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN visit_occurrence vo ON cs.location_id = vo.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_002_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect care_site joins."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo1
+        JOIN care_site cs1 ON vo1.care_site_id = cs1.care_site_id
+        JOIN condition_occurrence co ON co.visit_occurrence_id = vo1.visit_occurrence_id
+        JOIN care_site cs2 ON co.care_site_id = cs2.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_occurrence", violations[0].message)
+
+    def test_join_002_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence AS visits
+        JOIN care_site AS site ON visits.care_site_id = site.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_no_care_site_table(self) -> None:
+        """Queries without care_site table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_care_site_to_location_not_flagged(self) -> None:
+        """Join between care_site and location (valid path) should not be flagged."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_person_to_care_site(self) -> None:
+        """Person table should also validate care_site joins."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN care_site cs ON p.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_002_person_incorrect_join(self) -> None:
+        """Person joining on wrong column should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN care_site cs ON p.care_site_id = cs.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class CareSiteLocationJoinValidationTests(unittest.TestCase):
+    """Tests for the care_site to location join validation rule (JOIN_003)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.care_site_location_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_003_incorrect_care_site_id_to_location_id(self) -> None:
+        """Joining care_site_id to location_id should error."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN location l ON cs.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("care_site_id", violations[0].message.lower())
+        self.assertIn("location_id", violations[0].message)
+
+    def test_join_003_incorrect_care_site_name_to_location_id(self) -> None:
+        """Joining care_site_name to location_id should error."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN location l ON cs.care_site_name = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("care_site_name", violations[0].message.lower())
+
+    def test_join_003_correct_location_id_to_location_id(self) -> None:
+        """Correct join using location_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_reversed_join_order(self) -> None:
+        """Test reversed join order (location → care_site)."""
+        sql = """
+        SELECT *
+        FROM location l
+        JOIN care_site cs ON l.location_id = cs.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_reversed_incorrect_join(self) -> None:
+        """Test reversed incorrect join order."""
+        sql = """
+        SELECT *
+        FROM location l
+        JOIN care_site cs ON l.location_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_003_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM care_site AS site
+        JOIN location AS loc ON site.location_id = loc.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_no_location_table(self) -> None:
+        """Queries without location table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN visit_occurrence vo ON cs.care_site_id = vo.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_no_care_site_table(self) -> None:
+        """Queries without care_site table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN location l ON p.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect care_site/location joins."""
+        sql = """
+        SELECT *
+        FROM care_site cs1
+        JOIN location l1 ON cs1.location_id = l1.location_id
+        JOIN care_site cs2 ON cs2.care_site_id = cs1.care_site_id
+        JOIN location l2 ON cs2.care_site_id = l2.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("care_site_id", violations[0].message.lower())
+
+    def test_join_003_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.care_site cs
+        JOIN public.location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_003_incorrect_with_schema(self) -> None:
+        """Test incorrect join with schema-qualified names."""
+        sql = """
+        SELECT *
+        FROM public.care_site cs
+        JOIN public.location l ON cs.care_site_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class PersonLocationJoinValidationTests(unittest.TestCase):
+    """Tests for the person to location join validation rule (JOIN_004)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.person_location_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_004_incorrect_person_id_to_location_id(self) -> None:
+        """Joining person_id to location_id should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN location l ON p.person_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message.lower())
+        self.assertIn("location_id", violations[0].message)
+
+    def test_join_004_incorrect_person_source_value_to_location_id(self) -> None:
+        """Joining person_source_value to location_id should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN location l ON p.person_source_value = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_source_value", violations[0].message.lower())
+
+    def test_join_004_correct_location_id_to_location_id(self) -> None:
+        """Correct join using location_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN location l ON p.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_reversed_join_order(self) -> None:
+        """Test reversed join order (location → person)."""
+        sql = """
+        SELECT *
+        FROM location l
+        JOIN person p ON l.location_id = p.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_reversed_incorrect_join(self) -> None:
+        """Test reversed incorrect join order."""
+        sql = """
+        SELECT *
+        FROM location l
+        JOIN person p ON l.location_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_004_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM person AS patient
+        JOIN location AS address ON patient.location_id = address.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_no_location_table(self) -> None:
+        """Queries without location table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN visit_occurrence vo ON p.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_no_person_table(self) -> None:
+        """Queries without person table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN location l ON cs.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect person/location joins."""
+        sql = """
+        SELECT *
+        FROM person p1
+        JOIN location l1 ON p1.location_id = l1.location_id
+        JOIN person p2 ON p2.person_id = p1.person_id
+        JOIN location l2 ON p2.person_id = l2.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message.lower())
+
+    def test_join_004_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.person p
+        JOIN public.location l ON p.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_004_incorrect_with_schema(self) -> None:
+        """Test incorrect join with schema-qualified names."""
+        sql = """
+        SELECT *
+        FROM public.person p
+        JOIN public.location l ON p.person_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ProviderCareSiteJoinValidationTests(unittest.TestCase):
+    """Tests for the provider to care_site join validation rule (JOIN_005)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.provider_care_site_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_005_incorrect_provider_id_to_care_site_id(self) -> None:
+        """Joining provider_id to care_site_id should error."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN care_site cs ON p.provider_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("provider_id", violations[0].message.lower())
+        self.assertIn("care_site_id", violations[0].message)
+
+    def test_join_005_incorrect_specialty_concept_id_to_care_site_id(self) -> None:
+        """Joining specialty_concept_id to care_site_id should error."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN care_site cs ON p.specialty_concept_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("specialty_concept_id", violations[0].message.lower())
+
+    def test_join_005_correct_care_site_id_to_care_site_id(self) -> None:
+        """Correct join using care_site_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN care_site cs ON p.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_reversed_join_order(self) -> None:
+        """Test reversed join order (care_site → provider)."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN provider p ON cs.care_site_id = p.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_reversed_incorrect_join(self) -> None:
+        """Test reversed incorrect join order."""
+        sql = """
+        SELECT *
+        FROM care_site cs
+        JOIN provider p ON cs.care_site_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_005_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM provider AS prov
+        JOIN care_site AS site ON prov.care_site_id = site.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_no_care_site_table(self) -> None:
+        """Queries without care_site table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM provider p
+        JOIN person pe ON p.provider_id = pe.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_no_provider_table(self) -> None:
+        """Queries without provider table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect provider/care_site joins."""
+        sql = """
+        SELECT *
+        FROM provider p1
+        JOIN care_site cs1 ON p1.care_site_id = cs1.care_site_id
+        JOIN provider p2 ON p2.provider_id = p1.provider_id
+        JOIN care_site cs2 ON p2.provider_id = cs2.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("provider_id", violations[0].message.lower())
+
+    def test_join_005_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.provider p
+        JOIN public.care_site cs ON p.care_site_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_005_incorrect_with_schema(self) -> None:
+        """Test incorrect join with schema-qualified names."""
+        sql = """
+        SELECT *
+        FROM public.provider p
+        JOIN public.care_site cs ON p.provider_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
+    """Tests for the clinical to visit_detail join validation rule (JOIN_007)."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.clinical_visit_detail_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_007_incorrect_visit_occurrence_id_to_visit_detail_id(self) -> None:
+        """Joining visit_occurrence_id to visit_detail_id should error (ID type mismatch)."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message.lower())
+        self.assertIn("visit_detail_id", violations[0].message.lower())
+        self.assertIn("type mismatch", violations[0].message.lower())
+
+    def test_join_007_correct_visit_detail_id_to_visit_detail_id(self) -> None:
+        """Correct join using visit_detail_id on both sides should pass."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_multiple_clinical_tables(self) -> None:
+        """Test with multiple clinical tables."""
+        for table in ["condition_occurrence", "procedure_occurrence", "drug_exposure", "observation"]:
+            # Correct join
+            sql_correct = f"""
+            SELECT *
+            FROM {table} t
+            JOIN visit_detail vd ON t.visit_detail_id = vd.visit_detail_id
+            """
+            violations = self._run_rule(sql_correct)
+            self.assertEqual(len(violations), 0,
+                           f"Expected no violations for {table} with correct join")
+
+            # Incorrect join
+            sql_incorrect = f"""
+            SELECT *
+            FROM {table} t
+            JOIN visit_detail vd ON t.visit_occurrence_id = vd.visit_detail_id
+            """
+            violations = self._run_rule(sql_incorrect)
+            self.assertEqual(len(violations), 1,
+                           f"Expected violation for {table} with incorrect join")
+
+    def test_join_007_reversed_join_order(self) -> None:
+        """Test reversed join order (visit_detail → clinical)."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN measurement m ON vd.visit_detail_id = m.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_007_correct_reversed_join(self) -> None:
+        """Test correct reversed join order."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN measurement m ON vd.visit_detail_id = m.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM measurement AS m
+        JOIN visit_detail AS vd ON m.visit_detail_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_no_visit_detail_table(self) -> None:
+        """Queries without visit_detail table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN visit_occurrence vo ON m.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_visit_detail_to_visit_occurrence_not_flagged(self) -> None:
+        """Join between visit_detail and visit_occurrence should not be flagged."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_non_clinical_table_not_flagged(self) -> None:
+        """Joins from non-clinical tables should not be flagged."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN visit_detail vd ON p.person_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect clinical/visit_detail joins."""
+        sql = """
+        SELECT *
+        FROM measurement m1
+        JOIN visit_detail vd1 ON m1.visit_detail_id = vd1.visit_detail_id
+        JOIN condition_occurrence co ON co.person_id = m1.person_id
+        JOIN visit_detail vd2 ON co.visit_occurrence_id = vd2.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_occurrence", violations[0].message.lower())
+
+    def test_join_007_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.measurement m
+        JOIN public.visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_007_incorrect_with_schema(self) -> None:
+        """Test incorrect join with schema-qualified names."""
+        sql = """
+        SELECT *
+        FROM public.measurement m
+        JOIN public.visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_008: concept_primary_concept_id_join_column."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_008_correct_join_on_concept_id(self) -> None:
+        """Correct join to concept using concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_incorrect_join_on_concept_name(self) -> None:
+        """Joining arbitrary column on concept_name is allowed (not a vocab column)."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_source_value = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        # concept_name is not a vocab column, so no violation
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_incorrect_join_on_concept_code(self) -> None:
+        """Joining on concept_code without vocabulary_id should warn."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_source_value = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "warning")
+        self.assertIn("concept_code", violations[0].message.lower())
+
+    def test_join_008_incorrect_join_on_vocabulary_id(self) -> None:
+        """Joining TO vocabulary_id is allowed (acts as its own constraint)."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN concept c ON m.measurement_id = c.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        # No violation: joining TO vocabulary_id means you already have vocab constraint
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_incorrect_join_on_domain_id(self) -> None:
+        """Joining *_concept_id to domain_id should error."""
+        sql = """
+        SELECT *
+        FROM procedure_occurrence po
+        JOIN concept c ON po.procedure_concept_id = c.domain_id
+        """
+        violations = self._run_rule(sql)
+        # This is an ERROR because procedure_concept_id (ends with _concept_id)
+        # must join to concept.concept_id
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+    def test_join_008_reversed_join_order(self) -> None:
+        """Reversed join order with arbitrary columns is allowed."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN drug_exposure de ON c.concept_name = de.drug_source_value
+        """
+        violations = self._run_rule(sql)
+        # No violation: drug_source_value is not a *_concept_id column
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_correct_reversed_join(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN drug_exposure de ON c.concept_id = de.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM drug_exposure AS d
+        JOIN concept AS c ON d.drug_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.condition_occurrence co
+        JOIN public.concept c ON co.condition_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_incorrect_with_schema(self) -> None:
+        """Join on concept_code without vocabulary_id should warn (schema-qualified)."""
+        sql = """
+        SELECT *
+        FROM public.measurement m
+        JOIN public.concept c ON m.measurement_source_value = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "warning")
+
+    def test_join_008_no_concept_table(self) -> None:
+        """Queries without concept table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN person p ON de.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_multiple_correct_concept_joins(self) -> None:
+        """Multiple correct concept joins should all pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN concept c1 ON de.drug_concept_id = c1.concept_id
+        JOIN concept c2 ON de.drug_source_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_mixed_correct_and_incorrect(self) -> None:
+        """Mix of correct join and arbitrary column join."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN concept c1 ON de.drug_concept_id = c1.concept_id
+        JOIN concept c2 ON de.drug_source_value = c2.concept_name
+        """
+        violations = self._run_rule(sql)
+        # No violation: drug_source_value to concept_name is allowed
+        self.assertEqual(len(violations), 0)
+
+    def test_join_008_incorrect_join_on_concept_class_id(self) -> None:
+        """Joining *_concept_id to concept_class_id should error."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN concept c ON m.unit_concept_id = c.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        # ERROR: unit_concept_id must join to concept_id
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+    def test_join_008_incorrect_join_on_standard_concept(self) -> None:
+        """Joining *_concept_id to standard_concept should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.standard_concept
+        """
+        violations = self._run_rule(sql)
+        # ERROR: condition_concept_id must join to concept_id
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+
+class ConceptAliasReuseValidationTests(unittest.TestCase):
+    """Tests for JOIN_009: source_concept_id_to_concept_join_separate_alias."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_alias_reuse_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_009_correct_separate_aliases(self) -> None:
+        """Correct: separate aliases for standard and source concept joins."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM condition_occurrence co
+        JOIN concept c1 ON co.condition_concept_id = c1.concept_id
+        JOIN concept c2 ON co.condition_source_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_violation_same_alias_standard_and_source(self) -> None:
+        """Same alias used for both standard and source concept joins should error."""
+        sql = """
+        SELECT c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept c ON co.condition_source_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("c", violations[0].message.lower())
+        self.assertIn("reused", violations[0].message.lower())
+
+    def test_join_009_drug_exposure_same_alias(self) -> None:
+        """Drug exposure with reused alias should be flagged."""
+        sql = """
+        SELECT concept.concept_name
+        FROM drug_exposure de
+        JOIN concept ON de.drug_concept_id = concept.concept_id
+        JOIN concept ON de.drug_source_concept_id = concept.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("concept", violations[0].message.lower())
+
+    def test_join_009_procedure_occurrence_correct(self) -> None:
+        """Procedure with separate aliases should pass."""
+        sql = """
+        SELECT c_std.concept_name, c_src.concept_name
+        FROM procedure_occurrence po
+        JOIN concept c_std ON po.procedure_concept_id = c_std.concept_id
+        JOIN concept c_src ON po.procedure_source_concept_id = c_src.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_single_concept_join_no_violation(self) -> None:
+        """Single concept join should not trigger violation."""
+        sql = """
+        SELECT c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_same_column_joined_twice_allowed(self) -> None:
+        """Same column joined twice (weird but not this violation)."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM condition_occurrence co
+        JOIN concept c1 ON co.condition_concept_id = c1.concept_id
+        JOIN concept c2 ON co.condition_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        # Not a violation of THIS rule (separate aliases used)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_measurement_with_unit_concept(self) -> None:
+        """Measurement with multiple concept joins using different aliases."""
+        sql = """
+        SELECT
+            c1.concept_name AS measurement_name,
+            c2.concept_name AS unit_name
+        FROM measurement m
+        JOIN concept c1 ON m.measurement_concept_id = c1.concept_id
+        JOIN concept c2 ON m.unit_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_measurement_reused_alias_error(self) -> None:
+        """Measurement with reused alias for different concept_id columns."""
+        sql = """
+        SELECT c.concept_name
+        FROM measurement m
+        JOIN concept c ON m.measurement_concept_id = c.concept_id
+        JOIN concept c ON m.unit_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_009_visit_occurrence_violation(self) -> None:
+        """Visit with same alias for visit_concept_id and visit_source_concept_id."""
+        sql = """
+        SELECT c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.visit_concept_id = c.concept_id
+        JOIN concept c ON vo.visit_source_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_009_no_concept_table(self) -> None:
+        """Queries without concept table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM public.drug_exposure de
+        JOIN public.concept c1 ON de.drug_concept_id = c1.concept_id
+        JOIN public.concept c2 ON de.drug_source_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_009_reversed_join_order(self) -> None:
+        """Test reversed join order (concept on left side)."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        JOIN condition_occurrence co ON c.concept_id = co.condition_concept_id
+        JOIN condition_occurrence co2 ON c.concept_id = co2.condition_source_concept_id
+        """
+        violations = self._run_rule(sql)
+        # This is joining concept to different condition_occurrence instances (co, co2)
+        # New behavior: WARNING for cross-table alias reuse
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "warning")
+
+    def test_join_009_three_concept_joins_same_alias(self) -> None:
+        """Three concept joins with same alias should be flagged."""
+        sql = """
+        SELECT c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        JOIN concept c ON de.drug_source_concept_id = c.concept_id
+        JOIN concept c ON de.route_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        # Should list multiple columns in the violation
+        self.assertIn("drug_concept_id", violations[0].message.lower())
+
+    def test_join_009_observation_correct_aliases(self) -> None:
+        """Observation with correct separate aliases."""
+        sql = """
+        SELECT
+            c_obs.concept_name,
+            c_src.concept_name,
+            c_unit.concept_name
+        FROM observation o
+        JOIN concept c_obs ON o.observation_concept_id = c_obs.concept_id
+        JOIN concept c_src ON o.observation_source_concept_id = c_src.concept_id
+        JOIN concept c_unit ON o.unit_concept_id = c_unit.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_010_type_concept_same_alias_error(self) -> None:
+        """JOIN_010: Same alias for primary and type concept_id should error."""
+        sql = """
+        SELECT c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept c ON co.condition_type_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+        self.assertIn("type", violations[0].message.lower())
+        self.assertIn("provenance", violations[0].message.lower())
+
+    def test_join_010_type_concept_correct_separate_aliases(self) -> None:
+        """JOIN_010: Separate aliases for primary and type should pass."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM drug_exposure de
+        JOIN concept c1 ON de.drug_concept_id = c1.concept_id
+        JOIN concept c2 ON de.drug_type_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_010_visit_type_concept_error(self) -> None:
+        """JOIN_010: Visit with reused alias for visit_concept_id and visit_type_concept_id."""
+        sql = """
+        SELECT c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.visit_concept_id = c.concept_id
+        JOIN concept c ON vo.visit_type_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+    def test_join_010_measurement_type_concept_correct(self) -> None:
+        """JOIN_010: Measurement with separate aliases for all concept types."""
+        sql = """
+        SELECT
+            c_meas.concept_name,
+            c_type.concept_name,
+            c_unit.concept_name
+        FROM measurement m
+        JOIN concept c_meas ON m.measurement_concept_id = c_meas.concept_id
+        JOIN concept c_type ON m.measurement_type_concept_id = c_type.concept_id
+        JOIN concept c_unit ON m.unit_concept_id = c_unit.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_010_procedure_type_concept_error(self) -> None:
+        """JOIN_010: Procedure with same alias for primary and type."""
+        sql = """
+        SELECT concept.concept_name
+        FROM procedure_occurrence po
+        JOIN concept ON po.procedure_concept_id = concept.concept_id
+        JOIN concept ON po.procedure_type_concept_id = concept.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+    def test_join_009_and_010_combined_all_three_types(self) -> None:
+        """Combining primary, source, and type with same alias should error."""
+        sql = """
+        SELECT c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept c ON co.condition_source_concept_id = c.concept_id
+        JOIN concept c ON co.condition_type_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        # Should get at least one error for mixing concept types
+        self.assertGreaterEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity.value, "error")
+
+    def test_join_010_death_type_concept(self) -> None:
+        """JOIN_010: Death table with type concept."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM death d
+        JOIN concept c1 ON d.death_type_concept_id = c1.concept_id
+        JOIN concept c2 ON d.cause_concept_id = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class ConceptVocabularyJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_011: concept_to_vocabulary_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_vocabulary_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_011_correct_vocabulary_id_join(self) -> None:
+        """Correct join using vocabulary_id should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_incorrect_concept_id_to_vocabulary_concept_id(self) -> None:
+        """Joining concept_id to vocabulary_concept_id should error."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN vocabulary v ON c.concept_id = v.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("concept_id", violations[0].message.lower())
+        self.assertIn("vocabulary_concept_id", violations[0].message.lower())
+
+    def test_join_011_incorrect_vocabulary_id_to_vocabulary_name(self) -> None:
+        """Joining vocabulary_id to vocabulary_name should error."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("vocabulary_name", violations[0].message.lower())
+
+    def test_join_011_reversed_join_order(self) -> None:
+        """Reversed join order (vocabulary → concept) should still detect violations."""
+        sql = """
+        SELECT *
+        FROM vocabulary v
+        JOIN concept c ON v.vocabulary_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_011_correct_reversed_join(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM vocabulary v
+        JOIN concept c ON v.vocabulary_id = c.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_with_table_aliases(self) -> None:
+        """Test with custom table aliases."""
+        sql = """
+        SELECT *
+        FROM concept AS con
+        JOIN vocabulary AS voc ON con.vocabulary_id = voc.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_schema_qualified_names(self) -> None:
+        """Test with schema-qualified table names."""
+        sql = """
+        SELECT *
+        FROM public.concept c
+        JOIN public.vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_incorrect_with_schema(self) -> None:
+        """Incorrect join with schema-qualified names should be detected."""
+        sql = """
+        SELECT *
+        FROM public.concept c
+        JOIN public.vocabulary v ON c.concept_id = v.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_011_no_vocabulary_table(self) -> None:
+        """Queries without vocabulary table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_no_concept_table(self) -> None:
+        """Queries without concept table should not trigger rule."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN person p ON de.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_multiple_joins_mixed(self) -> None:
+        """Test query with both correct and incorrect joins."""
+        sql = """
+        SELECT *
+        FROM concept c1
+        JOIN vocabulary v1 ON c1.vocabulary_id = v1.vocabulary_id
+        JOIN concept c2 ON c1.concept_id = c2.concept_id
+        JOIN vocabulary v2 ON c2.concept_id = v2.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        # Should only flag the incorrect vocabulary join
+
+    def test_join_011_correct_with_additional_joins(self) -> None:
+        """Correct vocabulary join with other joins should pass."""
+        sql = """
+        SELECT
+            c.concept_name,
+            v.vocabulary_name,
+            d.domain_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_011_incorrect_other_column_pair(self) -> None:
+        """Other incorrect column pairs should be flagged."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN vocabulary v ON c.concept_name = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ConceptDomainJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_012: concept_to_domain_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_domain_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_012_correct_domain_id_join(self) -> None:
+        """Correct join using domain_id should pass."""
+        sql = """
+        SELECT c.concept_name, d.domain_name
+        FROM concept c
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_incorrect_concept_id_to_domain_concept_id(self) -> None:
+        """Joining concept_id to domain_concept_id should warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN domain d ON c.concept_id = d.domain_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+        self.assertIn("suspicious", violations[0].message.lower())
+
+    def test_join_012_incorrect_domain_id_to_domain_name(self) -> None:
+        """Joining domain_id to domain_name should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN domain d ON c.domain_id = d.domain_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_012_reversed_join_order(self) -> None:
+        """Reversed incorrect join should also warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM domain d
+        JOIN concept c ON d.domain_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_join_012_correct_reversed_join(self) -> None:
+        """Correct reversed join should pass."""
+        sql = """
+        SELECT *
+        FROM domain d
+        JOIN concept c ON d.domain_id = c.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_with_table_aliases(self) -> None:
+        """Correct join with table aliases should pass."""
+        sql = """
+        SELECT c1.concept_name
+        FROM concept c1
+        JOIN domain dom ON c1.domain_id = dom.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_schema_qualified_names(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT c.concept_name
+        FROM cdm.concept c
+        JOIN cdm.domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_incorrect_with_schema(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        sql = """
+        SELECT c.concept_name
+        FROM cdm.concept c
+        JOIN cdm.domain d ON c.concept_id = d.domain_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_012_no_domain_table(self) -> None:
+        """No domain table should not trigger rule."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_no_concept_table(self) -> None:
+        """No concept table should not trigger rule."""
+        sql = """
+        SELECT d.domain_name
+        FROM domain d
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_multiple_joins_mixed(self) -> None:
+        """Multiple joins with one wrong should warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN domain d ON c.concept_id = d.domain_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_join_012_correct_with_additional_joins(self) -> None:
+        """Multiple joins all correct should pass."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN domain d ON c.domain_id = d.domain_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_012_incorrect_other_column_pair(self) -> None:
+        """Other incorrect column pairs should be flagged."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN domain d ON c.concept_name = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ConceptConceptClassJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_013: concept_to_concept_class_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_concept_class_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_013_correct_concept_class_id_join(self) -> None:
+        """Correct join using concept_class_id should pass."""
+        sql = """
+        SELECT c.concept_name, cc.concept_class_name
+        FROM concept c
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_incorrect_concept_id_to_concept_class_concept_id(self) -> None:
+        """Joining concept_id to concept_class_concept_id should warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN concept_class cc ON c.concept_id = cc.concept_class_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+        self.assertIn("suspicious", violations[0].message.lower())
+
+    def test_join_013_incorrect_concept_class_id_to_concept_class_name(self) -> None:
+        """Joining concept_class_id to concept_class_name should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_013_reversed_join_order(self) -> None:
+        """Reversed incorrect join should also warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept_class cc
+        JOIN concept c ON cc.concept_class_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_join_013_correct_reversed_join(self) -> None:
+        """Correct reversed join should pass."""
+        sql = """
+        SELECT *
+        FROM concept_class cc
+        JOIN concept c ON cc.concept_class_id = c.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_with_table_aliases(self) -> None:
+        """Correct join with table aliases should pass."""
+        sql = """
+        SELECT c1.concept_name
+        FROM concept c1
+        JOIN concept_class cls ON c1.concept_class_id = cls.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_schema_qualified_names(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT c.concept_name
+        FROM cdm.concept c
+        JOIN cdm.concept_class cc ON c.concept_class_id = cc.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_incorrect_with_schema(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name
+        FROM cdm.concept c
+        JOIN cdm.concept_class cc ON c.concept_class_id = cc.concept_class_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_013_no_concept_class_table(self) -> None:
+        """No concept_class table should not trigger rule."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.concept_class_id = 'Ingredient'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_no_concept_table(self) -> None:
+        """No concept table should not trigger rule."""
+        sql = """
+        SELECT cc.concept_class_name
+        FROM concept_class cc
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_multiple_joins_mixed(self) -> None:
+        """Multiple joins with one wrong should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_013_correct_with_additional_joins(self) -> None:
+        """Multiple joins all correct should pass."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_drug_era_ingredient_filter(self) -> None:
+        """Common use case: drug_era with ingredient filter should pass."""
+        sql = """
+        SELECT de.*, c.concept_name, cc.concept_class_id
+        FROM drug_era de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        WHERE cc.concept_class_id = 'Ingredient'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_013_incorrect_other_column_pair(self) -> None:
+        """Other incorrect column pairs should be flagged."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN concept_class cc ON c.concept_name = cc.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_014: concept_relationship_to_relationship_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_relationship_relationship_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_014_correct_relationship_id_join(self) -> None:
+        """Correct join using relationship_id should pass."""
+        sql = """
+        SELECT cr.*, r.relationship_name
+        FROM concept_relationship cr
+        JOIN relationship r ON cr.relationship_id = r.relationship_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_incorrect_concept_id_1_to_relationship_concept_id(self) -> None:
+        """Joining concept_id_1 to relationship_concept_id should warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept_relationship cr
+        JOIN relationship r ON cr.concept_id_1 = r.relationship_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+        self.assertIn("suspicious", violations[0].message.lower())
+
+    def test_join_014_incorrect_concept_id_2_to_relationship_concept_id(self) -> None:
+        """Joining concept_id_2 to relationship_concept_id should warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept_relationship cr
+        JOIN relationship r ON cr.concept_id_2 = r.relationship_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_join_014_incorrect_relationship_id_to_relationship_name(self) -> None:
+        """Joining relationship_id to relationship_name should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept_relationship cr
+        JOIN relationship r ON cr.relationship_id = r.relationship_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_014_reversed_join_order(self) -> None:
+        """Reversed incorrect join should also warn."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM relationship r
+        JOIN concept_relationship cr ON r.relationship_concept_id = cr.concept_id_1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.WARNING)
+
+    def test_join_014_correct_reversed_join(self) -> None:
+        """Correct reversed join should pass."""
+        sql = """
+        SELECT *
+        FROM relationship r
+        JOIN concept_relationship cr ON r.relationship_id = cr.relationship_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_with_table_aliases(self) -> None:
+        """Correct join with table aliases should pass."""
+        sql = """
+        SELECT cr1.*, rel.relationship_name
+        FROM concept_relationship cr1
+        JOIN relationship rel ON cr1.relationship_id = rel.relationship_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_schema_qualified_names(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT cr.*, r.relationship_name
+        FROM cdm.concept_relationship cr
+        JOIN cdm.relationship r ON cr.relationship_id = r.relationship_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_incorrect_with_schema(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT cr.*, r.relationship_name
+        FROM cdm.concept_relationship cr
+        JOIN cdm.relationship r ON cr.relationship_id = r.relationship_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_014_no_relationship_table(self) -> None:
+        """No relationship table should not trigger rule."""
+        sql = """
+        SELECT cr.*
+        FROM concept_relationship cr
+        WHERE cr.relationship_id = 'Maps to'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_no_concept_relationship_table(self) -> None:
+        """No concept_relationship table should not trigger rule."""
+        sql = """
+        SELECT r.relationship_name
+        FROM relationship r
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_multiple_joins_mixed(self) -> None:
+        """Multiple joins with one wrong should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT cr.*, r.relationship_name
+        FROM concept_relationship cr
+        JOIN concept c1 ON cr.concept_id_1 = c1.concept_id
+        JOIN relationship r ON cr.relationship_id = r.relationship_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_014_correct_with_additional_joins(self) -> None:
+        """Multiple joins all correct should pass."""
+        sql = """
+        SELECT cr.*, r.relationship_name
+        FROM concept_relationship cr
+        JOIN concept c1 ON cr.concept_id_1 = c1.concept_id
+        JOIN relationship r ON cr.relationship_id = r.relationship_id
+        WHERE cr.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_maps_to_relationship_use_case(self) -> None:
+        """Common use case: source-to-standard mapping should pass."""
+        sql = """
+        SELECT source.concept_code AS source_code, standard.concept_code AS standard_code
+        FROM concept_relationship cr
+        JOIN concept source ON cr.concept_id_1 = source.concept_id
+        JOIN concept standard ON cr.concept_id_2 = standard.concept_id
+        JOIN relationship r ON cr.relationship_id = r.relationship_id
+        WHERE r.relationship_id = 'Maps to'
+          AND cr.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_014_incorrect_other_column_pair(self) -> None:
+        """Other incorrect column pairs should be flagged."""
+        sql = """
+        SELECT *
+        FROM concept_relationship cr
+        JOIN relationship r ON cr.valid_start_date = r.relationship_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
+    """Tests for JOIN_016: concept_ancestor_to_concept_for_name_resolution."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.concept_ancestor_name_resolution")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_016_correct_descendant_name_resolution(self) -> None:
+        """Correct descendant name resolution should pass."""
+        sql = """
+        SELECT c.concept_name AS descendant_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.descendant_concept_id = c.concept_id
+        WHERE ca.ancestor_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_correct_ancestor_name_resolution(self) -> None:
+        """Correct ancestor name resolution should pass."""
+        sql = """
+        SELECT c.concept_name AS ancestor_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        WHERE ca.descendant_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_incorrect_descendant_uses_ancestor_id(self) -> None:
+        """Alias says 'descendant_name' but joins on ancestor_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name AS descendant_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        WHERE ca.descendant_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("descendant", violations[0].message.lower())
+
+    def test_join_016_incorrect_ancestor_uses_descendant_id(self) -> None:
+        """Alias says 'ancestor_name' but joins on descendant_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name AS ancestor_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.descendant_concept_id = c.concept_id
+        WHERE ca.ancestor_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("ancestor", violations[0].message.lower())
+
+    def test_join_016_correct_with_parent_keyword(self) -> None:
+        """Using 'parent_name' with ancestor_concept_id should pass."""
+        sql = """
+        SELECT c.concept_name AS parent_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        WHERE ca.descendant_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_correct_with_child_keyword(self) -> None:
+        """Using 'child_name' with descendant_concept_id should pass."""
+        sql = """
+        SELECT c.concept_name AS child_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.descendant_concept_id = c.concept_id
+        WHERE ca.ancestor_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_incorrect_parent_uses_descendant(self) -> None:
+        """Alias says 'parent_name' but joins on descendant_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name AS parent_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.descendant_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_016_incorrect_child_uses_ancestor(self) -> None:
+        """Alias says 'child_name' but joins on ancestor_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name AS child_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_016_both_joins_correct(self) -> None:
+        """Joining to concept twice (both correct) should pass."""
+        sql = """
+        SELECT
+            c_ancestor.concept_name AS ancestor_name,
+            c_descendant.concept_name AS descendant_name
+        FROM concept_ancestor ca
+        JOIN concept c_ancestor ON ca.ancestor_concept_id = c_ancestor.concept_id
+        JOIN concept c_descendant ON ca.descendant_concept_id = c_descendant.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_both_joins_one_incorrect(self) -> None:
+        """Joining to concept twice with one incorrect should error once."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT
+            c_ancestor.concept_name AS ancestor_name,
+            c_descendant.concept_name AS descendant_name
+        FROM concept_ancestor ca
+        JOIN concept c_ancestor ON ca.descendant_concept_id = c_ancestor.concept_id
+        JOIN concept c_descendant ON ca.descendant_concept_id = c_descendant.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_016_concept_code_column(self) -> None:
+        """Should work for concept_code as well as concept_name."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_code AS descendant_code
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_016_no_clear_alias_should_pass(self) -> None:
+        """Without clear intent in alias, should not flag violation."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept_ancestor ca
+        JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_016_reversed_join_order(self) -> None:
+        """Reversed join order should still detect violations."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c.concept_name AS descendant_name
+        FROM concept c
+        JOIN concept_ancestor ca ON c.concept_id = ca.ancestor_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_016_no_concept_ancestor_should_pass(self) -> None:
+        """Query without concept_ancestor should not be checked."""
+        sql = """
+        SELECT c.concept_name AS descendant_name
+        FROM concept c
+        WHERE c.concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_017: concept_relationship_concept_id_1_to_concept."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("semantic.concept_relationship_concept_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_017_correct_source_target_joins(self) -> None:
+        """Correct source/target aliases should pass."""
+        sql = """
+        SELECT
+          c_source.concept_name AS source_name,
+          c_target.concept_name AS target_name
+        FROM concept_relationship cr
+        JOIN concept c_source ON cr.concept_id_1 = c_source.concept_id
+        JOIN concept c_target ON cr.concept_id_2 = c_target.concept_id
+        WHERE cr.relationship_id = 'Maps to'
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_incorrect_swapped_source_target(self) -> None:
+        """Swapped source/target joins should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT
+          c_source.concept_name AS source_name,
+          c_target.concept_name AS target_name
+        FROM concept_relationship cr
+        JOIN concept c_source ON cr.concept_id_2 = c_source.concept_id
+        JOIN concept c_target ON cr.concept_id_1 = c_target.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+
+    def test_join_017_correct_numbered_aliases(self) -> None:
+        """Correct c1/c2 aliases should pass."""
+        sql = """
+        SELECT
+          c1.concept_name AS concept_1_name,
+          c2.concept_name AS concept_2_name
+        FROM concept_relationship cr
+        JOIN concept c1 ON cr.concept_id_1 = c1.concept_id
+        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_incorrect_swapped_numbered_aliases(self) -> None:
+        """Swapped c1/c2 should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM concept_relationship cr
+        JOIN concept c1 ON cr.concept_id_2 = c1.concept_id
+        JOIN concept c2 ON cr.concept_id_1 = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+
+    def test_join_017_correct_from_to_keywords(self) -> None:
+        """Correct from/to aliases should pass."""
+        sql = """
+        SELECT
+          c_from.concept_code,
+          c_to.concept_code
+        FROM concept_relationship cr
+        JOIN concept c_from ON cr.concept_id_1 = c_from.concept_id
+        JOIN concept c_to ON cr.concept_id_2 = c_to.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_incorrect_from_to_swapped(self) -> None:
+        """Swapped from/to should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c_from.concept_code, c_to.concept_code
+        FROM concept_relationship cr
+        JOIN concept c_from ON cr.concept_id_2 = c_from.concept_id
+        JOIN concept c_to ON cr.concept_id_1 = c_to.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_017_correct_origin_dest_keywords(self) -> None:
+        """Correct origin/destination aliases should pass."""
+        sql = """
+        SELECT
+          origin.concept_name,
+          destination.concept_name
+        FROM concept_relationship cr
+        JOIN concept origin ON cr.concept_id_1 = origin.concept_id
+        JOIN concept destination ON cr.concept_id_2 = destination.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_incorrect_one_swapped(self) -> None:
+        """Only one join swapped should error once."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c_source.concept_name, c_target.concept_name
+        FROM concept_relationship cr
+        JOIN concept c_source ON cr.concept_id_2 = c_source.concept_id
+        JOIN concept c_target ON cr.concept_id_2 = c_target.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("source", violations[0].message.lower())
+
+    def test_join_017_no_clear_intent_should_pass(self) -> None:
+        """Generic aliases without clear intent should pass."""
+        sql = """
+        SELECT c1.concept_name, c2.concept_name
+        FROM concept_relationship cr
+        JOIN concept c ON cr.concept_id_1 = c.concept_id
+        JOIN concept concept ON cr.concept_id_2 = concept.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_reversed_join_order(self) -> None:
+        """Reversed join order should still detect violations."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c_source.concept_name, c_target.concept_name
+        FROM concept c_source
+        JOIN concept_relationship cr ON c_source.concept_id = cr.concept_id_2
+        JOIN concept c_target ON c_target.concept_id = cr.concept_id_1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_017_only_one_concept_join_should_pass(self) -> None:
+        """Only one concept join cannot have a swap."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept_relationship cr
+        JOIN concept c ON cr.concept_id_1 = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_017_with_standard_keyword(self) -> None:
+        """'standard' keyword should suggest concept_id_2."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT c_standard.concept_name
+        FROM concept_relationship cr
+        JOIN concept c_standard ON cr.concept_id_1 = c_standard.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_017_no_concept_relationship_should_pass(self) -> None:
+        """Query without concept_relationship should not be checked."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_018: drug_exposure_to_drug_strength_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.drug_exposure_drug_strength_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_018_correct_drug_concept_id_join(self) -> None:
+        """Correct join using drug_concept_id should pass."""
+        sql = """
+        SELECT
+          de.drug_exposure_id,
+          ds.amount_value,
+          ds.amount_unit_concept_id
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        WHERE ds.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_incorrect_drug_exposure_id_join(self) -> None:
+        """Joining on drug_exposure_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("drug_exposure_id", violations[0].message.lower())
+
+    def test_join_018_incorrect_person_id_join(self) -> None:
+        """Joining on person_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.person_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_incorrect_route_concept_id_join(self) -> None:
+        """Joining on route_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.route_concept_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_incorrect_both_sides_wrong(self) -> None:
+        """Wrong columns on both sides should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.person_id = ds.ingredient_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_reversed_join_order_correct(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM drug_strength ds
+        JOIN drug_exposure de ON ds.drug_concept_id = de.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_reversed_join_order_incorrect(self) -> None:
+        """Incorrect reversed join order should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_strength ds
+        JOIN drug_exposure de ON ds.drug_concept_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_with_schema_qualification(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT *
+        FROM cdm.drug_exposure de
+        JOIN cdm.drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_with_schema_qualification_incorrect(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cdm.drug_exposure de
+        JOIN cdm.drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_implicit_join_where_clause_correct(self) -> None:
+        """Correct implicit join in WHERE clause should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de, drug_strength ds
+        WHERE de.drug_concept_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_implicit_join_where_clause_incorrect(self) -> None:
+        """Incorrect implicit join in WHERE clause should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de, drug_strength ds
+        WHERE de.person_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_018_with_additional_joins(self) -> None:
+        """Correct join with additional joins should pass."""
+        sql = """
+        SELECT
+          de.drug_exposure_id,
+          ds.amount_value,
+          c.concept_name
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        JOIN concept c ON ds.ingredient_concept_id = c.concept_id
+        WHERE ds.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_no_drug_tables_should_pass(self) -> None:
+        """Query without drug tables should not be checked."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_018_only_drug_exposure_should_pass(self) -> None:
+        """Query with only drug_exposure should not be checked."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        WHERE de.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class NoteNlpNoteJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_019: note_nlp_to_note_join_key."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.note_nlp_note_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_019_correct_note_id_join(self) -> None:
+        """Correct join using note_id should pass."""
+        sql = """
+        SELECT
+          nn.note_nlp_id,
+          nn.lexical_variant,
+          n.note_text,
+          n.person_id
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        WHERE nn.note_nlp_concept_id = 4329847
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_incorrect_note_nlp_id_join(self) -> None:
+        """Joining on note_nlp_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN note n ON nn.note_nlp_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("note_nlp_id", violations[0].message.lower())
+
+    def test_join_019_incorrect_both_sides_wrong(self) -> None:
+        """Wrong columns on both sides should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN note n ON nn.note_nlp_id = n.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_019_reversed_join_order_correct(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM note n
+        JOIN note_nlp nn ON n.note_id = nn.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_reversed_join_order_incorrect(self) -> None:
+        """Incorrect reversed join order should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note n
+        JOIN note_nlp nn ON n.note_id = nn.note_nlp_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_019_with_schema_qualification(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT *
+        FROM cdm.note_nlp nn
+        JOIN cdm.note n ON nn.note_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_with_schema_qualification_incorrect(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cdm.note_nlp nn
+        JOIN cdm.note n ON nn.note_nlp_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_019_implicit_join_where_clause_correct(self) -> None:
+        """Correct implicit join in WHERE clause should pass."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn, note n
+        WHERE nn.note_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_implicit_join_where_clause_incorrect(self) -> None:
+        """Incorrect implicit join in WHERE clause should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn, note n
+        WHERE nn.note_nlp_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_019_with_additional_joins(self) -> None:
+        """Correct join with additional joins should pass."""
+        sql = """
+        SELECT
+          nn.note_nlp_id,
+          nn.lexical_variant,
+          n.note_text,
+          c.concept_name
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        JOIN concept c ON nn.note_nlp_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_no_note_tables_should_pass(self) -> None:
+        """Query without note tables should not be checked."""
+        sql = """
+        SELECT c.concept_name
+        FROM concept c
+        WHERE c.concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_only_note_nlp_should_pass(self) -> None:
+        """Query with only note_nlp should not be checked."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        WHERE nn.note_nlp_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_only_note_should_pass(self) -> None:
+        """Query with only note should not be checked."""
+        sql = """
+        SELECT *
+        FROM note n
+        WHERE n.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_019_missing_join_condition(self) -> None:
+        """Tables present but not joined should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn, note n
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("not joined", violations[0].message.lower())
+
+
+class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_021: death_forbidden_join_to_visit_on_non_person_id."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.death_visit_occurrence_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_021_correct_person_id_join(self) -> None:
+        """Correct join using person_id should pass."""
+        sql = """
+        SELECT
+          d.person_id,
+          vo.visit_occurrence_id,
+          d.death_date,
+          vo.visit_end_date
+        FROM death d
+        JOIN visit_occurrence vo ON d.person_id = vo.person_id
+        WHERE d.death_date = vo.visit_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_incorrect_death_date_join(self) -> None:
+        """Temporal join using death_date should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d
+        JOIN visit_occurrence vo ON d.death_date = vo.visit_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("death_date", violations[0].message.lower())
+
+    def test_join_021_incorrect_death_datetime_join(self) -> None:
+        """Temporal join using death_datetime should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d
+        JOIN visit_occurrence vo ON d.death_datetime = vo.visit_end_datetime
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_incorrect_concept_id_join(self) -> None:
+        """Joining death_type_concept_id to visit_concept_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d
+        JOIN visit_occurrence vo ON d.death_type_concept_id = vo.visit_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_incorrect_multiple_wrong_columns(self) -> None:
+        """Wrong columns on both sides should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d
+        JOIN visit_occurrence vo ON d.cause_concept_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_reversed_join_order_correct(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN death d ON vo.person_id = d.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_reversed_join_order_incorrect(self) -> None:
+        """Incorrect reversed join order should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN death d ON vo.visit_end_date = d.death_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_with_schema_qualification(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT *
+        FROM cdm.death d
+        JOIN cdm.visit_occurrence vo ON d.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_with_schema_qualification_incorrect(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cdm.death d
+        JOIN cdm.visit_occurrence vo ON d.death_date = vo.visit_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_implicit_join_where_clause_correct(self) -> None:
+        """Correct implicit join in WHERE clause should pass."""
+        sql = """
+        SELECT *
+        FROM death d, visit_occurrence vo
+        WHERE d.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_implicit_join_where_clause_incorrect(self) -> None:
+        """Incorrect implicit join in WHERE clause should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d, visit_occurrence vo
+        WHERE d.death_date = vo.visit_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_021_with_additional_joins(self) -> None:
+        """Correct join with additional joins should pass."""
+        sql = """
+        SELECT
+          d.person_id,
+          vo.visit_occurrence_id,
+          p.year_of_birth
+        FROM death d
+        JOIN visit_occurrence vo ON d.person_id = vo.person_id
+        JOIN person p ON d.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_no_death_tables_should_pass(self) -> None:
+        """Query without death table should not be checked."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_only_death_should_pass(self) -> None:
+        """Query with only death should not be checked."""
+        sql = """
+        SELECT *
+        FROM death d
+        WHERE d.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_only_visit_occurrence_should_pass(self) -> None:
+        """Query with only visit_occurrence should not be checked."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        WHERE vo.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_021_missing_join_condition(self) -> None:
+        """Tables present but not joined should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM death d, visit_occurrence vo
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("not joined", violations[0].message.lower())
+
+    def test_join_021_using_clause_correct(self) -> None:
+        """USING clause with person_id should pass."""
+        sql = """
+        SELECT *
+        FROM death d
+        JOIN visit_occurrence vo USING (person_id)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class CohortClinicalJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_022: cohort_to_clinical_table_via_subject_id_to_person_id."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.cohort_clinical_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_022_correct_subject_id_to_person_id(self) -> None:
+        """Correct join using subject_id = person_id should pass."""
+        sql = """
+        SELECT
+          c.subject_id,
+          co.condition_occurrence_id,
+          co.condition_concept_id
+        FROM cohort c
+        JOIN condition_occurrence co ON c.subject_id = co.person_id
+        WHERE c.cohort_definition_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_incorrect_subject_id_to_pk(self) -> None:
+        """Joining subject_id to condition_occurrence_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN condition_occurrence co ON c.subject_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("condition_occurrence_id", violations[0].message.lower())
+
+    def test_join_022_incorrect_cohort_definition_id_to_person_id(self) -> None:
+        """Joining cohort_definition_id to person_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN drug_exposure de ON c.cohort_definition_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_022_correct_with_visit_occurrence(self) -> None:
+        """Correct join to visit_occurrence should pass."""
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN visit_occurrence vo ON c.subject_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_incorrect_subject_id_to_visit_occurrence_id(self) -> None:
+        """Joining subject_id to visit_occurrence_id should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN visit_occurrence vo ON c.subject_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("visit_occurrence_id", violations[0].message.lower())
+
+    def test_join_022_reversed_join_order_correct(self) -> None:
+        """Correct reversed join order should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN cohort c ON co.person_id = c.subject_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_reversed_join_order_incorrect(self) -> None:
+        """Incorrect reversed join order should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN cohort c ON de.drug_exposure_id = c.subject_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_022_with_schema_qualification(self) -> None:
+        """Schema-qualified correct join should pass."""
+        sql = """
+        SELECT *
+        FROM cdm.cohort c
+        JOIN cdm.measurement m ON c.subject_id = m.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_with_schema_qualification_incorrect(self) -> None:
+        """Schema-qualified incorrect join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cdm.cohort c
+        JOIN cdm.measurement m ON c.subject_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_022_implicit_join_correct(self) -> None:
+        """Correct implicit join should pass."""
+        sql = """
+        SELECT *
+        FROM cohort c, observation o
+        WHERE c.subject_id = o.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_implicit_join_incorrect(self) -> None:
+        """Incorrect implicit join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c, observation o
+        WHERE c.subject_id = o.observation_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_022_multiple_clinical_tables_all_correct(self) -> None:
+        """Multiple clinical tables with correct joins should pass."""
+        sql = """
+        SELECT
+          c.subject_id,
+          co.condition_concept_id,
+          de.drug_concept_id
+        FROM cohort c
+        JOIN condition_occurrence co ON c.subject_id = co.person_id
+        JOIN drug_exposure de ON c.subject_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_multiple_clinical_tables_one_wrong(self) -> None:
+        """Multiple clinical tables with one wrong join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN condition_occurrence co ON c.subject_id = co.person_id
+        JOIN drug_exposure de ON c.subject_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("drug_exposure", violations[0].message.lower())
+
+    def test_join_022_with_procedure_occurrence(self) -> None:
+        """Correct join to procedure_occurrence should pass."""
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN procedure_occurrence po ON c.subject_id = po.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_with_death_table(self) -> None:
+        """Correct join to death table should pass."""
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN death d ON c.subject_id = d.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_missing_join_condition(self) -> None:
+        """Tables present but not joined should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cohort c, condition_occurrence co
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("not joined", violations[0].message.lower())
+
+    def test_join_022_no_cohort_should_pass(self) -> None:
+        """Query without cohort should not be checked."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_only_cohort_should_pass(self) -> None:
+        """Query with only cohort should not be checked."""
+        sql = """
+        SELECT *
+        FROM cohort c
+        WHERE c.cohort_definition_id = 123
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_022_cohort_to_non_clinical_table(self) -> None:
+        """Cohort joined to non-clinical table should not be checked."""
+        sql = """
+        SELECT *
+        FROM cohort c
+        JOIN cohort_definition cd ON c.cohort_definition_id = cd.cohort_definition_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class EraForbiddenJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_024: era_table_forbidden_join_to_visit_occurrence."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.era_forbidden_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_024_correct_era_to_person(self) -> None:
+        """Correct join of drug_era to person should pass."""
+        sql = """
+        SELECT
+          de.drug_era_id,
+          p.year_of_birth,
+          p.gender_concept_id
+        FROM drug_era de
+        JOIN person p ON de.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_024_correct_era_to_concept(self) -> None:
+        """Correct join of condition_era to concept should pass."""
+        sql = """
+        SELECT
+          ce.condition_era_id,
+          c.concept_name,
+          c.vocabulary_id
+        FROM condition_era ce
+        JOIN concept c ON ce.condition_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_024_drug_era_to_visit_occurrence(self) -> None:
+        """Joining drug_era to visit_occurrence should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de
+        JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("drug_era", violations[0].message.lower())
+        self.assertIn("visit_occurrence", violations[0].message.lower())
+
+    def test_join_024_condition_era_to_visit_detail(self) -> None:
+        """Joining condition_era to visit_detail should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM condition_era ce
+        JOIN visit_detail vd ON ce.person_id = vd.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("visit_detail", violations[0].message.lower())
+
+    def test_join_024_dose_era_to_provider(self) -> None:
+        """Joining dose_era to provider should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM dose_era de
+        JOIN provider p ON de.person_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("provider", violations[0].message.lower())
+
+    def test_join_024_drug_era_to_care_site(self) -> None:
+        """Joining drug_era to care_site should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de
+        JOIN care_site cs ON de.person_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+        self.assertIn("care_site", violations[0].message.lower())
+
+    def test_join_024_reversed_join_order(self) -> None:
+        """Reversed join order should still error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN drug_era de ON vo.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_024_with_schema_qualification(self) -> None:
+        """Schema-qualified forbidden join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM cdm.condition_era ce
+        JOIN cdm.visit_occurrence vo ON ce.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_024_implicit_join_where_clause(self) -> None:
+        """Implicit join in WHERE clause should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de, visit_occurrence vo
+        WHERE de.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_024_with_date_overlap_still_wrong(self) -> None:
+        """Even with date overlap, era to visit join should error."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de
+        JOIN visit_occurrence vo
+          ON de.person_id = vo.person_id
+          AND de.drug_era_start_date = vo.visit_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_024_multiple_forbidden_joins(self) -> None:
+        """Multiple forbidden joins should produce multiple errors."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de
+        JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        JOIN provider p ON de.person_id = p.provider_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+
+    def test_join_024_era_with_allowed_joins(self) -> None:
+        """Era with both allowed and forbidden joins should error only on forbidden."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM drug_era de
+        JOIN person p ON de.person_id = p.person_id
+        JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence", violations[0].message.lower())
+
+    def test_join_024_no_era_tables_should_pass(self) -> None:
+        """Query without era tables should not be checked."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_024_era_only_should_pass(self) -> None:
+        """Query with only era table should pass."""
+        sql = """
+        SELECT *
+        FROM drug_era de
+        WHERE de.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_024_all_era_tables(self) -> None:
+        """Test all three era tables."""
+        from fastssv.core.base import Severity
+
+        for era_table in ["condition_era", "drug_era", "dose_era"]:
+            sql = f"""
+            SELECT *
+            FROM {era_table} e
+            JOIN visit_occurrence vo ON e.person_id = vo.person_id
+            """
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 1,
+                           f"Expected violation for {era_table}")
+            self.assertEqual(violations[0].severity, Severity.ERROR)
+
+    def test_join_024_all_forbidden_tables(self) -> None:
+        """Test all four forbidden tables."""
+        from fastssv.core.base import Severity
+
+        forbidden = ["visit_occurrence", "visit_detail", "provider", "care_site"]
+        for forbidden_table in forbidden:
+            sql = f"""
+            SELECT *
+            FROM drug_era de
+            JOIN {forbidden_table} t ON de.person_id = t.person_id
+            """
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 1,
+                           f"Expected violation for {forbidden_table}")
+            self.assertEqual(violations[0].severity, Severity.ERROR)
+
+
+class PersonIdJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_026: person_id_cross_matched_to_non_person_id_pk."""
+
+    def _run_rule(self, sql: str):
+        """Run person_id join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.person_id_join_validation")()
+        return rule.validate(sql)
+
+    def test_join_026_person_id_to_visit_occurrence_id(self) -> None:
+        """person_id joined to visit_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.person_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_join_026_person_id_to_condition_occurrence_id(self) -> None:
+        """person_id joined to condition_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+
+    def test_join_026_person_id_to_measurement_id(self) -> None:
+        """person_id joined to measurement_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN measurement m ON vo.person_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("measurement_id", violations[0].message)
+
+    def test_join_026_person_id_to_drug_exposure_id(self) -> None:
+        """person_id joined to drug_exposure_id should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN person p ON de.drug_exposure_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+
+    def test_join_026_correct_person_id_to_person_id(self) -> None:
+        """person_id joined to person_id should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_026_correct_visit_occurrence_id_join(self) -> None:
+        """visit_occurrence_id joined to visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_026_using_clause_with_person_id(self) -> None:
+        """USING (person_id) should pass (always matches person_id to person_id)."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo USING (person_id)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_026_implicit_join_where_clause(self) -> None:
+        """Implicit join with person_id cross-match in WHERE should error."""
+        sql = """
+        SELECT *
+        FROM person p, visit_occurrence vo
+        WHERE p.person_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_join_026_multiple_violations(self) -> None:
+        """Multiple person_id cross-matches should all be flagged."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.condition_occurrence_id
+        JOIN drug_exposure de ON p.person_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_026_mixed_correct_and_wrong(self) -> None:
+        """Mix of correct and wrong joins should flag only violations."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        JOIN visit_occurrence vo ON co.person_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_join_026_unqualified_columns(self) -> None:
+        """Unqualified person_id cross-match should be detected."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN visit_occurrence vo ON person_id = visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_026_reversed_join_order(self) -> None:
+        """Reversed join order (right side is person_id) should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN person p ON vo.visit_occurrence_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+
+    def test_join_026_procedure_occurrence_id(self) -> None:
+        """person_id joined to procedure_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN procedure_occurrence po ON p.person_id = po.procedure_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("procedure_occurrence_id", violations[0].message)
+
+    def test_join_026_observation_id(self) -> None:
+        """person_id joined to observation_id should error."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN observation o ON p.person_id = o.observation_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("person_id", violations[0].message)
+        self.assertIn("observation_id", violations[0].message)
+
+    def test_join_026_no_person_id_should_pass(self) -> None:
+        """Query without person_id should not be checked."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_026_person_id_in_where_filter_only(self) -> None:
+        """person_id used only as filter (not join) should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE co.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_027: visit_occurrence_id_cross_matched_to_non_visit_id."""
+
+    def _run_rule(self, sql: str):
+        """Run visit_occurrence_id join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.visit_occurrence_id_join_validation")()
+        return rule.validate(sql)
+
+    def test_join_027_visit_occurrence_id_to_person_id(self) -> None:
+        """visit_occurrence_id joined to person_id should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("person_id", violations[0].message)
+
+    def test_join_027_visit_occurrence_id_to_condition_occurrence_id(self) -> None:
+        """visit_occurrence_id joined to condition_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+
+    def test_join_027_visit_occurrence_id_to_drug_exposure_id(self) -> None:
+        """visit_occurrence_id joined to drug_exposure_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN drug_exposure de ON vo.visit_occurrence_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+
+    def test_join_027_visit_occurrence_id_to_visit_detail_id(self) -> None:
+        """visit_occurrence_id joined to visit_detail_id should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_detail vd ON de.visit_occurrence_id = vd.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("visit_detail_id", violations[0].message)
+
+    def test_join_027_correct_visit_occurrence_id_to_visit_occurrence_id(self) -> None:
+        """visit_occurrence_id joined to visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_027_correct_person_id_join(self) -> None:
+        """person_id joined to person_id should pass (not checking person_id)."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_027_using_clause_with_visit_occurrence_id(self) -> None:
+        """USING (visit_occurrence_id) should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo USING (visit_occurrence_id)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_027_implicit_join_where_clause(self) -> None:
+        """Implicit join with visit_occurrence_id cross-match in WHERE should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo, drug_exposure de
+        WHERE vo.visit_occurrence_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+
+    def test_join_027_multiple_violations(self) -> None:
+        """Multiple visit_occurrence_id cross-matches should all be flagged."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id
+        JOIN drug_exposure de ON vo.visit_occurrence_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_027_mixed_correct_and_wrong(self) -> None:
+        """Mix of correct and wrong joins should flag only violations."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN drug_exposure de ON vo.visit_occurrence_id = de.visit_occurrence_id
+        JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+
+    def test_join_027_unqualified_columns(self) -> None:
+        """Unqualified visit_occurrence_id cross-match should be detected."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN drug_exposure de ON visit_occurrence_id = drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_027_reversed_join_order(self) -> None:
+        """Reversed join order (right side is visit_occurrence_id) should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN visit_occurrence vo ON de.drug_exposure_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+
+    def test_join_027_measurement_id(self) -> None:
+        """visit_occurrence_id joined to measurement_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN measurement m ON vo.visit_occurrence_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("measurement_id", violations[0].message)
+
+    def test_join_027_procedure_occurrence_id(self) -> None:
+        """visit_occurrence_id joined to procedure_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN procedure_occurrence po ON vo.visit_occurrence_id = po.procedure_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_occurrence_id", violations[0].message)
+        self.assertIn("procedure_occurrence_id", violations[0].message)
+
+    def test_join_027_no_visit_occurrence_id_should_pass(self) -> None:
+        """Query without visit_occurrence_id should not be checked."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_027_visit_occurrence_id_in_where_filter_only(self) -> None:
+        """visit_occurrence_id used only as filter (not join) should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN person p ON de.person_id = p.person_id
+        WHERE de.visit_occurrence_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_028: forbidden_clinical_to_clinical_pk_cross_join."""
+
+    def _run_rule(self, sql: str):
+        """Run clinical PK cross-join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.clinical_pk_cross_join_validation")()
+        return rule.validate(sql)
+
+    def test_join_028_condition_to_drug_pk_cross_join(self) -> None:
+        """condition_occurrence_id joined to drug_exposure_id should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+        self.assertIn("independent", violations[0].message)
+
+    def test_join_028_measurement_to_procedure_pk_cross_join(self) -> None:
+        """measurement_id joined to procedure_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN procedure_occurrence po ON m.measurement_id = po.procedure_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("measurement_id", violations[0].message)
+        self.assertIn("procedure_occurrence_id", violations[0].message)
+
+    def test_join_028_observation_to_device_pk_cross_join(self) -> None:
+        """observation_id joined to device_exposure_id should error."""
+        sql = """
+        SELECT *
+        FROM observation o
+        JOIN device_exposure dev ON o.observation_id = dev.device_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("observation_id", violations[0].message)
+        self.assertIn("device_exposure_id", violations[0].message)
+
+    def test_join_028_specimen_to_note_pk_cross_join(self) -> None:
+        """specimen_id joined to note_id should error."""
+        sql = """
+        SELECT *
+        FROM specimen s
+        JOIN note n ON s.specimen_id = n.note_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("specimen_id", violations[0].message)
+        self.assertIn("note_id", violations[0].message)
+
+    def test_join_028_visit_detail_to_condition_pk_cross_join(self) -> None:
+        """visit_detail_id joined to condition_occurrence_id should error."""
+        sql = """
+        SELECT *
+        FROM visit_detail vd
+        JOIN condition_occurrence co ON vd.visit_detail_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("visit_detail_id", violations[0].message)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+
+    def test_join_028_correct_person_id_join(self) -> None:
+        """Joining via person_id should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_028_correct_visit_occurrence_id_join(self) -> None:
+        """Joining via visit_occurrence_id should pass."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN procedure_occurrence po ON m.visit_occurrence_id = po.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_028_self_join_same_pk(self) -> None:
+        """Self-join with same PK should pass (not a cross-join)."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co1
+        JOIN condition_occurrence co2 ON co1.condition_occurrence_id = co2.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_028_implicit_join_where_clause(self) -> None:
+        """Implicit join with PK cross-match in WHERE should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co, drug_exposure de
+        WHERE co.condition_occurrence_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("condition_occurrence_id", violations[0].message)
+        self.assertIn("drug_exposure_id", violations[0].message)
+
+    def test_join_028_multiple_violations(self) -> None:
+        """Multiple PK cross-joins should all be flagged."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id
+        JOIN measurement m ON co.condition_occurrence_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_028_mixed_correct_and_wrong(self) -> None:
+        """Mix of correct and wrong joins should flag only violations."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN measurement m ON co.condition_occurrence_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("measurement_id", violations[0].message)
+
+    def test_join_028_reversed_join_order(self) -> None:
+        """Reversed join order should still error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN condition_occurrence co ON de.drug_exposure_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_028_unqualified_columns(self) -> None:
+        """Unqualified PK cross-match should be detected."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON condition_occurrence_id = drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_028_no_clinical_pks_should_pass(self) -> None:
+        """Query without clinical event PKs should not be checked."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_028_pk_in_where_filter_only(self) -> None:
+        """Clinical PK used only as filter (not join) should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_occurrence_id = 12345
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_028_all_clinical_event_pks(self) -> None:
+        """Test coverage of all clinical event PKs."""
+        from fastssv.core.base import Severity
+
+        pk_pairs = [
+            ("condition_occurrence_id", "drug_exposure_id"),
+            ("procedure_occurrence_id", "measurement_id"),
+            ("observation_id", "device_exposure_id"),
+            ("specimen_id", "note_id"),
+            ("visit_detail_id", "condition_occurrence_id"),
+        ]
+
+        for pk1, pk2 in pk_pairs:
+            sql = f"""
+            SELECT *
+            FROM table1 t1
+            JOIN table2 t2 ON t1.{pk1} = t2.{pk2}
+            """
+            violations = self._run_rule(sql)
+            self.assertEqual(len(violations), 1,
+                           f"Expected violation for {pk1} → {pk2}")
+            self.assertEqual(violations[0].severity, Severity.ERROR)
+
+
+class ConceptSynonymJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_029: concept_synonym_to_concept_join_key."""
+
+    def _run_rule(self, sql: str):
+        """Run concept synonym join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.concept_synonym_join_validation")()
+        return rule.validate(sql)
+
+    def test_join_029_synonym_name_to_concept_name(self) -> None:
+        """Joining concept_synonym_name to concept_name should error."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_synonym_name = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("concept_synonym_name", violations[0].message)
+        self.assertIn("concept_name", violations[0].message)
+
+    def test_join_029_language_concept_id_to_concept_id(self) -> None:
+        """Joining language_concept_id to concept_id should error."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.language_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("language_concept_id", violations[0].message)
+
+    def test_join_029_synonym_name_to_concept_code(self) -> None:
+        """Joining concept_synonym_name to concept_code should error."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_synonym_name = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_029_correct_concept_id_join(self) -> None:
+        """Joining via concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_correct_reversed_join(self) -> None:
+        """Joining via concept_id in reversed order should pass."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN concept_synonym cs ON c.concept_id = cs.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_using_clause_concept_id(self) -> None:
+        """USING (concept_id) should pass."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c USING (concept_id)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_implicit_join_where_clause(self) -> None:
+        """Implicit join with wrong columns in WHERE should error."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs, concept c
+        WHERE cs.concept_synonym_name = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_029_multiple_wrong_joins(self) -> None:
+        """Multiple wrong join conditions should be flagged."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_synonym_name = c.concept_name
+          AND cs.language_concept_id = c.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        # Should have at least 1 violation
+        self.assertGreaterEqual(len(violations), 1)
+
+    def test_join_029_unqualified_columns(self) -> None:
+        """Unqualified columns should still be detected."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON concept_id = concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)  # Valid join
+
+    def test_join_029_no_concept_synonym_table(self) -> None:
+        """Query without concept_synonym should not be checked."""
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_no_concept_table(self) -> None:
+        """Query without concept table should not be checked."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN vocabulary v ON cs.concept_id = v.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_both_tables_no_join(self) -> None:
+        """Both tables present but not joined should pass."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs, concept c
+        WHERE cs.concept_id = 12345
+          AND c.concept_id = 67890
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_correct_with_other_joins(self) -> None:
+        """Correct concept_id join with other joins should pass."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_id = c.concept_id
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_029_wrong_with_correct(self) -> None:
+        """Wrong join should error even if correct join also exists."""
+        sql = """
+        SELECT *
+        FROM concept_synonym cs
+        JOIN concept c ON cs.concept_synonym_name = c.concept_name
+          AND cs.concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+
+class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_030: payer_plan_period_to_clinical_requires_person_id_and_dates."""
+
+    def _run_rule(self, sql: str):
+        """Run payer plan period join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.payer_plan_period_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_030_person_id_only_no_date_check(self) -> None:
+        """Joining only on person_id without date check should warn."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN payer_plan_period pp ON de.person_id = pp.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("date", violations[0].message.lower())
+
+    def test_join_030_person_id_with_between(self) -> None:
+        """Joining with person_id AND BETWEEN date check should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN payer_plan_period pp
+          ON de.person_id = pp.person_id
+          AND de.drug_exposure_start_date BETWEEN
+              pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_person_id_with_range_overlap(self) -> None:
+        """Joining with person_id AND range overlap (>= and <=) should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence co
+        JOIN payer_plan_period pp
+          ON co.person_id = pp.person_id
+          AND co.condition_start_date >= pp.payer_plan_period_start_date
+          AND co.condition_start_date <= pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_person_id_with_end_date_overlap(self) -> None:
+        """Joining with person_id AND end date overlap should pass."""
+        sql = """
+        SELECT *
+        FROM device_exposure de
+        JOIN payer_plan_period pp
+          ON de.person_id = pp.person_id
+          AND de.device_exposure_start_date <= pp.payer_plan_period_end_date
+          AND de.device_exposure_end_date >= pp.payer_plan_period_start_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_where_clause_date_check(self) -> None:
+        """Date check in WHERE clause should also pass."""
+        sql = """
+        SELECT *
+        FROM measurement m, payer_plan_period pp
+        WHERE m.person_id = pp.person_id
+          AND m.measurement_date BETWEEN
+              pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_where_clause_no_date_check(self) -> None:
+        """person_id in WHERE without date check should warn."""
+        sql = """
+        SELECT *
+        FROM observation o, payer_plan_period pp
+        WHERE o.person_id = pp.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_030_no_payer_plan_period(self) -> None:
+        """Query without payer_plan_period should pass."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN person p ON de.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_no_clinical_table(self) -> None:
+        """payer_plan_period joined to non-clinical table should pass."""
+        sql = """
+        SELECT *
+        FROM payer_plan_period pp
+        JOIN person p ON pp.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_multiple_clinical_tables_one_missing_date(self) -> None:
+        """Multiple clinical tables, one without date check should warn once."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN payer_plan_period pp ON de.person_id = pp.person_id
+        JOIN condition_occurrence co
+          ON co.person_id = pp.person_id
+          AND co.condition_start_date BETWEEN
+              pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("drug_exposure", violations[0].message)
+
+    def test_join_030_procedure_date_check(self) -> None:
+        """procedure_occurrence with procedure_date should pass."""
+        sql = """
+        SELECT *
+        FROM procedure_occurrence po
+        JOIN payer_plan_period pp
+          ON po.person_id = pp.person_id
+          AND po.procedure_date >= pp.payer_plan_period_start_date
+          AND po.procedure_date <= pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_visit_occurrence_date_check(self) -> None:
+        """visit_occurrence with visit dates should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence vo
+        JOIN payer_plan_period pp
+          ON vo.person_id = pp.person_id
+          AND vo.visit_start_date BETWEEN
+              pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_specimen_date_check(self) -> None:
+        """specimen with specimen_date should pass."""
+        sql = """
+        SELECT *
+        FROM specimen s
+        JOIN payer_plan_period pp
+          ON s.person_id = pp.person_id
+          AND s.specimen_date >= pp.payer_plan_period_start_date
+          AND s.specimen_date <= pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_note_date_check(self) -> None:
+        """note with note_date should pass."""
+        sql = """
+        SELECT *
+        FROM note n
+        JOIN payer_plan_period pp
+          ON n.person_id = pp.person_id
+          AND n.note_date BETWEEN
+              pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_datetime_column(self) -> None:
+        """Using datetime columns should also work."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN payer_plan_period pp
+          ON m.person_id = pp.person_id
+          AND m.measurement_datetime >= pp.payer_plan_period_start_date
+          AND m.measurement_datetime <= pp.payer_plan_period_end_date
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_030_person_id_only_with_other_filters(self) -> None:
+        """person_id join with non-date filters should still warn."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de
+        JOIN payer_plan_period pp
+          ON de.person_id = pp.person_id
+        WHERE de.drug_concept_id = 123456
+          AND pp.payer_concept_id = 789
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+
+    def test_join_030_no_person_id_join(self) -> None:
+        """Both tables present but not joined should pass (not our concern)."""
+        sql = """
+        SELECT *
+        FROM drug_exposure de, payer_plan_period pp
+        WHERE de.person_id = 12345
+          AND pp.person_id = 67890
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+
+class FactRelationshipJoinValidationTests(unittest.TestCase):
+    """Tests for JOIN_031: fact_relationship_join_requires_domain_aware_polymorphic_key."""
+
+    def _run_rule(self, sql: str):
+        """Run fact relationship join validation rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.fact_relationship_join_validation")()
+        return rule.validate(sql, dialect="postgres")
+
+    def test_join_031_fact_id_1_without_domain_filter(self) -> None:
+        """Joining fact_id_1 without domain_concept_id_1 filter should error."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("domain_concept_id_1", violations[0].message)
+        self.assertIn("21", violations[0].message)
+
+    def test_join_031_fact_id_2_without_domain_filter(self) -> None:
+        """Joining fact_id_2 without domain_concept_id_2 filter should error."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN observation o ON fr.fact_id_2 = o.observation_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("domain_concept_id_2", violations[0].message)
+        self.assertIn("27", violations[0].message)
+
+    def test_join_031_fact_id_1_with_correct_domain(self) -> None:
+        """Joining fact_id_1 WITH domain_concept_id_1 = 21 should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        WHERE fr.domain_concept_id_1 = 21
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_fact_id_2_with_correct_domain(self) -> None:
+        """Joining fact_id_2 WITH domain_concept_id_2 = 27 should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN observation o ON fr.fact_id_2 = o.observation_id
+        WHERE fr.domain_concept_id_2 = 27
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_both_fact_ids_with_domains(self) -> None:
+        """Joining both fact_id_1 and fact_id_2 with proper domains should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        JOIN observation o ON fr.fact_id_2 = o.observation_id
+        WHERE fr.domain_concept_id_1 = 21
+          AND fr.domain_concept_id_2 = 27
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_both_fact_ids_missing_domains(self) -> None:
+        """Joining both fact_ids without domains should error twice."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        JOIN observation o ON fr.fact_id_2 = o.observation_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 2)
+
+    def test_join_031_domain_in_join_on_clause(self) -> None:
+        """Domain filter in JOIN ON clause should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m
+          ON fr.fact_id_1 = m.measurement_id
+          AND fr.domain_concept_id_1 = 21
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_wrong_domain_filter(self) -> None:
+        """Wrong domain_concept_id value should still error."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        WHERE fr.domain_concept_id_1 = 27
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("measurement", violations[0].message.lower())
+
+    def test_join_031_condition_occurrence(self) -> None:
+        """Joining to condition_occurrence should work."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN condition_occurrence co ON fr.fact_id_1 = co.condition_occurrence_id
+        WHERE fr.domain_concept_id_1 = 19
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_drug_exposure(self) -> None:
+        """Joining to drug_exposure should work."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN drug_exposure de ON fr.fact_id_2 = de.drug_exposure_id
+        WHERE fr.domain_concept_id_2 = 13
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_procedure_occurrence(self) -> None:
+        """Joining to procedure_occurrence should work."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN procedure_occurrence po ON fr.fact_id_1 = po.procedure_occurrence_id
+        WHERE fr.domain_concept_id_1 = 10
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_domain_in_clause(self) -> None:
+        """IN clause with extra domains should error (stricter validation)."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        WHERE fr.domain_concept_id_1 IN (21, 27)
+        """
+        violations = self._run_rule(sql)
+        # Stricter validation: requires EXACTLY the expected domain, not superset
+        self.assertEqual(len(violations), 1)
+        self.assertIn("21", violations[0].message)
+
+    def test_join_031_domain_in_clause_exact(self) -> None:
+        """IN clause with ONLY the expected domain should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        WHERE fr.domain_concept_id_1 IN (21)
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_no_fact_relationship(self) -> None:
+        """Query without fact_relationship should pass."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN observation o ON m.person_id = o.person_id
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_no_clinical_table_join(self) -> None:
+        """fact_relationship without clinical table join should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        WHERE fr.domain_concept_id_1 = 21
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 0)
+
+    def test_join_031_reversed_join_order(self) -> None:
+        """Clinical table joined to fact_relationship should also detect."""
+        sql = """
+        SELECT *
+        FROM measurement m
+        JOIN fact_relationship fr ON m.measurement_id = fr.fact_id_1
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("domain_concept_id_1", violations[0].message)
+
+    def test_join_031_multiple_clinical_tables(self) -> None:
+        """Multiple clinical tables, partial domain filters should error."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        JOIN drug_exposure de ON fr.fact_id_2 = de.drug_exposure_id
+        WHERE fr.domain_concept_id_1 = 21
+        """
+        violations = self._run_rule(sql)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("drug_exposure", violations[0].message)
+        self.assertIn("domain_concept_id_2", violations[0].message)
 
 
 if __name__ == "__main__":
