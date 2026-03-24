@@ -9,8 +9,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 75 rules (including covered rules)
-- Coverage: 21.4%
+- Implemented: 105 rules (including covered rules)
+- Coverage: 30.0%
 - Last updated: March 2026
 
 ---
@@ -236,8 +236,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Suggested group: `domain_specific/visit/`*
 - [ ] **OMOP_104**: specimen_anatomic_site_concept_id_domain
   - *Suggested group: `domain_specific/specimen/`*
-- [ ] **OMOP_105**: provider_npi_is_string_not_integer
-  - *Suggested group: `domain_specific/provider/`*
+- [x] **OMOP_105**: provider_npi_is_string_not_integer
+  - *Covered by: `data_quality/column_type_validation.py` - Detects integer literals used with VARCHAR column provider.npi. The provider table schema (with npi as VARCHAR) has been added to cdm_column_types.py, enabling automatic type validation.*
 - [ ] **OMOP_106**: location_state_zip_not_joined_to_concept
   - *Suggested group: `domain_specific/location/`*
 - [ ] **OMOP_107**: condition_occurrence_stop_reason_is_free_text
@@ -876,66 +876,66 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 - [x] **JOIN_001**: clinical_to_provider_join_key
   - *Implemented as: `joins/provider_join_validation.py`*
-- [ ] **JOIN_002**: clinical_to_care_site_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_003**: care_site_to_location_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_004**: person_to_location_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_005**: provider_to_care_site_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_006**: visit_detail_to_visit_occurrence_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_007**: clinical_to_visit_detail_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_008**: concept_primary_concept_id_join_column
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_009**: source_concept_id_to_concept_join_separate_alias
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_010**: type_concept_id_join_requires_own_alias
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_011**: concept_to_vocabulary_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_012**: concept_to_domain_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_013**: concept_to_concept_class_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_014**: concept_relationship_to_relationship_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_015**: concept_ancestor_to_concept_descendant_side
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_016**: concept_ancestor_to_concept_for_name_resolution
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_017**: concept_relationship_concept_id_1_to_concept
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_018**: drug_exposure_to_drug_strength_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_019**: note_nlp_to_note_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_020**: clinical_tables_forbidden_direct_join_to_location
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_021**: death_forbidden_join_to_visit_on_non_person_id
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_022**: cohort_to_clinical_table_via_subject_id_to_person_id
-  - *Suggested group: `joins/`*
+- [x] **JOIN_002**: clinical_to_care_site_join_key
+  - *Implemented as: `joins/care_site_id_join_validation.py`*
+- [x] **JOIN_003**: care_site_to_location_join_key
+  - *Implemented as: `joins/care_site_location_join_validation.py`*
+- [x] **JOIN_004**: person_to_location_join_key
+  - *Implemented as: `joins/person_location_join_validation.py`*
+- [x] **JOIN_005**: provider_to_care_site_join_key
+  - *Implemented as: `joins/provider_care_site_join_validation.py`*
+- [x] **JOIN_006**: visit_detail_to_visit_occurrence_join_key
+  - *Covered by OMOP_034: `joins/visit_detail_join_validation.py`*
+- [x] **JOIN_007**: clinical_to_visit_detail_join_key
+  - *Implemented as: `joins/clinical_visit_detail_join_validation.py`*
+- [x] **JOIN_008**: concept_primary_concept_id_join_column
+  - *Implemented as: `joins/concept_primary_key_join_validation.py`*
+- [x] **JOIN_009**: source_concept_id_to_concept_join_separate_alias
+  - *Implemented as: `joins/concept_alias_reuse_validation.py`*
+- [x] **JOIN_010**: type_concept_id_join_requires_own_alias
+  - *Covered by JOIN_009: `joins/concept_alias_reuse_validation.py`*
+- [x] **JOIN_011**: concept_to_vocabulary_join_key
+  - *Implemented as: `joins/concept_vocabulary_join_validation.py`*
+- [x] **JOIN_012**: concept_to_domain_join_key
+  - *Implemented as: `joins/concept_domain_join_validation.py`*
+- [x] **JOIN_013**: concept_to_concept_class_join_key
+  - *Implemented as: `joins/concept_concept_class_join_validation.py`*
+- [x] **JOIN_014**: concept_relationship_to_relationship_join_key
+  - *Implemented as: `joins/concept_relationship_relationship_join_validation.py`*
+- [x] **JOIN_015**: concept_ancestor_to_concept_descendant_side
+  - *Covered by: `concept_standardization/hierarchy_expansion.py` (OMOP_006/007) - The `_verify_concept_ancestor_join_direction()` function detects when clinical tables incorrectly join to concept_ancestor.ancestor_concept_id instead of descendant_concept_id. Provides warnings when join direction is inverted, ensuring proper hierarchical query patterns.*
+- [x] **JOIN_016**: concept_ancestor_to_concept_for_name_resolution
+  - *Implemented as: `joins/concept_ancestor_name_resolution_validation.py`*
+- [x] **JOIN_017**: concept_relationship_concept_id_1_to_concept
+  - *Implemented as: `joins/concept_relationship_concept_join_validation.py`*
+- [x] **JOIN_018**: drug_exposure_to_drug_strength_join_key
+  - *Implemented as: `joins/drug_exposure_drug_strength_join_validation.py`*
+- [x] **JOIN_019**: note_nlp_to_note_join_key
+  - *Implemented as: `joins/note_nlp_note_join_validation.py`*
+- [x] **JOIN_020**: clinical_tables_forbidden_direct_join_to_location
+  - *Covered by: `joins/care_site_join_validation.py` (OMOP_039) - Enforces that clinical tables must join to location via care_site, not directly. Detects violations where clinical tables attempt direct joins to location.location_id, ensuring proper join path: clinical → care_site → location.*
+- [x] **JOIN_021**: death_forbidden_join_to_visit_on_non_person_id
+  - *Implemented as: `joins/death_visit_occurrence_join_validation.py`*
+- [x] **JOIN_022**: cohort_to_clinical_table_via_subject_id_to_person_id
+  - *Implemented as: `joins/cohort_clinical_join_validation.py`*
 - [ ] **JOIN_023**: observation_period_to_clinical_requires_person_id_and_dates
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_024**: era_table_forbidden_join_to_visit_occurrence
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_025**: cost_to_clinical_table_requires_event_id_and_domain
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_026**: person_id_cross_matched_to_non_person_id_pk
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_027**: visit_occurrence_id_cross_matched_to_non_visit_id
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_028**: forbidden_clinical_to_clinical_pk_cross_join
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_029**: concept_synonym_to_concept_join_key
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_030**: payer_plan_period_to_clinical_requires_person_id_and_dates
-  - *Suggested group: `joins/`*
-- [ ] **JOIN_031**: fact_relationship_join_requires_domain_aware_polymorphic_key
-  - *Suggested group: `joins/`*
+  - *Suggested group: `joins/`* SKIPPED FOR NOW BECAUSE OF THE DATE
+- [x] **JOIN_024**: era_table_forbidden_join_to_visit_occurrence
+  - *Implemented as: `joins/era_forbidden_join_validation.py`*
+- [x] **JOIN_025**: cost_to_clinical_table_requires_event_id_and_domain
+  - *Covered by OMOP_038: `joins/cost_table_domain_validation.py` - Validates that cost table joins to clinical tables include cost_domain_id filter to disambiguate polymorphic cost_event_id foreign key. Identical semantic rule to OMOP_038.*
+- [x] **JOIN_026**: person_id_cross_matched_to_non_person_id_pk
+  - *Implemented as: `joins/person_id_join_validation.py`*
+- [x] **JOIN_027**: visit_occurrence_id_cross_matched_to_non_visit_id
+  - *Implemented as: `joins/visit_occurrence_id_join_validation.py`*
+- [x] **JOIN_028**: forbidden_clinical_to_clinical_pk_cross_join
+  - *Implemented as: `joins/clinical_pk_cross_join_validation.py`*
+- [x] **JOIN_029**: concept_synonym_to_concept_join_key
+  - *Implemented as: `joins/concept_synonym_join_validation.py`*
+- [x] **JOIN_030**: payer_plan_period_to_clinical_requires_person_id_and_dates
+  - *Implemented as: `joins/payer_plan_period_join_validation.py`*
+- [x] **JOIN_031**: fact_relationship_join_requires_domain_aware_polymorphic_key
+  - *Implemented as: `joins/fact_relationship_join_validation.py`*
 
 ---
 

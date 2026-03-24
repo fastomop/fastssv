@@ -189,6 +189,50 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
     },
 
     # ===========================
+    # STANDARDIZED HEALTH SYSTEM DATA
+    # ===========================
+
+    "provider": {
+        "provider_id": INTEGER,
+        "provider_name": VARCHAR,
+        "npi": VARCHAR,
+        "dea": VARCHAR,
+        "specialty_concept_id": INTEGER,
+        "care_site_id": INTEGER,
+        "year_of_birth": INTEGER,
+        "gender_concept_id": INTEGER,
+        "provider_source_value": VARCHAR,
+        "specialty_source_value": VARCHAR,
+        "specialty_source_concept_id": INTEGER,
+        "gender_source_value": VARCHAR,
+        "gender_source_concept_id": INTEGER,
+    },
+
+    "care_site": {
+        "care_site_id": INTEGER,
+        "care_site_name": VARCHAR,
+        "place_of_service_concept_id": INTEGER,
+        "location_id": INTEGER,
+        "care_site_source_value": VARCHAR,
+        "place_of_service_source_value": VARCHAR,
+    },
+
+    "location": {
+        "location_id": INTEGER,
+        "address_1": VARCHAR,
+        "address_2": VARCHAR,
+        "city": VARCHAR,
+        "state": VARCHAR,
+        "zip": VARCHAR,
+        "county": VARCHAR,
+        "location_source_value": VARCHAR,
+        "country_concept_id": INTEGER,
+        "country_source_value": VARCHAR,
+        "latitude": FLOAT,
+        "longitude": FLOAT,
+    },
+
+    # ===========================
     # STANDARDIZED VOCABULARIES
     # ===========================
 
