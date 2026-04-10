@@ -47,7 +47,7 @@ class Severity(Enum):
 
 @dataclass
 class RuleViolation:
-    rule_id: str                    # e.g., "semantic.standard_concept_enforcement"
+    rule_id: str                    # e.g., "concept_standardization.standard_concept_enforcement"
     severity: Severity              # ERROR or WARNING
     message: str                    # Human-readable error message
     suggested_fix: str              # Recommendation for fixing the violation
@@ -77,66 +77,53 @@ The registry manages rule discovery and access:
 from typing import Type
 
 # Global registry
-_rules: dict[str, Type[Rule]] = {}
-_categories: dict[str, list[Type[Rule]]] = {}
+_registry: dict[str, Type[Rule]] = {}
 
-def register(rule_id: str, category: str, description: str):
-    """Decorator to register a rule class."""
-    def decorator(cls: Type[Rule]) -> Type[Rule]:
-        cls._rule_id = rule_id
-        cls._category = category
-        cls._description = description
-
-        _rules[rule_id] = cls
-
-        if category not in _categories:
-            _categories[category] = []
-        _categories[category].append(cls)
-
-        return cls
-    return decorator
+def register(cls: Type[Rule]) -> Type[Rule]:
+    """Decorator to register a rule class by its rule_id attribute."""
+    _registry[cls.rule_id] = cls
+    return cls
 
 def get_rule(rule_id: str) -> Type[Rule]:
     """Get a rule class by ID."""
-    return _rules[rule_id]
+    return _registry[rule_id]
 
 def get_rules_by_category(category: str) -> list[Type[Rule]]:
     """Get all rules in a category."""
-    return _categories.get(category, [])
+    prefix = category + "."
+    return [r for r in _registry.values() if r.rule_id.startswith(prefix)]
 
 def get_all_rules() -> list[Type[Rule]]:
     """Get all registered rules."""
-    return list(_rules.values())
+    return list(_registry.values())
 ```
 
 ## Creating a New Rule
 
 ### Step 1: Create Rule File
 
-Create a new Python file in the appropriate category directory:
+Create a new Python file in the appropriate implementation directory:
 
 ```
 src/fastssv/rules/
-├── semantic/
-│   └── my_new_rule.py    # For semantic rules
-└── vocabulary/
-    └── my_new_rule.py    # For vocabulary rules
+├── concept_standardization/
+├── anti_patterns/
+├── joins/
+├── temporal/
+├── data_quality/
+└── domain_specific/
 ```
 
 ### Step 2: Implement the Rule Class
 
 ```python
-# src/fastssv/rules/semantic/my_new_rule.py
+# src/fastssv/rules/joins/my_new_rule.py
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.registry import register
 from fastssv.core.helpers import parse_sql
 
-@register(
-    rule_id="semantic.my_new_rule",
-    category="semantic",
-    description="Brief description of what this rule checks"
-)
+@register
 class MyNewRule(Rule):
     """
     Detailed documentation of the rule.
@@ -147,6 +134,12 @@ class MyNewRule(Rule):
     - Examples of violations
     - How to fix violations
     """
+
+    rule_id = "joins.my_new_rule"
+    name = "My New Rule"
+    description = "Brief description of what this rule checks"
+    severity = Severity.ERROR
+    suggested_fix = "Specific recommendation for fixing this violation"
 
     def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
         """
@@ -190,19 +183,12 @@ class MyNewRule(Rule):
 
 ### Step 3: Register the Rule
 
-Import the rule in the category's `__init__.py`:
+Import the rule in the package's `__init__.py`:
 
 ```python
-# src/fastssv/rules/semantic/__init__.py
+# src/fastssv/rules/joins/__init__.py
 
-from . import join_path
-from . import standard_concept
-from . import hierarchy_expansion
-from . import temporal_constraint_mapping
-from . import maps_to_direction
-from . import unmapped_concept
-from . import invalid_reason
-from . import my_new_rule  # Add this line
+from .my_new_rule import MyNewRule
 ```
 
 ### Step 4: Add Tests
@@ -212,24 +198,25 @@ Create a test file:
 ```python
 # tests/test_my_new_rule.py
 
-import unittest
-from fastssv.rules.semantic.my_new_rule import MyNewRule
+import pytest
+from fastssv.rules.joins.my_new_rule import MyNewRule
 
-class TestMyNewRule(unittest.TestCase):
+class TestMyNewRule:
 
-    def setUp(self):
-        self.rule = MyNewRule()
+    @pytest.fixture
+    def rule(self):
+        return MyNewRule()
 
-    def test_valid_query_passes(self):
+    def test_valid_query_passes(self, rule):
         sql = "SELECT * FROM person"
-        violations = self.rule.validate(sql)
-        self.assertEqual(len(violations), 0)
+        violations = rule.validate(sql)
+        assert len(violations) == 0
 
-    def test_invalid_query_fails(self):
+    def test_invalid_query_fails(self, rule):
         sql = "SELECT * FROM invalid_table"
-        violations = self.rule.validate(sql)
-        self.assertGreater(len(violations), 0)
-        self.assertEqual(violations[0].rule_id, "semantic.my_new_rule")
+        violations = rule.validate(sql)
+        assert len(violations) > 0
+        assert violations[0].rule_id == "joins.my_new_rule"
 ```
 
 ## Using Rules
@@ -241,16 +228,16 @@ class TestMyNewRule(unittest.TestCase):
 python main.py query.sql
 
 # Run specific category
-python main.py query.sql --categories semantic
+python main.py query.sql --categories joins
 
 # Run multiple categories
-python main.py query.sql --categories semantic vocabulary
+python main.py query.sql --categories joins temporal
 
 # Run specific rule
-python main.py query.sql --rules semantic.my_new_rule
+python main.py query.sql --rules joins.my_new_rule
 
 # Run multiple specific rules
-python main.py query.sql --rules semantic.join_path_validation semantic.standard_concept_enforcement
+python main.py query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
 ```
 
 ### Python API
@@ -262,12 +249,12 @@ from fastssv import validate_sql_structured
 violations = validate_sql_structured(sql)
 
 # Run specific category
-violations = validate_sql_structured(sql, categories=["semantic"])
+violations = validate_sql_structured(sql, categories=["joins"])
 
 # Run specific rules
 violations = validate_sql_structured(
     sql,
-    rule_ids=["semantic.my_new_rule", "vocabulary.concept_lookup_context"]
+    rule_ids=["joins.my_new_rule", "anti_patterns.concept_lookup_context"]
 )
 
 # Process violations
@@ -277,25 +264,21 @@ for v in violations:
 
 ## Rule Categories
 
-### Semantic Rules (`semantic`)
+### Core Categories
 
-Rules that validate OMOP CDM schema and concept usage:
+Examples from the current public categories:
 
-- `semantic.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
-- `semantic.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
-- `semantic.hierarchy_expansion_required` - Concept hierarchy expansion via concept_ancestor
-- `semantic.observation_period_anchoring` - Temporal constraints anchored to observation_period
-- `semantic.maps_to_direction` - Maps-to relationship direction validation (source → standard)
-- `semantic.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
-- `semantic.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
+- `joins.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
+- `concept_standardization.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
+- `concept_standardization.hierarchy_expansion_required` - Concept hierarchy expansion via concept_ancestor
+- `temporal.observation_period_anchoring` - Temporal constraints anchored to observation_period
+- `joins.maps_to_direction` - Maps-to relationship direction validation (source → standard)
+- `data_quality.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
+- `concept_standardization.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
 
-### Vocabulary Rules (`vocabulary`)
-
-Rules that validate OMOP vocabulary lookup patterns:
-
-- `vocabulary.no_string_identification` - String-based concept ID lookup detection
-- `vocabulary.concept_lookup_context` - Concept table string filter validation
-- `vocabulary.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)
+- `anti_patterns.no_string_identification` - String-based concept ID lookup detection
+- `anti_patterns.concept_lookup_context` - Concept table string filter validation
+- `anti_patterns.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)
 
 ### Adding New Categories
 
@@ -306,7 +289,7 @@ To add a new category:
 3. Add rule files
 4. Import in `src/fastssv/rules/__init__.py`:
    ```python
-   from . import semantic, vocabulary, new_category
+   from . import joins, new_category
    ```
 
 ## Best Practices
@@ -329,7 +312,7 @@ Good violation messages follow this pattern:
 Example:
 ```python
 RuleViolation(
-    rule_id="semantic.standard_concept_enforcement",
+    rule_id="concept_standardization.standard_concept_enforcement",
     severity=Severity.ERROR,
     message="Query uses STANDARD concept field 'drug_concept_id' without enforcing "
             "standard_concept = 'S'. This may include non-standard concepts in results.",
@@ -421,8 +404,13 @@ Is replaced by:
 
 ```python
 # NEW (current)
-@register(rule_id="semantic.join_path_validation", category="semantic", description="...")
+@register
 class JoinPathRule(Rule):
+    rule_id = "joins.join_path_validation"
+    name = "Join Path Validation"
+    description = "..."
+    severity = Severity.WARNING
+
     def validate(self, sql, dialect):
         violations = []
         # validation logic

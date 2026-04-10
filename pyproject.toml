@@ -3,6 +3,7 @@ name = "fastssv"
 version = "0.1.0"
 description = "FastOMOP Semantic Static Validator - A semantic validation framework for OMOP CDM SQL queries"
 readme = "README.md"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.12"
 dependencies = [
 	"dotenv>=0.9.9",

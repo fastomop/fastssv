@@ -11,7 +11,7 @@ python main.py query.sql
 python main.py query.sql --output my_report.json
 
 # With other options
-python main.py query.sql --dialect mysql --categories semantic
+python main.py query.sql --dialect mysql --categories joins
 ```
 
 ### Exit Codes
@@ -35,7 +35,7 @@ Note: WARNING-level violations do not affect exit code.
 **Violation Object:**
 | Field | Type | Description |
 |-------|------|-------------|
-| `rule_id` | string | Unique rule identifier (e.g., "semantic.join_path_validation") |
+| `rule_id` | string | Unique rule identifier (e.g., "joins.join_path_validation") |
 | `severity` | string | "error" or "warning" (lowercase) |
 | `issue` | string | Human-readable violation message |
 | `suggested_fix` | string | Recommendation for fixing the violation |
@@ -106,7 +106,7 @@ When validation fails, a `violations` array is included:
   "warning_count": 1,
   "violations": [
     {
-      "rule_id": "semantic.standard_concept_enforcement",
+      "rule_id": "concept_standardization.standard_concept_enforcement",
       "severity": "error",
       "issue": "Query uses STANDARD concept field 'condition_concept_id' without enforcing standard_concept = 'S'. This may include non-standard concepts in results.",
       "suggested_fix": "Add WHERE clause: concept.standard_concept = 'S' OR use concept_relationship with relationship_id = 'Maps to'",
@@ -116,7 +116,7 @@ When validation fails, a `violations` array is included:
       }
     },
     {
-      "rule_id": "vocabulary.no_string_identification",
+      "rule_id": "anti_patterns.no_string_identification",
       "severity": "warning",
       "issue": "Concept table string filter outside concept_id lookup: x.concept_name = 'Hypertension'",
       "suggested_fix": "Use concept_id-based filtering instead of string matching on concept_name"
@@ -170,7 +170,7 @@ Each violation has the following fields:
 
 ```json
 {
-  "rule_id": "semantic.hierarchy_expansion_required",
+  "rule_id": "concept_standardization.hierarchy_expansion_required",
   "severity": "error",
   "issue": "Query filters on drug_concept_id without using concept_ancestor for hierarchy expansion",
   "suggested_fix": "JOIN to concept_ancestor to capture all descendant concepts",
@@ -243,12 +243,12 @@ else:
         print(f"  Fix: {v.suggested_fix}")
 
 # Filter by category
-violations = validate_sql_structured(sql, categories=["semantic"])
+violations = validate_sql_structured(sql, categories=["concept_standardization"])
 
 # Filter by specific rules
 violations = validate_sql_structured(
     sql,
-    rule_ids=["semantic.standard_concept_enforcement"]
+    rule_ids=["concept_standardization.standard_concept_enforcement"]
 )
 
 # Convert to dict for JSON serialization
@@ -438,7 +438,7 @@ from collections import defaultdict
 
 by_category = defaultdict(list)
 for v in report.get("violations", []):
-    category = v["rule_id"].split(".")[0]  # "semantic" or "vocabulary"
+    category = v["rule_id"].split(".")[0]  # e.g., "concept_standardization", "anti_patterns", "joins", etc.
     by_category[category].append(v)
 
 for category, violations in by_category.items():
@@ -477,7 +477,7 @@ else:
   warning_count: number,      // Count of WARNING violations
   violations?: [              // Array (omitted if empty)
     {
-      rule_id: string,        // e.g., "semantic.join_path_validation"
+      rule_id: string,        // e.g., "joins.join_path_validation"
       severity: "error" | "warning",
       issue: string,          // Human-readable violation message
       suggested_fix: string,  // Specific fix recommendation
