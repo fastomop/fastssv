@@ -1,9 +1,17 @@
-"""Unit tests for semantic validation."""
+"""Unit tests for FastSSV validation rules.
 
-import unittest
+This file contains comprehensive tests for all validation rule categories:
+- Anti-patterns
+- Concept standardization
+- Data quality
+- Domain-specific
+- Joins
+- Temporal
+"""
 
-from fastssv.rules import validate_omop_semantic_rules
-from fastssv.core.registry import get_rules_by_category
+import pytest
+
+from fastssv.rules import validate_concept_standardization
 
 
 def validate_standard_concept_mapping(sql: str, dialect: str = "postgres") -> list[str]:
@@ -11,14 +19,14 @@ def validate_standard_concept_mapping(sql: str, dialect: str = "postgres") -> li
     from fastssv.core.base import Severity
     from fastssv.core.registry import get_rule
 
-    rule = get_rule("semantic.standard_concept_enforcement")()
+    rule = get_rule("concept_standardization.standard_concept_enforcement")()
     violations = rule.validate(sql, dialect)
 
     # Also run join_path and maps_to_direction for warnings
-    join_rule = get_rule("semantic.join_path_validation")()
+    join_rule = get_rule("joins.join_path_validation")()
     violations.extend(join_rule.validate(sql, dialect))
 
-    maps_rule = get_rule("semantic.maps_to_direction")()
+    maps_rule = get_rule("joins.maps_to_direction")()
     violations.extend(maps_rule.validate(sql, dialect))
 
     # Convert to legacy string format
@@ -35,7 +43,7 @@ def validate_unmapped_concept_handling(sql: str, dialect: str = "postgres") -> l
     from fastssv.core.base import Severity
     from fastssv.core.registry import get_rule
 
-    rule = get_rule("semantic.unmapped_concept_handling")()
+    rule = get_rule("data_quality.unmapped_concept_handling")()
     violations = rule.validate(sql, dialect)
 
     # Convert to legacy string format
@@ -47,7 +55,7 @@ def validate_unmapped_concept_handling(sql: str, dialect: str = "postgres") -> l
     return results
 
 
-class StandardConceptMappingTests(unittest.TestCase):
+class TestStandardConceptMapping:
     """Tests for standard concept mapping rule."""
 
     def test_query_with_standard_concept_enforcement(self) -> None:
@@ -59,7 +67,7 @@ class StandardConceptMappingTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         errors = validate_standard_concept_mapping(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_query_with_maps_to_relationship(self) -> None:
         """Query with 'Maps to' relationship should pass."""
@@ -72,7 +80,7 @@ class StandardConceptMappingTests(unittest.TestCase):
         errors = validate_standard_concept_mapping(sql)
         # Should pass (uses Maps to) but may have warnings about join path
         main_errors = [e for e in errors if not e.startswith("Warning:")]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_query_without_standard_enforcement(self) -> None:
         """Query using standard fields without enforcement should fail."""
@@ -81,8 +89,8 @@ class StandardConceptMappingTests(unittest.TestCase):
         FROM condition_occurrence co
         """
         errors = validate_standard_concept_mapping(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("STANDARD concept fields" in e for e in errors))
+        assert len(errors) > 0
+        assert any("STANDARD concept fields" in e for e in errors)
 
     def test_query_with_standard_concept_in_join_on(self) -> None:
         """Query with standard_concept = 'S' in JOIN ON should pass."""
@@ -93,7 +101,7 @@ class StandardConceptMappingTests(unittest.TestCase):
             AND c.standard_concept = 'S'
         """
         errors = validate_standard_concept_mapping(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_query_with_in_clause(self) -> None:
         """Query with standard_concept IN ('S') should pass."""
@@ -104,10 +112,10 @@ class StandardConceptMappingTests(unittest.TestCase):
         WHERE c.standard_concept IN ('S')
         """
         errors = validate_standard_concept_mapping(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
 
-class UnmappedConceptHandlingTests(unittest.TestCase):
+class TestUnmappedConceptHandling:
     """Tests for concept_id = 0 handling rule."""
 
     def test_specific_concept_id_without_zero_handling(self) -> None:
@@ -117,8 +125,8 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertTrue(len(warnings) > 0)
-        self.assertTrue(any("concept_id = 0" in w for w in warnings))
+        assert len(warnings) > 0
+        assert any("concept_id = 0" in w for w in warnings)
 
     def test_concept_id_with_greater_than_zero(self) -> None:
         """Query with > 0 should not warn."""
@@ -127,7 +135,7 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         WHERE condition_concept_id = 201826 AND condition_concept_id > 0
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertEqual(warnings, [])
+        assert warnings == []
 
     def test_concept_id_with_not_equal_zero(self) -> None:
         """Query with != 0 should not warn."""
@@ -136,7 +144,7 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         WHERE condition_concept_id = 201826 AND condition_concept_id != 0
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertEqual(warnings, [])
+        assert warnings == []
 
     def test_in_clause_without_zero_handling(self) -> None:
         """Query with IN clause but no 0 handling should warn."""
@@ -145,7 +153,7 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         WHERE condition_concept_id IN (201826, 201820)
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertTrue(len(warnings) > 0)
+        assert len(warnings) > 0
 
     def test_no_specific_filter(self) -> None:
         """Query without specific concept_id filter should not warn."""
@@ -154,7 +162,7 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         JOIN concept c ON co.condition_concept_id = c.concept_id
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertEqual(warnings, [])
+        assert warnings == []
 
     def test_non_clinical_table(self) -> None:
         """Query on concept table should not warn."""
@@ -163,10 +171,10 @@ class UnmappedConceptHandlingTests(unittest.TestCase):
         WHERE concept_id = 201826
         """
         warnings = validate_unmapped_concept_handling(sql)
-        self.assertEqual(warnings, [])
+        assert warnings == []
 
 
-class CombinedSemanticValidationTests(unittest.TestCase):
+class TestCombinedSemanticValidation:
     """Tests for combined semantic validation."""
 
     def test_valid_query(self) -> None:
@@ -182,18 +190,18 @@ class CombinedSemanticValidationTests(unittest.TestCase):
         AND c.invalid_reason IS NULL
         AND c.domain_id = 'Condition'
         """
-        errors = validate_omop_semantic_rules(sql)
-        self.assertEqual(errors, [])
+        errors = validate_concept_standardization(sql)
+        assert errors == []
 
     def test_invalid_sql(self) -> None:
         """Invalid SQL should return parse error."""
         sql = "SELECT FROM WHERE"
-        errors = validate_omop_semantic_rules(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("parse error" in e.lower() or "error" in e.lower() for e in errors))
+        errors = validate_concept_standardization(sql)
+        assert len(errors) > 0
+        assert any("parse error" in e.lower() or "error" in e.lower() for e in errors)
 
 
-class ObservationPeriodAnchoringTests(unittest.TestCase):
+class TestObservationPeriodAnchoring:
     """Tests for observation period anchoring rule (temporal constraints)."""
 
     def _validate_temporal(self, sql: str, dialect: str = "postgres") -> list[str]:
@@ -201,7 +209,7 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.observation_period_anchoring")()
+        rule = get_rule("temporal.observation_period_anchoring")()
         violations = rule.validate(sql, dialect)
 
         results = []
@@ -217,8 +225,8 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         WHERE condition_start_date >= '2020-01-01'
         """
         errors = self._validate_temporal(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("observation_period" in e for e in errors))
+        assert len(errors) > 0
+        assert any("observation_period" in e for e in errors)
 
     def test_temporal_filter_with_observation_period_should_pass(self) -> None:
         """Query with date filter AND observation_period join should pass."""
@@ -231,7 +239,7 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         errors = self._validate_temporal(sql)
         # Should pass (has observation_period join on person_id)
         main_errors = [e for e in errors if not e.startswith("Warning:")]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_multiple_date_filters_without_observation_period(self) -> None:
         """Query with multiple date filters should error without observation_period."""
@@ -241,7 +249,7 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         AND drug_exposure_end_date <= '2020-12-31'
         """
         errors = self._validate_temporal(sql)
-        self.assertTrue(len(errors) > 0)
+        assert len(errors) > 0
 
     def test_date_comparison_between_tables(self) -> None:
         """Query comparing dates between tables should require observation_period."""
@@ -252,8 +260,8 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         WHERE de.drug_exposure_start_date > co.condition_start_date
         """
         errors = self._validate_temporal(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("observation_period" in e for e in errors))
+        assert len(errors) > 0
+        assert any("observation_period" in e for e in errors)
 
     def test_no_temporal_constraints_should_not_trigger(self) -> None:
         """Query without temporal constraints should not trigger the rule."""
@@ -262,7 +270,7 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         WHERE condition_concept_id = 12345
         """
         errors = self._validate_temporal(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_observation_period_in_cte_should_pass(self) -> None:
         """Query using observation_period in CTE should pass."""
@@ -279,7 +287,7 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         """
         errors = self._validate_temporal(sql)
         main_errors = [e for e in errors if not e.startswith("Warning:")]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_washout_period_pattern_should_require_observation_period(self) -> None:
         """Washout period pattern (NOT EXISTS with date) should require observation_period."""
@@ -293,10 +301,10 @@ class ObservationPeriodAnchoringTests(unittest.TestCase):
         )
         """
         errors = self._validate_temporal(sql)
-        self.assertTrue(len(errors) > 0)
+        assert len(errors) > 0
 
 
-class HierarchyExpansionTests(unittest.TestCase):
+class TestHierarchyExpansion:
     """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
 
     def _validate_hierarchy(self, sql: str, dialect: str = "postgres") -> list[str]:
@@ -304,7 +312,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.hierarchy_expansion_required")()
+        rule = get_rule("concept_standardization.hierarchy_expansion_required")()
         violations = rule.validate(sql, dialect)
 
         results = []
@@ -320,9 +328,9 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE drug_concept_id = 1234567
         """
         errors = self._validate_hierarchy(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_ancestor" in e for e in errors))
-        self.assertTrue(any("drug_exposure.drug_concept_id" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
+        assert any("drug_exposure.drug_concept_id" in e for e in errors)
 
     def test_condition_filter_without_ancestor_should_error(self) -> None:
         """Filtering condition_concept_id without concept_ancestor should error."""
@@ -331,9 +339,9 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         errors = self._validate_hierarchy(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_ancestor" in e for e in errors))
-        self.assertTrue(any("condition_occurrence.condition_concept_id" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
+        assert any("condition_occurrence.condition_concept_id" in e for e in errors)
 
     def test_in_clause_without_ancestor_should_error(self) -> None:
         """IN clause on drug_concept_id without concept_ancestor should error."""
@@ -342,7 +350,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE drug_concept_id IN (1234, 5678, 9012)
         """
         errors = self._validate_hierarchy(sql)
-        self.assertTrue(len(errors) > 0)
+        assert len(errors) > 0
 
     def test_with_concept_ancestor_should_pass(self) -> None:
         """Query using concept_ancestor for hierarchy should pass."""
@@ -355,7 +363,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         errors = self._validate_hierarchy(sql)
         # Should pass (uses concept_ancestor)
         main_errors = [e for e in errors if not e.startswith("Warning:")]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_with_concept_ancestor_cte_should_pass(self) -> None:
         """Query using concept_ancestor via CTE should pass."""
@@ -371,7 +379,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         """
         errors = self._validate_hierarchy(sql)
         main_errors = [e for e in errors if not e.startswith("Warning:")]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_zero_concept_id_should_be_exempt(self) -> None:
         """Filtering on concept_id = 0 should not trigger the rule."""
@@ -380,7 +388,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE drug_concept_id = 0
         """
         errors = self._validate_hierarchy(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_no_filter_should_not_trigger(self) -> None:
         """Query without filtering on drug/condition concept_id should not trigger."""
@@ -390,7 +398,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE person_id = 12345
         """
         errors = self._validate_hierarchy(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_other_concept_columns_should_not_trigger(self) -> None:
         """Filtering on other concept_id columns should not trigger."""
@@ -399,7 +407,7 @@ class HierarchyExpansionTests(unittest.TestCase):
         WHERE measurement_concept_id = 3012345
         """
         errors = self._validate_hierarchy(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_wrong_join_direction_should_warn(self) -> None:
         """Joining on ancestor_concept_id instead of descendant should warn."""
@@ -414,11 +422,11 @@ class HierarchyExpansionTests(unittest.TestCase):
         errors = self._validate_hierarchy(sql)
         # Should have a warning about join direction
         warnings = [e for e in errors if e.startswith("Warning:")]
-        self.assertTrue(len(warnings) > 0)
-        self.assertTrue(any("direction" in w.lower() for w in warnings))
+        assert len(warnings) > 0
+        assert any("direction" in w.lower() for w in warnings)
 
 
-class EdgeCasesTests(unittest.TestCase):
+class TestEdgeCases:
     """Edge cases for semantic validation."""
 
     def test_cte_query(self) -> None:
@@ -437,10 +445,10 @@ class EdgeCasesTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         AND c.invalid_reason IS NULL
         """
-        errors = validate_omop_semantic_rules(sql)
+        errors = validate_concept_standardization(sql)
         # May have warnings but shouldn't have main errors
         main_errors = [e for e in errors if "Violation" in e]
-        self.assertEqual(main_errors, [])
+        assert main_errors == []
 
     def test_multiple_clinical_tables(self) -> None:
         """Query joining multiple clinical tables."""
@@ -454,7 +462,7 @@ class EdgeCasesTests(unittest.TestCase):
         AND c2.standard_concept = 'S'
         """
         errors = validate_standard_concept_mapping(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_subquery(self) -> None:
         """Query with subquery should be handled."""
@@ -467,10 +475,10 @@ class EdgeCasesTests(unittest.TestCase):
         """
         errors = validate_standard_concept_mapping(sql)
         # The subquery has standard_concept = 'S', so this should pass
-        self.assertEqual(errors, [])
+        assert errors == []
 
 
-class InvalidReasonEnforcementTests(unittest.TestCase):
+class TestInvalidReasonEnforcement:
     """Tests for invalid_reason enforcement rule."""
 
     def _run_invalid_reason_rule(self, sql: str) -> list[str]:
@@ -478,7 +486,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.invalid_reason_enforcement")()
+        rule = get_rule("concept_standardization.invalid_reason_enforcement")()
         violations = rule.validate(sql)
 
         # Convert to legacy string format
@@ -499,10 +507,10 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE domain_id = 'Drug'
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept" in e and "invalid_reason" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept" in e and "invalid_reason" in e for e in errors)
         # Should be ERROR, not warning
-        self.assertTrue(all(not e.startswith("Warning:") for e in errors))
+        assert all(not e.startswith("Warning:") for e in errors)
 
     def test_concept_table_with_invalid_reason_is_null(self) -> None:
         """Query with invalid_reason IS NULL should pass."""
@@ -513,7 +521,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         AND invalid_reason IS NULL
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_concept_table_with_invalid_reason_is_not_null(self) -> None:
         """Query explicitly checking for invalid concepts should pass."""
@@ -523,7 +531,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE invalid_reason IS NOT NULL
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_concept_relationship_without_invalid_reason(self) -> None:
         """Query on concept_relationship without invalid_reason should ERROR."""
@@ -533,8 +541,8 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE relationship_id = 'Maps to'
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_relationship" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept_relationship" in e for e in errors)
 
     def test_concept_relationship_with_invalid_reason(self) -> None:
         """Query on concept_relationship with invalid_reason should pass."""
@@ -545,7 +553,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         AND invalid_reason IS NULL
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     # Tests for derived tables WITHOUT invalid_reason column (WARNING)
 
@@ -557,10 +565,10 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE ancestor_concept_id = 201826
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_ancestor" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
         # Should be WARNING, not error
-        self.assertTrue(any(e.startswith("Warning:") for e in errors))
+        assert any(e.startswith("Warning:") for e in errors)
 
     def test_concept_ancestor_with_concept_join(self) -> None:
         """Query on concept_ancestor with proper concept join should pass."""
@@ -572,7 +580,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         AND c.invalid_reason IS NULL
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_concept_synonym_without_concept_join(self) -> None:
         """Query on concept_synonym without concept join should WARN."""
@@ -582,9 +590,9 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE concept_synonym_name LIKE '%diabetes%'
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_synonym" in e for e in errors))
-        self.assertTrue(any(e.startswith("Warning:") for e in errors))
+        assert len(errors) > 0
+        assert any("concept_synonym" in e for e in errors)
+        assert any(e.startswith("Warning:") for e in errors)
 
     def test_drug_strength_without_concept_join(self) -> None:
         """Query on drug_strength without concept join should WARN."""
@@ -593,8 +601,8 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         FROM drug_strength
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("drug_strength" in e for e in errors))
+        assert len(errors) > 0
+        assert any("drug_strength" in e for e in errors)
 
     # Tests for clinical tables (NO check needed)
 
@@ -606,7 +614,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_multiple_clinical_tables_no_check(self) -> None:
         """Query on multiple clinical tables should not require invalid_reason."""
@@ -616,7 +624,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         JOIN drug_exposure de ON co.person_id = de.person_id
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     # Edge cases
 
@@ -630,7 +638,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
             AND c.invalid_reason IS NULL
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_mixed_vocabulary_and_clinical_tables(self) -> None:
         """Query mixing vocabulary and clinical tables should still check."""
@@ -642,8 +650,8 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         """
         errors = self._run_invalid_reason_rule(sql)
         # Should still flag missing invalid_reason on concept table
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept" in e for e in errors)
 
     def test_subquery_with_concept_table(self) -> None:
         """Subquery using concept table should be checked."""
@@ -656,7 +664,7 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         """
         errors = self._run_invalid_reason_rule(sql)
         # Should flag the concept table in the subquery
-        self.assertTrue(len(errors) > 0)
+        assert len(errors) > 0
 
     def test_cte_with_concept_ancestor(self) -> None:
         """CTE using concept_ancestor should be checked."""
@@ -670,8 +678,8 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         """
         errors = self._run_invalid_reason_rule(sql)
         # Should warn about concept_ancestor
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any("concept_ancestor" in e for e in errors))
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
 
     def test_no_vocabulary_tables_used(self) -> None:
         """Query without any vocabulary tables should not be checked."""
@@ -681,17 +689,17 @@ class InvalidReasonEnforcementTests(unittest.TestCase):
         WHERE condition_start_date > '2020-01-01'
         """
         errors = self._run_invalid_reason_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
 
-class DomainSegregationTests(unittest.TestCase):
+class TestDomainSegregation:
     """Tests for the domain segregation rule (now merged into concept_domain_validation)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.concept_domain_validation")()
+        rule = get_rule("concept_standardization.concept_domain_validation")()
         violations = rule.validate(sql, dialect)
         results = []
         for v in violations:
@@ -711,7 +719,7 @@ class DomainSegregationTests(unittest.TestCase):
         AND c.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_drug_exposure_correct_domain(self) -> None:
         """drug_exposure joined to concept with domain_id = 'Drug' should pass."""
@@ -722,7 +730,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_procedure_occurrence_correct_domain(self) -> None:
         """procedure_occurrence with domain_id = 'Procedure' should pass."""
@@ -734,7 +742,7 @@ class DomainSegregationTests(unittest.TestCase):
         AND c.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_measurement_correct_domain(self) -> None:
         """measurement with domain_id = 'Measurement' should pass."""
@@ -745,7 +753,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.domain_id = 'Measurement'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_domain_filter_in_join_on(self) -> None:
         """domain_id filter in JOIN ON clause should pass."""
@@ -757,7 +765,7 @@ class DomainSegregationTests(unittest.TestCase):
             AND c.domain_id = 'Condition'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_domain_filter_in_clause(self) -> None:
         """domain_id IN (...) with correct domain should pass."""
@@ -768,7 +776,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.domain_id IN ('Condition')
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_death_cause_concept_uses_condition_domain(self) -> None:
         """death.cause_concept_id maps to 'Condition' domain and should pass with it."""
@@ -779,7 +787,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     # --- Wrong domain filter -> ERROR ---
 
@@ -792,11 +800,11 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE c.domain_id = 'Procedure'
         """
         errors = self._run_rule(sql)
-        self.assertTrue(len(errors) > 0)
+        assert len(errors) > 0
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertTrue(len(errors_only) > 0)
-        self.assertTrue(any("domain mismatch" in e.lower() for e in errors_only))
-        self.assertTrue(any("condition_occurrence" in e for e in errors_only))
+        assert len(errors_only) > 0
+        assert any("domain mismatch" in e.lower() for e in errors_only)
+        assert any("condition_occurrence" in e for e in errors_only)
 
     def test_drug_exposure_wrong_domain_condition(self) -> None:
         """drug_exposure filtered with domain_id = 'Condition' should ERROR."""
@@ -808,8 +816,8 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertTrue(len(errors_only) > 0)
-        self.assertTrue(any("drug_exposure" in e for e in errors_only))
+        assert len(errors_only) > 0
+        assert any("drug_exposure" in e for e in errors_only)
 
     def test_procedure_wrong_domain_drug(self) -> None:
         """procedure_occurrence filtered with domain_id = 'Drug' should ERROR."""
@@ -821,7 +829,7 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertTrue(len(errors_only) > 0)
+        assert len(errors_only) > 0
 
     def test_visit_occurrence_wrong_domain(self) -> None:
         """visit_occurrence filtered with domain_id = 'Condition' should ERROR."""
@@ -833,7 +841,7 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertTrue(len(errors_only) > 0)
+        assert len(errors_only) > 0
 
     def test_death_wrong_domain(self) -> None:
         """death.cause_concept_id filtered with domain_id = 'Drug' (not Condition) should ERROR."""
@@ -845,7 +853,7 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertTrue(len(errors_only) > 0)
+        assert len(errors_only) > 0
 
     # --- No domain filter -> WARNING ---
 
@@ -859,10 +867,10 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         warnings = [e for e in errors if e.startswith("Warning:")]
-        self.assertTrue(len(warnings) > 0)
+        assert len(warnings) > 0
         # Should not be an error
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertEqual(errors_only, [])
+        assert errors_only == []
 
     def test_no_domain_filter_drug_warns(self) -> None:
         """drug_exposure join to concept without domain_id should produce WARNING."""
@@ -874,7 +882,7 @@ class DomainSegregationTests(unittest.TestCase):
         """
         errors = self._run_rule(sql)
         warnings = [e for e in errors if e.startswith("Warning:")]
-        self.assertTrue(len(warnings) > 0)
+        assert len(warnings) > 0
 
     # --- No concept table -> no violation ---
 
@@ -886,7 +894,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE co.condition_concept_id IN (201826, 201254)
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_clinical_tables_only_no_violation(self) -> None:
         """Query joining only clinical tables should not trigger the rule."""
@@ -897,7 +905,7 @@ class DomainSegregationTests(unittest.TestCase):
         WHERE co.condition_start_date > '2020-01-01'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     # --- Multiple tables ---
 
@@ -915,7 +923,7 @@ class DomainSegregationTests(unittest.TestCase):
         AND dc.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        self.assertEqual(errors, [])
+        assert errors == []
 
     def test_unrelated_concept_column_not_flagged(self) -> None:
         """Joining concept on a type_concept_id (not a primary entity column) should not trigger."""
@@ -928,7 +936,7 @@ class DomainSegregationTests(unittest.TestCase):
         errors = self._run_rule(sql)
         # type_concept_id is not in CLINICAL_TABLE_DOMAIN -> no domain segregation violation
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertEqual(errors_only, [])
+        assert errors_only == []
 
     def test_cte_concept_join_not_flagged(self) -> None:
         """Joining to a CTE (not directly to concept table) should not trigger."""
@@ -945,15 +953,15 @@ class DomainSegregationTests(unittest.TestCase):
         errors = self._run_rule(sql)
         # The clinical table joins a CTE, not concept directly -> no domain_segregation violation
         errors_only = [e for e in errors if e.startswith("Error:")]
-        self.assertEqual(errors_only, [])
+        assert errors_only == []
 
 
-class MeasurementUnitValidationTests(unittest.TestCase):
+class TestMeasurementUnitValidation:
     """Tests for the measurement unit validation rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.measurement_unit_validation")()
+        rule = get_rule("domain_specific.measurement_unit_validation")()
         return rule.validate(sql, dialect)
 
     def test_value_as_number_without_unit_fires(self) -> None:
@@ -965,8 +973,8 @@ class MeasurementUnitValidationTests(unittest.TestCase):
           AND m.value_as_number > 7.0
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].rule_id, "semantic.measurement_unit_validation")
+        assert len(violations) > 0
+        assert violations[0].rule_id == "domain_specific.measurement_unit_validation"
 
     def test_value_as_number_with_unit_passes(self) -> None:
         """Filtering value_as_number WITH unit_concept_id -> no violation."""
@@ -978,7 +986,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
           AND m.unit_concept_id = 8554
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_no_value_as_number_filter_not_flagged(self) -> None:
         """Measurement query without numeric threshold -> no violation."""
@@ -988,7 +996,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         WHERE m.measurement_concept_id = 3004410
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_non_measurement_table_not_flagged(self) -> None:
         """Numeric comparison on non-measurement table -> no violation."""
@@ -998,7 +1006,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         WHERE condition_occurrence_id > 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_gte_comparison_without_unit_fires(self) -> None:
         """GTE (>=) threshold without unit_concept_id also triggers the rule."""
@@ -1008,7 +1016,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         WHERE m.value_as_number >= 6.5
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_lt_comparison_without_unit_fires(self) -> None:
         """LT (<) threshold without unit_concept_id also triggers the rule."""
@@ -1019,7 +1027,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
           AND m.value_as_number < 60.0
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_unit_in_join_on_satisfies_rule(self) -> None:
         """unit_concept_id referenced in a JOIN ON clause satisfies the rule."""
@@ -1030,7 +1038,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         WHERE m.value_as_number > 7.0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_between_without_unit_fires(self) -> None:
         """BETWEEN filter on value_as_number without unit_concept_id -> violation."""
@@ -1041,7 +1049,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
           AND m.value_as_number BETWEEN 5.0 AND 10.0
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_between_with_unit_passes(self) -> None:
         """BETWEEN filter on value_as_number WITH unit_concept_id -> no violation."""
@@ -1053,7 +1061,7 @@ class MeasurementUnitValidationTests(unittest.TestCase):
           AND m.unit_concept_id = 8840
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_string_comparison_not_flagged(self) -> None:
         """Filtering on value_as_concept_id (not value_as_number) should not trigger the rule."""
@@ -1063,14 +1071,14 @@ class MeasurementUnitValidationTests(unittest.TestCase):
         WHERE m.value_as_concept_id = 4181412
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
-class FutureInformationLeakageTests(unittest.TestCase):
+class TestFutureInformationLeakage:
     """Tests for the future information leakage rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.future_information_leakage")()
+        rule = get_rule("temporal.future_information_leakage")()
         return rule.validate(sql, dialect)
 
     def test_cross_table_date_comparison_without_bound_fires(self) -> None:
@@ -1082,8 +1090,8 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE co.condition_start_date > de.drug_exposure_start_date
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].rule_id, "semantic.future_information_leakage")
+        assert len(violations) > 0
+        assert violations[0].rule_id == "temporal.future_information_leakage"
 
     def test_cross_table_date_comparison_with_bound_passes(self) -> None:
         """Cross-table date comparison WITH observation_period_end_date bound -> no violation."""
@@ -1096,7 +1104,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
           AND co.condition_start_date <= op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_single_table_date_filter_not_flagged(self) -> None:
         """Single-table temporal filter (same table both sides) should not trigger."""
@@ -1107,7 +1115,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE co.condition_start_date > op.observation_period_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_no_date_comparison_not_flagged(self) -> None:
         """Query with no temporal activity at all should not trigger."""
@@ -1117,7 +1125,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_gte_comparison_without_bound_fires(self) -> None:
         """GTE (>=) cross-table date comparison also triggers the rule."""
@@ -1128,7 +1136,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE de.drug_exposure_start_date >= vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_date_comparison_against_literal_not_flagged(self) -> None:
         """Comparing a date column against a literal value should not trigger."""
@@ -1138,7 +1146,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE co.condition_start_date > '2020-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_lt_direction_fires(self) -> None:
         """LT (a < b) is semantically equivalent to GT (b > a) and must also trigger."""
@@ -1149,7 +1157,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE de.drug_exposure_start_date < co.condition_start_date
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_end_date_only_in_select_still_fires(self) -> None:
         """observation_period_end_date in SELECT list is not an upper bound -- must still fire."""
@@ -1162,7 +1170,7 @@ class FutureInformationLeakageTests(unittest.TestCase):
         WHERE co.condition_start_date > de.drug_exposure_start_date
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_between_with_end_date_passes(self) -> None:
         """BETWEEN ... AND observation_period_end_date is a valid upper bound."""
@@ -1176,15 +1184,15 @@ class FutureInformationLeakageTests(unittest.TestCase):
                                           AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
 
-class TypeConceptIdMisuseTests(unittest.TestCase):
+class TestTypeConceptIdMisuse:
     """Tests for the type_concept_id misuse rule (OMOP_014)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.type_concept_id_misuse")()
+        rule = get_rule("anti_patterns.type_concept_id_misuse")()
         return rule.validate(sql, dialect)
 
     def test_condition_type_concept_id_filter_fires(self) -> None:
@@ -1194,10 +1202,10 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE condition_type_concept_id = 32817
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].rule_id, "semantic.type_concept_id_misuse")
-        self.assertTrue("condition_type_concept_id" in violations[0].message)
-        self.assertTrue("provenance" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].rule_id == "anti_patterns.type_concept_id_misuse"
+        assert "condition_type_concept_id" in violations[0].message
+        assert "provenance" in violations[0].message.lower()
 
     def test_drug_type_concept_id_filter_fires(self) -> None:
         """Filtering on drug_type_concept_id should error."""
@@ -1206,9 +1214,9 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE drug_type_concept_id = 38000177
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("drug_type_concept_id" in violations[0].message)
-        self.assertTrue("drug_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "drug_type_concept_id" in violations[0].message
+        assert "drug_concept_id" in violations[0].message
 
     def test_visit_type_concept_id_filter_fires(self) -> None:
         """Filtering on visit_type_concept_id should error (OMOP_013 covered)."""
@@ -1217,9 +1225,9 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE visit_type_concept_id = 9201
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("visit_type_concept_id" in violations[0].message)
-        self.assertTrue("visit_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "visit_type_concept_id" in violations[0].message
+        assert "visit_concept_id" in violations[0].message
 
     def test_measurement_type_concept_id_in_clause_fires(self) -> None:
         """Filtering with IN clause on measurement_type_concept_id should error."""
@@ -1228,8 +1236,8 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE measurement_type_concept_id IN (32817, 32818)
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("measurement_type_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "measurement_type_concept_id" in violations[0].message
 
     def test_procedure_type_concept_id_comparison_fires(self) -> None:
         """Using comparison operators on procedure_type_concept_id should error."""
@@ -1238,7 +1246,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE procedure_type_concept_id != 32817
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_type_concept_id_in_join_on_fires(self) -> None:
         """Using type_concept_id in JOIN ON clause should error."""
@@ -1248,8 +1256,8 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         JOIN concept c ON co.condition_type_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("JOIN ON" in violations[0].message or "join" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "JOIN ON" in violations[0].message or "join" in violations[0].message.lower()
 
     def test_type_concept_id_in_having_fires(self) -> None:
         """Using type_concept_id in HAVING clause should error."""
@@ -1260,7 +1268,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         HAVING condition_type_concept_id = 32817
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_correct_primary_concept_id_usage_passes(self) -> None:
         """Using primary concept_id (not type) should pass."""
@@ -1269,7 +1277,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_correct_visit_concept_id_usage_passes(self) -> None:
         """Using visit_concept_id (not visit_type_concept_id) should pass."""
@@ -1278,7 +1286,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE visit_concept_id = 9201
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_type_concept_id_in_select_list_passes(self) -> None:
         """Selecting type_concept_id (not filtering) should pass."""
@@ -1288,7 +1296,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_type_concept_id_in_group_by_passes(self) -> None:
         """Using type_concept_id in GROUP BY (not filtering) should pass."""
@@ -1298,7 +1306,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         GROUP BY condition_type_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_multiple_type_concept_id_filters_fires_multiple(self) -> None:
         """Multiple type_concept_id filters should produce multiple violations."""
@@ -1310,7 +1318,7 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         AND de.drug_type_concept_id = 38000177
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) >= 2)
+        assert len(violations) >= 2
 
     def test_no_clinical_tables_not_flagged(self) -> None:
         """Query without clinical tables should not trigger."""
@@ -1320,15 +1328,15 @@ class TypeConceptIdMisuseTests(unittest.TestCase):
         WHERE domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
 
-class EraTableStandardConceptsTests(unittest.TestCase):
+class TestEraTableStandardConcepts:
     """Tests for the era table standard concepts rule (OMOP_011)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.era_table_standard_concepts")()
+        rule = get_rule("concept_standardization.era_table_standard_concepts")()
         return rule.validate(sql, dialect)
 
     def test_era_table_filter_for_null_standard_concept_warns(self) -> None:
@@ -1340,9 +1348,9 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.standard_concept IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].rule_id, "semantic.era_table_standard_concepts")
-        self.assertTrue("0 rows" in violations[0].message)
+        assert len(violations) > 0
+        assert violations[0].rule_id == "concept_standardization.era_table_standard_concepts"
+        assert "0 rows" in violations[0].message
 
     def test_era_table_filter_for_not_standard_warns(self) -> None:
         """Filtering era table for standard_concept != 'S' should warn."""
@@ -1353,8 +1361,8 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.standard_concept != 'S'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("0 rows" in violations[0].message)
+        assert len(violations) > 0
+        assert "0 rows" in violations[0].message
 
     def test_era_table_standard_filter_acceptable(self) -> None:
         """standard_concept = 'S' filter should NOT be flagged (even if redundant)."""
@@ -1365,7 +1373,7 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_era_table_without_concept_join_passes(self) -> None:
         """Era table query without concept join should pass."""
@@ -1375,7 +1383,7 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_era_table_with_concept_no_standard_filter_passes(self) -> None:
         """Era table joined to concept without standard filter should pass."""
@@ -1386,7 +1394,7 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_condition_era_with_standard_filter_acceptable(self) -> None:
         """condition_era with standard_concept = 'S' should NOT be flagged."""
@@ -1398,7 +1406,7 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         AND c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_non_era_table_not_affected(self) -> None:
         """Non-era tables should not trigger this rule."""
@@ -1409,7 +1417,7 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.standard_concept IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_dose_era_covered(self) -> None:
         """dose_era table should also be covered for non-standard concept filters."""
@@ -1420,8 +1428,8 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         WHERE c.standard_concept IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("0 rows" in violations[0].message)
+        assert len(violations) > 0
+        assert "0 rows" in violations[0].message
 
     def test_multiple_era_tables_not_flagged_without_filters(self) -> None:
         """Multiple era tables without standard filters should pass."""
@@ -1431,15 +1439,15 @@ class EraTableStandardConceptsTests(unittest.TestCase):
         JOIN drug_era de ON ce.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
 
-class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
+class TestConceptRelationshipRequiresRelationshipId:
     """Tests for the concept_relationship requires relationship_id rule (OMOP_016)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.concept_relationship_requires_relationship_id")()
+        rule = get_rule("joins.concept_relationship_requires_relationship_id")()
         return rule.validate(sql, dialect)
 
     def test_concept_relationship_without_filter_fires(self) -> None:
@@ -1452,9 +1460,9 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE c1.concept_code = 'E11.9'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].rule_id, "semantic.concept_relationship_requires_relationship_id")
-        self.assertTrue("cross-product" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].rule_id == "joins.concept_relationship_requires_relationship_id"
+        assert "cross-product" in violations[0].message.lower()
 
     def test_concept_relationship_with_on_clause_filter_passes(self) -> None:
         """relationship_id filter in JOIN ON clause should pass."""
@@ -1467,7 +1475,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE c1.concept_code = 'E11.9'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_concept_relationship_with_where_clause_filter_passes(self) -> None:
         """relationship_id filter in WHERE clause should pass."""
@@ -1480,7 +1488,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         AND cr.relationship_id = 'Maps to'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_concept_relationship_with_in_clause_passes(self) -> None:
         """relationship_id filter using IN clause should pass."""
@@ -1492,7 +1500,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE cr.relationship_id IN ('Maps to', 'Is a')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_concept_relationship_is_a_relationship_passes(self) -> None:
         """Using 'Is a' relationship with filter should pass."""
@@ -1504,7 +1512,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_no_concept_relationship_table_not_flagged(self) -> None:
         """Query without concept_relationship table should not trigger."""
@@ -1514,7 +1522,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE c.concept_code = 'E11.9'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_concept_relationship_in_subquery_without_filter_fires(self) -> None:
         """concept_relationship in subquery without filter should error."""
@@ -1527,7 +1535,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         )
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_concept_relationship_in_cte_without_filter_fires(self) -> None:
         """concept_relationship in CTE without filter should error."""
@@ -1542,7 +1550,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         JOIN mapped_concepts mc ON c.concept_id = mc.concept_id_2
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_concept_relationship_with_multiple_filters_passes(self) -> None:
         """Multiple conditions including relationship_id should pass."""
@@ -1556,7 +1564,7 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         AND c1.concept_code = 'E11.9'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_concept_relationship_with_is_not_null_fires(self) -> None:
         """IS NOT NULL doesn't specify relationship type, should error."""
@@ -1568,8 +1576,8 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE cr.relationship_id IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("cross-product" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "cross-product" in violations[0].message.lower()
 
     def test_concept_relationship_with_not_equals_fires(self) -> None:
         """!= doesn't specify relationship type, should error."""
@@ -1581,8 +1589,8 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE cr.relationship_id != 'Subsumes'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("cross-product" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "cross-product" in violations[0].message.lower()
 
     def test_concept_relationship_with_is_null_fires(self) -> None:
         """IS NULL doesn't specify relationship type, should error."""
@@ -1591,15 +1599,15 @@ class ConceptRelationshipRequiresRelationshipIdTests(unittest.TestCase):
         WHERE cr.relationship_id IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
 
-class ConceptDomainValidationTests(unittest.TestCase):
+class TestConceptDomainValidation:
     """Tests for the concept domain validation rule (OMOP_066 + OMOP_019)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.concept_domain_validation")()
+        rule = get_rule("concept_standardization.concept_domain_validation")()
         return rule.validate(sql, dialect)
 
     def test_condition_with_correct_domain_passes(self) -> None:
@@ -1611,7 +1619,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_condition_with_wrong_domain_fires(self) -> None:
         """Drug domain for condition_concept_id should error."""
@@ -1622,10 +1630,10 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("condition_concept_id" in violations[0].message.lower())
-        self.assertTrue("drug" in violations[0].message.lower())
-        self.assertTrue("condition" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "condition_concept_id" in violations[0].message.lower()
+        assert "drug" in violations[0].message.lower()
+        assert "condition" in violations[0].message.lower()
 
     def test_drug_with_correct_domain_passes(self) -> None:
         """Drug domain for drug_concept_id should pass."""
@@ -1636,7 +1644,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_drug_with_wrong_domain_fires(self) -> None:
         """Procedure domain for drug_concept_id should error."""
@@ -1647,8 +1655,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("drug_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "drug_concept_id" in violations[0].message.lower()
 
     def test_gender_with_correct_domain_passes(self) -> None:
         """Gender domain for gender_concept_id should pass (OMOP_019)."""
@@ -1659,7 +1667,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Gender'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_gender_with_wrong_domain_fires(self) -> None:
         """Race domain for gender_concept_id should error (OMOP_019)."""
@@ -1670,8 +1678,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Race'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("gender_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "gender_concept_id" in violations[0].message.lower()
 
     def test_race_with_correct_domain_passes(self) -> None:
         """Race domain for race_concept_id should pass."""
@@ -1682,7 +1690,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Race'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_no_domain_filter_warns_for_main_tables(self) -> None:
         """No domain filter on main clinical tables should trigger WARNING."""
@@ -1694,8 +1702,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) > 0
+        assert violations[0].severity == Severity.WARNING
 
     def test_no_domain_filter_passes_for_auxiliary_columns(self) -> None:
         """No domain filter on auxiliary columns (gender, race, etc.) should not warn."""
@@ -1706,7 +1714,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_domain_filter_in_join_on_clause(self) -> None:
         """Domain filter in ON clause should be detected."""
@@ -1717,7 +1725,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
             AND c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_reversed_join_condition_detected(self) -> None:
         """Reversed join (concept.concept_id = table.*_concept_id) should work."""
@@ -1728,7 +1736,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_multiple_domain_in_clause_fires(self) -> None:
         """IN clause with wrong domains should error."""
@@ -1739,7 +1747,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id IN ('Condition', 'Procedure')
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_measurement_with_unit_domain(self) -> None:
         """Unit domain for unit_concept_id should pass."""
@@ -1750,7 +1758,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Unit'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_measurement_unit_with_wrong_domain_fires(self) -> None:
         """Measurement domain for unit_concept_id should error (CLIN_025)."""
@@ -1761,8 +1769,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Measurement'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("unit_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "unit_concept_id" in violations[0].message.lower()
 
     def test_measurement_with_wrong_domain_fires(self) -> None:
         """Condition domain for measurement_concept_id should error (CLIN_024)."""
@@ -1773,8 +1781,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("measurement_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "measurement_concept_id" in violations[0].message.lower()
 
     def test_route_concept_with_route_domain(self) -> None:
         """Route domain for route_concept_id should pass."""
@@ -1785,7 +1793,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Route'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_route_concept_with_wrong_domain_fires(self) -> None:
         """Drug domain for route_concept_id should error (CLIN_017)."""
@@ -1796,10 +1804,10 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("route_concept_id" in violations[0].message.lower())
-        self.assertTrue("drug" in violations[0].message.lower())
-        self.assertTrue("route" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "route_concept_id" in violations[0].message.lower()
+        assert "drug" in violations[0].message.lower()
+        assert "route" in violations[0].message.lower()
 
     def test_no_concept_join_not_flagged(self) -> None:
         """Query without concept table join should not trigger."""
@@ -1809,7 +1817,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE condition_concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_condition_status_with_correct_domain_passes(self) -> None:
         """Condition Status domain for condition_status_concept_id should pass (CLIN_012)."""
@@ -1820,7 +1828,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition Status'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_condition_status_with_wrong_domain_fires(self) -> None:
         """Condition domain for condition_status_concept_id should error (CLIN_012)."""
@@ -1831,9 +1839,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("condition_status_concept_id" in violations[0].message.lower())
-        self.assertTrue("condition" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "condition_status_concept_id" in violations[0].message.lower()
+        assert "condition" in violations[0].message.lower()
 
     def test_qualifier_with_correct_domain_passes(self) -> None:
         """Meas Value domain for qualifier_concept_id should pass (OMOP_101)."""
@@ -1844,7 +1852,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Meas Value'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_qualifier_with_wrong_domain_fires(self) -> None:
         """Observation domain for qualifier_concept_id should error (OMOP_101)."""
@@ -1855,8 +1863,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Observation'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("qualifier_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "qualifier_concept_id" in violations[0].message.lower()
 
     def test_qualifier_with_condition_domain_fires(self) -> None:
         """Condition domain for qualifier_concept_id should error (CLIN_033)."""
@@ -1867,9 +1875,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("qualifier_concept_id", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "ERROR"
+        assert "qualifier_concept_id" in violations[0].message.lower()
 
     def test_visit_with_correct_domain_passes(self) -> None:
         """Visit domain for visit_concept_id should pass (CLIN_038)."""
@@ -1880,7 +1888,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Visit'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_visit_with_wrong_domain_fires(self) -> None:
         """Condition domain for visit_concept_id should error (CLIN_038)."""
@@ -1891,10 +1899,10 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("visit_concept_id", violations[0].message.lower())
-        self.assertIn("visit", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "ERROR"
+        assert "visit_concept_id" in violations[0].message.lower()
+        assert "visit" in violations[0].message.lower()
 
     def test_visit_detail_with_correct_domain_passes(self) -> None:
         """Visit domain for visit_detail_concept_id should pass (CLIN_043)."""
@@ -1905,7 +1913,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Visit'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_visit_detail_with_wrong_domain_fires(self) -> None:
         """Condition domain for visit_detail_concept_id should error (CLIN_043)."""
@@ -1916,9 +1924,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("visit_detail_concept_id", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "ERROR"
+        assert "visit_detail_concept_id" in violations[0].message.lower()
 
     def test_visit_detail_without_domain_filter_warns(self) -> None:
         """visit_detail_concept_id without domain filter should warn (CLIN_043)."""
@@ -1928,9 +1936,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         JOIN concept c ON vd.visit_detail_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "WARNING")
-        self.assertIn("visit_detail_concept_id", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "WARNING"
+        assert "visit_detail_concept_id" in violations[0].message.lower()
 
     def test_disease_status_with_correct_domain_passes(self) -> None:
         """Spec Disease Status domain for disease_status_concept_id should pass (OMOP_153)."""
@@ -1941,7 +1949,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Spec Disease Status'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_disease_status_with_wrong_domain_fires(self) -> None:
         """Condition domain for disease_status_concept_id should error (OMOP_153)."""
@@ -1952,8 +1960,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("disease_status_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "disease_status_concept_id" in violations[0].message.lower()
 
     def test_modifier_with_correct_domain_passes(self) -> None:
         """Modifier domain for modifier_concept_id should pass (CLIN_021)."""
@@ -1964,7 +1972,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Modifier'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_modifier_with_wrong_domain_fires(self) -> None:
         """Procedure domain for modifier_concept_id should error (CLIN_021)."""
@@ -1975,8 +1983,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("modifier_concept_id" in violations[0].message.lower())
+        assert len(violations) > 0
+        assert "modifier_concept_id" in violations[0].message.lower()
 
     def test_observation_with_correct_domain_passes(self) -> None:
         """Observation domain for observation_concept_id should pass (CLIN_031)."""
@@ -1987,7 +1995,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Observation'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_observation_with_wrong_domain_fires(self) -> None:
         """Measurement domain for observation_concept_id should error (CLIN_031)."""
@@ -1998,10 +2006,10 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Measurement'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("observation_concept_id", violations[0].message.lower())
-        self.assertIn("observation", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "ERROR"
+        assert "observation_concept_id" in violations[0].message.lower()
+        assert "observation" in violations[0].message.lower()
 
     def test_observation_unit_with_correct_domain_passes(self) -> None:
         """Unit domain for observation.unit_concept_id should pass (CLIN_032)."""
@@ -2012,7 +2020,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Unit'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_observation_unit_with_wrong_domain_fires(self) -> None:
         """Observation domain for observation.unit_concept_id should error (CLIN_032)."""
@@ -2023,9 +2031,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Observation'
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("unit_concept_id", violations[0].message.lower())
+        assert len(violations) > 0
+        assert violations[0].severity.name == "ERROR"
+        assert "unit_concept_id" in violations[0].message.lower()
 
     # CLIN_049: death.cause_concept_id should reference Condition domain
 
@@ -2038,7 +2046,7 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_clin_049_death_cause_with_drug_domain_fires(self) -> None:
         """death.cause_concept_id with Drug domain should error (CLIN_049)."""
@@ -2049,10 +2057,10 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("cause_concept_id", violations[0].message.lower())
-        self.assertIn("condition", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "cause_concept_id" in violations[0].message.lower()
+        assert "condition" in violations[0].message.lower()
 
     def test_clin_049_death_cause_with_procedure_domain_fires(self) -> None:
         """death.cause_concept_id with Procedure domain should error (CLIN_049)."""
@@ -2062,9 +2070,9 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("cause_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "cause_concept_id" in violations[0].message.lower()
 
     def test_clin_049_death_cause_with_measurement_domain_fires(self) -> None:
         """death.cause_concept_id with Measurement domain should error (CLIN_049)."""
@@ -2075,8 +2083,8 @@ class ConceptDomainValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Measurement'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "ERROR")
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
 
     def test_clin_049_death_cause_without_domain_filter_warns(self) -> None:
         """death.cause_concept_id without domain filter should warn (CLIN_049)."""
@@ -2086,17 +2094,17 @@ class ConceptDomainValidationTests(unittest.TestCase):
         JOIN concept c ON d.cause_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "WARNING")
-        self.assertIn("cause_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "cause_concept_id" in violations[0].message.lower()
 
 
-class ObservationValueAsConceptConfusionTests(unittest.TestCase):
+class TestObservationValueAsConceptConfusion:
     """Tests for observation value_as_concept_id confusion rule (CLIN_034)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.observation_value_as_concept_confusion")()
+        rule = get_rule("domain_specific.observation_value_as_concept_confusion")()
         return rule.validate(sql, dialect)
 
     def test_clin_034_same_concept_id_fires(self) -> None:
@@ -2107,11 +2115,11 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_concept_id = 4058286
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("4058286", violations[0].message)
-        self.assertIn("observation_concept_id", violations[0].message.lower())
-        self.assertIn("value_as_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "4058286" in violations[0].message
+        assert "observation_concept_id" in violations[0].message.lower()
+        assert "value_as_concept_id" in violations[0].message.lower()
 
     def test_clin_034_overlapping_in_clauses_fires(self) -> None:
         """Overlapping concept_ids in IN clauses should error."""
@@ -2121,9 +2129,9 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_concept_id IN (4058286, 3016502)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "ERROR")
-        self.assertIn("4058286", violations[0].message)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "4058286" in violations[0].message
 
     def test_clin_034_multiple_overlapping_concepts_fires(self) -> None:
         """Multiple overlapping concepts should error."""
@@ -2133,9 +2141,9 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_concept_id IN (4058286, 3004249, 999)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("4058286", violations[0].message)
-        self.assertIn("3004249", violations[0].message)
+        assert len(violations) == 1
+        assert "4058286" in violations[0].message
+        assert "3004249" in violations[0].message
 
     def test_clin_034_different_concepts_passes(self) -> None:
         """Different concept_ids for observation_concept_id and value_as_concept_id should pass."""
@@ -2145,7 +2153,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_concept_id = 45877994
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_no_overlap_in_clauses_passes(self) -> None:
         """Non-overlapping IN clauses should pass."""
@@ -2155,7 +2163,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_concept_id IN (45877994, 3016502)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_only_observation_concept_id_passes(self) -> None:
         """Only filtering observation_concept_id should pass."""
@@ -2164,7 +2172,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
         WHERE observation_concept_id = 4058286
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_only_value_as_concept_id_passes(self) -> None:
         """Only filtering value_as_concept_id should pass."""
@@ -2173,7 +2181,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
         WHERE value_as_concept_id = 4058286
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_value_as_number_instead_passes(self) -> None:
         """Using value_as_number instead of value_as_concept_id should pass."""
@@ -2183,7 +2191,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND value_as_number > 120
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_no_observation_table_passes(self) -> None:
         """Query without observation table should pass."""
@@ -2192,7 +2200,7 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
         WHERE measurement_concept_id = 4058286
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_034_qualified_columns_fires(self) -> None:
         """Qualified column references should be detected."""
@@ -2202,15 +2210,15 @@ class ObservationValueAsConceptConfusionTests(unittest.TestCase):
           AND o.value_as_concept_id = 4058286
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class SourceConceptIdWarningTests(unittest.TestCase):
+class TestSourceConceptIdWarning:
     """Tests for the source_concept_id warning rule (OMOP_022)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.source_concept_id_warning")()
+        rule = get_rule("concept_standardization.source_concept_id_warning")()
         return rule.validate(sql, dialect)
 
     def test_condition_source_concept_id_filter_warns(self) -> None:
@@ -2221,9 +2229,9 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE condition_source_concept_id = 44836914
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("condition_source_concept_id" in violations[0].message)
-        self.assertTrue("condition_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "condition_source_concept_id" in violations[0].message
+        assert "condition_concept_id" in violations[0].message
 
     def test_drug_source_concept_id_filter_warns(self) -> None:
         """Filtering on drug_source_concept_id should warn."""
@@ -2233,8 +2241,8 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE drug_source_concept_id = 123456
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("drug_source_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "drug_source_concept_id" in violations[0].message
 
     def test_procedure_source_concept_id_in_clause_warns(self) -> None:
         """Using IN clause with procedure_source_concept_id should warn."""
@@ -2244,8 +2252,8 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE procedure_source_concept_id IN (111, 222, 333)
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
-        self.assertTrue("procedure_source_concept_id" in violations[0].message)
+        assert len(violations) > 0
+        assert "procedure_source_concept_id" in violations[0].message
 
     def test_standard_concept_id_does_not_warn(self) -> None:
         """Using standard *_concept_id should not warn."""
@@ -2255,7 +2263,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_source_concept_id_in_select_not_flagged(self) -> None:
         """Selecting source_concept_id (not filtering) should not warn."""
@@ -2265,7 +2273,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE condition_concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_source_concept_id_in_group_by_not_flagged(self) -> None:
         """GROUP BY source_concept_id should not warn."""
@@ -2275,7 +2283,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         GROUP BY condition_source_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
     def test_measurement_source_concept_id_warns(self) -> None:
         """Filtering on measurement_source_concept_id should warn."""
@@ -2285,7 +2293,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE measurement_source_concept_id = 999
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_observation_source_concept_id_warns(self) -> None:
         """Filtering on observation_source_concept_id should warn."""
@@ -2295,7 +2303,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE observation_source_concept_id = 888
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_multiple_source_concept_id_filters_warns_multiple(self) -> None:
         """Multiple source_concept_id filters should generate multiple warnings."""
@@ -2307,7 +2315,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         AND de.drug_source_concept_id = 222
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) >= 2)
+        assert len(violations) >= 2
 
     def test_source_concept_id_comparison_operators_warn(self) -> None:
         """Various comparison operators on source_concept_id should warn."""
@@ -2317,7 +2325,7 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         WHERE condition_source_concept_id != 0
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) > 0)
+        assert len(violations) > 0
 
     def test_no_clinical_tables_not_flagged(self) -> None:
         """Query without clinical tables should not trigger."""
@@ -2325,16 +2333,16 @@ class SourceConceptIdWarningTests(unittest.TestCase):
         SELECT * FROM concept WHERE concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(violations, [])
+        assert violations == []
 
 
-class SchemaValidationTests(unittest.TestCase):
+class TestSchemaValidation:
     """Tests for schema validation rule (OMOP_008, 009, 023, 028)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run schema validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("vocabulary.schema_validation")()
+        rule = get_rule("data_quality.schema_validation")()
         return rule.validate(sql)
 
     # OMOP_023: death_id column doesn't exist in death table
@@ -2346,10 +2354,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE death_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("death_id", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("death", violations[0].message)
+        assert len(violations) == 1
+        assert "death_id" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "death" in violations[0].message
 
     # OMOP_028: condition_source_value doesn't exist in condition_era
     def test_omop_028_condition_source_value_in_condition_era(self) -> None:
@@ -2360,10 +2368,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_source_value", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("condition_era", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_source_value" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "condition_era" in violations[0].message
 
     def test_omop_028_visit_occurrence_id_in_condition_era(self) -> None:
         """Referencing visit_occurrence_id from condition_era should error."""
@@ -2373,9 +2381,9 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("condition_era", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "condition_era" in violations[0].message
 
     def test_omop_028_provider_id_in_condition_era(self) -> None:
         """Referencing provider_id from condition_era should error."""
@@ -2385,9 +2393,9 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("provider_id", violations[0].message)
-        self.assertIn("condition_era", violations[0].message)
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message
+        assert "condition_era" in violations[0].message
 
     def test_valid_death_columns(self) -> None:
         """Referencing valid death table columns should pass."""
@@ -2397,7 +2405,7 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_valid_condition_era_columns(self) -> None:
         """Referencing valid condition_era columns should pass."""
@@ -2409,7 +2417,7 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # OMOP_029: drug_era doesn't have drug_exposure columns
     def test_omop_029_days_supply_in_drug_era(self) -> None:
@@ -2420,10 +2428,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE drug_concept_id = 1125315
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("days_supply", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("drug_era", violations[0].message)
+        assert len(violations) == 1
+        assert "days_supply" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "drug_era" in violations[0].message
 
     def test_omop_029_quantity_in_drug_era(self) -> None:
         """Referencing quantity from drug_era should error."""
@@ -2433,9 +2441,9 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message)
-        self.assertIn("drug_era", violations[0].message)
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message
+        assert "drug_era" in violations[0].message
 
     def test_omop_029_route_concept_id_in_drug_era(self) -> None:
         """Referencing route_concept_id from drug_era should error."""
@@ -2445,9 +2453,9 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("route_concept_id", violations[0].message)
-        self.assertIn("drug_era", violations[0].message)
+        assert len(violations) == 1
+        assert "route_concept_id" in violations[0].message
+        assert "drug_era" in violations[0].message
 
     def test_omop_029_sig_in_drug_era(self) -> None:
         """Referencing sig from drug_era should error."""
@@ -2457,9 +2465,9 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE drug_concept_id = 1125315
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message)
-        self.assertIn("drug_era", violations[0].message)
+        assert len(violations) == 1
+        assert "sig" in violations[0].message
+        assert "drug_era" in violations[0].message
 
     def test_valid_drug_era_columns(self) -> None:
         """Referencing valid drug_era columns should pass."""
@@ -2471,7 +2479,7 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_029: measurement doesn't have value_as_string
     def test_clin_029_value_as_string_in_measurement(self) -> None:
@@ -2482,10 +2490,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE measurement_concept_id = 3004249
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("value_as_string", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("measurement", violations[0].message)
+        assert len(violations) == 1
+        assert "value_as_string" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "measurement" in violations[0].message
 
     def test_clin_029_value_as_string_in_observation_passes(self) -> None:
         """Referencing value_as_string from observation should pass (column exists there)."""
@@ -2495,7 +2503,7 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE observation_concept_id = 3004249
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_036: observation doesn't have range_low or range_high
     def test_clin_036_range_high_in_observation(self) -> None:
@@ -2505,10 +2513,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE value_as_number > range_high
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("range_high", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("observation", violations[0].message)
+        assert len(violations) == 1
+        assert "range_high" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "observation" in violations[0].message
 
     def test_clin_036_range_low_in_observation(self) -> None:
         """Referencing range_low from observation should error (column exists only on measurement)."""
@@ -2517,10 +2525,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE value_as_number < range_low
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("range_low", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("observation", violations[0].message)
+        assert len(violations) == 1
+        assert "range_low" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "observation" in violations[0].message
 
     def test_clin_036_range_columns_in_measurement_passes(self) -> None:
         """Referencing range_low/range_high from measurement should pass (columns exist there)."""
@@ -2530,7 +2538,7 @@ class SchemaValidationTests(unittest.TestCase):
            OR value_as_number < range_low
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_037: observation doesn't have operator_concept_id
     def test_clin_037_operator_concept_id_in_observation(self) -> None:
@@ -2540,10 +2548,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE operator_concept_id = 4171756
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("operator_concept_id", violations[0].message)
-        self.assertIn("does not exist", violations[0].message.lower())
-        self.assertIn("observation", violations[0].message)
+        assert len(violations) == 1
+        assert "operator_concept_id" in violations[0].message
+        assert "does not exist" in violations[0].message.lower()
+        assert "observation" in violations[0].message
 
     def test_clin_037_operator_concept_id_in_measurement_passes(self) -> None:
         """Referencing operator_concept_id from measurement should pass (column exists there)."""
@@ -2552,7 +2560,7 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE operator_concept_id = 4171756
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_042: visit_occurrence has no clinical value columns
 
@@ -2562,9 +2570,9 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT value_as_number FROM visit_occurrence WHERE visit_concept_id = 9201
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("value_as_number", violations[0].message)
-        self.assertIn("visit_occurrence", violations[0].message)
+        assert len(violations) == 1
+        assert "value_as_number" in violations[0].message
+        assert "visit_occurrence" in violations[0].message
 
     def test_clin_042_visit_occurrence_value_as_string_fires(self) -> None:
         """visit_occurrence.value_as_string should error (CLIN_042)."""
@@ -2574,8 +2582,8 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE vo.person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("value_as_string", violations[0].message)
+        assert len(violations) == 1
+        assert "value_as_string" in violations[0].message
 
     def test_clin_042_visit_occurrence_value_as_concept_id_fires(self) -> None:
         """visit_occurrence.value_as_concept_id should error (CLIN_042)."""
@@ -2583,8 +2591,8 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT value_as_concept_id FROM visit_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("value_as_concept_id", violations[0].message)
+        assert len(violations) == 1
+        assert "value_as_concept_id" in violations[0].message
 
     def test_clin_042_visit_occurrence_unit_concept_id_fires(self) -> None:
         """visit_occurrence.unit_concept_id should error (CLIN_042)."""
@@ -2592,8 +2600,8 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT unit_concept_id FROM visit_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("unit_concept_id", violations[0].message)
+        assert len(violations) == 1
+        assert "unit_concept_id" in violations[0].message
 
     def test_clin_042_visit_occurrence_quantity_fires(self) -> None:
         """visit_occurrence.quantity should error (CLIN_042)."""
@@ -2601,8 +2609,8 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT quantity FROM visit_occurrence WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message)
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message
 
     def test_clin_042_measurement_value_as_number_passes(self) -> None:
         """measurement.value_as_number should pass (correct table for CLIN_042)."""
@@ -2610,7 +2618,7 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT value_as_number FROM measurement
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_042_observation_value_as_string_passes(self) -> None:
         """observation.value_as_string should pass (correct table for CLIN_042)."""
@@ -2618,7 +2626,7 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT value_as_string FROM observation
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_046: visit_detail has no preceding_visit_occurrence_id column
 
@@ -2628,9 +2636,9 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT preceding_visit_occurrence_id FROM visit_detail WHERE visit_detail_id = 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("preceding_visit_occurrence_id", violations[0].message)
-        self.assertIn("visit_detail", violations[0].message)
+        assert len(violations) == 1
+        assert "preceding_visit_occurrence_id" in violations[0].message
+        assert "visit_detail" in violations[0].message
 
     def test_clin_046_visit_detail_preceding_visit_occurrence_id_qualified_fires(self) -> None:
         """visit_detail.preceding_visit_occurrence_id (qualified) should error (CLIN_046)."""
@@ -2640,8 +2648,8 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE vd.visit_detail_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("preceding_visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "preceding_visit_occurrence_id" in violations[0].message
 
     def test_clin_046_visit_detail_preceding_visit_detail_id_passes(self) -> None:
         """visit_detail.preceding_visit_detail_id should pass (correct column for CLIN_046)."""
@@ -2649,7 +2657,7 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT preceding_visit_detail_id FROM visit_detail
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_046_visit_occurrence_preceding_visit_occurrence_id_passes(self) -> None:
         """visit_occurrence.preceding_visit_occurrence_id should pass (correct table for CLIN_046)."""
@@ -2657,7 +2665,7 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT preceding_visit_occurrence_id FROM visit_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # CLIN_048: death table does not have visit_occurrence_id, visit_detail_id, provider_id, care_site_id
 
@@ -2667,9 +2675,9 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT visit_occurrence_id FROM death WHERE person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("death", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "death" in violations[0].message
 
     def test_clin_048_death_visit_detail_id_fires(self) -> None:
         """death.visit_detail_id should error (doesn't exist in death table)."""
@@ -2677,8 +2685,8 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT person_id, visit_detail_id FROM death
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_detail_id" in violations[0].message
 
     def test_clin_048_death_provider_id_fires(self) -> None:
         """death.provider_id should error (doesn't exist in death table)."""
@@ -2688,8 +2696,8 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE d.death_date > '2020-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("provider_id", violations[0].message)
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message
 
     def test_clin_048_death_care_site_id_fires(self) -> None:
         """death.care_site_id should error (doesn't exist in death table)."""
@@ -2697,8 +2705,8 @@ class SchemaValidationTests(unittest.TestCase):
         SELECT care_site_id FROM death
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("care_site_id", violations[0].message)
+        assert len(violations) == 1
+        assert "care_site_id" in violations[0].message
 
     def test_clin_048_valid_death_columns_pass(self) -> None:
         """Valid death columns (person_id, death_date, cause_concept_id) should pass."""
@@ -2708,10 +2716,10 @@ class SchemaValidationTests(unittest.TestCase):
         WHERE death_type_concept_id = 32817
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class ColumnTypeValidationTests(unittest.TestCase):
+class TestColumnTypeValidation:
     """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026, 105)."""
 
     def _run_rule(self, sql: str) -> list:
@@ -2729,11 +2737,11 @@ class ColumnTypeValidationTests(unittest.TestCase):
         JOIN person p2 ON p1.person_id = p2.person_source_value
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("person_source_value", violations[0].message)
-        self.assertIn("integer", violations[0].message.lower())
-        self.assertIn("varchar", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "person_source_value" in violations[0].message
+        assert "integer" in violations[0].message.lower()
+        assert "varchar" in violations[0].message.lower()
 
     # OMOP_005: visit_occurrence_id to varchar join
     def test_omop_005_visit_occurrence_id_to_varchar_join(self) -> None:
@@ -2744,9 +2752,9 @@ class ColumnTypeValidationTests(unittest.TestCase):
         JOIN visit_occurrence v2 ON v1.visit_occurrence_id = v2.visit_source_value
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("visit_source_value", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "visit_source_value" in violations[0].message
 
     # OMOP_024: cohort.subject_id to person.person_source_value join
     def test_omop_024_subject_id_to_person_source_value_join(self) -> None:
@@ -2757,9 +2765,9 @@ class ColumnTypeValidationTests(unittest.TestCase):
         JOIN person p ON c.subject_id = p.person_source_value
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("subject_id", violations[0].message)
-        self.assertIn("person_source_value", violations[0].message)
+        assert len(violations) == 1
+        assert "subject_id" in violations[0].message
+        assert "person_source_value" in violations[0].message
 
     # OMOP_025: vocabulary_id (varchar) with integer literal
     def test_omop_025_vocabulary_id_with_integer_literal(self) -> None:
@@ -2768,10 +2776,10 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept c WHERE c.vocabulary_id = 1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("vocabulary_id", violations[0].message)
-        self.assertIn("varchar", violations[0].message.lower())
-        self.assertIn("integer", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "vocabulary_id" in violations[0].message
+        assert "varchar" in violations[0].message.lower()
+        assert "integer" in violations[0].message.lower()
 
     # OMOP_026: domain_id (varchar) with integer literal
     def test_omop_026_domain_id_with_integer_literal(self) -> None:
@@ -2780,10 +2788,10 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept c WHERE c.domain_id = 19
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("domain_id", violations[0].message)
-        self.assertIn("varchar", violations[0].message.lower())
-        self.assertIn("integer", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "domain_id" in violations[0].message
+        assert "varchar" in violations[0].message.lower()
+        assert "integer" in violations[0].message.lower()
 
     def test_vocabulary_id_in_clause_with_integers(self) -> None:
         """Filtering vocabulary_id with IN clause containing integers should error."""
@@ -2791,8 +2799,8 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept c WHERE c.vocabulary_id IN (1, 2, 3)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("vocabulary_id", violations[0].message)
+        assert len(violations) == 1
+        assert "vocabulary_id" in violations[0].message
 
     def test_correct_vocabulary_id_with_string(self) -> None:
         """Filtering vocabulary_id with string literal should pass."""
@@ -2800,7 +2808,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE vocabulary_id = 'SNOMED'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_correct_domain_id_with_string(self) -> None:
         """Filtering domain_id with string literal should pass."""
@@ -2808,7 +2816,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_correct_person_id_join(self) -> None:
         """Joining person_id (integer) to person_id (integer) should pass."""
@@ -2818,7 +2826,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
         JOIN visit_occurrence v ON p.person_id = v.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_integer_column_with_integer_literal(self) -> None:
         """Filtering integer column with integer literal should pass."""
@@ -2826,7 +2834,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_date_compatibility(self) -> None:
         """Date columns should be compatible with each other."""
@@ -2837,7 +2845,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
           ON co.condition_start_date = op.observation_period_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_105_provider_npi_with_integer_literal(self) -> None:
         """OMOP_105: provider.npi with integer literal should error."""
@@ -2845,10 +2853,10 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM provider p WHERE p.npi = 1234567890
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("npi", violations[0].message)
-        self.assertIn("varchar", violations[0].message.lower())
-        self.assertIn("integer", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "npi" in violations[0].message
+        assert "varchar" in violations[0].message.lower()
+        assert "integer" in violations[0].message.lower()
 
     def test_omop_105_provider_npi_with_string_literal(self) -> None:
         """OMOP_105: provider.npi with string literal should pass."""
@@ -2856,7 +2864,7 @@ class ColumnTypeValidationTests(unittest.TestCase):
         SELECT * FROM provider p WHERE p.npi = '1234567890'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_105_provider_npi_in_complex_query(self) -> None:
         """OMOP_105: provider.npi in complex query with integer should error."""
@@ -2869,17 +2877,17 @@ class ColumnTypeValidationTests(unittest.TestCase):
         GROUP BY p.provider_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("npi", violations[0].message)
+        assert len(violations) == 1
+        assert "npi" in violations[0].message
 
 
-class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
+class TestObservationPeriodDateRangeLogic:
     """Tests for observation_period date range logic rule (OMOP_033)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run observation_period date range logic rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.observation_period_date_range_logic")()
+        rule = get_rule("temporal.observation_period_date_range_logic")()
         return rule.validate(sql)
 
     # OMOP_033: Reversed BETWEEN logic
@@ -2893,10 +2901,10 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                                    AND co.condition_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("reversed", violations[0].message.lower())
-        self.assertIn("observation_period_start_date", violations[0].message)
-        self.assertIn("condition_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "reversed" in violations[0].message.lower()
+        assert "observation_period_start_date" in violations[0].message
+        assert "condition_start_date" in violations[0].message
 
     def test_reversed_logic_with_drug_exposure(self) -> None:
         """Reversed BETWEEN with drug_exposure should error."""
@@ -2908,8 +2916,8 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                                  AND de.drug_exposure_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("observation_period_end_date", violations[0].message)
+        assert len(violations) == 1
+        assert "observation_period_end_date" in violations[0].message
 
     def test_reversed_logic_with_visit_occurrence(self) -> None:
         """Reversed BETWEEN with visit_occurrence should error."""
@@ -2921,8 +2929,8 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                                    AND vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("reversed", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "reversed" in violations[0].message.lower()
 
     def test_correct_between_logic(self) -> None:
         """Correct BETWEEN logic with event date tested should pass."""
@@ -2934,7 +2942,7 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                           AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_correct_logic_drug_exposure(self) -> None:
         """Correct BETWEEN logic with drug_exposure should pass."""
@@ -2946,7 +2954,7 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                               AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_no_between_clause_not_flagged(self) -> None:
         """Query without BETWEEN clause should not trigger."""
@@ -2958,7 +2966,7 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
           AND co.condition_start_date <= op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_between_without_observation_period_not_flagged(self) -> None:
         """BETWEEN without observation_period should not trigger."""
@@ -2968,7 +2976,7 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
         WHERE co.condition_start_date BETWEEN '2020-01-01' AND '2020-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_correct_logic_with_measurement(self) -> None:
         """Correct BETWEEN logic with measurement should pass."""
@@ -2980,16 +2988,16 @@ class ObservationPeriodDateRangeLogicTests(unittest.TestCase):
                                      AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class VisitOutpatientSameDayValidationTests(unittest.TestCase):
+class TestVisitOutpatientSameDayValidation:
     """Tests for visit outpatient same-day validation rule (CLIN_040)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit outpatient same-day validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_outpatient_same_day_validation")()
+        rule = get_rule("domain_specific.visit_outpatient_same_day_validation")()
         return rule.validate(sql)
 
     # CLIN_040: Outpatient visits filtered with multi-day date range logic
@@ -3002,9 +3010,9 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) > 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("9202", violations[0].message)
-        self.assertIn("multi-day", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "9202" in violations[0].message
+        assert "multi-day" in violations[0].message.lower()
 
     def test_clin_040_outpatient_with_datediff_greater_than_1_fires(self) -> None:
         """Outpatient visit with DATEDIFF > 1 should warn (CLIN_040)."""
@@ -3014,8 +3022,8 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, vo.visit_start_date, vo.visit_end_date) > 7
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("outpatient", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "outpatient" in violations[0].message.lower()
 
     def test_clin_040_outpatient_with_datediff_lte_1_passes(self) -> None:
         """Outpatient visit with DATEDIFF <= 1 should pass (CLIN_040)."""
@@ -3025,7 +3033,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) <= 1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_040_outpatient_with_datediff_equals_0_passes(self) -> None:
         """Outpatient visit with DATEDIFF = 0 should pass (CLIN_040)."""
@@ -3035,7 +3043,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_040_inpatient_with_datediff_greater_than_30_passes(self) -> None:
         """Inpatient visit with DATEDIFF > 30 should pass (correct usage)."""
@@ -3045,7 +3053,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) > 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_040_outpatient_without_datediff_passes(self) -> None:
         """Outpatient visit without DATEDIFF filter should pass (CLIN_040)."""
@@ -3054,7 +3062,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
         WHERE visit_concept_id = 9202
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_040_outpatient_in_list_with_datediff_fires(self) -> None:
         """Outpatient in IN list with multi-day DATEDIFF should warn (CLIN_040)."""
@@ -3064,7 +3072,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) > 10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_040_reversed_comparison_fires(self) -> None:
         """Reversed comparison (threshold < DATEDIFF) should also warn (CLIN_040)."""
@@ -3074,7 +3082,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND 30 < DATEDIFF(day, visit_start_date, visit_end_date)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_040_date_diff_function_fires(self) -> None:
         """DATE_DIFF function (underscore variant) should also detect (CLIN_040)."""
@@ -3084,7 +3092,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATE_DIFF(day, visit_start_date, visit_end_date) > 5
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_040_no_visit_occurrence_table_passes(self) -> None:
         """Query without visit_occurrence table should pass (CLIN_040)."""
@@ -3092,7 +3100,7 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
         SELECT * FROM person WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_040_unqualified_columns_fires(self) -> None:
         """Unqualified columns should still be detected (CLIN_040)."""
@@ -3102,16 +3110,16 @@ class VisitOutpatientSameDayValidationTests(unittest.TestCase):
           AND DATEDIFF(day, visit_start_date, visit_end_date) > 14
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class VisitEventTemporalValidationTests(unittest.TestCase):
+class TestVisitEventTemporalValidation:
     """Tests for visit event temporal validation rule (CLIN_041)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit event temporal validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_event_temporal_validation")()
+        rule = get_rule("domain_specific.visit_event_temporal_validation")()
         return rule.validate(sql)
 
     # CLIN_041: Clinical events filtered to occur before visit_start_date
@@ -3124,9 +3132,9 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE co.condition_start_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_start_date", violations[0].message.lower())
-        self.assertIn("visit_start_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "condition_start_date" in violations[0].message.lower()
+        assert "visit_start_date" in violations[0].message.lower()
 
     def test_clin_041_drug_exposure_before_visit_start_fires(self) -> None:
         """Drug exposure start date < visit start date should warn (CLIN_041)."""
@@ -3136,8 +3144,8 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE de.drug_exposure_start_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure_start_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "drug_exposure_start_date" in violations[0].message.lower()
 
     def test_clin_041_measurement_before_visit_start_fires(self) -> None:
         """Measurement date < visit start date should warn (CLIN_041)."""
@@ -3147,8 +3155,8 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE m.measurement_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "measurement_date" in violations[0].message.lower()
 
     def test_clin_041_procedure_before_visit_start_fires(self) -> None:
         """Procedure date < visit start date should warn (CLIN_041)."""
@@ -3158,8 +3166,8 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE po.procedure_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("procedure_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "procedure_date" in violations[0].message.lower()
 
     def test_clin_041_observation_before_visit_start_fires(self) -> None:
         """Observation date < visit start date should warn (CLIN_041)."""
@@ -3169,8 +3177,8 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE o.observation_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("observation_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "observation_date" in violations[0].message.lower()
 
     def test_clin_041_reversed_comparison_fires(self) -> None:
         """visit_start_date > event_date should also warn (CLIN_041)."""
@@ -3180,7 +3188,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE vo.visit_start_date > co.condition_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_041_event_gte_visit_start_passes(self) -> None:
         """Event date >= visit start date should pass (CLIN_041)."""
@@ -3190,7 +3198,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE co.condition_start_date >= vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_041_event_equals_visit_start_passes(self) -> None:
         """Event date = visit start date should pass (CLIN_041)."""
@@ -3200,7 +3208,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE co.condition_start_date = vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_041_event_after_visit_end_passes(self) -> None:
         """Event date > visit end date should pass (may be intentional for follow-up)."""
@@ -3210,7 +3218,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE co.condition_start_date > vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_041_no_join_to_visit_passes(self) -> None:
         """Query without join to visit_occurrence should pass (CLIN_041)."""
@@ -3219,7 +3227,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE condition_start_date < '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_041_join_without_temporal_filter_passes(self) -> None:
         """Join to visit without temporal filter should pass (CLIN_041)."""
@@ -3228,7 +3236,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_041_unqualified_columns_fires(self) -> None:
         """Unqualified column names should still be detected (CLIN_041)."""
@@ -3238,7 +3246,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE condition_start_date < visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_041_device_exposure_before_visit_start_fires(self) -> None:
         """Device exposure start date < visit start date should warn (CLIN_041)."""
@@ -3248,7 +3256,7 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE de.device_exposure_start_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_041_specimen_before_visit_start_fires(self) -> None:
         """Specimen date < visit start date should warn (CLIN_041)."""
@@ -3258,16 +3266,16 @@ class VisitEventTemporalValidationTests(unittest.TestCase):
         WHERE s.specimen_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
+class TestVisitDetailVisitOccurrenceReference:
     """Tests for visit_detail visit_occurrence reference rule (CLIN_044)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit_detail visit_occurrence reference rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_detail_visit_occurrence_reference")()
+        rule = get_rule("domain_specific.visit_detail_visit_occurrence_reference")()
         return rule.validate(sql)
 
     # CLIN_044: visit_detail should reference visit_occurrence for context
@@ -3280,10 +3288,10 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         WHERE visit_detail_concept_id = 32037
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "WARNING")
-        self.assertIn("visit_detail", violations[0].message.lower())
-        self.assertIn("visit_occurrence", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "visit_detail" in violations[0].message.lower()
+        assert "visit_occurrence" in violations[0].message.lower()
 
     def test_clin_044_visit_detail_with_join_passes(self) -> None:
         """visit_detail with visit_occurrence JOIN should pass (CLIN_044)."""
@@ -3294,7 +3302,7 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         WHERE vd.visit_detail_concept_id = 32037
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_044_visit_detail_with_subquery_passes(self) -> None:
         """visit_detail with visit_occurrence subquery should pass (CLIN_044)."""
@@ -3306,7 +3314,7 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         )
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_044_visit_detail_with_other_tables_warns(self) -> None:
         """visit_detail with other tables but no visit_occurrence should warn (CLIN_044)."""
@@ -3317,8 +3325,8 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         WHERE vd.visit_detail_concept_id = 32037
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "WARNING")
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
 
     def test_clin_044_no_visit_detail_passes(self) -> None:
         """Query without visit_detail should pass (CLIN_044)."""
@@ -3326,7 +3334,7 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         SELECT * FROM visit_occurrence WHERE visit_concept_id = 9201
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_044_visit_detail_count_without_context_warns(self) -> None:
         """Aggregating visit_detail without visit_occurrence should warn (CLIN_044)."""
@@ -3334,7 +3342,7 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         SELECT COUNT(*) FROM visit_detail
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_044_visit_detail_with_visit_occurrence_from_passes(self) -> None:
         """visit_detail with visit_occurrence in FROM should pass (CLIN_044)."""
@@ -3344,7 +3352,7 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         WHERE vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_044_complex_query_with_visit_occurrence_passes(self) -> None:
         """Complex query with visit_occurrence in subquery should pass (CLIN_044)."""
@@ -3358,16 +3366,16 @@ class VisitDetailVisitOccurrenceReferenceTests(unittest.TestCase):
         )
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
+class TestVisitDetailDatesWithinParentVisit:
     """Tests for visit_detail dates within parent visit rule (CLIN_047)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit_detail dates within parent visit rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_detail_dates_within_parent_visit")()
+        rule = get_rule("domain_specific.visit_detail_dates_within_parent_visit")()
         return rule.validate(sql)
 
     # CLIN_047: visit_detail dates should be within parent visit_occurrence date range
@@ -3381,8 +3389,8 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE vd.visit_detail_start_date < vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail_start_date occurs before visit_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_detail_start_date occurs before visit_start_date" in violations[0].message
 
     def test_clin_047_start_before_visit_start_reversed_fires(self):
         """Test that reversed comparison visit_start_date > visit_detail_start_date fires."""
@@ -3393,8 +3401,8 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE vo.visit_start_date > vd.visit_detail_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_start_date occurs after visit_detail_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_start_date occurs after visit_detail_start_date" in violations[0].message
 
     def test_clin_047_end_after_visit_end_fires(self):
         """Test that filtering visit_detail_end_date > visit_end_date fires."""
@@ -3405,8 +3413,8 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE vd.visit_detail_end_date > vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail_end_date occurs after visit_end_date", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_detail_end_date occurs after visit_end_date" in violations[0].message
 
     def test_clin_047_end_after_visit_end_reversed_fires(self):
         """Test that reversed comparison visit_end_date < visit_detail_end_date fires."""
@@ -3417,8 +3425,8 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
           AND vo.visit_end_date < vd.visit_detail_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_end_date occurs before visit_detail_end_date", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_end_date occurs before visit_detail_end_date" in violations[0].message
 
     def test_clin_047_correct_start_gte_passes(self):
         """Test that correct constraint visit_detail_start_date >= visit_start_date passes."""
@@ -3429,7 +3437,7 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE vd.visit_detail_start_date >= vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_047_correct_end_lte_passes(self):
         """Test that correct constraint visit_detail_end_date <= visit_end_date passes."""
@@ -3440,7 +3448,7 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE vd.visit_detail_end_date <= vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_047_both_constraints_correct_passes(self):
         """Test that both correct constraints together pass."""
@@ -3452,7 +3460,7 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
           AND vd.visit_detail_end_date <= vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_047_only_visit_detail_passes(self):
         """Test that query with only visit_detail (no visit_occurrence) passes."""
@@ -3461,7 +3469,7 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE visit_detail_concept_id = 32037
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_047_inside_or_passes(self):
         """Test that comparison inside OR clause passes (might be intentional)."""
@@ -3472,7 +3480,7 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
         WHERE (vd.visit_detail_start_date < vo.visit_start_date OR vd.visit_detail_concept_id = 32037)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_047_multiple_violations_fires(self):
         """Test that multiple violations are all detected."""
@@ -3484,16 +3492,16 @@ class VisitDetailDatesWithinParentVisitTests(unittest.TestCase):
           AND vd.visit_detail_end_date > vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
 
-class VisitDetailJoinValidationTests(unittest.TestCase):
+class TestVisitDetailJoinValidation:
     """Tests for visit_detail join validation rule (OMOP_034)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit_detail join validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_detail_join_validation")()
+        rule = get_rule("joins.visit_detail_join_validation")()
         return rule.validate(sql)
 
     # OMOP_034: Visit detail should join to visit_occurrence via visit_occurrence_id
@@ -3506,9 +3514,9 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("many-to-many", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "many-to-many" in violations[0].message.lower()
 
     def test_correct_join_on_visit_occurrence_id(self) -> None:
         """visit_detail JOIN visit_occurrence on visit_occurrence_id should pass."""
@@ -3518,7 +3526,7 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_on_both_person_id_and_visit_occurrence_id(self) -> None:
         """Join on both person_id AND visit_occurrence_id should pass."""
@@ -3530,7 +3538,7 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
          AND vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_left_join_only_on_person_id(self) -> None:
         """LEFT JOIN only on person_id should also warn."""
@@ -3540,8 +3548,8 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         LEFT JOIN visit_occurrence vo ON vd.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_visit_detail_without_visit_occurrence_join(self) -> None:
         """visit_detail joined to other tables should not trigger."""
@@ -3551,7 +3559,7 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN person p ON vd.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_reverse_order_join(self) -> None:
         """visit_occurrence JOIN visit_detail should also be detected."""
@@ -3561,8 +3569,8 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON vo.person_id = vd.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_reverse_order_correct_join(self) -> None:
         """visit_occurrence JOIN visit_detail on visit_occurrence_id should pass."""
@@ -3572,7 +3580,7 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON vo.visit_occurrence_id = vd.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_multiple_joins_with_incorrect_visit_detail_join(self) -> None:
         """Complex query with incorrect visit_detail join should be detected."""
@@ -3583,7 +3591,7 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_multiple_joins_with_correct_visit_detail_join(self) -> None:
         """Complex query with correct visit_detail join should pass."""
@@ -3594,16 +3602,16 @@ class VisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class StandardConceptValueValidationTests(unittest.TestCase):
+class TestStandardConceptValueValidation:
     """Tests for standard_concept value validation rule (OMOP_037)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run standard_concept value validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.standard_concept_value_validation")()
+        rule = get_rule("concept_standardization.standard_concept_value_validation")()
         return rule.validate(sql)
 
     # OMOP_037: standard_concept only accepts 'S', 'C', or NULL
@@ -3614,9 +3622,9 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = 'Y'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid standard_concept value", violations[0].message)
-        self.assertIn("'Y'", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid standard_concept value" in violations[0].message
+        assert "'Y'" in violations[0].message
 
     def test_omop_037_invalid_value_n(self) -> None:
         """Using 'N' for standard_concept should error."""
@@ -3624,8 +3632,8 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = 'N'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'N'", violations[0].message)
+        assert len(violations) == 1
+        assert "'N'" in violations[0].message
 
     def test_omop_037_invalid_string_number_1(self) -> None:
         """Using string '1' for standard_concept should error."""
@@ -3633,8 +3641,8 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = '1'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'1'", violations[0].message)
+        assert len(violations) == 1
+        assert "'1'" in violations[0].message
 
     def test_omop_037_invalid_string_number_0(self) -> None:
         """Using string '0' for standard_concept should error."""
@@ -3642,8 +3650,8 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = '0'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'0'", violations[0].message)
+        assert len(violations) == 1
+        assert "'0'" in violations[0].message
 
     def test_omop_037_invalid_in_clause(self) -> None:
         """Using invalid values in IN clause should error."""
@@ -3651,8 +3659,8 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept IN ('Y', 'N')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid standard_concept values", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid standard_concept values" in violations[0].message
 
     def test_omop_037_invalid_mixed_in_clause(self) -> None:
         """Mixed valid and invalid values in IN clause should error."""
@@ -3660,8 +3668,8 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept IN ('S', 'Y')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'Y'", violations[0].message)
+        assert len(violations) == 1
+        assert "'Y'" in violations[0].message
 
     def test_valid_value_s(self) -> None:
         """Using 'S' for standard_concept should pass."""
@@ -3669,7 +3677,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_valid_value_c(self) -> None:
         """Using 'C' for standard_concept should pass."""
@@ -3677,7 +3685,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = 'C'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_valid_in_clause(self) -> None:
         """Using 'S' and 'C' in IN clause should pass."""
@@ -3685,7 +3693,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept IN ('S', 'C')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_valid_is_null(self) -> None:
         """Using IS NULL for standard_concept should pass."""
@@ -3693,7 +3701,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_valid_is_not_null(self) -> None:
         """Using IS NOT NULL for standard_concept should pass."""
@@ -3701,7 +3709,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_standard_concept_in_select_not_flagged(self) -> None:
         """Using standard_concept in SELECT clause should not trigger."""
@@ -3709,7 +3717,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT standard_concept FROM concept WHERE concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_case_insensitive_valid_values(self) -> None:
         """Valid values should work regardless of case."""
@@ -3717,7 +3725,7 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept = 's'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_invalid_not_equals(self) -> None:
         """Invalid value in != comparison should error."""
@@ -3725,17 +3733,17 @@ class StandardConceptValueValidationTests(unittest.TestCase):
         SELECT * FROM concept WHERE standard_concept != 'Y'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'Y'", violations[0].message)
+        assert len(violations) == 1
+        assert "'Y'" in violations[0].message
 
 
-class CostTableDomainValidationTests(unittest.TestCase):
+class TestCostTableDomainValidation:
     """Tests for cost table domain validation rule (OMOP_038)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run cost table domain validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.cost_table_domain_validation")()
+        rule = get_rule("joins.cost_table_domain_validation")()
         return rule.validate(sql)
 
     # OMOP_038: cost table joins require cost_domain_id filter
@@ -3747,9 +3755,9 @@ class CostTableDomainValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Missing cost_domain_id filter", violations[0].message)
-        self.assertIn("'drug'", violations[0].message)
+        assert len(violations) == 1
+        assert "Missing cost_domain_id filter" in violations[0].message
+        assert "'drug'" in violations[0].message
 
     def test_omop_038_drug_exposure_with_domain_filter(self) -> None:
         """Cost joined to drug_exposure with correct domain filter should pass."""
@@ -3759,7 +3767,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_drug_exposure_wrong_domain(self) -> None:
         """Cost joined to drug_exposure with wrong domain should error."""
@@ -3769,9 +3777,9 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Cost domain mismatch", violations[0].message)
-        self.assertIn("'drug'", violations[0].message)
+        assert len(violations) == 1
+        assert "Cost domain mismatch" in violations[0].message
+        assert "'drug'" in violations[0].message
 
     def test_omop_038_procedure_missing_filter(self) -> None:
         """Cost joined to procedure_occurrence without filter should error."""
@@ -3780,8 +3788,8 @@ class CostTableDomainValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON c.cost_event_id = po.procedure_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("'procedure'", violations[0].message)
+        assert len(violations) == 1
+        assert "'procedure'" in violations[0].message
 
     def test_omop_038_procedure_with_filter(self) -> None:
         """Cost joined to procedure_occurrence with correct filter should pass."""
@@ -3791,7 +3799,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Procedure'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_condition_with_filter(self) -> None:
         """Cost joined to condition_occurrence with correct filter should pass."""
@@ -3801,7 +3809,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_case_insensitive_domain(self) -> None:
         """Domain filter should be case insensitive."""
@@ -3811,7 +3819,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_unqualified_column_with_filter(self) -> None:
         """Unqualified cost_domain_id should work when cost table present."""
@@ -3821,7 +3829,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE cost_domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_reversed_join_order(self) -> None:
         """Reversed join order (clinical → cost) should still validate."""
@@ -3831,7 +3839,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_in_clause_with_correct_domain(self) -> None:
         """IN clause with correct domain should pass."""
@@ -3841,7 +3849,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id IN ('Drug')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_no_cost_table(self) -> None:
         """Query without cost table should not trigger."""
@@ -3849,7 +3857,7 @@ class CostTableDomainValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure de WHERE de.drug_type_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_038_cost_domain_in_select_with_filter(self) -> None:
         """cost_domain_id in SELECT with WHERE filter should pass."""
@@ -3859,16 +3867,16 @@ class CostTableDomainValidationTests(unittest.TestCase):
         WHERE c.cost_domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class CareSiteJoinValidationTests(unittest.TestCase):
+class TestCareSiteJoinValidation:
     """Tests for care_site join path validation rule (OMOP_039)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run care_site join validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.care_site_join_validation")()
+        rule = get_rule("joins.care_site_join_validation")()
         return rule.validate(sql)
 
     # OMOP_039: Clinical tables must join to location through care_site
@@ -3880,9 +3888,9 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON vo.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid direct join to location detected", violations[0].message)
-        self.assertIn("care_site", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid direct join to location detected" in violations[0].message
+        assert "care_site" in violations[0].message
 
     def test_omop_039_proper_path_through_care_site(self) -> None:
         """Proper join path through care_site should pass."""
@@ -3892,7 +3900,7 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_039_person_to_location_allowed(self) -> None:
         """Person joined to location is valid (home address)."""
@@ -3901,7 +3909,7 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON p.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_039_condition_occurrence_bypass(self) -> None:
         """Condition_occurrence bypassing care_site should warn."""
@@ -3910,8 +3918,8 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON co.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid direct join to location detected", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid direct join to location detected" in violations[0].message
 
     def test_omop_039_care_site_to_location(self) -> None:
         """Care_site to location join is valid."""
@@ -3920,7 +3928,7 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_039_reversed_join_order(self) -> None:
         """Reversed join order (location → visit) should still warn."""
@@ -3929,8 +3937,8 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON l.location_id = vo.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid direct join to location detected", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid direct join to location detected" in violations[0].message
 
     def test_omop_039_procedure_occurrence_bypass(self) -> None:
         """Procedure_occurrence bypassing care_site should warn."""
@@ -3939,8 +3947,8 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON po.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid direct join to location detected", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid direct join to location detected" in violations[0].message
 
     def test_omop_039_no_location_table(self) -> None:
         """Query without location table should not trigger."""
@@ -3949,7 +3957,7 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON vo.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_039_visit_detail_bypass(self) -> None:
         """Visit_detail bypassing care_site should warn."""
@@ -3958,8 +3966,8 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN location l ON vd.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Invalid direct join to location detected", violations[0].message)
+        assert len(violations) == 1
+        assert "Invalid direct join to location detected" in violations[0].message
 
     def test_omop_039_person_reversed_join(self) -> None:
         """Person to location reversed join should pass."""
@@ -3968,16 +3976,16 @@ class CareSiteJoinValidationTests(unittest.TestCase):
         JOIN person p ON l.location_id = p.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
+class TestVisitOccurrenceInnerJoinValidation:
     """Tests for visit_occurrence INNER JOIN validation rule (OMOP_043)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run visit_occurrence INNER JOIN validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.visit_occurrence_inner_join_validation")()
+        rule = get_rule("joins.visit_occurrence_inner_join_validation")()
         return rule.validate(sql)
 
     # OMOP_043: INNER JOIN to visit_occurrence loses records
@@ -3990,8 +3998,8 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("may drop events", violations[0].message)
+        assert len(violations) == 1
+        assert "may drop events" in violations[0].message
 
     def test_omop_043_condition_left_join(self) -> None:
         """Condition LEFT JOIN to visit should pass."""
@@ -4001,7 +4009,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_043_drug_exposure_inner_join(self) -> None:
         """Drug exposure INNER JOIN to visit should warn."""
@@ -4011,8 +4019,8 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("may drop events", violations[0].message)
+        assert len(violations) == 1
+        assert "may drop events" in violations[0].message
 
     def test_omop_043_measurement_inner_join(self) -> None:
         """Measurement INNER JOIN to visit should warn."""
@@ -4022,7 +4030,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON m.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_043_inner_join_with_visit_filter(self) -> None:
         """INNER JOIN with WHERE clause filtering visit_occurrence_id shows intentional message."""
@@ -4033,8 +4041,8 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         WHERE vo.visit_occurrence_id IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("explicit filtering", violations[0].message)
+        assert len(violations) == 1
+        assert "explicit filtering" in violations[0].message
 
     def test_omop_043_procedure_left_join(self) -> None:
         """Procedure LEFT JOIN to visit should pass."""
@@ -4044,7 +4052,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         LEFT JOIN visit_occurrence vo ON po.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_043_right_join(self) -> None:
         """RIGHT JOIN should pass (unusual but not wrong)."""
@@ -4054,7 +4062,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         RIGHT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_043_no_visit_occurrence(self) -> None:
         """Query without visit_occurrence should not trigger."""
@@ -4062,7 +4070,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_043_inner_join_to_person(self) -> None:
         """INNER JOIN to person (not visit) should not trigger."""
@@ -4072,7 +4080,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN person p ON co.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_043_reversed_join_order(self) -> None:
         """Reversed join order (visit → condition) should still warn."""
@@ -4082,7 +4090,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON vo.visit_occurrence_id = co.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_043_observation_inner_join(self) -> None:
         """Observation INNER JOIN to visit should warn."""
@@ -4092,7 +4100,7 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON o.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_043_full_outer_join(self) -> None:
         """FULL OUTER JOIN should pass."""
@@ -4102,15 +4110,15 @@ class VisitOccurrenceInnerJoinValidationTests(unittest.TestCase):
         FULL OUTER JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugEraConceptClassValidationTests(unittest.TestCase):
+class TestDrugEraConceptClassValidation:
     """Tests for drug_era concept class validation rule (OMOP_044)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.drug_era_concept_class_validation")()
+        rule = get_rule("domain_specific.drug_era_concept_class_validation")()
         return rule.validate(sql, dialect)
 
     def test_omop_044_clinical_drug_filter_fails(self) -> None:
@@ -4122,9 +4130,9 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Clinical Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Clinical Drug", violations[0].message)
-        self.assertIn("0 rows", violations[0].message)
+        assert len(violations) == 1
+        assert "Clinical Drug" in violations[0].message
+        assert "0 rows" in violations[0].message
 
     def test_omop_044_branded_drug_filter_fails(self) -> None:
         """Filtering drug_era for 'Branded Drug' should error."""
@@ -4135,9 +4143,9 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Branded Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Branded Drug", violations[0].message)
-        self.assertIn("0 rows", violations[0].message)
+        assert len(violations) == 1
+        assert "Branded Drug" in violations[0].message
+        assert "0 rows" in violations[0].message
 
     def test_omop_044_clinical_drug_form_filter_fails(self) -> None:
         """Filtering drug_era for 'Clinical Drug Form' should error."""
@@ -4148,9 +4156,9 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Clinical Drug Form'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Clinical Drug Form", violations[0].message)
-        self.assertIn("0 rows", violations[0].message)
+        assert len(violations) == 1
+        assert "Clinical Drug Form" in violations[0].message
+        assert "0 rows" in violations[0].message
 
     def test_omop_044_ingredient_filter_passes(self) -> None:
         """Filtering drug_era for 'Ingredient' should pass."""
@@ -4161,7 +4169,7 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Ingredient'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_044_neq_ingredient_fails(self) -> None:
         """Filtering drug_era for concept_class_id != 'Ingredient' should error."""
@@ -4172,8 +4180,8 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id != 'Ingredient'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("!= 'Ingredient'", violations[0].message)
+        assert len(violations) == 1
+        assert "!= 'Ingredient'" in violations[0].message
 
     def test_omop_044_in_clause_with_invalid_values_fails(self) -> None:
         """IN clause with invalid concept classes should error."""
@@ -4184,9 +4192,9 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id IN ('Clinical Drug', 'Branded Drug')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Branded Drug", violations[0].message)
-        self.assertIn("Clinical Drug", violations[0].message)
+        assert len(violations) == 1
+        assert "Branded Drug" in violations[0].message
+        assert "Clinical Drug" in violations[0].message
 
     def test_omop_044_in_clause_with_ingredient_passes(self) -> None:
         """IN clause with only 'Ingredient' should pass."""
@@ -4197,7 +4205,7 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id IN ('Ingredient')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_044_no_concept_join_passes(self) -> None:
         """drug_era query without concept join should pass."""
@@ -4207,7 +4215,7 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_044_concept_join_no_class_filter_passes(self) -> None:
         """drug_era joined to concept without concept_class_id filter should pass."""
@@ -4218,7 +4226,7 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_044_reversed_join_order_fails(self) -> None:
         """Reversed join order (concept -> drug_era) should still error."""
@@ -4229,8 +4237,8 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Clinical Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("Clinical Drug", violations[0].message)
+        assert len(violations) == 1
+        assert "Clinical Drug" in violations[0].message
 
     def test_omop_044_non_drug_era_table_not_affected(self) -> None:
         """Non-drug_era tables should not trigger this rule."""
@@ -4241,15 +4249,15 @@ class DrugEraConceptClassValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Clinical Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class NegativeConceptIdValidationTests(unittest.TestCase):
+class TestNegativeConceptIdValidation:
     """Tests for negative concept_id validation rule (OMOP_050)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.negative_concept_id_validation")()
+        rule = get_rule("data_quality.negative_concept_id_validation")()
         return rule.validate(sql, dialect)
 
     def test_omop_050_negative_equality_fails(self) -> None:
@@ -4258,9 +4266,9 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM condition_occurrence WHERE condition_concept_id = -1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
-        self.assertIn("-1", violations[0].message)
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
+        assert "-1" in violations[0].message
 
     def test_omop_050_negative_in_clause_fails(self) -> None:
         """Negative concept_id in IN clause should error."""
@@ -4268,10 +4276,10 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE drug_concept_id IN (-1, -2, 123)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
-        self.assertIn("-1", violations[0].message)
-        self.assertIn("-2", violations[0].message)
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
+        assert "-1" in violations[0].message
+        assert "-2" in violations[0].message
 
     def test_omop_050_negative_less_than_fails(self) -> None:
         """Negative concept_id in < comparison should error."""
@@ -4279,9 +4287,9 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE measurement_concept_id < -10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
-        self.assertIn("-10", violations[0].message)
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
+        assert "-10" in violations[0].message
 
     def test_omop_050_negative_between_fails(self) -> None:
         """Negative concept_id in BETWEEN should error."""
@@ -4289,9 +4297,9 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM observation WHERE observation_concept_id BETWEEN -5 AND 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("between", violations[0].message.lower())
-        self.assertIn("-5", violations[0].message)
+        assert len(violations) == 1
+        assert "between" in violations[0].message.lower()
+        assert "-5" in violations[0].message
 
     def test_omop_050_positive_values_pass(self) -> None:
         """Positive concept_id values should pass."""
@@ -4299,7 +4307,7 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_050_zero_passes(self) -> None:
         """Zero (unmapped) should pass."""
@@ -4307,7 +4315,7 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE drug_concept_id = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_050_multiple_columns_fails(self) -> None:
         """Multiple columns with negative values should error."""
@@ -4315,7 +4323,7 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM person WHERE gender_concept_id = -1 AND race_concept_id = -2
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_omop_050_auxiliary_concepts_fails(self) -> None:
         """Negative values in auxiliary concept columns should error."""
@@ -4323,8 +4331,8 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE route_concept_id = -100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
 
     def test_omop_050_greater_than_negative_fails(self) -> None:
         """Negative concept_id in > comparison should error."""
@@ -4332,8 +4340,8 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM procedure_occurrence WHERE procedure_concept_id > -1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
 
     def test_omop_050_in_clause_only_positive_passes(self) -> None:
         """IN clause with only positive values should pass."""
@@ -4341,15 +4349,15 @@ class NegativeConceptIdValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE measurement_concept_id IN (123, 456, 789)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugExposureQuantityMisuseTests(unittest.TestCase):
+class TestDrugExposureQuantityMisuse:
     """Tests for drug_exposure quantity misuse rule (OMOP_055)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.drug_exposure_quantity_misuse")()
+        rule = get_rule("domain_specific.drug_exposure_quantity_misuse")()
         return rule.validate(sql, dialect)
 
     def test_omop_055_dateadd_with_quantity_fails(self) -> None:
@@ -4360,9 +4368,9 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
-        self.assertIn("days_supply", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
+        assert "days_supply" in violations[0].message.lower()
 
     def test_omop_055_date_add_with_quantity_fails(self) -> None:
         """DATE_ADD using quantity should error."""
@@ -4372,9 +4380,9 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
-        self.assertIn("days_supply", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
+        assert "days_supply" in violations[0].message.lower()
 
     def test_omop_055_datediff_with_quantity_fails(self) -> None:
         """DATEDIFF using quantity should error."""
@@ -4384,8 +4392,8 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
 
     def test_omop_055_add_operator_with_quantity_fails(self) -> None:
         """Date arithmetic using + operator with quantity should error."""
@@ -4395,9 +4403,9 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
-        self.assertIn("days_supply", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
+        assert "days_supply" in violations[0].message.lower()
 
     def test_omop_055_sub_operator_with_quantity_fails(self) -> None:
         """Date arithmetic using - operator with quantity should error."""
@@ -4407,8 +4415,8 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
 
     def test_omop_055_interval_with_quantity_fails(self) -> None:
         """INTERVAL expression with quantity should error."""
@@ -4418,8 +4426,8 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("quantity", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "quantity" in violations[0].message.lower()
 
     def test_omop_055_days_supply_passes(self) -> None:
         """Using days_supply instead of quantity should pass."""
@@ -4429,7 +4437,7 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_055_date_diff_between_dates_passes(self) -> None:
         """DATEDIFF between date columns should pass."""
@@ -4439,7 +4447,7 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_055_quantity_in_non_date_context_passes(self) -> None:
         """Using quantity in non-date context should pass."""
@@ -4449,7 +4457,7 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         WHERE quantity > 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_055_no_quantity_column_passes(self) -> None:
         """Query without quantity column should pass."""
@@ -4459,7 +4467,7 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         WHERE days_supply > 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_055_other_table_quantity_passes(self) -> None:
         """Quantity from non-drug_exposure table should pass."""
@@ -4470,15 +4478,15 @@ class DrugExposureQuantityMisuseTests(unittest.TestCase):
         JOIN product p ON o.product_id = p.id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class SourceToConceptMapValidationTests(unittest.TestCase):
+class TestSourceToConceptMapValidation:
     """Tests for source_to_concept_map validation rule (OMOP_058)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.source_to_concept_map_validation")()
+        rule = get_rule("concept_standardization.source_to_concept_map_validation")()
         return rule.validate(sql, dialect)
 
     def test_omop_058_source_code_without_vocabulary_id_fails(self) -> None:
@@ -4489,9 +4497,9 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE source_code = '250.00'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("source_code", violations[0].message.lower())
-        self.assertIn("source_vocabulary_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "source_code" in violations[0].message.lower()
+        assert "source_vocabulary_id" in violations[0].message.lower()
 
     def test_omop_058_both_filters_passes(self) -> None:
         """Filtering by both source_code and source_vocabulary_id should pass."""
@@ -4502,7 +4510,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
           AND source_vocabulary_id = 'ICD9CM'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_no_source_code_filter_passes(self) -> None:
         """Query without source_code filter should pass."""
@@ -4512,7 +4520,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE target_concept_id > 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_vocabulary_id_only_passes(self) -> None:
         """Filtering by source_vocabulary_id alone should pass."""
@@ -4522,7 +4530,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE source_vocabulary_id = 'ICD9CM'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_in_clause_without_vocabulary_id_fails(self) -> None:
         """IN clause on source_code without source_vocabulary_id should error."""
@@ -4532,8 +4540,8 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE source_code IN ('250.00', '250.01', '250.02')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("source_code", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "source_code" in violations[0].message.lower()
 
     def test_omop_058_in_clause_with_vocabulary_id_passes(self) -> None:
         """IN clause with source_vocabulary_id should pass."""
@@ -4544,7 +4552,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
           AND source_vocabulary_id = 'ICD9CM'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_like_without_vocabulary_id_fails(self) -> None:
         """LIKE on source_code without source_vocabulary_id should error."""
@@ -4554,7 +4562,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE source_code LIKE '250%'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_058_qualified_columns_fails(self) -> None:
         """Qualified column names should also be detected."""
@@ -4564,7 +4572,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE stcm.source_code = 'A123'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_058_qualified_columns_passes(self) -> None:
         """Qualified column names with both filters should pass."""
@@ -4575,7 +4583,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
           AND stcm.source_vocabulary_id = 'SNOMED'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_join_condition_fails(self) -> None:
         """Join conditions should also be checked."""
@@ -4585,7 +4593,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         JOIN source_to_concept_map t ON m.code = t.source_code
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_058_join_with_vocabulary_id_passes(self) -> None:
         """Join with source_vocabulary_id filter should pass."""
@@ -4597,7 +4605,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
          AND t.source_vocabulary_id = 'ICD10CM'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_other_tables_not_affected(self) -> None:
         """Other tables should not trigger this rule."""
@@ -4607,7 +4615,7 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         WHERE concept_code = '250.00'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_058_no_table_reference_passes(self) -> None:
         """Query without source_to_concept_map table should pass."""
@@ -4615,15 +4623,15 @@ class SourceToConceptMapValidationTests(unittest.TestCase):
         SELECT * FROM person WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
+class TestPrecedingVisitOccurrenceValidation:
     """Tests for preceding_visit_occurrence_id validation rule (OMOP_059)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.preceding_visit_occurrence_validation")()
+        rule = get_rule("joins.preceding_visit_occurrence_validation")()
         return rule.validate(sql, dialect)
 
     def test_omop_059_join_to_different_table_fails(self) -> None:
@@ -4634,9 +4642,9 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail", violations[0].message.lower())
-        self.assertIn("visit_occurrence", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_detail" in violations[0].message.lower()
+        assert "visit_occurrence" in violations[0].message.lower()
 
     def test_omop_059_join_to_wrong_column_fails(self) -> None:
         """Joining to wrong column in visit_occurrence should error."""
@@ -4646,9 +4654,9 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN visit_occurrence v2 ON v1.preceding_visit_occurrence_id = v2.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message.lower())
-        self.assertIn("visit_occurrence_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+        assert "visit_occurrence_id" in violations[0].message.lower()
 
     def test_omop_059_correct_self_join_passes(self) -> None:
         """Correct self-join to visit_occurrence_id should pass."""
@@ -4659,7 +4667,7 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
           ON v1.preceding_visit_occurrence_id = v2.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_059_left_join_correct_passes(self) -> None:
         """LEFT JOIN with correct columns should pass."""
@@ -4670,7 +4678,7 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
           ON v1.preceding_visit_occurrence_id = v2.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_059_reversed_join_order_fails(self) -> None:
         """Reversed join order with wrong column should still error."""
@@ -4680,8 +4688,8 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN visit_occurrence v2 ON v2.visit_concept_id = v1.preceding_visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_concept_id" in violations[0].message.lower()
 
     def test_omop_059_no_preceding_column_passes(self) -> None:
         """Query without preceding_visit_occurrence_id should pass."""
@@ -4691,7 +4699,7 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN person p ON vo.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_059_multiple_tables_join_to_wrong_fails(self) -> None:
         """Complex query joining to wrong table should error."""
@@ -4702,8 +4710,8 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_detail" in violations[0].message.lower()
 
     def test_omop_059_unqualified_table_name_passes(self) -> None:
         """Unqualified table names with correct join should pass."""
@@ -4714,7 +4722,7 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
           ON vo1.preceding_visit_occurrence_id = vo2.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_059_join_to_person_table_fails(self) -> None:
         """Joining to person table should error."""
@@ -4724,8 +4732,8 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN person p ON vo.preceding_visit_occurrence_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "person" in violations[0].message.lower()
 
     def test_omop_059_other_visit_joins_not_affected(self) -> None:
         """Other visit_occurrence joins should not trigger this rule."""
@@ -4736,7 +4744,7 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         JOIN care_site cs ON vo.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_059_column_in_where_clause_not_flagged(self) -> None:
         """Using preceding_visit_occurrence_id in WHERE should not be flagged."""
@@ -4746,15 +4754,15 @@ class PrecedingVisitOccurrenceValidationTests(unittest.TestCase):
         WHERE preceding_visit_occurrence_id IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class NullableEndDateNullHandlingTests(unittest.TestCase):
+class TestNullableEndDateNullHandling:
     """Tests for nullable end_date NULL handling rule (OMOP_062, OMOP_159, CLIN_022, CLIN_039)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.nullable_end_date_null_handling")()
+        rule = get_rule("temporal.nullable_end_date_null_handling")()
         return rule.validate(sql, dialect)
 
     def test_omop_062_datediff_without_null_handling_fails(self) -> None:
@@ -4764,9 +4772,9 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("null", violations[0].message.lower())
-        self.assertIn("coalesce", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "null" in violations[0].message.lower()
+        assert "coalesce" in violations[0].message.lower()
 
     def test_omop_062_datediff_with_coalesce_passes(self) -> None:
         """DATEDIFF with COALESCE should pass."""
@@ -4776,7 +4784,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_062_with_is_not_null_filter_passes(self) -> None:
         """Query with IS NOT NULL filter should pass."""
@@ -4786,7 +4794,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         WHERE condition_end_date IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_062_date_arithmetic_without_null_handling_fails(self) -> None:
         """Date arithmetic without NULL handling should warn."""
@@ -4795,8 +4803,8 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("null", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "null" in violations[0].message.lower()
 
     def test_omop_062_date_arithmetic_with_coalesce_passes(self) -> None:
         """Date arithmetic with COALESCE should pass."""
@@ -4805,7 +4813,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_062_no_date_calculation_passes(self) -> None:
         """Query without date calculation should pass."""
@@ -4815,7 +4823,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_062_date_add_without_null_handling_fails(self) -> None:
         """DATE_ADD using condition_end_date should warn."""
@@ -4824,7 +4832,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_062_timestampdiff_without_null_handling_fails(self) -> None:
         """TIMESTAMPDIFF without NULL handling should warn."""
@@ -4833,7 +4841,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_062_multiple_functions_without_handling_fails(self) -> None:
         """Multiple date functions without handling should warn for each."""
@@ -4844,7 +4852,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_omop_062_condition_start_date_only_passes(self) -> None:
         """Using only condition_start_date should pass."""
@@ -4853,7 +4861,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_039_visit_end_date_without_null_handling_fails(self) -> None:
         """visit_end_date without NULL handling should warn (CLIN_039)."""
@@ -4862,8 +4870,8 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM visit_occurrence vo
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_end_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_end_date" in violations[0].message.lower()
 
     def test_omop_062_no_condition_table_passes(self) -> None:
         """Query without condition_occurrence should pass."""
@@ -4871,7 +4879,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         SELECT * FROM person WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_159_drug_exposure_end_date_without_null_handling_fails(self) -> None:
         """drug_exposure_end_date without NULL handling should warn (OMOP_159)."""
@@ -4880,8 +4888,8 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure_end_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "drug_exposure_end_date" in violations[0].message.lower()
 
     def test_omop_159_drug_exposure_end_date_with_coalesce_passes(self) -> None:
         """drug_exposure_end_date with COALESCE should pass (OMOP_159)."""
@@ -4891,7 +4899,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_159_drug_exposure_end_date_with_is_not_null_passes(self) -> None:
         """drug_exposure_end_date with IS NOT NULL filter should pass (OMOP_159)."""
@@ -4901,7 +4909,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         WHERE drug_exposure_end_date IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_022_procedure_end_date_without_null_handling_fails(self) -> None:
         """procedure_end_date without NULL handling should warn (CLIN_022)."""
@@ -4910,8 +4918,8 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM procedure_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("procedure_end_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "procedure_end_date" in violations[0].message.lower()
 
     def test_clin_022_procedure_end_date_with_coalesce_passes(self) -> None:
         """procedure_end_date with COALESCE should pass (CLIN_022)."""
@@ -4921,7 +4929,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM procedure_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_022_procedure_end_date_arithmetic_without_null_handling_fails(self) -> None:
         """procedure_end_date in arithmetic without NULL handling should warn (CLIN_022)."""
@@ -4930,7 +4938,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         FROM procedure_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_039_visit_end_date_with_is_not_null_passes(self) -> None:
         """visit_end_date with IS NOT NULL filter should pass (CLIN_039)."""
@@ -4940,7 +4948,7 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         WHERE visit_end_date IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_all_tables_mixed_query(self) -> None:
         """Query using multiple tables should flag all unprotected end_dates."""
@@ -4956,10 +4964,10 @@ class NullableEndDateNullHandlingTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 4)
+        assert len(violations) == 4
 
 
-class DrugStrengthValidityFilterTests(unittest.TestCase):
+class TestDrugStrengthValidityFilter:
     """Tests for OMOP_064: drug_strength_valid_start_end_date_filter."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -4978,8 +4986,8 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         WHERE drug_concept_id = 19078461
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("invalid_reason", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "invalid_reason" in violations[0].message.lower()
 
     def test_omop_064_with_invalid_reason_null_passes(self) -> None:
         """drug_strength with invalid_reason IS NULL should pass."""
@@ -4990,7 +4998,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_with_valid_end_date_comparison_passes(self) -> None:
         """drug_strength with valid_end_date check should pass."""
@@ -5001,7 +5009,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND valid_end_date >= CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_with_valid_start_date_comparison_passes(self) -> None:
         """drug_strength with valid_start_date check should pass."""
@@ -5012,7 +5020,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND valid_start_date <= CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_with_between_date_range_passes(self) -> None:
         """drug_strength with BETWEEN date range should pass."""
@@ -5023,7 +5031,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_join_without_validity_fails(self) -> None:
         """JOIN to drug_strength without validity filter should warn."""
@@ -5034,7 +5042,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         WHERE de.person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_064_join_with_invalid_reason_in_join_passes(self) -> None:
         """JOIN with invalid_reason in JOIN condition should pass."""
@@ -5047,7 +5055,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         WHERE de.person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_join_with_invalid_reason_in_where_passes(self) -> None:
         """JOIN with invalid_reason in WHERE should pass."""
@@ -5059,7 +5067,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND ds.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_no_drug_strength_table_passes(self) -> None:
         """Query without drug_strength should pass."""
@@ -5067,7 +5075,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_subquery_without_validity_fails(self) -> None:
         """Subquery selecting from drug_strength without filter should warn."""
@@ -5079,7 +5087,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         ) subq
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_064_multiple_conditions_with_validity_passes(self) -> None:
         """Complex WHERE with validity filter should pass."""
@@ -5091,7 +5099,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_invalid_reason_equality_filter_passes(self) -> None:
         """Checking invalid_reason with equality should pass (intentional historical query)."""
@@ -5102,7 +5110,7 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
           AND invalid_reason = 'D'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_064_date_in_select_but_not_where_fails(self) -> None:
         """Selecting validity columns without filtering should still warn."""
@@ -5112,10 +5120,10 @@ class DrugStrengthValidityFilterTests(unittest.TestCase):
         WHERE drug_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
+class TestUnionConceptIdDomainIndicator:
     """Tests for OMOP_067: no_union_different_concept_id_types."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -5136,8 +5144,8 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("domain indicator", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "domain indicator" in violations[0].message.lower()
 
     def test_omop_067_union_with_domain_indicator_passes(self) -> None:
         """UNION with literal domain column should pass."""
@@ -5149,7 +5157,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_067_union_same_domain_passes(self) -> None:
         """UNION from same domain table should pass."""
@@ -5163,7 +5171,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         WHERE person_id = 456
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_067_union_non_concept_id_passes(self) -> None:
         """UNION not involving concept_id columns should pass."""
@@ -5175,7 +5183,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_067_no_union_passes(self) -> None:
         """Query without UNION should pass."""
@@ -5183,7 +5191,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         SELECT condition_concept_id FROM condition_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_067_union_three_domains_fails(self) -> None:
         """UNION mixing three domains without indicator should warn."""
@@ -5195,7 +5203,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         SELECT procedure_concept_id AS concept_id FROM procedure_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_067_union_measurement_observation_fails(self) -> None:
         """UNION mixing measurement and observation should warn."""
@@ -5207,7 +5215,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         FROM observation
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_067_union_with_concept_join_passes(self) -> None:
         """UNION with domain_id from concept table should pass."""
@@ -5221,7 +5229,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         JOIN concept c ON de.drug_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_067_plain_union_without_all_fails(self) -> None:
         """Plain UNION (not ALL) mixing domains should also warn."""
@@ -5233,7 +5241,7 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_omop_067_union_non_domain_tables_passes(self) -> None:
         """UNION from non-domain tables should pass."""
@@ -5243,15 +5251,15 @@ class UnionConceptIdDomainIndicatorTests(unittest.TestCase):
         SELECT concept_id FROM concept WHERE domain_id = 'Drug'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugExposureSigParsingTests(unittest.TestCase):
+class TestDrugExposureSigParsing:
     """Tests for drug_exposure sig parsing rule (OMOP_072)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.drug_exposure_sig_parsing")()
+        rule = get_rule("domain_specific.drug_exposure_sig_parsing")()
         return rule.validate(sql, dialect)
 
     def test_omop_072_substring_with_cast_fails(self) -> None:
@@ -5262,9 +5270,9 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message.lower())
-        self.assertIn("drug_strength", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "sig" in violations[0].message.lower()
+        assert "drug_strength" in violations[0].message.lower()
 
     def test_omop_072_regexp_substr_for_numeric_fails(self) -> None:
         """REGEXP_SUBSTR extracting numbers from sig should error."""
@@ -5274,8 +5282,8 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "sig" in violations[0].message.lower()
 
     def test_omop_072_charindex_on_sig_fails(self) -> None:
         """CHARINDEX on sig field should error."""
@@ -5286,8 +5294,8 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         WHERE CAST(SUBSTRING(sig, 1, 2) AS INT) > 1
         """
         violations = self._run_rule(sql)
-        self.assertTrue(len(violations) >= 1)
-        self.assertTrue(any("sig" in v.message.lower() for v in violations))
+        assert len(violations) >= 1
+        assert any("sig" in v.message.lower() for v in violations)
 
     def test_omop_072_position_on_sig_for_parsing_fails(self) -> None:
         """POSITION function on sig used for numeric extraction should warn."""
@@ -5298,8 +5306,8 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should trigger at least one violation for SUBSTR on sig
-        self.assertTrue(len(violations) >= 1)
-        self.assertTrue(any("sig" in v.message.lower() for v in violations))
+        assert len(violations) >= 1
+        assert any("sig" in v.message.lower() for v in violations)
 
     def test_omop_072_substr_for_parsing_fails(self) -> None:
         """SUBSTR on sig for dose extraction should error."""
@@ -5309,9 +5317,9 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message.lower())
-        self.assertIn("drug_strength", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "sig" in violations[0].message.lower()
+        assert "drug_strength" in violations[0].message.lower()
 
     def test_omop_072_split_part_on_sig_fails(self) -> None:
         """SPLIT_PART on sig with numeric cast should warn."""
@@ -5321,8 +5329,8 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "sig" in violations[0].message.lower()
 
     def test_omop_072_drug_strength_join_passes(self) -> None:
         """Using drug_strength table should pass."""
@@ -5333,7 +5341,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         WHERE ds.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_072_sig_in_select_passes(self) -> None:
         """Simply selecting sig column should pass."""
@@ -5343,7 +5351,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         WHERE drug_concept_id = 1234567
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_072_sig_in_where_like_passes(self) -> None:
         """Using LIKE on sig for searching (not parsing) should pass."""
@@ -5353,7 +5361,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         WHERE sig LIKE '%daily%'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_072_no_drug_exposure_table_passes(self) -> None:
         """Query without drug_exposure table should pass."""
@@ -5362,7 +5370,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM patient_records
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_072_other_table_sig_column_passes(self) -> None:
         """Parsing sig from non-drug_exposure table should pass."""
@@ -5371,7 +5379,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM documents
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_072_left_function_on_sig_fails(self) -> None:
         """LEFT function on sig should warn."""
@@ -5383,7 +5391,7 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         violations = self._run_rule(sql)
         # LEFT is in STRING_FUNCTIONS but might not trigger without numeric context
         # This is acceptable as it's a WARNING rule with some flexibility
-        self.assertTrue(len(violations) >= 0)
+        assert len(violations) >= 0
 
     def test_omop_072_regexp_replace_on_sig_fails(self) -> None:
         """REGEXP_REPLACE on sig should warn."""
@@ -5393,11 +5401,11 @@ class DrugExposureSigParsingTests(unittest.TestCase):
         FROM drug_exposure
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("sig", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "sig" in violations[0].message.lower()
 
 
-class VocabularyTableProtectionTests(unittest.TestCase):
+class TestVocabularyTableProtection:
     """Tests for vocabulary table protection rule (OMOP_081)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -5411,10 +5419,10 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         DELETE FROM concept WHERE concept_id = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("DELETE", violations[0].message)
-        self.assertIn("concept", violations[0].message.lower())
-        self.assertIn("vocabulary", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "DELETE" in violations[0].message
+        assert "concept" in violations[0].message.lower()
+        assert "vocabulary" in violations[0].message.lower()
 
     def test_omop_081_update_concept_fails(self) -> None:
         """UPDATE on concept table should error."""
@@ -5422,9 +5430,9 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         UPDATE concept SET concept_name = 'test' WHERE concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("UPDATE", violations[0].message)
-        self.assertIn("concept", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "UPDATE" in violations[0].message
+        assert "concept" in violations[0].message.lower()
 
     def test_omop_081_insert_into_vocabulary_fails(self) -> None:
         """INSERT into vocabulary table should error."""
@@ -5433,9 +5441,9 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         VALUES ('CUSTOM', 'My Custom Vocabulary')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("INSERT", violations[0].message)
-        self.assertIn("vocabulary", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "INSERT" in violations[0].message
+        assert "vocabulary" in violations[0].message.lower()
 
     def test_omop_081_truncate_concept_ancestor_fails(self) -> None:
         """TRUNCATE on concept_ancestor should error."""
@@ -5443,9 +5451,9 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         TRUNCATE TABLE concept_ancestor
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("TRUNCATE", violations[0].message)
-        self.assertIn("concept_ancestor", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "TRUNCATE" in violations[0].message
+        assert "concept_ancestor" in violations[0].message.lower()
 
     def test_omop_081_drop_drug_strength_fails(self) -> None:
         """DROP on drug_strength should error."""
@@ -5453,9 +5461,9 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         DROP TABLE drug_strength
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("DROP", violations[0].message)
-        self.assertIn("drug_strength", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "DROP" in violations[0].message
+        assert "drug_strength" in violations[0].message.lower()
 
     def test_omop_081_delete_from_concept_relationship_fails(self) -> None:
         """DELETE from concept_relationship should error."""
@@ -5464,9 +5472,9 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         WHERE relationship_id = 'Maps to'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("DELETE", violations[0].message)
-        self.assertIn("concept_relationship", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "DELETE" in violations[0].message
+        assert "concept_relationship" in violations[0].message.lower()
 
     def test_omop_081_select_from_concept_passes(self) -> None:
         """SELECT from concept should pass."""
@@ -5474,7 +5482,7 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         SELECT * FROM concept WHERE concept_id = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_081_delete_from_clinical_table_passes(self) -> None:
         """DELETE from clinical tables (non-vocabulary) should pass."""
@@ -5482,7 +5490,7 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         DELETE FROM condition_occurrence WHERE person_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_081_update_clinical_table_passes(self) -> None:
         """UPDATE on clinical tables should pass."""
@@ -5492,7 +5500,7 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         WHERE drug_exposure_id = 456
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_081_insert_into_cohort_passes(self) -> None:
         """INSERT into non-vocabulary table should pass."""
@@ -5501,7 +5509,7 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         VALUES (123, 1, '2020-01-01')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_omop_081_all_vocabulary_tables_protected(self) -> None:
         """All vocabulary tables should be protected."""
@@ -5515,12 +5523,11 @@ class VocabularyTableProtectionTests(unittest.TestCase):
         for table in vocabulary_tables:
             sql = f"DELETE FROM {table} WHERE 1=1"
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 1,
-                           f"Expected violation for table {table}")
-            self.assertIn(table, violations[0].message.lower())
+            assert len(violations) == 1, f"Expected violation for table {table}"
+            assert table in violations[0].message.lower()
 
 
-class ProviderJoinValidationTests(unittest.TestCase):
+class TestProviderJoinValidation:
     """Tests for the provider join validation rule (JOIN_001)."""
 
     def _run_rule(self, sql: str):
@@ -5536,9 +5543,9 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider p ON co.person_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message.lower())
-        self.assertIn("provider_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+        assert "provider_id" in violations[0].message
 
     def test_join_001_incorrect_care_site_id_to_provider_id(self) -> None:
         """Joining care_site_id to provider_id should error."""
@@ -5548,8 +5555,8 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider p ON de.care_site_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("care_site_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "care_site_id" in violations[0].message.lower()
 
     def test_join_001_correct_provider_id_to_provider_id(self) -> None:
         """Correct join using provider_id on both sides should pass."""
@@ -5559,7 +5566,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider p ON co.provider_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_001_multiple_clinical_tables(self) -> None:
         """Test with multiple clinical tables."""
@@ -5570,8 +5577,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
             JOIN provider p ON t.provider_id = p.provider_id
             """
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 0,
-                           f"Expected no violations for {table}")
+            assert len(violations) == 0, f"Expected no violations for {table}"
 
     def test_join_001_reversed_join_order(self) -> None:
         """Test reversed join order (provider → clinical)."""
@@ -5581,7 +5587,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON p.provider_id = co.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_001_reversed_incorrect_join(self) -> None:
         """Test reversed incorrect join order."""
@@ -5591,7 +5597,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON p.provider_id = co.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_001_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect provider joins."""
@@ -5603,8 +5609,8 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider p2 ON de.person_id = p2.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure" in violations[0].message
 
     def test_join_001_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -5614,7 +5620,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider AS prov ON conditions.provider_id = prov.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_001_no_provider_table(self) -> None:
         """Queries without provider table should not trigger rule."""
@@ -5624,7 +5630,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN person p ON co.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_001_provider_to_care_site_not_flagged(self) -> None:
         """Join between provider and care_site (non-clinical) should not be flagged."""
@@ -5634,7 +5640,7 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_001_visit_occurrence_to_provider(self) -> None:
         """Visit occurrence should also validate provider joins."""
@@ -5644,10 +5650,10 @@ class ProviderJoinValidationTests(unittest.TestCase):
         JOIN provider p ON vo.person_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class CareSiteIdJoinValidationTests(unittest.TestCase):
+class TestCareSiteIdJoinValidation:
     """Tests for the care site ID join validation rule (JOIN_002)."""
 
     def _run_rule(self, sql: str):
@@ -5663,9 +5669,9 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON vo.care_site_id = cs.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("location_id", violations[0].message.lower())
-        self.assertIn("care_site_id", violations[0].message)
+        assert len(violations) == 1
+        assert "location_id" in violations[0].message.lower()
+        assert "care_site_id" in violations[0].message
 
     def test_join_002_incorrect_care_site_id_to_provider_id(self) -> None:
         """Joining care_site_id to provider_id should error."""
@@ -5675,8 +5681,8 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON de.care_site_id = cs.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("provider_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message.lower()
 
     def test_join_002_correct_care_site_id_to_care_site_id(self) -> None:
         """Correct join using care_site_id on both sides should pass."""
@@ -5686,7 +5692,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON vo.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_multiple_tables_with_care_site_id(self) -> None:
         """Test with multiple tables that have care_site_id."""
@@ -5697,8 +5703,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
             JOIN care_site cs ON t.care_site_id = cs.care_site_id
             """
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 0,
-                           f"Expected no violations for {table}")
+            assert len(violations) == 0, f"Expected no violations for {table}"
 
     def test_join_002_reversed_join_order(self) -> None:
         """Test reversed join order (care_site → clinical)."""
@@ -5708,7 +5713,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON cs.care_site_id = vo.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_reversed_incorrect_join(self) -> None:
         """Test reversed incorrect join order."""
@@ -5718,7 +5723,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON cs.location_id = vo.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_002_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect care_site joins."""
@@ -5730,8 +5735,8 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs2 ON co.care_site_id = cs2.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_occurrence", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_occurrence" in violations[0].message
 
     def test_join_002_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -5741,7 +5746,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site AS site ON visits.care_site_id = site.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_no_care_site_table(self) -> None:
         """Queries without care_site table should not trigger rule."""
@@ -5751,7 +5756,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN person p ON vo.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_care_site_to_location_not_flagged(self) -> None:
         """Join between care_site and location (valid path) should not be flagged."""
@@ -5761,7 +5766,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_person_to_care_site(self) -> None:
         """Person table should also validate care_site joins."""
@@ -5771,7 +5776,7 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_002_person_incorrect_join(self) -> None:
         """Person joining on wrong column should error."""
@@ -5781,10 +5786,10 @@ class CareSiteIdJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.care_site_id = cs.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class CareSiteLocationJoinValidationTests(unittest.TestCase):
+class TestCareSiteLocationJoinValidation:
     """Tests for the care_site to location join validation rule (JOIN_003)."""
 
     def _run_rule(self, sql: str):
@@ -5800,9 +5805,9 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("care_site_id", violations[0].message.lower())
-        self.assertIn("location_id", violations[0].message)
+        assert len(violations) == 1
+        assert "care_site_id" in violations[0].message.lower()
+        assert "location_id" in violations[0].message
 
     def test_join_003_incorrect_care_site_name_to_location_id(self) -> None:
         """Joining care_site_name to location_id should error."""
@@ -5812,8 +5817,8 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.care_site_name = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("care_site_name", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "care_site_name" in violations[0].message.lower()
 
     def test_join_003_correct_location_id_to_location_id(self) -> None:
         """Correct join using location_id on both sides should pass."""
@@ -5823,7 +5828,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_reversed_join_order(self) -> None:
         """Test reversed join order (location → care_site)."""
@@ -5833,7 +5838,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON l.location_id = cs.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_reversed_incorrect_join(self) -> None:
         """Test reversed incorrect join order."""
@@ -5843,7 +5848,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON l.location_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_003_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -5853,7 +5858,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location AS loc ON site.location_id = loc.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_no_location_table(self) -> None:
         """Queries without location table should not trigger rule."""
@@ -5863,7 +5868,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON cs.care_site_id = vo.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_no_care_site_table(self) -> None:
         """Queries without care_site table should not trigger rule."""
@@ -5873,7 +5878,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON p.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect care_site/location joins."""
@@ -5885,8 +5890,8 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN location l2 ON cs2.care_site_id = l2.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("care_site_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "care_site_id" in violations[0].message.lower()
 
     def test_join_003_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -5896,7 +5901,7 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN public.location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_003_incorrect_with_schema(self) -> None:
         """Test incorrect join with schema-qualified names."""
@@ -5906,10 +5911,10 @@ class CareSiteLocationJoinValidationTests(unittest.TestCase):
         JOIN public.location l ON cs.care_site_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class PersonLocationJoinValidationTests(unittest.TestCase):
+class TestPersonLocationJoinValidation:
     """Tests for the person to location join validation rule (JOIN_004)."""
 
     def _run_rule(self, sql: str):
@@ -5925,9 +5930,9 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON p.person_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message.lower())
-        self.assertIn("location_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+        assert "location_id" in violations[0].message
 
     def test_join_004_incorrect_person_source_value_to_location_id(self) -> None:
         """Joining person_source_value to location_id should error."""
@@ -5937,8 +5942,8 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON p.person_source_value = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_source_value", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "person_source_value" in violations[0].message.lower()
 
     def test_join_004_correct_location_id_to_location_id(self) -> None:
         """Correct join using location_id on both sides should pass."""
@@ -5948,7 +5953,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON p.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_reversed_join_order(self) -> None:
         """Test reversed join order (location → person)."""
@@ -5958,7 +5963,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN person p ON l.location_id = p.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_reversed_incorrect_join(self) -> None:
         """Test reversed incorrect join order."""
@@ -5968,7 +5973,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN person p ON l.location_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_004_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -5978,7 +5983,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location AS address ON patient.location_id = address.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_no_location_table(self) -> None:
         """Queries without location table should not trigger rule."""
@@ -5988,7 +5993,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON p.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_no_person_table(self) -> None:
         """Queries without person table should not trigger rule."""
@@ -5998,7 +6003,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location l ON cs.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect person/location joins."""
@@ -6010,8 +6015,8 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN location l2 ON p2.person_id = l2.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
 
     def test_join_004_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6021,7 +6026,7 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN public.location l ON p.location_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_004_incorrect_with_schema(self) -> None:
         """Test incorrect join with schema-qualified names."""
@@ -6031,10 +6036,10 @@ class PersonLocationJoinValidationTests(unittest.TestCase):
         JOIN public.location l ON p.person_id = l.location_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ProviderCareSiteJoinValidationTests(unittest.TestCase):
+class TestProviderCareSiteJoinValidation:
     """Tests for the provider to care_site join validation rule (JOIN_005)."""
 
     def _run_rule(self, sql: str):
@@ -6050,9 +6055,9 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.provider_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("provider_id", violations[0].message.lower())
-        self.assertIn("care_site_id", violations[0].message)
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message.lower()
+        assert "care_site_id" in violations[0].message
 
     def test_join_005_incorrect_specialty_concept_id_to_care_site_id(self) -> None:
         """Joining specialty_concept_id to care_site_id should error."""
@@ -6062,8 +6067,8 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.specialty_concept_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("specialty_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "specialty_concept_id" in violations[0].message.lower()
 
     def test_join_005_correct_care_site_id_to_care_site_id(self) -> None:
         """Correct join using care_site_id on both sides should pass."""
@@ -6073,7 +6078,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON p.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_reversed_join_order(self) -> None:
         """Test reversed join order (care_site → provider)."""
@@ -6083,7 +6088,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN provider p ON cs.care_site_id = p.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_reversed_incorrect_join(self) -> None:
         """Test reversed incorrect join order."""
@@ -6093,7 +6098,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN provider p ON cs.care_site_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_005_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -6103,7 +6108,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site AS site ON prov.care_site_id = site.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_no_care_site_table(self) -> None:
         """Queries without care_site table should not trigger rule."""
@@ -6113,7 +6118,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN person pe ON p.provider_id = pe.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_no_provider_table(self) -> None:
         """Queries without provider table should not trigger rule."""
@@ -6123,7 +6128,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON vo.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect provider/care_site joins."""
@@ -6135,8 +6140,8 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN care_site cs2 ON p2.provider_id = cs2.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("provider_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message.lower()
 
     def test_join_005_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6146,7 +6151,7 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN public.care_site cs ON p.care_site_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_005_incorrect_with_schema(self) -> None:
         """Test incorrect join with schema-qualified names."""
@@ -6156,10 +6161,10 @@ class ProviderCareSiteJoinValidationTests(unittest.TestCase):
         JOIN public.care_site cs ON p.provider_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
+class TestClinicalVisitDetailJoinValidation:
     """Tests for the clinical to visit_detail join validation rule (JOIN_007)."""
 
     def _run_rule(self, sql: str):
@@ -6175,10 +6180,10 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message.lower())
-        self.assertIn("visit_detail_id", violations[0].message.lower())
-        self.assertIn("type mismatch", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message.lower()
+        assert "visit_detail_id" in violations[0].message.lower()
+        assert "type mismatch" in violations[0].message.lower()
 
     def test_join_007_correct_visit_detail_id_to_visit_detail_id(self) -> None:
         """Correct join using visit_detail_id on both sides should pass."""
@@ -6188,7 +6193,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_multiple_clinical_tables(self) -> None:
         """Test with multiple clinical tables."""
@@ -6200,8 +6205,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
             JOIN visit_detail vd ON t.visit_detail_id = vd.visit_detail_id
             """
             violations = self._run_rule(sql_correct)
-            self.assertEqual(len(violations), 0,
-                           f"Expected no violations for {table} with correct join")
+            assert len(violations) == 0, f"Expected no violations for {table} with correct join"
 
             # Incorrect join
             sql_incorrect = f"""
@@ -6210,8 +6214,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
             JOIN visit_detail vd ON t.visit_occurrence_id = vd.visit_detail_id
             """
             violations = self._run_rule(sql_incorrect)
-            self.assertEqual(len(violations), 1,
-                           f"Expected violation for {table} with incorrect join")
+            assert len(violations) == 1, f"Expected violation for {table} with incorrect join"
 
     def test_join_007_reversed_join_order(self) -> None:
         """Test reversed join order (visit_detail → clinical)."""
@@ -6221,7 +6224,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON vd.visit_detail_id = m.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_007_correct_reversed_join(self) -> None:
         """Test correct reversed join order."""
@@ -6231,7 +6234,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON vd.visit_detail_id = m.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -6241,7 +6244,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail AS vd ON m.visit_detail_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_no_visit_detail_table(self) -> None:
         """Queries without visit_detail table should not trigger rule."""
@@ -6251,7 +6254,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON m.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_visit_detail_to_visit_occurrence_not_flagged(self) -> None:
         """Join between visit_detail and visit_occurrence should not be flagged."""
@@ -6261,7 +6264,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_non_clinical_table_not_flagged(self) -> None:
         """Joins from non-clinical tables should not be flagged."""
@@ -6271,7 +6274,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON p.person_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect clinical/visit_detail joins."""
@@ -6283,8 +6286,8 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd2 ON co.visit_occurrence_id = vd2.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_occurrence", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "condition_occurrence" in violations[0].message.lower()
 
     def test_join_007_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6294,7 +6297,7 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN public.visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_007_incorrect_with_schema(self) -> None:
         """Test incorrect join with schema-qualified names."""
@@ -6304,10 +6307,10 @@ class ClinicalVisitDetailJoinValidationTests(unittest.TestCase):
         JOIN public.visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
+class TestConceptPrimaryKeyJoinValidation:
     """Tests for JOIN_008: concept_primary_concept_id_join_column."""
 
     def _run_rule(self, sql: str):
@@ -6323,7 +6326,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN concept c ON de.drug_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_incorrect_join_on_concept_name(self) -> None:
         """Joining arbitrary column on concept_name is allowed (not a vocab column)."""
@@ -6334,7 +6337,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # concept_name is not a vocab column, so no violation
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_incorrect_join_on_concept_code(self) -> None:
         """Joining on concept_code without vocabulary_id should warn."""
@@ -6344,9 +6347,9 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN concept c ON co.condition_source_value = c.concept_code
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "warning")
-        self.assertIn("concept_code", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.value == "warning"
+        assert "concept_code" in violations[0].message.lower()
 
     def test_join_008_incorrect_join_on_vocabulary_id(self) -> None:
         """Joining TO vocabulary_id is allowed (acts as its own constraint)."""
@@ -6357,7 +6360,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # No violation: joining TO vocabulary_id means you already have vocab constraint
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_incorrect_join_on_domain_id(self) -> None:
         """Joining *_concept_id to domain_id should error."""
@@ -6369,8 +6372,8 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         violations = self._run_rule(sql)
         # This is an ERROR because procedure_concept_id (ends with _concept_id)
         # must join to concept.concept_id
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
 
     def test_join_008_reversed_join_order(self) -> None:
         """Reversed join order with arbitrary columns is allowed."""
@@ -6381,7 +6384,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # No violation: drug_source_value is not a *_concept_id column
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_correct_reversed_join(self) -> None:
         """Correct reversed join order should pass."""
@@ -6391,7 +6394,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON c.concept_id = de.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -6401,7 +6404,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN concept AS c ON d.drug_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6411,7 +6414,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN public.concept c ON co.condition_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_incorrect_with_schema(self) -> None:
         """Join on concept_code without vocabulary_id should warn (schema-qualified)."""
@@ -6421,8 +6424,8 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN public.concept c ON m.measurement_source_value = c.concept_code
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "warning")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "warning"
 
     def test_join_008_no_concept_table(self) -> None:
         """Queries without concept table should not trigger rule."""
@@ -6432,7 +6435,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN person p ON de.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_multiple_correct_concept_joins(self) -> None:
         """Multiple correct concept joins should all pass."""
@@ -6443,7 +6446,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         JOIN concept c2 ON de.drug_source_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_mixed_correct_and_incorrect(self) -> None:
         """Mix of correct join and arbitrary column join."""
@@ -6455,7 +6458,7 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # No violation: drug_source_value to concept_name is allowed
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_008_incorrect_join_on_concept_class_id(self) -> None:
         """Joining *_concept_id to concept_class_id should error."""
@@ -6466,8 +6469,8 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # ERROR: unit_concept_id must join to concept_id
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
 
     def test_join_008_incorrect_join_on_standard_concept(self) -> None:
         """Joining *_concept_id to standard_concept should error."""
@@ -6478,11 +6481,11 @@ class ConceptPrimaryKeyJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # ERROR: condition_concept_id must join to concept_id
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
 
 
-class ConceptAliasReuseValidationTests(unittest.TestCase):
+class TestConceptAliasReuseValidation:
     """Tests for JOIN_009: source_concept_id_to_concept_join_separate_alias."""
 
     def _run_rule(self, sql: str):
@@ -6499,7 +6502,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c2 ON co.condition_source_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_violation_same_alias_standard_and_source(self) -> None:
         """Same alias used for both standard and source concept joins should error."""
@@ -6510,9 +6513,9 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON co.condition_source_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("c", violations[0].message.lower())
-        self.assertIn("reused", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "c" in violations[0].message.lower()
+        assert "reused" in violations[0].message.lower()
 
     def test_join_009_drug_exposure_same_alias(self) -> None:
         """Drug exposure with reused alias should be flagged."""
@@ -6523,8 +6526,8 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept ON de.drug_source_concept_id = concept.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("concept", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "concept" in violations[0].message.lower()
 
     def test_join_009_procedure_occurrence_correct(self) -> None:
         """Procedure with separate aliases should pass."""
@@ -6535,7 +6538,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c_src ON po.procedure_source_concept_id = c_src.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_single_concept_join_no_violation(self) -> None:
         """Single concept join should not trigger violation."""
@@ -6545,7 +6548,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON co.condition_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_same_column_joined_twice_allowed(self) -> None:
         """Same column joined twice (weird but not this violation)."""
@@ -6557,7 +6560,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Not a violation of THIS rule (separate aliases used)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_measurement_with_unit_concept(self) -> None:
         """Measurement with multiple concept joins using different aliases."""
@@ -6570,7 +6573,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c2 ON m.unit_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_measurement_reused_alias_error(self) -> None:
         """Measurement with reused alias for different concept_id columns."""
@@ -6581,7 +6584,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON m.unit_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_009_visit_occurrence_violation(self) -> None:
         """Visit with same alias for visit_concept_id and visit_source_concept_id."""
@@ -6592,7 +6595,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON vo.visit_source_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_009_no_concept_table(self) -> None:
         """Queries without concept table should not trigger rule."""
@@ -6602,7 +6605,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN person p ON co.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6613,7 +6616,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN public.concept c2 ON de.drug_source_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_009_reversed_join_order(self) -> None:
         """Test reversed join order (concept on left side)."""
@@ -6626,8 +6629,8 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         violations = self._run_rule(sql)
         # This is joining concept to different condition_occurrence instances (co, co2)
         # New behavior: WARNING for cross-table alias reuse
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "warning")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "warning"
 
     def test_join_009_three_concept_joins_same_alias(self) -> None:
         """Three concept joins with same alias should be flagged."""
@@ -6639,9 +6642,9 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON de.route_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
         # Should list multiple columns in the violation
-        self.assertIn("drug_concept_id", violations[0].message.lower())
+        assert "drug_concept_id" in violations[0].message.lower()
 
     def test_join_009_observation_correct_aliases(self) -> None:
         """Observation with correct separate aliases."""
@@ -6656,7 +6659,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c_unit ON o.unit_concept_id = c_unit.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_010_type_concept_same_alias_error(self) -> None:
         """JOIN_010: Same alias for primary and type concept_id should error."""
@@ -6667,10 +6670,10 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON co.condition_type_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
-        self.assertIn("type", violations[0].message.lower())
-        self.assertIn("provenance", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
+        assert "type" in violations[0].message.lower()
+        assert "provenance" in violations[0].message.lower()
 
     def test_join_010_type_concept_correct_separate_aliases(self) -> None:
         """JOIN_010: Separate aliases for primary and type should pass."""
@@ -6681,7 +6684,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c2 ON de.drug_type_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_010_visit_type_concept_error(self) -> None:
         """JOIN_010: Visit with reused alias for visit_concept_id and visit_type_concept_id."""
@@ -6692,8 +6695,8 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c ON vo.visit_type_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
 
     def test_join_010_measurement_type_concept_correct(self) -> None:
         """JOIN_010: Measurement with separate aliases for all concept types."""
@@ -6708,7 +6711,7 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c_unit ON m.unit_concept_id = c_unit.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_010_procedure_type_concept_error(self) -> None:
         """JOIN_010: Procedure with same alias for primary and type."""
@@ -6719,8 +6722,8 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept ON po.procedure_type_concept_id = concept.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) == 1
+        assert violations[0].severity.value == "error"
 
     def test_join_009_and_010_combined_all_three_types(self) -> None:
         """Combining primary, source, and type with same alias should error."""
@@ -6733,8 +6736,8 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should get at least one error for mixing concept types
-        self.assertGreaterEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.value, "error")
+        assert len(violations) >= 1
+        assert violations[0].severity.value == "error"
 
     def test_join_010_death_type_concept(self) -> None:
         """JOIN_010: Death table with type concept."""
@@ -6745,10 +6748,10 @@ class ConceptAliasReuseValidationTests(unittest.TestCase):
         JOIN concept c2 ON d.cause_concept_id = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class ConceptVocabularyJoinValidationTests(unittest.TestCase):
+class TestConceptVocabularyJoinValidation:
     """Tests for JOIN_011: concept_to_vocabulary_join_key."""
 
     def _run_rule(self, sql: str):
@@ -6764,7 +6767,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_incorrect_concept_id_to_vocabulary_concept_id(self) -> None:
         """Joining concept_id to vocabulary_concept_id should error."""
@@ -6774,9 +6777,9 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.concept_id = v.vocabulary_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("concept_id", violations[0].message.lower())
-        self.assertIn("vocabulary_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "concept_id" in violations[0].message.lower()
+        assert "vocabulary_concept_id" in violations[0].message.lower()
 
     def test_join_011_incorrect_vocabulary_id_to_vocabulary_name(self) -> None:
         """Joining vocabulary_id to vocabulary_name should error."""
@@ -6786,8 +6789,8 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("vocabulary_name", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "vocabulary_name" in violations[0].message.lower()
 
     def test_join_011_reversed_join_order(self) -> None:
         """Reversed join order (vocabulary → concept) should still detect violations."""
@@ -6797,7 +6800,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN concept c ON v.vocabulary_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_011_correct_reversed_join(self) -> None:
         """Correct reversed join order should pass."""
@@ -6807,7 +6810,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN concept c ON v.vocabulary_id = c.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_with_table_aliases(self) -> None:
         """Test with custom table aliases."""
@@ -6817,7 +6820,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary AS voc ON con.vocabulary_id = voc.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_schema_qualified_names(self) -> None:
         """Test with schema-qualified table names."""
@@ -6827,7 +6830,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN public.vocabulary v ON c.vocabulary_id = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_incorrect_with_schema(self) -> None:
         """Incorrect join with schema-qualified names should be detected."""
@@ -6837,7 +6840,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN public.vocabulary v ON c.concept_id = v.vocabulary_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_011_no_vocabulary_table(self) -> None:
         """Queries without vocabulary table should not trigger rule."""
@@ -6847,7 +6850,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.domain_id = d.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_no_concept_table(self) -> None:
         """Queries without concept table should not trigger rule."""
@@ -6857,7 +6860,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN person p ON de.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_multiple_joins_mixed(self) -> None:
         """Test query with both correct and incorrect joins."""
@@ -6869,7 +6872,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v2 ON c2.concept_id = v2.vocabulary_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
         # Should only flag the incorrect vocabulary join
 
     def test_join_011_correct_with_additional_joins(self) -> None:
@@ -6884,7 +6887,7 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.domain_id = d.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_011_incorrect_other_column_pair(self) -> None:
         """Other incorrect column pairs should be flagged."""
@@ -6894,10 +6897,10 @@ class ConceptVocabularyJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.concept_name = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConceptDomainJoinValidationTests(unittest.TestCase):
+class TestConceptDomainJoinValidation:
     """Tests for JOIN_012: concept_to_domain_join_key."""
 
     def _run_rule(self, sql: str):
@@ -6913,7 +6916,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.domain_id = d.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_incorrect_concept_id_to_domain_concept_id(self) -> None:
         """Joining concept_id to domain_concept_id should warn."""
@@ -6924,9 +6927,9 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.concept_id = d.domain_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
-        self.assertIn("suspicious", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        assert "suspicious" in violations[0].message.lower()
 
     def test_join_012_incorrect_domain_id_to_domain_name(self) -> None:
         """Joining domain_id to domain_name should error."""
@@ -6937,8 +6940,8 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.domain_id = d.domain_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_012_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
@@ -6949,8 +6952,8 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN concept c ON d.domain_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
 
     def test_join_012_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -6960,7 +6963,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN concept c ON d.domain_id = c.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_with_table_aliases(self) -> None:
         """Correct join with table aliases should pass."""
@@ -6970,7 +6973,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain dom ON c1.domain_id = dom.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_schema_qualified_names(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -6980,7 +6983,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN cdm.domain d ON c.domain_id = d.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_incorrect_with_schema(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -6990,7 +6993,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN cdm.domain d ON c.concept_id = d.domain_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_012_no_domain_table(self) -> None:
         """No domain table should not trigger rule."""
@@ -7000,7 +7003,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         WHERE c.domain_id = 'Condition'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_no_concept_table(self) -> None:
         """No concept table should not trigger rule."""
@@ -7009,7 +7012,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         FROM domain d
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should warn."""
@@ -7021,8 +7024,8 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.concept_id = d.domain_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
 
     def test_join_012_correct_with_additional_joins(self) -> None:
         """Multiple joins all correct should pass."""
@@ -7034,7 +7037,7 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_012_incorrect_other_column_pair(self) -> None:
         """Other incorrect column pairs should be flagged."""
@@ -7044,10 +7047,10 @@ class ConceptDomainJoinValidationTests(unittest.TestCase):
         JOIN domain d ON c.concept_name = d.domain_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConceptConceptClassJoinValidationTests(unittest.TestCase):
+class TestConceptConceptClassJoinValidation:
     """Tests for JOIN_013: concept_to_concept_class_join_key."""
 
     def _run_rule(self, sql: str):
@@ -7063,7 +7066,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_incorrect_concept_id_to_concept_class_concept_id(self) -> None:
         """Joining concept_id to concept_class_concept_id should warn."""
@@ -7074,9 +7077,9 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cc ON c.concept_id = cc.concept_class_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
-        self.assertIn("suspicious", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        assert "suspicious" in violations[0].message.lower()
 
     def test_join_013_incorrect_concept_class_id_to_concept_class_name(self) -> None:
         """Joining concept_class_id to concept_class_name should error."""
@@ -7087,8 +7090,8 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cc ON c.concept_class_id = cc.concept_class_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_013_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
@@ -7099,8 +7102,8 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cc.concept_class_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
 
     def test_join_013_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -7110,7 +7113,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cc.concept_class_id = c.concept_class_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_with_table_aliases(self) -> None:
         """Correct join with table aliases should pass."""
@@ -7120,7 +7123,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cls ON c1.concept_class_id = cls.concept_class_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_schema_qualified_names(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -7130,7 +7133,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN cdm.concept_class cc ON c.concept_class_id = cc.concept_class_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_incorrect_with_schema(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -7141,8 +7144,8 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN cdm.concept_class cc ON c.concept_class_id = cc.concept_class_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_013_no_concept_class_table(self) -> None:
         """No concept_class table should not trigger rule."""
@@ -7152,7 +7155,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         WHERE c.concept_class_id = 'Ingredient'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_no_concept_table(self) -> None:
         """No concept table should not trigger rule."""
@@ -7161,7 +7164,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         FROM concept_class cc
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should error."""
@@ -7173,8 +7176,8 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cc ON c.concept_class_id = cc.concept_class_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_013_correct_with_additional_joins(self) -> None:
         """Multiple joins all correct should pass."""
@@ -7186,7 +7189,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         WHERE c.standard_concept = 'S'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_drug_era_ingredient_filter(self) -> None:
         """Common use case: drug_era with ingredient filter should pass."""
@@ -7198,7 +7201,7 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         WHERE cc.concept_class_id = 'Ingredient'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_013_incorrect_other_column_pair(self) -> None:
         """Other incorrect column pairs should be flagged."""
@@ -7208,10 +7211,10 @@ class ConceptConceptClassJoinValidationTests(unittest.TestCase):
         JOIN concept_class cc ON c.concept_name = cc.concept_class_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
+class TestConceptRelationshipRelationshipJoinValidation:
     """Tests for JOIN_014: concept_relationship_to_relationship_join_key."""
 
     def _run_rule(self, sql: str):
@@ -7227,7 +7230,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.relationship_id = r.relationship_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_incorrect_concept_id_1_to_relationship_concept_id(self) -> None:
         """Joining concept_id_1 to relationship_concept_id should warn."""
@@ -7238,9 +7241,9 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.concept_id_1 = r.relationship_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
-        self.assertIn("suspicious", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        assert "suspicious" in violations[0].message.lower()
 
     def test_join_014_incorrect_concept_id_2_to_relationship_concept_id(self) -> None:
         """Joining concept_id_2 to relationship_concept_id should warn."""
@@ -7251,8 +7254,8 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.concept_id_2 = r.relationship_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
 
     def test_join_014_incorrect_relationship_id_to_relationship_name(self) -> None:
         """Joining relationship_id to relationship_name should error."""
@@ -7263,8 +7266,8 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.relationship_id = r.relationship_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_014_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
@@ -7275,8 +7278,8 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN concept_relationship cr ON r.relationship_concept_id = cr.concept_id_1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
 
     def test_join_014_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -7286,7 +7289,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN concept_relationship cr ON r.relationship_id = cr.relationship_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_with_table_aliases(self) -> None:
         """Correct join with table aliases should pass."""
@@ -7296,7 +7299,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship rel ON cr1.relationship_id = rel.relationship_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_schema_qualified_names(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -7306,7 +7309,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN cdm.relationship r ON cr.relationship_id = r.relationship_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_incorrect_with_schema(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -7317,8 +7320,8 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN cdm.relationship r ON cr.relationship_id = r.relationship_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_014_no_relationship_table(self) -> None:
         """No relationship table should not trigger rule."""
@@ -7328,7 +7331,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         WHERE cr.relationship_id = 'Maps to'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_no_concept_relationship_table(self) -> None:
         """No concept_relationship table should not trigger rule."""
@@ -7337,7 +7340,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         FROM relationship r
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should error."""
@@ -7349,8 +7352,8 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.relationship_id = r.relationship_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_014_correct_with_additional_joins(self) -> None:
         """Multiple joins all correct should pass."""
@@ -7362,7 +7365,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         WHERE cr.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_maps_to_relationship_use_case(self) -> None:
         """Common use case: source-to-standard mapping should pass."""
@@ -7376,7 +7379,7 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
           AND cr.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_014_incorrect_other_column_pair(self) -> None:
         """Other incorrect column pairs should be flagged."""
@@ -7386,15 +7389,15 @@ class ConceptRelationshipRelationshipJoinValidationTests(unittest.TestCase):
         JOIN relationship r ON cr.valid_start_date = r.relationship_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
+class TestConceptAncestorNameResolutionValidation:
     """Tests for JOIN_016: concept_ancestor_to_concept_for_name_resolution."""
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.concept_ancestor_name_resolution")()
+        rule = get_rule("joins.concept_ancestor_name_resolution")()
         return rule.validate(sql, dialect="postgres")
 
     def test_join_016_correct_descendant_name_resolution(self) -> None:
@@ -7406,7 +7409,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.ancestor_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_correct_ancestor_name_resolution(self) -> None:
         """Correct ancestor name resolution should pass."""
@@ -7417,7 +7420,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.descendant_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_incorrect_descendant_uses_ancestor_id(self) -> None:
         """Alias says 'descendant_name' but joins on ancestor_concept_id should error."""
@@ -7429,9 +7432,9 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.descendant_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("descendant", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "descendant" in violations[0].message.lower()
 
     def test_join_016_incorrect_ancestor_uses_descendant_id(self) -> None:
         """Alias says 'ancestor_name' but joins on descendant_concept_id should error."""
@@ -7443,9 +7446,9 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.ancestor_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("ancestor", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "ancestor" in violations[0].message.lower()
 
     def test_join_016_correct_with_parent_keyword(self) -> None:
         """Using 'parent_name' with ancestor_concept_id should pass."""
@@ -7456,7 +7459,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.descendant_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_correct_with_child_keyword(self) -> None:
         """Using 'child_name' with descendant_concept_id should pass."""
@@ -7467,7 +7470,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE ca.ancestor_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_incorrect_parent_uses_descendant(self) -> None:
         """Alias says 'parent_name' but joins on descendant_concept_id should error."""
@@ -7478,8 +7481,8 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c ON ca.descendant_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_016_incorrect_child_uses_ancestor(self) -> None:
         """Alias says 'child_name' but joins on ancestor_concept_id should error."""
@@ -7490,8 +7493,8 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c ON ca.ancestor_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_016_both_joins_correct(self) -> None:
         """Joining to concept twice (both correct) should pass."""
@@ -7504,7 +7507,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c_descendant ON ca.descendant_concept_id = c_descendant.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_both_joins_one_incorrect(self) -> None:
         """Joining to concept twice with one incorrect should error once."""
@@ -7518,8 +7521,8 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c_descendant ON ca.descendant_concept_id = c_descendant.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_016_concept_code_column(self) -> None:
         """Should work for concept_code as well as concept_name."""
@@ -7530,8 +7533,8 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c ON ca.ancestor_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_016_no_clear_alias_should_pass(self) -> None:
         """Without clear intent in alias, should not flag violation."""
@@ -7541,7 +7544,7 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept c ON ca.ancestor_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_016_reversed_join_order(self) -> None:
         """Reversed join order should still detect violations."""
@@ -7552,8 +7555,8 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         JOIN concept_ancestor ca ON c.concept_id = ca.ancestor_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_016_no_concept_ancestor_should_pass(self) -> None:
         """Query without concept_ancestor should not be checked."""
@@ -7563,15 +7566,15 @@ class ConceptAncestorNameResolutionValidationTests(unittest.TestCase):
         WHERE c.concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
+class TestConceptRelationshipConceptJoinValidation:
     """Tests for JOIN_017: concept_relationship_concept_id_1_to_concept."""
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.concept_relationship_concept_join_validation")()
+        rule = get_rule("joins.concept_relationship_concept_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
     def test_join_017_correct_source_target_joins(self) -> None:
@@ -7586,7 +7589,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         WHERE cr.relationship_id = 'Maps to'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_incorrect_swapped_source_target(self) -> None:
         """Swapped source/target joins should error."""
@@ -7600,8 +7603,8 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_target ON cr.concept_id_1 = c_target.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
-        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+        assert len(violations) == 2
+        assert all(v.severity == Severity.ERROR for v in violations)
 
     def test_join_017_correct_numbered_aliases(self) -> None:
         """Correct c1/c2 aliases should pass."""
@@ -7614,7 +7617,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_incorrect_swapped_numbered_aliases(self) -> None:
         """Swapped c1/c2 should error."""
@@ -7626,8 +7629,8 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c2 ON cr.concept_id_1 = c2.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
-        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+        assert len(violations) == 2
+        assert all(v.severity == Severity.ERROR for v in violations)
 
     def test_join_017_correct_from_to_keywords(self) -> None:
         """Correct from/to aliases should pass."""
@@ -7640,11 +7643,10 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_to ON cr.concept_id_2 = c_to.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_incorrect_from_to_swapped(self) -> None:
         """Swapped from/to should error."""
-        from fastssv.core.base import Severity
         sql = """
         SELECT c_from.concept_code, c_to.concept_code
         FROM concept_relationship cr
@@ -7652,7 +7654,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_to ON cr.concept_id_1 = c_to.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_017_correct_origin_dest_keywords(self) -> None:
         """Correct origin/destination aliases should pass."""
@@ -7665,7 +7667,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept destination ON cr.concept_id_2 = destination.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_incorrect_one_swapped(self) -> None:
         """Only one join swapped should error once."""
@@ -7677,9 +7679,9 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_target ON cr.concept_id_2 = c_target.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("source", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "source" in violations[0].message.lower()
 
     def test_join_017_no_clear_intent_should_pass(self) -> None:
         """Generic aliases without clear intent should pass."""
@@ -7690,11 +7692,10 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept concept ON cr.concept_id_2 = concept.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_reversed_join_order(self) -> None:
         """Reversed join order should still detect violations."""
-        from fastssv.core.base import Severity
         sql = """
         SELECT c_source.concept_name, c_target.concept_name
         FROM concept c_source
@@ -7702,7 +7703,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_target ON c_target.concept_id = cr.concept_id_1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_017_only_one_concept_join_should_pass(self) -> None:
         """Only one concept join cannot have a swap."""
@@ -7712,7 +7713,7 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cr.concept_id_1 = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_017_with_standard_keyword(self) -> None:
         """'standard' keyword should suggest concept_id_2."""
@@ -7723,8 +7724,8 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         JOIN concept c_standard ON cr.concept_id_1 = c_standard.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_017_no_concept_relationship_should_pass(self) -> None:
         """Query without concept_relationship should not be checked."""
@@ -7734,10 +7735,10 @@ class ConceptRelationshipConceptJoinValidationTests(unittest.TestCase):
         WHERE c.concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
+class TestDrugExposureDrugStrengthJoinValidation:
     """Tests for JOIN_018: drug_exposure_to_drug_strength_join_key."""
 
     def _run_rule(self, sql: str):
@@ -7757,7 +7758,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE ds.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_incorrect_drug_exposure_id_join(self) -> None:
         """Joining on drug_exposure_id should error."""
@@ -7768,9 +7769,9 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("drug_exposure_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "drug_exposure_id" in violations[0].message.lower()
 
     def test_join_018_incorrect_person_id_join(self) -> None:
         """Joining on person_id should error."""
@@ -7781,8 +7782,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_strength ds ON de.person_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_incorrect_route_concept_id_join(self) -> None:
         """Joining on route_concept_id should error."""
@@ -7793,8 +7794,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_strength ds ON de.route_concept_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_incorrect_both_sides_wrong(self) -> None:
         """Wrong columns on both sides should error."""
@@ -7805,8 +7806,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_strength ds ON de.person_id = ds.ingredient_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_reversed_join_order_correct(self) -> None:
         """Correct reversed join order should pass."""
@@ -7816,7 +7817,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON ds.drug_concept_id = de.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
@@ -7827,8 +7828,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON ds.drug_concept_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_with_schema_qualification(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -7838,7 +7839,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN cdm.drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -7849,8 +7850,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         JOIN cdm.drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_implicit_join_where_clause_correct(self) -> None:
         """Correct implicit join in WHERE clause should pass."""
@@ -7860,7 +7861,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE de.drug_concept_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
@@ -7871,8 +7872,8 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE de.person_id = ds.drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_018_with_additional_joins(self) -> None:
         """Correct join with additional joins should pass."""
@@ -7887,7 +7888,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE ds.invalid_reason IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_no_drug_tables_should_pass(self) -> None:
         """Query without drug tables should not be checked."""
@@ -7897,7 +7898,7 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE c.concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_018_only_drug_exposure_should_pass(self) -> None:
         """Query with only drug_exposure should not be checked."""
@@ -7907,10 +7908,10 @@ class DrugExposureDrugStrengthJoinValidationTests(unittest.TestCase):
         WHERE de.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class NoteNlpNoteJoinValidationTests(unittest.TestCase):
+class TestNoteNlpNoteJoinValidation:
     """Tests for JOIN_019: note_nlp_to_note_join_key."""
 
     def _run_rule(self, sql: str):
@@ -7931,7 +7932,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE nn.note_nlp_concept_id = 4329847
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_incorrect_note_nlp_id_join(self) -> None:
         """Joining on note_nlp_id should error."""
@@ -7942,9 +7943,9 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN note n ON nn.note_nlp_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("note_nlp_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "note_nlp_id" in violations[0].message.lower()
 
     def test_join_019_incorrect_both_sides_wrong(self) -> None:
         """Wrong columns on both sides should error."""
@@ -7955,8 +7956,8 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN note n ON nn.note_nlp_id = n.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_019_reversed_join_order_correct(self) -> None:
         """Correct reversed join order should pass."""
@@ -7966,7 +7967,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN note_nlp nn ON n.note_id = nn.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
@@ -7977,8 +7978,8 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN note_nlp nn ON n.note_id = nn.note_nlp_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_019_with_schema_qualification(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -7988,7 +7989,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN cdm.note n ON nn.note_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -7999,8 +8000,8 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN cdm.note n ON nn.note_nlp_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_019_implicit_join_where_clause_correct(self) -> None:
         """Correct implicit join in WHERE clause should pass."""
@@ -8010,7 +8011,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE nn.note_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
@@ -8021,8 +8022,8 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE nn.note_nlp_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_019_with_additional_joins(self) -> None:
         """Correct join with additional joins should pass."""
@@ -8037,7 +8038,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         JOIN concept c ON nn.note_nlp_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_no_note_tables_should_pass(self) -> None:
         """Query without note tables should not be checked."""
@@ -8047,7 +8048,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE c.concept_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_only_note_nlp_should_pass(self) -> None:
         """Query with only note_nlp should not be checked."""
@@ -8057,7 +8058,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE nn.note_nlp_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_only_note_should_pass(self) -> None:
         """Query with only note should not be checked."""
@@ -8067,7 +8068,7 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         WHERE n.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_019_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
@@ -8077,12 +8078,12 @@ class NoteNlpNoteJoinValidationTests(unittest.TestCase):
         FROM note_nlp nn, note n
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("not joined", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "not joined" in violations[0].message.lower()
 
 
-class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
+class TestDeathVisitOccurrenceJoinValidation:
     """Tests for JOIN_021: death_forbidden_join_to_visit_on_non_person_id."""
 
     def _run_rule(self, sql: str):
@@ -8103,7 +8104,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         WHERE d.death_date = vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_incorrect_death_date_join(self) -> None:
         """Temporal join using death_date should error."""
@@ -8114,9 +8115,9 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON d.death_date = vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("death_date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "death_date" in violations[0].message.lower()
 
     def test_join_021_incorrect_death_datetime_join(self) -> None:
         """Temporal join using death_datetime should error."""
@@ -8127,8 +8128,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON d.death_datetime = vo.visit_end_datetime
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_incorrect_concept_id_join(self) -> None:
         """Joining death_type_concept_id to visit_concept_id should error."""
@@ -8139,8 +8140,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON d.death_type_concept_id = vo.visit_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_incorrect_multiple_wrong_columns(self) -> None:
         """Wrong columns on both sides should error."""
@@ -8151,8 +8152,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON d.cause_concept_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_reversed_join_order_correct(self) -> None:
         """Correct reversed join order should pass."""
@@ -8162,7 +8163,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN death d ON vo.person_id = d.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
@@ -8173,8 +8174,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN death d ON vo.visit_end_date = d.death_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_with_schema_qualification(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -8184,7 +8185,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN cdm.visit_occurrence vo ON d.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -8195,8 +8196,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN cdm.visit_occurrence vo ON d.death_date = vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_implicit_join_where_clause_correct(self) -> None:
         """Correct implicit join in WHERE clause should pass."""
@@ -8206,7 +8207,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         WHERE d.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
@@ -8217,8 +8218,8 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         WHERE d.death_date = vo.visit_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_021_with_additional_joins(self) -> None:
         """Correct join with additional joins should pass."""
@@ -8232,7 +8233,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN person p ON d.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_no_death_tables_should_pass(self) -> None:
         """Query without death table should not be checked."""
@@ -8242,7 +8243,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN person p ON vo.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_only_death_should_pass(self) -> None:
         """Query with only death should not be checked."""
@@ -8252,7 +8253,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         WHERE d.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_only_visit_occurrence_should_pass(self) -> None:
         """Query with only visit_occurrence should not be checked."""
@@ -8262,7 +8263,7 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         WHERE vo.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_021_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
@@ -8272,9 +8273,9 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         FROM death d, visit_occurrence vo
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("not joined", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "not joined" in violations[0].message.lower()
 
     def test_join_021_using_clause_correct(self) -> None:
         """USING clause with person_id should pass."""
@@ -8284,10 +8285,10 @@ class DeathVisitOccurrenceJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo USING (person_id)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class CohortClinicalJoinValidationTests(unittest.TestCase):
+class TestCohortClinicalJoinValidation:
     """Tests for JOIN_022: cohort_to_clinical_table_via_subject_id_to_person_id."""
 
     def _run_rule(self, sql: str):
@@ -8307,7 +8308,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         WHERE c.cohort_definition_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_incorrect_subject_id_to_pk(self) -> None:
         """Joining subject_id to condition_occurrence_id should error."""
@@ -8318,9 +8319,9 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON c.subject_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("condition_occurrence_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "condition_occurrence_id" in violations[0].message.lower()
 
     def test_join_022_incorrect_cohort_definition_id_to_person_id(self) -> None:
         """Joining cohort_definition_id to person_id should error."""
@@ -8331,8 +8332,8 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON c.cohort_definition_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_022_correct_with_visit_occurrence(self) -> None:
         """Correct join to visit_occurrence should pass."""
@@ -8342,7 +8343,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON c.subject_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_incorrect_subject_id_to_visit_occurrence_id(self) -> None:
         """Joining subject_id to visit_occurrence_id should error."""
@@ -8353,9 +8354,9 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON c.subject_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("visit_occurrence_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "visit_occurrence_id" in violations[0].message.lower()
 
     def test_join_022_reversed_join_order_correct(self) -> None:
         """Correct reversed join order should pass."""
@@ -8365,7 +8366,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN cohort c ON co.person_id = c.subject_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
@@ -8376,8 +8377,8 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN cohort c ON de.drug_exposure_id = c.subject_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_022_with_schema_qualification(self) -> None:
         """Schema-qualified correct join should pass."""
@@ -8387,7 +8388,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN cdm.measurement m ON c.subject_id = m.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
@@ -8398,8 +8399,8 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN cdm.measurement m ON c.subject_id = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_022_implicit_join_correct(self) -> None:
         """Correct implicit join should pass."""
@@ -8409,7 +8410,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         WHERE c.subject_id = o.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_implicit_join_incorrect(self) -> None:
         """Incorrect implicit join should error."""
@@ -8420,8 +8421,8 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         WHERE c.subject_id = o.observation_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_022_multiple_clinical_tables_all_correct(self) -> None:
         """Multiple clinical tables with correct joins should pass."""
@@ -8435,7 +8436,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON c.subject_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_multiple_clinical_tables_one_wrong(self) -> None:
         """Multiple clinical tables with one wrong join should error."""
@@ -8447,9 +8448,9 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON c.subject_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("drug_exposure", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "drug_exposure" in violations[0].message.lower()
 
     def test_join_022_with_procedure_occurrence(self) -> None:
         """Correct join to procedure_occurrence should pass."""
@@ -8459,7 +8460,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON c.subject_id = po.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_with_death_table(self) -> None:
         """Correct join to death table should pass."""
@@ -8469,7 +8470,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN death d ON c.subject_id = d.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
@@ -8479,9 +8480,9 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         FROM cohort c, condition_occurrence co
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("not joined", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "not joined" in violations[0].message.lower()
 
     def test_join_022_no_cohort_should_pass(self) -> None:
         """Query without cohort should not be checked."""
@@ -8491,7 +8492,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN person p ON co.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_only_cohort_should_pass(self) -> None:
         """Query with only cohort should not be checked."""
@@ -8501,7 +8502,7 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         WHERE c.cohort_definition_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_022_cohort_to_non_clinical_table(self) -> None:
         """Cohort joined to non-clinical table should not be checked."""
@@ -8511,10 +8512,10 @@ class CohortClinicalJoinValidationTests(unittest.TestCase):
         JOIN cohort_definition cd ON c.cohort_definition_id = cd.cohort_definition_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class EraForbiddenJoinValidationTests(unittest.TestCase):
+class TestEraForbiddenJoinValidation:
     """Tests for JOIN_024: era_table_forbidden_join_to_visit_occurrence."""
 
     def _run_rule(self, sql: str):
@@ -8533,7 +8534,7 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN person p ON de.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_024_correct_era_to_concept(self) -> None:
         """Correct join of condition_era to concept should pass."""
@@ -8546,7 +8547,7 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN concept c ON ce.condition_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_024_drug_era_to_visit_occurrence(self) -> None:
         """Joining drug_era to visit_occurrence should error."""
@@ -8557,10 +8558,10 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("drug_era", violations[0].message.lower())
-        self.assertIn("visit_occurrence", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "drug_era" in violations[0].message.lower()
+        assert "visit_occurrence" in violations[0].message.lower()
 
     def test_join_024_condition_era_to_visit_detail(self) -> None:
         """Joining condition_era to visit_detail should error."""
@@ -8571,9 +8572,9 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON ce.person_id = vd.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("visit_detail", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "visit_detail" in violations[0].message.lower()
 
     def test_join_024_dose_era_to_provider(self) -> None:
         """Joining dose_era to provider should error."""
@@ -8584,9 +8585,9 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN provider p ON de.person_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("provider", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "provider" in violations[0].message.lower()
 
     def test_join_024_drug_era_to_care_site(self) -> None:
         """Joining drug_era to care_site should error."""
@@ -8597,9 +8598,9 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN care_site cs ON de.person_id = cs.care_site_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
-        self.assertIn("care_site", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "care_site" in violations[0].message.lower()
 
     def test_join_024_reversed_join_order(self) -> None:
         """Reversed join order should still error."""
@@ -8610,8 +8611,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN drug_era de ON vo.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_024_with_schema_qualification(self) -> None:
         """Schema-qualified forbidden join should error."""
@@ -8622,8 +8623,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN cdm.visit_occurrence vo ON ce.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_024_implicit_join_where_clause(self) -> None:
         """Implicit join in WHERE clause should error."""
@@ -8634,8 +8635,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         WHERE de.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_024_with_date_overlap_still_wrong(self) -> None:
         """Even with date overlap, era to visit join should error."""
@@ -8648,8 +8649,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
           AND de.drug_era_start_date = vo.visit_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
     def test_join_024_multiple_forbidden_joins(self) -> None:
         """Multiple forbidden joins should produce multiple errors."""
@@ -8661,12 +8662,11 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN provider p ON de.person_id = p.provider_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
-        self.assertTrue(all(v.severity == Severity.ERROR for v in violations))
+        assert len(violations) == 2
+        assert all(v.severity == Severity.ERROR for v in violations)
 
     def test_join_024_era_with_allowed_joins(self) -> None:
         """Era with both allowed and forbidden joins should error only on forbidden."""
-        from fastssv.core.base import Severity
         sql = """
         SELECT *
         FROM drug_era de
@@ -8674,8 +8674,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_occurrence" in violations[0].message.lower()
 
     def test_join_024_no_era_tables_should_pass(self) -> None:
         """Query without era tables should not be checked."""
@@ -8685,7 +8685,7 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_024_era_only_should_pass(self) -> None:
         """Query with only era table should pass."""
@@ -8695,7 +8695,7 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
         WHERE de.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_024_all_era_tables(self) -> None:
         """Test all three era tables."""
@@ -8708,9 +8708,8 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
             JOIN visit_occurrence vo ON e.person_id = vo.person_id
             """
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 1,
-                           f"Expected violation for {era_table}")
-            self.assertEqual(violations[0].severity, Severity.ERROR)
+            assert len(violations) == 1, f"Expected violation for {era_table}"
+            assert violations[0].severity == Severity.ERROR
 
     def test_join_024_all_forbidden_tables(self) -> None:
         """Test all four forbidden tables."""
@@ -8724,12 +8723,11 @@ class EraForbiddenJoinValidationTests(unittest.TestCase):
             JOIN {forbidden_table} t ON de.person_id = t.person_id
             """
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 1,
-                           f"Expected violation for {forbidden_table}")
-            self.assertEqual(violations[0].severity, Severity.ERROR)
+            assert len(violations) == 1, f"Expected violation for {forbidden_table}"
+            assert violations[0].severity == Severity.ERROR
 
 
-class PersonIdJoinValidationTests(unittest.TestCase):
+class TestPersonIdJoinValidation:
     """Tests for JOIN_026: person_id_cross_matched_to_non_person_id_pk."""
 
     def _run_rule(self, sql: str):
@@ -8746,9 +8744,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.person_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_join_026_person_id_to_condition_occurrence_id(self) -> None:
         """person_id joined to condition_occurrence_id should error."""
@@ -8758,9 +8756,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON p.person_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("condition_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "condition_occurrence_id" in violations[0].message
 
     def test_join_026_person_id_to_measurement_id(self) -> None:
         """person_id joined to measurement_id should error."""
@@ -8770,9 +8768,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON vo.person_id = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("measurement_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "measurement_id" in violations[0].message
 
     def test_join_026_person_id_to_drug_exposure_id(self) -> None:
         """person_id joined to drug_exposure_id should error."""
@@ -8782,9 +8780,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN person p ON de.drug_exposure_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
 
     def test_join_026_correct_person_id_to_person_id(self) -> None:
         """person_id joined to person_id should pass."""
@@ -8794,7 +8792,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_026_correct_visit_occurrence_id_join(self) -> None:
         """visit_occurrence_id joined to visit_occurrence_id should pass."""
@@ -8804,7 +8802,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_026_using_clause_with_person_id(self) -> None:
         """USING (person_id) should pass (always matches person_id to person_id)."""
@@ -8814,7 +8812,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo USING (person_id)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_026_implicit_join_where_clause(self) -> None:
         """Implicit join with person_id cross-match in WHERE should error."""
@@ -8824,9 +8822,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         WHERE p.person_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_join_026_multiple_violations(self) -> None:
         """Multiple person_id cross-matches should all be flagged."""
@@ -8837,7 +8835,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON p.person_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_026_mixed_correct_and_wrong(self) -> None:
         """Mix of correct and wrong joins should flag only violations."""
@@ -8848,8 +8846,8 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.person_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_join_026_unqualified_columns(self) -> None:
         """Unqualified person_id cross-match should be detected."""
@@ -8859,7 +8857,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON person_id = visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_026_reversed_join_order(self) -> None:
         """Reversed join order (right side is person_id) should error."""
@@ -8869,9 +8867,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN person p ON vo.visit_occurrence_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("visit_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "visit_occurrence_id" in violations[0].message
 
     def test_join_026_procedure_occurrence_id(self) -> None:
         """person_id joined to procedure_occurrence_id should error."""
@@ -8881,9 +8879,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON p.person_id = po.procedure_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("procedure_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "procedure_occurrence_id" in violations[0].message
 
     def test_join_026_observation_id(self) -> None:
         """person_id joined to observation_id should error."""
@@ -8893,9 +8891,9 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN observation o ON p.person_id = o.observation_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message)
-        self.assertIn("observation_id", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message
+        assert "observation_id" in violations[0].message
 
     def test_join_026_no_person_id_should_pass(self) -> None:
         """Query without person_id should not be checked."""
@@ -8905,7 +8903,7 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_026_person_id_in_where_filter_only(self) -> None:
         """person_id used only as filter (not join) should pass."""
@@ -8916,10 +8914,10 @@ class PersonIdJoinValidationTests(unittest.TestCase):
         WHERE co.person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
+class TestVisitOccurrenceIdJoinValidation:
     """Tests for JOIN_027: visit_occurrence_id_cross_matched_to_non_visit_id."""
 
     def _run_rule(self, sql: str):
@@ -8936,9 +8934,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("person_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "person_id" in violations[0].message
 
     def test_join_027_visit_occurrence_id_to_condition_occurrence_id(self) -> None:
         """visit_occurrence_id joined to condition_occurrence_id should error."""
@@ -8948,9 +8946,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("condition_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "condition_occurrence_id" in violations[0].message
 
     def test_join_027_visit_occurrence_id_to_drug_exposure_id(self) -> None:
         """visit_occurrence_id joined to drug_exposure_id should error."""
@@ -8960,9 +8958,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON vo.visit_occurrence_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
 
     def test_join_027_visit_occurrence_id_to_visit_detail_id(self) -> None:
         """visit_occurrence_id joined to visit_detail_id should error."""
@@ -8972,9 +8970,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_detail vd ON de.visit_occurrence_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("visit_detail_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "visit_detail_id" in violations[0].message
 
     def test_join_027_correct_visit_occurrence_id_to_visit_occurrence_id(self) -> None:
         """visit_occurrence_id joined to visit_occurrence_id should pass."""
@@ -8984,7 +8982,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_027_correct_person_id_join(self) -> None:
         """person_id joined to person_id should pass (not checking person_id)."""
@@ -8994,7 +8992,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.person_id = vo.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_027_using_clause_with_visit_occurrence_id(self) -> None:
         """USING (visit_occurrence_id) should pass."""
@@ -9004,7 +9002,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo USING (visit_occurrence_id)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_027_implicit_join_where_clause(self) -> None:
         """Implicit join with visit_occurrence_id cross-match in WHERE should error."""
@@ -9014,9 +9012,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         WHERE vo.visit_occurrence_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
 
     def test_join_027_multiple_violations(self) -> None:
         """Multiple visit_occurrence_id cross-matches should all be flagged."""
@@ -9027,7 +9025,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON vo.visit_occurrence_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_027_mixed_correct_and_wrong(self) -> None:
         """Mix of correct and wrong joins should flag only violations."""
@@ -9038,8 +9036,8 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_occurrence_id" in violations[0].message
 
     def test_join_027_unqualified_columns(self) -> None:
         """Unqualified visit_occurrence_id cross-match should be detected."""
@@ -9049,7 +9047,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON visit_occurrence_id = drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_027_reversed_join_order(self) -> None:
         """Reversed join order (right side is visit_occurrence_id) should error."""
@@ -9059,9 +9057,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN visit_occurrence vo ON de.drug_exposure_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
 
     def test_join_027_measurement_id(self) -> None:
         """visit_occurrence_id joined to measurement_id should error."""
@@ -9071,9 +9069,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON vo.visit_occurrence_id = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("measurement_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "measurement_id" in violations[0].message
 
     def test_join_027_procedure_occurrence_id(self) -> None:
         """visit_occurrence_id joined to procedure_occurrence_id should error."""
@@ -9083,9 +9081,9 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON vo.visit_occurrence_id = po.procedure_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence_id", violations[0].message)
-        self.assertIn("procedure_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence_id" in violations[0].message
+        assert "procedure_occurrence_id" in violations[0].message
 
     def test_join_027_no_visit_occurrence_id_should_pass(self) -> None:
         """Query without visit_occurrence_id should not be checked."""
@@ -9095,7 +9093,7 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON p.person_id = co.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_027_visit_occurrence_id_in_where_filter_only(self) -> None:
         """visit_occurrence_id used only as filter (not join) should pass."""
@@ -9106,10 +9104,10 @@ class VisitOccurrenceIdJoinValidationTests(unittest.TestCase):
         WHERE de.visit_occurrence_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
+class TestClinicalPkCrossJoinValidation:
     """Tests for JOIN_028: forbidden_clinical_to_clinical_pk_cross_join."""
 
     def _run_rule(self, sql: str):
@@ -9126,10 +9124,10 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_occurrence_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
-        self.assertIn("independent", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_occurrence_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
+        assert "independent" in violations[0].message
 
     def test_join_028_measurement_to_procedure_pk_cross_join(self) -> None:
         """measurement_id joined to procedure_occurrence_id should error."""
@@ -9139,9 +9137,9 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON m.measurement_id = po.procedure_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement_id", violations[0].message)
-        self.assertIn("procedure_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "measurement_id" in violations[0].message
+        assert "procedure_occurrence_id" in violations[0].message
 
     def test_join_028_observation_to_device_pk_cross_join(self) -> None:
         """observation_id joined to device_exposure_id should error."""
@@ -9151,9 +9149,9 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN device_exposure dev ON o.observation_id = dev.device_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("observation_id", violations[0].message)
-        self.assertIn("device_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "observation_id" in violations[0].message
+        assert "device_exposure_id" in violations[0].message
 
     def test_join_028_specimen_to_note_pk_cross_join(self) -> None:
         """specimen_id joined to note_id should error."""
@@ -9163,9 +9161,9 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN note n ON s.specimen_id = n.note_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("specimen_id", violations[0].message)
-        self.assertIn("note_id", violations[0].message)
+        assert len(violations) == 1
+        assert "specimen_id" in violations[0].message
+        assert "note_id" in violations[0].message
 
     def test_join_028_visit_detail_to_condition_pk_cross_join(self) -> None:
         """visit_detail_id joined to condition_occurrence_id should error."""
@@ -9175,9 +9173,9 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON vd.visit_detail_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail_id", violations[0].message)
-        self.assertIn("condition_occurrence_id", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_detail_id" in violations[0].message
+        assert "condition_occurrence_id" in violations[0].message
 
     def test_join_028_correct_person_id_join(self) -> None:
         """Joining via person_id should pass."""
@@ -9187,7 +9185,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON co.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_028_correct_visit_occurrence_id_join(self) -> None:
         """Joining via visit_occurrence_id should pass."""
@@ -9197,7 +9195,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON m.visit_occurrence_id = po.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_028_self_join_same_pk(self) -> None:
         """Self-join with same PK should pass (not a cross-join)."""
@@ -9207,7 +9205,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co2 ON co1.condition_occurrence_id = co2.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_028_implicit_join_where_clause(self) -> None:
         """Implicit join with PK cross-match in WHERE should error."""
@@ -9217,9 +9215,9 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         WHERE co.condition_occurrence_id = de.drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_occurrence_id", violations[0].message)
-        self.assertIn("drug_exposure_id", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_occurrence_id" in violations[0].message
+        assert "drug_exposure_id" in violations[0].message
 
     def test_join_028_multiple_violations(self) -> None:
         """Multiple PK cross-joins should all be flagged."""
@@ -9230,7 +9228,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON co.condition_occurrence_id = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_028_mixed_correct_and_wrong(self) -> None:
         """Mix of correct and wrong joins should flag only violations."""
@@ -9241,8 +9239,8 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON co.condition_occurrence_id = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement_id", violations[0].message)
+        assert len(violations) == 1
+        assert "measurement_id" in violations[0].message
 
     def test_join_028_reversed_join_order(self) -> None:
         """Reversed join order should still error."""
@@ -9252,7 +9250,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN condition_occurrence co ON de.drug_exposure_id = co.condition_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_028_unqualified_columns(self) -> None:
         """Unqualified PK cross-match should be detected."""
@@ -9262,7 +9260,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON condition_occurrence_id = drug_exposure_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_028_no_clinical_pks_should_pass(self) -> None:
         """Query without clinical event PKs should not be checked."""
@@ -9272,7 +9270,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         JOIN concept c ON p.gender_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_028_pk_in_where_filter_only(self) -> None:
         """Clinical PK used only as filter (not join) should pass."""
@@ -9283,7 +9281,7 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
         WHERE co.condition_occurrence_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_028_all_clinical_event_pks(self) -> None:
         """Test coverage of all clinical event PKs."""
@@ -9304,12 +9302,11 @@ class ClinicalPkCrossJoinValidationTests(unittest.TestCase):
             JOIN table2 t2 ON t1.{pk1} = t2.{pk2}
             """
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 1,
-                           f"Expected violation for {pk1} → {pk2}")
-            self.assertEqual(violations[0].severity, Severity.ERROR)
+            assert len(violations) == 1, f"Expected violation for {pk1} → {pk2}"
+            assert violations[0].severity == Severity.ERROR
 
 
-class ConceptSynonymJoinValidationTests(unittest.TestCase):
+class TestConceptSynonymJoinValidation:
     """Tests for JOIN_029: concept_synonym_to_concept_join_key."""
 
     def _run_rule(self, sql: str):
@@ -9326,9 +9323,9 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cs.concept_synonym_name = c.concept_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("concept_synonym_name", violations[0].message)
-        self.assertIn("concept_name", violations[0].message)
+        assert len(violations) == 1
+        assert "concept_synonym_name" in violations[0].message
+        assert "concept_name" in violations[0].message
 
     def test_join_029_language_concept_id_to_concept_id(self) -> None:
         """Joining language_concept_id to concept_id should error."""
@@ -9338,8 +9335,8 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cs.language_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("language_concept_id", violations[0].message)
+        assert len(violations) == 1
+        assert "language_concept_id" in violations[0].message
 
     def test_join_029_synonym_name_to_concept_code(self) -> None:
         """Joining concept_synonym_name to concept_code should error."""
@@ -9349,7 +9346,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cs.concept_synonym_name = c.concept_code
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_029_correct_concept_id_join(self) -> None:
         """Joining via concept_id should pass."""
@@ -9359,7 +9356,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c ON cs.concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_correct_reversed_join(self) -> None:
         """Joining via concept_id in reversed order should pass."""
@@ -9369,7 +9366,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept_synonym cs ON c.concept_id = cs.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_using_clause_concept_id(self) -> None:
         """USING (concept_id) should pass."""
@@ -9379,7 +9376,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c USING (concept_id)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_implicit_join_where_clause(self) -> None:
         """Implicit join with wrong columns in WHERE should error."""
@@ -9389,7 +9386,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         WHERE cs.concept_synonym_name = c.concept_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_029_multiple_wrong_joins(self) -> None:
         """Multiple wrong join conditions should be flagged."""
@@ -9401,7 +9398,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should have at least 1 violation
-        self.assertGreaterEqual(len(violations), 1)
+        assert len(violations) >= 1
 
     def test_join_029_unqualified_columns(self) -> None:
         """Unqualified columns should still be detected."""
@@ -9411,7 +9408,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN concept c ON concept_id = concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)  # Valid join
+        assert len(violations) == 0  # Valid join
 
     def test_join_029_no_concept_synonym_table(self) -> None:
         """Query without concept_synonym should not be checked."""
@@ -9421,7 +9418,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_no_concept_table(self) -> None:
         """Query without concept table should not be checked."""
@@ -9431,7 +9428,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON cs.concept_id = v.vocabulary_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_both_tables_no_join(self) -> None:
         """Both tables present but not joined should pass."""
@@ -9442,7 +9439,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
           AND c.concept_id = 67890
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_correct_with_other_joins(self) -> None:
         """Correct concept_id join with other joins should pass."""
@@ -9453,7 +9450,7 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
         JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_029_wrong_with_correct(self) -> None:
         """Wrong join should error even if correct join also exists."""
@@ -9464,10 +9461,10 @@ class ConceptSynonymJoinValidationTests(unittest.TestCase):
           AND cs.concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
+class TestPayerPlanPeriodJoinValidation:
     """Tests for JOIN_030: payer_plan_period_to_clinical_requires_person_id_and_dates."""
 
     def _run_rule(self, sql: str):
@@ -9484,8 +9481,8 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
         JOIN payer_plan_period pp ON de.person_id = pp.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("date", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "date" in violations[0].message.lower()
 
     def test_join_030_person_id_with_between(self) -> None:
         """Joining with person_id AND BETWEEN date check should pass."""
@@ -9498,7 +9495,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
               pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_person_id_with_range_overlap(self) -> None:
         """Joining with person_id AND range overlap (>= and <=) should pass."""
@@ -9511,7 +9508,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND co.condition_start_date <= pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_person_id_with_end_date_overlap(self) -> None:
         """Joining with person_id AND end date overlap should pass."""
@@ -9524,7 +9521,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND de.device_exposure_end_date >= pp.payer_plan_period_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_where_clause_date_check(self) -> None:
         """Date check in WHERE clause should also pass."""
@@ -9536,7 +9533,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
               pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_where_clause_no_date_check(self) -> None:
         """person_id in WHERE without date check should warn."""
@@ -9546,7 +9543,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
         WHERE o.person_id = pp.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_030_no_payer_plan_period(self) -> None:
         """Query without payer_plan_period should pass."""
@@ -9556,7 +9553,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
         JOIN person p ON de.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_no_clinical_table(self) -> None:
         """payer_plan_period joined to non-clinical table should pass."""
@@ -9566,7 +9563,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
         JOIN person p ON pp.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_multiple_clinical_tables_one_missing_date(self) -> None:
         """Multiple clinical tables, one without date check should warn once."""
@@ -9580,8 +9577,8 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
               pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure" in violations[0].message
 
     def test_join_030_procedure_date_check(self) -> None:
         """procedure_occurrence with procedure_date should pass."""
@@ -9594,7 +9591,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND po.procedure_date <= pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_visit_occurrence_date_check(self) -> None:
         """visit_occurrence with visit dates should pass."""
@@ -9607,7 +9604,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
               pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_specimen_date_check(self) -> None:
         """specimen with specimen_date should pass."""
@@ -9620,7 +9617,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND s.specimen_date <= pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_note_date_check(self) -> None:
         """note with note_date should pass."""
@@ -9633,7 +9630,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
               pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_datetime_column(self) -> None:
         """Using datetime columns should also work."""
@@ -9646,7 +9643,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND m.measurement_datetime <= pp.payer_plan_period_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_030_person_id_only_with_other_filters(self) -> None:
         """person_id join with non-date filters should still warn."""
@@ -9659,7 +9656,7 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND pp.payer_concept_id = 789
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_join_030_no_person_id_join(self) -> None:
         """Both tables present but not joined should pass (not our concern)."""
@@ -9670,10 +9667,10 @@ class PayerPlanPeriodJoinValidationTests(unittest.TestCase):
           AND pp.person_id = 67890
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class FactRelationshipJoinValidationTests(unittest.TestCase):
+class TestFactRelationshipJoinValidation:
     """Tests for JOIN_031: fact_relationship_join_requires_domain_aware_polymorphic_key."""
 
     def _run_rule(self, sql: str):
@@ -9690,9 +9687,9 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         JOIN measurement m ON fr.fact_id_1 = m.measurement_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("domain_concept_id_1", violations[0].message)
-        self.assertIn("21", violations[0].message)
+        assert len(violations) == 1
+        assert "domain_concept_id_1" in violations[0].message
+        assert "21" in violations[0].message
 
     def test_join_031_fact_id_2_without_domain_filter(self) -> None:
         """Joining fact_id_2 without domain_concept_id_2 filter should error."""
@@ -9702,9 +9699,9 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         JOIN observation o ON fr.fact_id_2 = o.observation_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("domain_concept_id_2", violations[0].message)
-        self.assertIn("27", violations[0].message)
+        assert len(violations) == 1
+        assert "domain_concept_id_2" in violations[0].message
+        assert "27" in violations[0].message
 
     def test_join_031_fact_id_1_with_correct_domain(self) -> None:
         """Joining fact_id_1 WITH domain_concept_id_1 = 21 should pass."""
@@ -9715,7 +9712,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 21
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_fact_id_2_with_correct_domain(self) -> None:
         """Joining fact_id_2 WITH domain_concept_id_2 = 27 should pass."""
@@ -9726,7 +9723,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_2 = 27
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_both_fact_ids_with_domains(self) -> None:
         """Joining both fact_id_1 and fact_id_2 with proper domains should pass."""
@@ -9739,7 +9736,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
           AND fr.domain_concept_id_2 = 27
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_both_fact_ids_missing_domains(self) -> None:
         """Joining both fact_ids without domains should error twice."""
@@ -9750,7 +9747,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         JOIN observation o ON fr.fact_id_2 = o.observation_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
 
     def test_join_031_domain_in_join_on_clause(self) -> None:
         """Domain filter in JOIN ON clause should pass."""
@@ -9762,7 +9759,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
           AND fr.domain_concept_id_1 = 21
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_wrong_domain_filter(self) -> None:
         """Wrong domain_concept_id value should still error."""
@@ -9773,8 +9770,8 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 27
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "measurement" in violations[0].message.lower()
 
     def test_join_031_condition_occurrence(self) -> None:
         """Joining to condition_occurrence should work."""
@@ -9785,7 +9782,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 19
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_drug_exposure(self) -> None:
         """Joining to drug_exposure should work."""
@@ -9796,7 +9793,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_2 = 13
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_procedure_occurrence(self) -> None:
         """Joining to procedure_occurrence should work."""
@@ -9807,7 +9804,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_domain_in_clause(self) -> None:
         """IN clause with extra domains should error (stricter validation)."""
@@ -9819,8 +9816,8 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Stricter validation: requires EXACTLY the expected domain, not superset
-        self.assertEqual(len(violations), 1)
-        self.assertIn("21", violations[0].message)
+        assert len(violations) == 1
+        assert "21" in violations[0].message
 
     def test_join_031_domain_in_clause_exact(self) -> None:
         """IN clause with ONLY the expected domain should pass."""
@@ -9831,7 +9828,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 IN (21)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_no_fact_relationship(self) -> None:
         """Query without fact_relationship should pass."""
@@ -9841,7 +9838,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         JOIN observation o ON m.person_id = o.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_no_clinical_table_join(self) -> None:
         """fact_relationship without clinical table join should pass."""
@@ -9851,7 +9848,7 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 21
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_join_031_reversed_join_order(self) -> None:
         """Clinical table joined to fact_relationship should also detect."""
@@ -9861,8 +9858,8 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         JOIN fact_relationship fr ON m.measurement_id = fr.fact_id_1
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("domain_concept_id_1", violations[0].message)
+        assert len(violations) == 1
+        assert "domain_concept_id_1" in violations[0].message
 
     def test_join_031_multiple_clinical_tables(self) -> None:
         """Multiple clinical tables, partial domain filters should error."""
@@ -9874,19 +9871,19 @@ class FactRelationshipJoinValidationTests(unittest.TestCase):
         WHERE fr.domain_concept_id_1 = 21
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure", violations[0].message)
-        self.assertIn("domain_concept_id_2", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure" in violations[0].message
+        assert "domain_concept_id_2" in violations[0].message
 
 
-class PersonBirthFieldValidationTests(unittest.TestCase):
+class TestPersonBirthFieldValidation:
     """Tests for person birth field validation (CLIN_006, CLIN_007, CLIN_008)."""
 
     def _run_rule(self, sql: str) -> list:
         """Helper to run the person birth field validation rule."""
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.person_birth_field_validation")()
+        rule = get_rule("domain_specific.person_birth_field_validation")()
         return rule.validate(sql)
 
     # --- CLIN_006: year_of_birth tests ---
@@ -9895,12 +9892,12 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         """year_of_birth before 1900 should trigger WARNING."""
         sql = "SELECT * FROM person WHERE year_of_birth = 1850"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("year_of_birth", violations[0].message)
-        self.assertIn("1850", violations[0].message)
-        self.assertIn("1900", violations[0].message)
+        assert len(violations) == 1
+        assert "year_of_birth" in violations[0].message
+        assert "1850" in violations[0].message
+        assert "1900" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_006_year_in_future(self) -> None:
         """year_of_birth in the future should trigger WARNING."""
@@ -9908,29 +9905,29 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         future_year = datetime.now().year + 10
         sql = f"SELECT * FROM person WHERE year_of_birth = {future_year}"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("year_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "year_of_birth" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_006_year_equality_boundary(self) -> None:
         """year_of_birth = 1900 (boundary) should pass."""
         sql = "SELECT * FROM person WHERE year_of_birth = 1900"
         violations = self._run_rule(sql)
         # 1900 is the minimum valid value, should not trigger violation
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_006_year_valid_range(self) -> None:
         """year_of_birth in valid range should pass."""
         sql = "SELECT * FROM person WHERE year_of_birth = 1990"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_006_year_valid_between(self) -> None:
         """year_of_birth BETWEEN valid years should pass."""
         sql = "SELECT * FROM person WHERE year_of_birth BETWEEN 1950 AND 2000"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_007: month_of_birth tests ---
 
@@ -9938,47 +9935,47 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         """month_of_birth = 13 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE month_of_birth = 13"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("month_of_birth", violations[0].message)
-        self.assertIn("13", violations[0].message)
+        assert len(violations) == 1
+        assert "month_of_birth" in violations[0].message
+        assert "13" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert violations[0].severity == Severity.ERROR
 
     def test_clin_007_month_zero(self) -> None:
         """month_of_birth = 0 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE month_of_birth = 0"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("month_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "month_of_birth" in violations[0].message
 
     def test_clin_007_month_negative(self) -> None:
         """month_of_birth = -1 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE month_of_birth = -1"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("month_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "month_of_birth" in violations[0].message
 
     def test_clin_007_month_valid_values(self) -> None:
         """month_of_birth in 1-12 should pass."""
         for month in [1, 6, 12]:
             sql = f"SELECT * FROM person WHERE month_of_birth = {month}"
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 0, f"Month {month} should be valid")
+            assert len(violations) == 0, f"Month {month} should be valid"
 
     def test_clin_007_month_in_clause_invalid(self) -> None:
         """month_of_birth IN with invalid values should trigger ERROR."""
         sql = "SELECT * FROM person WHERE month_of_birth IN (1, 6, 13, 14)"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("month_of_birth", violations[0].message)
-        self.assertIn("13", violations[0].message)
-        self.assertIn("14", violations[0].message)
+        assert len(violations) == 1
+        assert "month_of_birth" in violations[0].message
+        assert "13" in violations[0].message
+        assert "14" in violations[0].message
 
     def test_clin_007_month_in_clause_valid(self) -> None:
         """month_of_birth IN with only valid values should pass."""
         sql = "SELECT * FROM person WHERE month_of_birth IN (1, 6, 12)"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_008: day_of_birth tests ---
 
@@ -9986,40 +9983,40 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         """day_of_birth = 32 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE day_of_birth = 32"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("day_of_birth", violations[0].message)
-        self.assertIn("32", violations[0].message)
+        assert len(violations) == 1
+        assert "day_of_birth" in violations[0].message
+        assert "32" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert violations[0].severity == Severity.ERROR
 
     def test_clin_008_day_zero(self) -> None:
         """day_of_birth = 0 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE day_of_birth = 0"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("day_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "day_of_birth" in violations[0].message
 
     def test_clin_008_day_negative(self) -> None:
         """day_of_birth = -1 should trigger ERROR."""
         sql = "SELECT * FROM person WHERE day_of_birth = -1"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("day_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "day_of_birth" in violations[0].message
 
     def test_clin_008_day_valid_values(self) -> None:
         """day_of_birth in 1-31 should pass."""
         for day in [1, 15, 31]:
             sql = f"SELECT * FROM person WHERE day_of_birth = {day}"
             violations = self._run_rule(sql)
-            self.assertEqual(len(violations), 0, f"Day {day} should be valid")
+            assert len(violations) == 0, f"Day {day} should be valid"
 
     def test_clin_008_day_in_clause_invalid(self) -> None:
         """day_of_birth IN with invalid values should trigger ERROR."""
         sql = "SELECT * FROM person WHERE day_of_birth IN (1, 15, 32, 40)"
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("day_of_birth", violations[0].message)
-        self.assertIn("32", violations[0].message)
+        assert len(violations) == 1
+        assert "day_of_birth" in violations[0].message
+        assert "32" in violations[0].message
 
     # --- Combined tests ---
 
@@ -10032,7 +10029,7 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
           AND day_of_birth = 15
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_multiple_birth_fields_mixed_validity(self) -> None:
         """Multiple birth fields with some invalid should trigger multiple violations."""
@@ -10043,13 +10040,13 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
           AND day_of_birth = 32
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 3)
+        assert len(violations) == 3
 
         # Check we have violations for all three fields
         messages = [v.message for v in violations]
-        self.assertTrue(any("year_of_birth" in m for m in messages))
-        self.assertTrue(any("month_of_birth" in m for m in messages))
-        self.assertTrue(any("day_of_birth" in m for m in messages))
+        assert any("year_of_birth" in m for m in messages)
+        assert any("month_of_birth" in m for m in messages)
+        assert any("day_of_birth" in m for m in messages)
 
     def test_non_person_table_ignored(self) -> None:
         """Birth field validation should only apply to person table."""
@@ -10059,7 +10056,7 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should not trigger violation on non-person table
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_person_table_with_alias(self) -> None:
         """Birth field validation should work with table aliases."""
@@ -10069,18 +10066,18 @@ class PersonBirthFieldValidationTests(unittest.TestCase):
         WHERE p.year_of_birth = 1850
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("year_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "year_of_birth" in violations[0].message
 
 
-class RequiredDateColumnValidationTests(unittest.TestCase):
+class TestRequiredDateColumnValidation:
     """Tests for required date column validation (CLIN_010, CLIN_015, CLIN_030, CLIN_035)."""
 
     def _run_rule(self, sql: str) -> list:
         """Helper to run the required date column validation rule."""
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.required_date_column_validation")()
+        rule = get_rule("temporal.required_date_column_validation")()
         return rule.validate(sql)
 
     # --- CLIN_010: Temporal column choice tests ---
@@ -10092,12 +10089,12 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE condition_start_datetime BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_start_datetime", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
-        self.assertIn("condition_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_start_datetime" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
+        assert "condition_start_date" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_010_end_date_in_temporal_filter(self) -> None:
         """Using condition_end_date for temporal filter should trigger WARNING."""
@@ -10106,9 +10103,9 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE condition_end_date > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_end_date", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "condition_end_date" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
 
     def test_clin_010_start_date_correct(self) -> None:
         """Using condition_start_date should pass (no violation)."""
@@ -10117,7 +10114,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE condition_start_date BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_010_datetime_with_coalesce(self) -> None:
         """Using COALESCE for NULL handling should pass."""
@@ -10126,7 +10123,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE COALESCE(condition_start_datetime, condition_start_date) > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_010_datetime_with_is_not_null(self) -> None:
         """Using datetime with explicit IS NOT NULL check should pass."""
@@ -10136,7 +10133,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND condition_start_datetime IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_010_comparison_operators(self) -> None:
         """Should detect violations with various comparison operators."""
@@ -10152,9 +10149,9 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
             sql = f"SELECT * FROM condition_occurrence {where_clause}"
             violations = self._run_rule(sql)
             if should_violate:
-                self.assertGreater(len(violations), 0, f"Should detect violation for: {where_clause}")
+                assert len(violations) > 0, f"Should detect violation for: {where_clause}"
             else:
-                self.assertEqual(len(violations), 0, f"Should not violate for: {where_clause}")
+                assert len(violations) == 0, f"Should not violate for: {where_clause}"
 
     def test_clin_010_datetime_in_select_no_violation(self) -> None:
         """Using datetime in SELECT clause (not WHERE) should not trigger."""
@@ -10164,7 +10161,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE condition_start_date > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_010_multiple_violations(self) -> None:
         """Should detect multiple nullable column usages."""
@@ -10174,10 +10171,10 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND condition_end_date < '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
         messages = [v.message for v in violations]
-        self.assertTrue(any("condition_start_datetime" in m for m in messages))
-        self.assertTrue(any("condition_end_date" in m for m in messages))
+        assert any("condition_start_datetime" in m for m in messages)
+        assert any("condition_end_date" in m for m in messages)
 
     def test_clin_010_with_table_alias(self) -> None:
         """Should work with table aliases."""
@@ -10187,8 +10184,8 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE co.condition_start_datetime BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_start_datetime", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_start_datetime" in violations[0].message
 
     def test_clin_010_non_temporal_filter_ignored(self) -> None:
         """Non-temporal filters on datetime should not trigger."""
@@ -10197,7 +10194,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE person_id = 12345
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_010_different_table_ignored(self) -> None:
         """Should NOT apply to unconfigured tables."""
@@ -10207,7 +10204,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should not trigger for unconfigured tables
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_015: drug_exposure tests ---
 
@@ -10218,12 +10215,12 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_datetime BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure_start_datetime", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
-        self.assertIn("drug_exposure_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure_start_datetime" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
+        assert "drug_exposure_start_date" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_015_drug_exposure_end_date_violation(self) -> None:
         """Using drug_exposure_end_date for temporal filter should trigger WARNING."""
@@ -10232,9 +10229,9 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE drug_exposure_end_date > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure_end_date", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "drug_exposure_end_date" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
 
     def test_clin_015_drug_exposure_start_date_correct(self) -> None:
         """Using drug_exposure_start_date should pass (no violation)."""
@@ -10243,7 +10240,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_date BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_015_drug_exposure_with_coalesce(self) -> None:
         """Using COALESCE for drug_exposure NULL handling should pass."""
@@ -10252,7 +10249,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE COALESCE(drug_exposure_start_datetime, drug_exposure_start_date) > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_015_drug_exposure_with_is_not_null(self) -> None:
         """Using drug_exposure_start_datetime with explicit IS NOT NULL check should pass."""
@@ -10262,7 +10259,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND drug_exposure_start_datetime IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_030: measurement tests ---
 
@@ -10273,12 +10270,12 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement_datetime", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
-        self.assertIn("measurement_date", violations[0].message)
+        assert len(violations) == 1
+        assert "measurement_datetime" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
+        assert "measurement_date" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_030_measurement_time_violation(self) -> None:
         """Using measurement_time for temporal filter should trigger WARNING."""
@@ -10287,9 +10284,9 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE measurement_time > '12:00:00'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("measurement_time", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "measurement_time" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
 
     def test_clin_030_measurement_date_correct(self) -> None:
         """Using measurement_date should pass (no violation)."""
@@ -10298,7 +10295,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE measurement_date BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_030_measurement_with_coalesce(self) -> None:
         """Using COALESCE for measurement NULL handling should pass."""
@@ -10307,7 +10304,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE COALESCE(measurement_datetime, measurement_date) > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_030_measurement_with_is_not_null(self) -> None:
         """Using measurement_datetime with explicit IS NOT NULL check should pass."""
@@ -10317,7 +10314,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND measurement_datetime IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_035: observation tests ---
 
@@ -10328,12 +10325,12 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE observation_datetime BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("observation_datetime", violations[0].message)
-        self.assertIn("nullable", violations[0].message.lower())
-        self.assertIn("observation_date", violations[0].message)
+        assert len(violations) == 1
+        assert "observation_datetime" in violations[0].message
+        assert "nullable" in violations[0].message.lower()
+        assert "observation_date" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.WARNING)
+        assert violations[0].severity == Severity.WARNING
 
     def test_clin_035_observation_date_correct(self) -> None:
         """Using observation_date should pass (no violation)."""
@@ -10342,7 +10339,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE observation_date BETWEEN '2023-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_035_observation_with_coalesce(self) -> None:
         """Using COALESCE for observation NULL handling should pass."""
@@ -10351,7 +10348,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
         WHERE COALESCE(observation_datetime, observation_date) > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_035_observation_with_is_not_null(self) -> None:
         """Using observation_datetime with explicit IS NOT NULL check should pass."""
@@ -10361,7 +10358,7 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND observation_datetime IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- Multi-table tests ---
 
@@ -10375,20 +10372,20 @@ class RequiredDateColumnValidationTests(unittest.TestCase):
           AND de.drug_exposure_end_date < '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
         messages = [v.message for v in violations]
-        self.assertTrue(any("condition_start_datetime" in m for m in messages))
-        self.assertTrue(any("drug_exposure_end_date" in m for m in messages))
+        assert any("condition_start_datetime" in m for m in messages)
+        assert any("drug_exposure_end_date" in m for m in messages)
 
 
-class EndBeforeStartValidationTests(unittest.TestCase):
+class TestEndBeforeStartValidation:
     """Tests for end before start validation (CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551)."""
 
     def _run_rule(self, sql: str) -> list:
         """Helper to run the end before start validation rule."""
         from fastssv.core.registry import get_rule
 
-        rule = get_rule("semantic.end_before_start_validation")()
+        rule = get_rule("temporal.end_before_start_validation")()
         return rule.validate(sql)
 
     # --- CLIN_011: condition_occurrence tests ---
@@ -10401,11 +10398,11 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date < '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("impossible", violations[0].message.lower())
-        self.assertIn("condition_occurrence", violations[0].message)
+        assert len(violations) == 1
+        assert "impossible" in violations[0].message.lower()
+        assert "condition_occurrence" in violations[0].message
         from fastssv.core.base import Severity
-        self.assertEqual(violations[0].severity, Severity.ERROR)
+        assert violations[0].severity == Severity.ERROR
 
     def test_clin_011_condition_start_gte_end_lt(self) -> None:
         """Start >= June 1 but end < June 1 is impossible."""
@@ -10415,8 +10412,8 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date < '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("impossible", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "impossible" in violations[0].message.lower()
 
     def test_clin_011_condition_equals_impossible(self) -> None:
         """Start = June 15 but end = May 1 is impossible."""
@@ -10426,7 +10423,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date = '2023-05-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_011_condition_valid_overlap(self) -> None:
         """Start > Jan and end < Dec is valid (overlap possible)."""
@@ -10436,7 +10433,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date < '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_011_condition_valid_same_day(self) -> None:
         """Start >= June 1 and end >= June 1 is valid (same day possible)."""
@@ -10446,7 +10443,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date >= '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- OMOP_551: drug_exposure tests ---
 
@@ -10458,8 +10455,8 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND drug_exposure_end_date < '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure" in violations[0].message
 
     def test_omop_551_drug_exposure_valid(self) -> None:
         """Valid drug exposure date range."""
@@ -10469,7 +10466,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND drug_exposure_end_date <= '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- OMOP_052: visit_occurrence tests ---
 
@@ -10481,8 +10478,8 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND visit_end_date < '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_occurrence" in violations[0].message
 
     def test_omop_052_visit_valid(self) -> None:
         """Valid visit date range."""
@@ -10492,7 +10489,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND visit_end_date <= '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- CLIN_045: visit_detail tests ---
 
@@ -10504,8 +10501,8 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND visit_detail_end_date < '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_detail", violations[0].message)
+        assert len(violations) == 1
+        assert "visit_detail" in violations[0].message
 
     def test_clin_045_visit_detail_valid(self) -> None:
         """Valid visit detail date range."""
@@ -10515,7 +10512,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND visit_detail_end_date >= '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- OMOP_529: cohort tests ---
 
@@ -10527,8 +10524,8 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND cohort_end_date < '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("cohort", violations[0].message)
+        assert len(violations) == 1
+        assert "cohort" in violations[0].message
 
     def test_omop_529_cohort_valid(self) -> None:
         """Valid cohort date range."""
@@ -10538,7 +10535,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND cohort_end_date <= '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- BETWEEN tests ---
 
@@ -10550,7 +10547,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date BETWEEN '2023-01-01' AND '2023-05-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_between_valid(self) -> None:
         """Valid BETWEEN clauses."""
@@ -10560,7 +10557,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND condition_end_date BETWEEN '2023-06-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     # --- Edge cases ---
 
@@ -10571,7 +10568,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
         WHERE condition_start_date > '2023-06-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_no_date_literals_no_violation(self) -> None:
         """Dynamic comparisons should not trigger."""
@@ -10580,7 +10577,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
         WHERE condition_end_date < condition_start_date + INTERVAL '30 days'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_with_table_aliases(self) -> None:
         """Should work with table aliases."""
@@ -10591,7 +10588,7 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND co.condition_end_date < '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_multiple_tables_violations(self) -> None:
         """Should detect violations across multiple tables."""
@@ -10605,13 +10602,13 @@ class EndBeforeStartValidationTests(unittest.TestCase):
           AND de.drug_exposure_end_date < '2023-07-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)
+        assert len(violations) == 2
         messages = [v.message for v in violations]
-        self.assertTrue(any("condition_occurrence" in m for m in messages))
-        self.assertTrue(any("drug_exposure" in m for m in messages))
+        assert any("condition_occurrence" in m for m in messages)
+        assert any("drug_exposure" in m for m in messages)
 
 
-class DeathDateBeforeBirthValidationTests(unittest.TestCase):
+class TestDeathDateBeforeBirthValidation:
     """Tests for death date before birth validation rule (CLIN_050)."""
 
     def _run_rule(self, sql: str) -> list:
@@ -10631,8 +10628,8 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         WHERE d.death_date < p.birth_datetime
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("death_date occurs before birth_datetime", violations[0].message)
+        assert len(violations) == 1
+        assert "death_date occurs before birth_datetime" in violations[0].message
 
     def test_clin_050_year_death_before_year_of_birth_fires(self):
         """Test that YEAR(death_date) < year_of_birth fires."""
@@ -10643,8 +10640,8 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         WHERE YEAR(d.death_date) < p.year_of_birth
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("YEAR(death_date) is earlier than year_of_birth", violations[0].message)
+        assert len(violations) == 1
+        assert "YEAR(death_date) is earlier than year_of_birth" in violations[0].message
 
     def test_clin_050_death_after_birth_passes(self):
         """Test that death_date >= birth_datetime passes."""
@@ -10655,7 +10652,7 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         WHERE d.death_date >= p.birth_datetime
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_050_year_death_after_year_of_birth_passes(self):
         """Test that YEAR(death_date) >= year_of_birth passes."""
@@ -10666,7 +10663,7 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         WHERE YEAR(d.death_date) >= p.year_of_birth
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_050_no_temporal_filter_passes(self):
         """Test that joining death and person without temporal filter passes."""
@@ -10676,7 +10673,7 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         JOIN person p ON d.person_id = p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_050_only_death_table_passes(self):
         """Test that query with only death table (no person) passes."""
@@ -10684,7 +10681,7 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         SELECT person_id FROM death WHERE death_date > '2020-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_050_inside_or_passes(self):
         """Test that comparison inside OR clause passes."""
@@ -10695,10 +10692,10 @@ class DeathDateBeforeBirthValidationTests(unittest.TestCase):
         WHERE (d.death_date < p.birth_datetime OR d.cause_concept_id = 12345)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DeathDateInFutureValidationTests(unittest.TestCase):
+class TestDeathDateInFutureValidation:
     """Tests for death date in future validation rule (CLIN_051)."""
 
     def _run_rule(self, sql: str) -> list:
@@ -10716,8 +10713,8 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE death_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("CURRENT_DATE", violations[0].message)
+        assert len(violations) == 1
+        assert "CURRENT_DATE" in violations[0].message
 
     def test_clin_051_death_after_far_future_date_fires(self):
         """Test that death_date > far-future date fires."""
@@ -10726,8 +10723,8 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE death_date > '2050-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("2050", violations[0].message)
+        assert len(violations) == 1
+        assert "2050" in violations[0].message
 
     def test_clin_051_death_before_current_date_passes(self):
         """Test that death_date <= CURRENT_DATE passes."""
@@ -10736,7 +10733,7 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE death_date <= CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_051_death_in_past_passes(self):
         """Test that filtering for past death dates passes."""
@@ -10745,7 +10742,7 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE death_date BETWEEN '2020-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_051_death_less_than_future_passes(self):
         """Test that death_date < future-date (inverted logic) passes."""
@@ -10754,7 +10751,7 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE death_date < '2050-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_051_no_death_table_passes(self):
         """Test that query without death table passes."""
@@ -10762,7 +10759,7 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         SELECT person_id FROM person WHERE year_of_birth > 1990
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_051_inside_or_passes(self):
         """Test that comparison inside OR clause passes."""
@@ -10771,16 +10768,16 @@ class DeathDateInFutureValidationTests(unittest.TestCase):
         WHERE (death_date > CURRENT_DATE OR cause_concept_id = 12345)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DeathCauseSourceConceptValidationTests(unittest.TestCase):
+class TestDeathCauseSourceConceptValidation:
     """Tests for death cause source concept validation rule (CLIN_052)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run death cause source concept validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.death_cause_source_concept_validation")()
+        rule = get_rule("domain_specific.death_cause_source_concept_validation")()
         return rule.validate(sql)
 
     # CLIN_052: death_cause_source_concept_id should not be used for analytical filtering
@@ -10792,8 +10789,8 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE cause_source_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("cause_source_concept_id", violations[0].message)
+        assert len(violations) == 1
+        assert "cause_source_concept_id" in violations[0].message
 
     def test_clin_052_source_concept_in_clause_fires(self):
         """Test that cause_source_concept_id IN (...) fires."""
@@ -10802,7 +10799,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE cause_source_concept_id IN (456, 789)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_052_source_concept_between_fires(self):
         """Test that cause_source_concept_id BETWEEN fires."""
@@ -10811,7 +10808,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE cause_source_concept_id BETWEEN 100 AND 200
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_052_standard_concept_passes(self):
         """Test that cause_concept_id passes (standard concept)."""
@@ -10820,7 +10817,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE cause_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_052_qualified_source_concept_fires(self):
         """Test that d.cause_source_concept_id fires with table alias."""
@@ -10829,7 +10826,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE d.cause_source_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_052_source_concept_not_equals_fires(self):
         """Test that cause_source_concept_id != value fires."""
@@ -10838,7 +10835,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE cause_source_concept_id != 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_052_no_death_table_passes(self):
         """Test that query without death table passes."""
@@ -10846,7 +10843,7 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         SELECT person_id FROM person WHERE gender_concept_id = 8507
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_052_joined_death_table_fires(self):
         """Test that source_concept_id in joined death table fires."""
@@ -10856,10 +10853,10 @@ class DeathCauseSourceConceptValidationTests(unittest.TestCase):
         WHERE d.cause_source_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
+class TestClinicalEventDateInFutureValidation:
     """Tests for clinical event date in future validation rule (CLIN_053)."""
 
     def _run_rule(self, sql: str) -> list:
@@ -10877,8 +10874,8 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE condition_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_start_date" in violations[0].message
 
     def test_clin_053_drug_exposure_start_date_far_future_fires(self):
         """Test that drug_exposure_start_date > far-future date fires."""
@@ -10887,8 +10884,8 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_date > '2050-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("drug_exposure_start_date", violations[0].message)
+        assert len(violations) == 1
+        assert "drug_exposure_start_date" in violations[0].message
 
     def test_clin_053_procedure_date_future_fires(self):
         """Test that procedure_date > CURRENT_DATE fires."""
@@ -10897,7 +10894,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE procedure_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_measurement_date_future_fires(self):
         """Test that measurement_date > CURRENT_DATE fires."""
@@ -10906,7 +10903,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE measurement_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_observation_date_future_fires(self):
         """Test that observation_date > CURRENT_DATE fires."""
@@ -10915,7 +10912,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE observation_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_visit_start_date_future_fires(self):
         """Test that visit_start_date > CURRENT_DATE fires."""
@@ -10924,7 +10921,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE visit_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_visit_detail_start_date_future_fires(self):
         """Test that visit_detail_start_date > CURRENT_DATE fires."""
@@ -10933,7 +10930,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE visit_detail_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_device_exposure_start_date_future_fires(self):
         """Test that device_exposure_start_date > CURRENT_DATE fires."""
@@ -10942,7 +10939,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE device_exposure_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_specimen_date_future_fires(self):
         """Test that specimen_date > CURRENT_DATE fires."""
@@ -10951,7 +10948,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE specimen_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_note_date_future_fires(self):
         """Test that note_date > CURRENT_DATE fires."""
@@ -10960,7 +10957,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE note_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_episode_start_date_future_fires(self):
         """Test that episode_start_date > CURRENT_DATE fires."""
@@ -10969,7 +10966,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE episode_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_end_date_future_fires(self):
         """Test that end dates > CURRENT_DATE also fire."""
@@ -10978,7 +10975,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE drug_exposure_end_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_datetime_columns_fire(self):
         """Test that _datetime columns are also checked."""
@@ -10987,7 +10984,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE condition_start_datetime > CURRENT_TIMESTAMP
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_past_date_passes(self):
         """Test that filtering for past dates passes."""
@@ -10996,7 +10993,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE condition_start_date <= CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_053_realistic_date_range_passes(self):
         """Test that realistic historical date ranges pass."""
@@ -11005,7 +11002,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_date BETWEEN '2020-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_053_qualified_column_fires(self):
         """Test that qualified column references fire."""
@@ -11014,7 +11011,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE co.condition_start_date > CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_no_clinical_tables_passes(self):
         """Test that query without clinical tables passes."""
@@ -11022,7 +11019,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         SELECT * FROM person WHERE year_of_birth > 1990
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_053_greater_than_equal_fires(self):
         """Test that >= CURRENT_DATE also fires."""
@@ -11031,7 +11028,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE measurement_date >= CURRENT_DATE
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_053_inside_or_passes(self):
         """Test that violations inside OR clause don't fire."""
@@ -11040,7 +11037,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE (condition_start_date > CURRENT_DATE OR condition_concept_id = 12345)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_053_multiple_violations_reported(self):
         """Test that multiple date filters in same query report each."""
@@ -11050,7 +11047,7 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         AND condition_end_date > '2050-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertGreaterEqual(len(violations), 1)
+        assert len(violations) >= 1
 
     def test_clin_053_current_timestamp_fires(self):
         """Test that CURRENT_TIMESTAMP is also detected."""
@@ -11059,10 +11056,10 @@ class ClinicalEventDateInFutureValidationTests(unittest.TestCase):
         WHERE procedure_date > CURRENT_TIMESTAMP
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
+class TestClinicalEventDateBefore1900Validation:
     """Tests for clinical event date before 1900 validation rule (CLIN_054)."""
 
     def _run_rule(self, sql: str) -> list:
@@ -11080,9 +11077,9 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE condition_start_date < '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("condition_start_date", violations[0].message)
-        self.assertIn("1900", violations[0].message)
+        assert len(violations) == 1
+        assert "condition_start_date" in violations[0].message
+        assert "1900" in violations[0].message
 
     def test_clin_054_drug_exposure_start_date_ancient_fires(self):
         """Test that drug_exposure_start_date < ancient date fires."""
@@ -11091,7 +11088,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_date < '1850-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_procedure_date_1899_fires(self):
         """Test that procedure_date < 1900 (1899) fires."""
@@ -11100,7 +11097,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE procedure_date < '1899-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_measurement_date_less_than_equal_fires(self):
         """Test that measurement_date <= 1899 fires."""
@@ -11109,7 +11106,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE measurement_date <= '1899-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_observation_date_inverted_comparison_fires(self):
         """Test that inverted comparison with ancient date fires (1850 < col)."""
@@ -11118,7 +11115,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE '1850-01-01' < observation_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_visit_start_date_between_ancient_fires(self):
         """Test that BETWEEN with ancient dates fires."""
@@ -11127,7 +11124,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE visit_start_date BETWEEN '1800-01-01' AND '1899-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_visit_detail_date_in_ancient_fires(self):
         """Test that IN with ancient dates fires."""
@@ -11136,7 +11133,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE visit_detail_start_date IN ('1850-01-01', '1875-06-15')
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_device_exposure_start_date_before_1700_fires(self):
         """Test that very ancient dates fire."""
@@ -11145,7 +11142,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE device_exposure_start_date < '1700-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_specimen_date_ancient_fires(self):
         """Test that specimen_date < 1900 fires."""
@@ -11154,7 +11151,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE specimen_date < '1899-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_note_date_before_1900_fires(self):
         """Test that note_date < 1900 fires."""
@@ -11163,7 +11160,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE note_date < '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_episode_start_date_ancient_fires(self):
         """Test that episode_start_date < 1900 fires."""
@@ -11172,7 +11169,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE episode_start_date < '1899-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_datetime_columns_fire(self):
         """Test that _datetime columns are also checked."""
@@ -11181,7 +11178,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE condition_start_datetime < '1899-12-31 23:59:59'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_end_date_before_1900_fires(self):
         """Test that end dates < 1900 also fire."""
@@ -11190,7 +11187,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE drug_exposure_end_date < '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_realistic_date_passes(self):
         """Test that realistic dates after 1900 pass."""
@@ -11199,7 +11196,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE condition_start_date >= '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_modern_date_passes(self):
         """Test that modern dates pass."""
@@ -11208,7 +11205,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE drug_exposure_start_date BETWEEN '1950-01-01' AND '2023-12-31'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_qualified_column_fires(self):
         """Test that qualified column references fire."""
@@ -11217,7 +11214,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE co.condition_start_date < '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_054_no_clinical_tables_passes(self):
         """Test that query without clinical tables passes."""
@@ -11225,7 +11222,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         SELECT * FROM person WHERE year_of_birth < 1900
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_greater_than_with_ancient_date_passes(self):
         """Test that > with ancient date (correct logic) passes."""
@@ -11234,7 +11231,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE measurement_date > '1800-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_inside_or_passes(self):
         """Test that violations inside OR clause don't fire."""
@@ -11243,7 +11240,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE (condition_start_date < '1900-01-01' OR condition_concept_id = 12345)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_1900_exactly_passes(self):
         """Test that 1900-01-01 exactly passes (not before)."""
@@ -11252,7 +11249,7 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         WHERE observation_date >= '1900-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_054_multiple_violations_reported(self):
         """Test that multiple ancient date filters report each."""
@@ -11262,10 +11259,10 @@ class ClinicalEventDateBefore1900ValidationTests(unittest.TestCase):
         AND visit_end_date < '1899-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertGreaterEqual(len(violations), 1)
+        assert len(violations) >= 1
 
 
-class ConditionVisitHierarchyTests(unittest.TestCase):
+class TestConditionVisitHierarchy:
     """Tests for CLIN_013: condition_occurrence_visit_detail_requires_visit_occurrence."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -11286,9 +11283,9 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("visit_occurrence", violations[0].message.lower())
-        self.assertIn("not properly join", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "visit_occurrence" in violations[0].message.lower()
+        assert "not properly join" in violations[0].message.lower()
 
     def test_clin_013_passes_with_proper_vo_join(self) -> None:
         """Properly joining through visit_occurrence should pass."""
@@ -11299,7 +11296,7 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_013_passes_no_vo_columns_referenced(self) -> None:
         """Joining co to vd without referencing vo columns should pass."""
@@ -11309,7 +11306,7 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_013_passes_no_vd_join(self) -> None:
         """Query without visit_detail join should pass."""
@@ -11319,7 +11316,7 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_013_violation_with_aliases(self) -> None:
         """Should detect violation with table aliases."""
@@ -11332,7 +11329,7 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         # This should have 1 violation - references v.visit_start_date but v is not defined
         # However, since we're checking if vo is referenced, this will depend on alias resolution
         # Let me adjust this test
-        self.assertEqual(len(violations), 0)  # v is not recognized as visit_occurrence
+        assert len(violations) == 0  # v is not recognized as visit_occurrence
 
     def test_clin_013_violation_in_where_clause(self) -> None:
         """Referencing vo columns in WHERE clause without proper join should error."""
@@ -11344,7 +11341,7 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         WHERE vo.visit_start_date > '2023-01-01'
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_013_multiple_co_vd_joins(self) -> None:
         """Multiple condition_occurrence to visit_detail joins with improper vo join."""
@@ -11357,10 +11354,10 @@ class ConditionVisitHierarchyTests(unittest.TestCase):
         JOIN visit_occurrence vo ON vo.person_id = co1.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class DrugDaysSupplyValidationTests(unittest.TestCase):
+class TestDrugDaysSupplyValidation:
     """Tests for CLIN_016: drug_exposure_days_supply_plausible_range."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -11378,9 +11375,9 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = -30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("below minimum", violations[0].message)
-        self.assertIn("-30", violations[0].message)
+        assert len(violations) == 1
+        assert "below minimum" in violations[0].message
+        assert "-30" in violations[0].message
 
     def test_clin_016_zero_value_warns(self) -> None:
         """Zero days_supply should warn."""
@@ -11388,8 +11385,8 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("below minimum", violations[0].message)
+        assert len(violations) == 1
+        assert "below minimum" in violations[0].message
 
     def test_clin_016_over_365_warns(self) -> None:
         """days_supply > 365 should warn."""
@@ -11397,9 +11394,9 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = 400
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("above maximum", violations[0].message)
-        self.assertIn("400", violations[0].message)
+        assert len(violations) == 1
+        assert "above maximum" in violations[0].message
+        assert "400" in violations[0].message
 
     def test_clin_016_valid_value_passes(self) -> None:
         """Valid days_supply should pass."""
@@ -11407,7 +11404,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_016_valid_between_passes(self) -> None:
         """Valid BETWEEN range should pass."""
@@ -11415,7 +11412,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply BETWEEN 1 AND 90
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_016_invalid_between_warns(self) -> None:
         """BETWEEN with invalid bounds should warn."""
@@ -11423,7 +11420,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply BETWEEN -10 AND 500
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 2)  # Both -10 and 500 are invalid
+        assert len(violations) == 2  # Both -10 and 500 are invalid
 
     def test_clin_016_valid_in_clause_passes(self) -> None:
         """IN clause with valid values should pass."""
@@ -11431,7 +11428,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply IN (7, 14, 30, 90)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_016_invalid_in_clause_warns(self) -> None:
         """IN clause with invalid values should warn."""
@@ -11439,9 +11436,9 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply IN (30, 60, 400, 500)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("400", violations[0].message)
-        self.assertIn("500", violations[0].message)
+        assert len(violations) == 1
+        assert "400" in violations[0].message
+        assert "500" in violations[0].message
 
     def test_clin_016_comparison_operators(self) -> None:
         """Various comparison operators with invalid values should warn."""
@@ -11450,7 +11447,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         WHERE days_supply > 400
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_016_with_table_alias(self) -> None:
         """Should work with table aliases."""
@@ -11460,7 +11457,7 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         WHERE de.days_supply = -5
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_016_boundary_values_pass(self) -> None:
         """Boundary values (1 and 365) should pass."""
@@ -11468,13 +11465,13 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = 1
         """
         violations1 = self._run_rule(sql1)
-        self.assertEqual(len(violations1), 0)
+        assert len(violations1) == 0
 
         sql2 = """
         SELECT * FROM drug_exposure WHERE days_supply = 365
         """
         violations2 = self._run_rule(sql2)
-        self.assertEqual(len(violations2), 0)
+        assert len(violations2) == 0
 
     def test_clin_016_just_outside_boundaries_warn(self) -> None:
         """Values just outside boundaries should warn."""
@@ -11482,13 +11479,13 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE days_supply = 0
         """
         violations1 = self._run_rule(sql1)
-        self.assertEqual(len(violations1), 1)
+        assert len(violations1) == 1
 
         sql2 = """
         SELECT * FROM drug_exposure WHERE days_supply = 366
         """
         violations2 = self._run_rule(sql2)
-        self.assertEqual(len(violations2), 1)
+        assert len(violations2) == 1
 
     def test_clin_016_no_violation_other_tables(self) -> None:
         """Should not trigger on other tables with days_supply column."""
@@ -11496,10 +11493,10 @@ class DrugDaysSupplyValidationTests(unittest.TestCase):
         SELECT * FROM some_other_table WHERE days_supply = -30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugQuantityValidationTests(unittest.TestCase):
+class TestDrugQuantityValidation:
     """Tests for CLIN_019: drug_exposure_quantity_negative_value."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
@@ -11517,9 +11514,9 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity = -10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
-        self.assertIn("-10", violations[0].message)
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
+        assert "-10" in violations[0].message
 
     def test_clin_019_negative_float_warns(self) -> None:
         """Negative float quantity should warn."""
@@ -11527,8 +11524,8 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity = -5.5
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("negative", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "negative" in violations[0].message.lower()
 
     def test_clin_019_less_than_zero_warns(self) -> None:
         """quantity < 0 should warn."""
@@ -11536,7 +11533,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity < 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_019_zero_value_passes(self) -> None:
         """Zero quantity should pass (edge case - might indicate no dispense)."""
@@ -11544,7 +11541,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity = 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_019_positive_value_passes(self) -> None:
         """Positive quantity should pass."""
@@ -11552,7 +11549,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity = 30
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_019_greater_than_zero_passes(self) -> None:
         """quantity > 0 should pass."""
@@ -11560,7 +11557,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity > 0
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_019_between_with_negative_warns(self) -> None:
         """BETWEEN with negative bound should warn."""
@@ -11568,8 +11565,8 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity BETWEEN -10 AND 50
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("-10", violations[0].message)
+        assert len(violations) == 1
+        assert "-10" in violations[0].message
 
     def test_clin_019_between_positive_passes(self) -> None:
         """BETWEEN with positive bounds should pass."""
@@ -11577,7 +11574,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity BETWEEN 1 AND 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_019_in_clause_with_negative_warns(self) -> None:
         """IN clause with negative values should warn."""
@@ -11585,8 +11582,8 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity IN (-10, 30, 60)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("-10", violations[0].message)
+        assert len(violations) == 1
+        assert "-10" in violations[0].message
 
     def test_clin_019_in_clause_positive_passes(self) -> None:
         """IN clause with only positive values should pass."""
@@ -11594,7 +11591,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity IN (10, 30, 60)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_019_with_table_alias(self) -> None:
         """Should work with table aliases."""
@@ -11604,7 +11601,7 @@ class DrugQuantityValidationTests(unittest.TestCase):
         WHERE de.quantity = -5
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_019_multiple_negatives(self) -> None:
         """Multiple negative values should be detected."""
@@ -11612,9 +11609,9 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM drug_exposure WHERE quantity IN (-5, -10, 20)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("-5", violations[0].message)
-        self.assertIn("-10", violations[0].message)
+        assert len(violations) == 1
+        assert "-5" in violations[0].message
+        assert "-10" in violations[0].message
 
     def test_clin_019_no_violation_other_tables(self) -> None:
         """Should not trigger on other tables with quantity column."""
@@ -11622,15 +11619,15 @@ class DrugQuantityValidationTests(unittest.TestCase):
         SELECT * FROM some_other_table WHERE quantity = -10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
+class TestProcedureOccurrenceQuantitySemantics:
     """Tests for procedure_occurrence.quantity semantics rule (CLIN_023)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.procedure_occurrence_quantity_semantics")()
+        rule = get_rule("domain_specific.procedure_occurrence_quantity_semantics")()
         return rule.validate(sql, dialect)
 
     def test_clin_023_sum_quantity_with_count_alias_warns(self) -> None:
@@ -11641,9 +11638,9 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("procedure_count", violations[0].message.lower())
-        self.assertIn("count(*)", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "procedure_count" in violations[0].message.lower()
+        assert "count(*)" in violations[0].message.lower()
 
     def test_clin_023_sum_quantity_with_number_alias_warns(self) -> None:
         """SUM(quantity) aliased as 'number_of_procedures' should warn."""
@@ -11653,8 +11650,8 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("number_of_procedures", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "number_of_procedures" in violations[0].message.lower()
 
     def test_clin_023_sum_quantity_with_num_alias_warns(self) -> None:
         """SUM(quantity) aliased as 'num_procedures' should warn."""
@@ -11663,7 +11660,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         FROM procedure_occurrence
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_023_sum_quantity_with_n_prefix_warns(self) -> None:
         """SUM(quantity) aliased as 'n_procedures' should warn."""
@@ -11673,7 +11670,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_023_sum_quantity_with_cnt_suffix_warns(self) -> None:
         """SUM(quantity) aliased as 'procedure_cnt' should warn."""
@@ -11683,7 +11680,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_023_sum_quantity_with_clear_alias_passes(self) -> None:
         """SUM(quantity) with clear 'total_units' alias should pass."""
@@ -11693,7 +11690,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_023_sum_quantity_with_total_alias_passes(self) -> None:
         """SUM(quantity) aliased as 'total_quantity' should pass."""
@@ -11703,7 +11700,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_023_sum_quantity_no_alias_passes(self) -> None:
         """SUM(quantity) without alias should pass."""
@@ -11713,7 +11710,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_023_count_star_with_count_alias_passes(self) -> None:
         """COUNT(*) with 'procedure_count' alias should pass."""
@@ -11723,7 +11720,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_023_no_procedure_table_passes(self) -> None:
         """Query without procedure_occurrence should pass."""
@@ -11733,7 +11730,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_023_qualified_column_with_count_alias_warns(self) -> None:
         """Qualified po.quantity with count alias should warn."""
@@ -11743,7 +11740,7 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_023_multiple_sum_with_mixed_aliases(self) -> None:
         """Multiple SUM(quantity) with mixed aliases should flag only bad ones."""
@@ -11756,16 +11753,16 @@ class ProcedureOccurrenceQuantitySemanticsTests(unittest.TestCase):
         GROUP BY person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("procedure_count", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "procedure_count" in violations[0].message.lower()
 
 
-class MeasurementOperatorConceptValidationTests(unittest.TestCase):
+class TestMeasurementOperatorConceptValidation:
     """Tests for measurement.operator_concept_id validation rule (CLIN_026)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.measurement_operator_concept_validation")()
+        rule = get_rule("domain_specific.measurement_operator_concept_validation")()
         return rule.validate(sql, dialect)
 
     def test_clin_026_valid_operator_less_than_passes(self) -> None:
@@ -11774,7 +11771,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 4171756
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_valid_operator_greater_than_passes(self) -> None:
         """Valid operator 4172704 (>) should pass."""
@@ -11782,7 +11779,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 4172704
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_valid_operator_equals_passes(self) -> None:
         """Valid operator 4171755 (=) should pass."""
@@ -11790,7 +11787,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 4171755
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_valid_operator_less_than_equals_passes(self) -> None:
         """Valid operator 4171754 (<=) should pass."""
@@ -11798,7 +11795,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 4171754
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_valid_operator_greater_than_equals_passes(self) -> None:
         """Valid operator 4172703 (>=) should pass."""
@@ -11806,7 +11803,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 4172703
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_invalid_operator_concept_id_fires(self) -> None:
         """Invalid operator concept_id should error."""
@@ -11814,9 +11811,9 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("201826", violations[0].message)
-        self.assertIn("valid operator", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "201826" in violations[0].message
+        assert "valid operator" in violations[0].message.lower()
 
     def test_clin_026_invalid_operator_999999_fires(self) -> None:
         """Invalid operator 999999 should error."""
@@ -11824,8 +11821,8 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE operator_concept_id = 999999
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("999999", violations[0].message)
+        assert len(violations) == 1
+        assert "999999" in violations[0].message
 
     def test_clin_026_multiple_valid_operators_in_clause_passes(self) -> None:
         """IN clause with all valid operators should pass."""
@@ -11834,7 +11831,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         WHERE operator_concept_id IN (4171756, 4172704, 4171755)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_in_clause_with_invalid_operator_fires(self) -> None:
         """IN clause with invalid operator should error."""
@@ -11843,8 +11840,8 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         WHERE operator_concept_id IN (4171756, 201826, 4172704)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("201826", violations[0].message)
+        assert len(violations) == 1
+        assert "201826" in violations[0].message
 
     def test_clin_026_qualified_column_reference_fires(self) -> None:
         """Qualified column m.operator_concept_id should be detected."""
@@ -11852,7 +11849,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement m WHERE m.operator_concept_id = 123456
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_026_no_measurement_table_passes(self) -> None:
         """Query without measurement table should pass."""
@@ -11860,7 +11857,7 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_026_reversed_comparison_fires(self) -> None:
         """Reversed comparison (value = column) should be detected."""
@@ -11868,15 +11865,15 @@ class MeasurementOperatorConceptValidationTests(unittest.TestCase):
         SELECT * FROM measurement WHERE 201826 = operator_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class MeasurementRangeLowHighValidationTests(unittest.TestCase):
+class TestMeasurementRangeLowHighValidation:
     """Tests for measurement range_low/range_high validation rule (CLIN_027)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.measurement_range_low_high_validation")()
+        rule = get_rule("domain_specific.measurement_range_low_high_validation")()
         return rule.validate(sql, dialect)
 
     def test_clin_027_direct_comparison_fires(self) -> None:
@@ -11887,9 +11884,9 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND value_as_number > range_high
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("range_low", violations[0].message.lower())
-        self.assertIn("range_high", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "range_low" in violations[0].message.lower()
+        assert "range_high" in violations[0].message.lower()
 
     def test_clin_027_direct_comparison_gte_fires(self) -> None:
         """Direct comparison range_low >= range_high should error."""
@@ -11899,8 +11896,8 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND measurement_concept_id = 3004249
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("range_low", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "range_low" in violations[0].message.lower()
 
     def test_clin_027_static_contradiction_fires(self) -> None:
         """Static contradiction (range_low > 150, range_high < 100) should error."""
@@ -11910,8 +11907,8 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high < 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("static", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "static" in violations[0].message.lower()
 
     def test_clin_027_static_contradiction_equal_boundary_fires(self) -> None:
         """Static contradiction at equal boundary (range_low > 100, range_high < 100) should error."""
@@ -11921,7 +11918,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high < 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_027_static_contradiction_exact_values_fires(self) -> None:
         """Static contradiction with exact values (range_low = 150, range_high = 50) should error."""
@@ -11931,7 +11928,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high = 50
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_027_valid_overlapping_range_passes(self) -> None:
         """Valid overlapping range (range_low >= 50, range_high <= 200) should pass."""
@@ -11941,7 +11938,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high <= 200
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_027_valid_same_boundary_passes(self) -> None:
         """Valid same boundary (range_low >= 100, range_high >= 100) should pass."""
@@ -11951,7 +11948,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high >= 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_027_out_of_range_detection_passes(self) -> None:
         """Valid out-of-range detection pattern should pass."""
@@ -11961,7 +11958,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
            OR value_as_number > range_high
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_027_or_clause_passes(self) -> None:
         """OR clause with range_low > range_high should pass (DQ check)."""
@@ -11971,7 +11968,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
            OR range_low IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_027_no_measurement_table_passes(self) -> None:
         """Query without measurement table should pass."""
@@ -11980,7 +11977,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
         WHERE condition_start_date > condition_end_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_027_qualified_column_reference_fires(self) -> None:
         """Qualified column m.range_low > m.range_high should be detected."""
@@ -11990,7 +11987,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND m.value_as_number IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_027_between_clause_contradiction_fires(self) -> None:
         """BETWEEN clause creating contradiction should error."""
@@ -12000,7 +11997,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high BETWEEN 50 AND 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_027_negative_values_contradiction_fires(self) -> None:
         """Contradiction with negative values should be detected."""
@@ -12010,7 +12007,7 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high < -10
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_027_valid_negative_range_passes(self) -> None:
         """Valid negative range should pass."""
@@ -12020,15 +12017,15 @@ class MeasurementRangeLowHighValidationTests(unittest.TestCase):
           AND range_high <= 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
+class TestMeasurementValueAsNumberAndConceptValidation:
     """Tests for measurement value_as_number and value_as_concept_id validation rule (CLIN_028)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.measurement_value_as_number_and_concept_validation")()
+        rule = get_rule("domain_specific.measurement_value_as_number_and_concept_validation")()
         return rule.validate(sql, dialect)
 
     def test_clin_028_both_columns_filtered_with_and_fires(self) -> None:
@@ -12039,10 +12036,10 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "WARNING")
-        self.assertIn("value_as_number", violations[0].message.lower())
-        self.assertIn("value_as_concept_id", violations[0].message.lower())
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "value_as_number" in violations[0].message.lower()
+        assert "value_as_concept_id" in violations[0].message.lower()
 
     def test_clin_028_both_columns_complex_filters_fires(self) -> None:
         """Complex filters on both columns with AND should warn."""
@@ -12052,8 +12049,8 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id IN (45884084, 45878583)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertEqual(violations[0].severity.name, "WARNING")
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
 
     def test_clin_028_both_columns_multiple_and_conditions_fires(self) -> None:
         """Multiple AND conditions on both columns should warn."""
@@ -12064,7 +12061,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_028_qualified_columns_fires(self) -> None:
         """Qualified columns with AND should warn."""
@@ -12074,7 +12071,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND m.value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_028_or_clause_passes(self) -> None:
         """Using OR instead of AND should pass."""
@@ -12084,7 +12081,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
            OR value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_null_checks_pass(self) -> None:
         """IS NOT NULL checks on both columns should pass (not business logic)."""
@@ -12094,7 +12091,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id IS NOT NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_only_value_as_number_passes(self) -> None:
         """Filtering only value_as_number should pass."""
@@ -12103,7 +12100,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
         WHERE value_as_number > 6.5
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_only_value_as_concept_id_passes(self) -> None:
         """Filtering only value_as_concept_id should pass."""
@@ -12112,7 +12109,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
         WHERE value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_null_check_with_business_logic_passes(self) -> None:
         """NULL check on one column with business logic on another should pass."""
@@ -12122,7 +12119,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id IS NULL
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_no_measurement_table_passes(self) -> None:
         """Query without measurement table should pass."""
@@ -12132,7 +12129,7 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND value_as_concept_id = 45884084
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_028_nested_and_conditions_fires(self) -> None:
         """Nested AND conditions should be detected."""
@@ -12142,14 +12139,8 @@ class MeasurementValueAsNumberAndConceptValidationTests(unittest.TestCase):
           AND (value_as_number > 6.5 AND value_as_concept_id = 45884084)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
+        assert len(violations) == 1
+class TestClinicalPersonIdLinkageValidation:
     """Tests for CLIN_055: clinical tables require person_id linkage."""
 
     def _run_rule(self, sql: str) -> list:
@@ -12168,10 +12159,10 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("person_id", violations[0].message.lower())
-        self.assertIn("condition_occurrence", violations[0].message)
-        self.assertIn("drug_exposure", violations[0].message)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+        assert "condition_occurrence" in violations[0].message
+        assert "drug_exposure" in violations[0].message
 
     def test_clin_055_direct_person_id_join_passes(self):
         """Test that direct person_id join passes."""
@@ -12181,7 +12172,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON co.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_transitive_person_id_passes(self):
         """Test that transitive person_id linkage through person table passes."""
@@ -12192,7 +12183,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN drug_exposure de ON p.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_three_tables_all_linked_passes(self):
         """Test that 3 clinical tables all linked via person_id passes."""
@@ -12203,7 +12194,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN procedure_occurrence po ON co.person_id = po.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_three_tables_partial_linkage_fires(self):
         """Test that 3 tables with only partial person_id linkage fires."""
@@ -12215,7 +12206,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # procedure_occurrence not linked via person_id to the others
-        self.assertGreater(len(violations), 0)
+        assert len(violations) > 0
 
     def test_clin_055_single_clinical_table_passes(self):
         """Test that a single clinical table passes (no joins to validate)."""
@@ -12224,7 +12215,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         WHERE condition_concept_id = 123
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_clinical_with_vocabulary_passes(self):
         """Test that joining clinical to vocabulary tables passes (no validation)."""
@@ -12234,7 +12225,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN concept c ON co.condition_concept_id = c.concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_using_person_id_passes(self):
         """Test that USING(person_id) is recognized as valid linkage."""
@@ -12244,7 +12235,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN drug_exposure de USING(person_id)
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_where_clause_join_fires(self):
         """Test that implicit joins via WHERE without person_id fire."""
@@ -12254,7 +12245,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         WHERE co.condition_start_date = de.drug_exposure_start_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_055_where_clause_person_id_passes(self):
         """Test that implicit joins via WHERE with person_id pass."""
@@ -12264,7 +12255,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         WHERE co.person_id = de.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_055_qualified_columns_fires(self):
         """Test that qualified column names are handled correctly."""
@@ -12275,7 +12266,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Joined on visit_occurrence_id, not person_id
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_055_measurement_observation_no_linkage_fires(self):
         """Test other clinical table combinations."""
@@ -12285,7 +12276,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN observation o ON m.measurement_date = o.observation_date
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_055_visit_detail_visit_occurrence_linkage(self):
         """Test visit_detail and visit_occurrence joined without person_id."""
@@ -12296,7 +12287,7 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Both are clinical tables but joined on visit_occurrence_id, not person_id
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_055_death_person_join_fires(self):
         """Test death table joined to person without person_id."""
@@ -12306,16 +12297,16 @@ class ClinicalPersonIdLinkageValidationTests(unittest.TestCase):
         JOIN person p ON d.death_date = p.birth_datetime
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
 
-class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
+class TestConditionOccurrenceCardinalityValidation:
     """Tests for CLIN_056: condition_occurrence_multiple_records_per_person."""
 
     def _run_rule(self, sql: str) -> list:
         """Run condition occurrence cardinality validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.condition_occurrence_cardinality_validation")()
+        rule = get_rule("domain_specific.condition_occurrence_cardinality_validation")()
         return rule.validate(sql)
 
     # CLIN_056: Condition occurrence cardinality awareness
@@ -12329,9 +12320,9 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("multiple", violations[0].message.lower())
-        self.assertIn("group by", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "multiple" in violations[0].message.lower()
+        assert "group by" in violations[0].message.lower()
 
     def test_clin_056_with_group_by_passes(self):
         """Test that GROUP BY aggregation passes."""
@@ -12342,7 +12333,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         GROUP BY co.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_with_distinct_passes(self):
         """Test that DISTINCT passes."""
@@ -12353,7 +12344,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_with_count_passes(self):
         """Test that aggregate functions (COUNT) pass."""
@@ -12364,7 +12355,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         GROUP BY p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_condition_only_passes(self):
         """Test that queries without person table pass."""
@@ -12374,7 +12365,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_person_only_passes(self):
         """Test that queries without condition_occurrence pass."""
@@ -12383,7 +12374,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         FROM person p
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_no_person_id_join_passes(self):
         """Test that queries without person_id join pass."""
@@ -12394,7 +12385,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_where_clause_join_fires(self):
         """Test that WHERE clause joins are detected."""
@@ -12405,7 +12396,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         AND co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_056_using_clause_fires(self):
         """Test that USING clause joins are detected."""
@@ -12416,7 +12407,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_056_with_min_passes(self):
         """Test that MIN aggregate function passes."""
@@ -12427,7 +12418,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         GROUP BY p.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_056_reversed_join_fires(self):
         """Test that condition to person join is also detected."""
@@ -12438,7 +12429,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_056_with_other_tables_fires(self):
         """Test detection with additional tables in query."""
@@ -12450,7 +12441,7 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         WHERE co.condition_concept_id = 201826
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_056_subquery_with_aggregation_passes(self):
         """Test that subquery with aggregation passes."""
@@ -12464,16 +12455,16 @@ class ConditionOccurrenceCardinalityValidationTests(unittest.TestCase):
         ) co_agg ON p.person_id = co_agg.person_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
 
-class DrugExposureCardinalityValidationTests(unittest.TestCase):
+class TestDrugExposureCardinalityValidation:
     """Tests for CLIN_057: drug_exposure_multiple_records_per_person."""
 
     def _run_rule(self, sql: str) -> list:
         """Run drug exposure cardinality validation rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("semantic.drug_exposure_cardinality_validation")()
+        rule = get_rule("domain_specific.drug_exposure_cardinality_validation")()
         return rule.validate(sql)
 
     # CLIN_057: Drug exposure cardinality awareness
@@ -12486,9 +12477,9 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
-        self.assertIn("count", violations[0].message.lower())
-        self.assertIn("distinct", violations[0].message.lower())
+        assert len(violations) == 1
+        assert "count" in violations[0].message.lower()
+        assert "distinct" in violations[0].message.lower()
 
     def test_clin_057_count_column_fires(self):
         """Test that COUNT(column) on drug_exposure fires."""
@@ -12498,7 +12489,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_057_count_distinct_person_id_passes(self):
         """Test that COUNT(DISTINCT person_id) passes."""
@@ -12509,7 +12500,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_drug_era_passes(self):
         """Test that using drug_era table passes."""
@@ -12519,7 +12510,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_no_count_passes(self):
         """Test that queries without COUNT pass."""
@@ -12529,7 +12520,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         WHERE drug_concept_id = 1234567
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_no_drug_exposure_passes(self):
         """Test that queries without drug_exposure pass."""
@@ -12539,7 +12530,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY condition_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_count_star_with_join_fires(self):
         """Test COUNT(*) with joins to other tables."""
@@ -12550,7 +12541,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY c.concept_name
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_057_multiple_counts_mixed_fires(self):
         """Test query with both COUNT(*) and COUNT(DISTINCT person_id)."""
@@ -12563,7 +12554,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Should still fire because of COUNT(*)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_057_subquery_with_count_star_fires(self):
         """Test COUNT(*) in subquery."""
@@ -12577,7 +12568,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         WHERE cnt > 100
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_057_count_distinct_other_column_fires(self):
         """Test COUNT(DISTINCT non-person_id) still fires."""
@@ -12587,7 +12578,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
 
     def test_clin_057_sum_passes(self):
         """Test that SUM aggregate doesn't fire."""
@@ -12597,7 +12588,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_min_max_passes(self):
         """Test that MIN/MAX aggregates don't fire."""
@@ -12609,7 +12600,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_drug_era_with_drug_exposure_passes(self):
         """Test that having drug_era in query prevents firing."""
@@ -12621,7 +12612,7 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         """
         violations = self._run_rule(sql)
         # Passes because drug_era is present (recommended approach)
-        self.assertEqual(len(violations), 0)
+        assert len(violations) == 0
 
     def test_clin_057_count_with_where_clause_fires(self):
         """Test COUNT(*) with WHERE clause still fires."""
@@ -12632,9 +12623,198 @@ class DrugExposureCardinalityValidationTests(unittest.TestCase):
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        self.assertEqual(len(violations), 1)
+        assert len(violations) == 1
+
+"""Unit tests for vocabulary validation rules."""
+
+from fastssv.core.registry import get_rule
 
 
+def _run_concept_code_rule(sql: str, dialect: str = "postgres") -> list[str]:
+    """Run the concept_code_requires_vocabulary_id rule and return violation messages."""
+    rule = get_rule("anti_patterns.concept_code_requires_vocabulary_id")()
+    return [v.message for v in rule.validate(sql, dialect)]
 
-if __name__ == "__main__":
-    unittest.main()
+
+class TestConceptCodeRequiresVocabularyId:
+    """Tests for the concept_code + vocabulary_id rule."""
+
+    # --- PASS cases ---
+
+    def test_eq_with_vocabulary_id_passes(self) -> None:
+        """concept_code = with vocabulary_id in same WHERE should pass."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code = '1661387'
+          AND c.vocabulary_id = 'RxNorm'
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_eq_unqualified_with_vocabulary_id_passes(self) -> None:
+        """Unqualified concept_code with unqualified vocabulary_id should pass."""
+        sql = """
+        SELECT concept_id FROM concept
+        WHERE concept_code = '308136'
+          AND vocabulary_id = 'RxNorm'
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_in_with_vocabulary_id_passes(self) -> None:
+        """concept_code IN with vocabulary_id should pass."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code IN ('308136', '314076')
+          AND c.vocabulary_id = 'RxNorm'
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_vocabulary_id_in_clause_passes(self) -> None:
+        """vocabulary_id as IN clause should also satisfy the rule."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code = '308136'
+          AND c.vocabulary_id IN ('RxNorm', 'RxNorm Extension')
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_vocabulary_id_in_join_on_passes(self) -> None:
+        """vocabulary_id filter in JOIN ON should satisfy the rule."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c
+          ON co.condition_concept_id = c.concept_id
+          AND c.concept_code = '123'
+          AND c.vocabulary_id = 'SNOMED'
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_cte_with_both_filters_passes(self) -> None:
+        """CTE containing concept_code + vocabulary_id should pass."""
+        sql = """
+        WITH mapped AS (
+            SELECT c.concept_id
+            FROM concept c
+            WHERE c.concept_code = '1661387'
+              AND c.vocabulary_id = 'RxNorm'
+              AND c.invalid_reason IS NULL
+        )
+        SELECT de.person_id
+        FROM drug_exposure de
+        WHERE de.drug_concept_id IN (SELECT concept_id FROM mapped)
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_no_concept_code_usage_passes(self) -> None:
+        """Query without concept_code should not trigger the rule."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        WHERE de.drug_concept_id = 46276149
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    def test_concept_code_on_non_concept_table_ignored(self) -> None:
+        """concept_code on a table that resolves to something other than concept is skipped."""
+        sql = """
+        SELECT * FROM other_table t
+        WHERE t.concept_code = '123'
+        """
+        assert _run_concept_code_rule(sql) == []
+
+    # --- FAIL cases ---
+
+    def test_eq_without_vocabulary_id_fails(self) -> None:
+        """concept_code = without vocabulary_id should error."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code = '1661387'
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+        assert "concept_code" in errors[0]
+        assert "vocabulary_id" in errors[0]
+
+    def test_in_without_vocabulary_id_fails(self) -> None:
+        """concept_code IN without vocabulary_id should error."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code IN ('308136', '314076')
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+        assert "IN" in errors[0]
+
+    def test_like_without_vocabulary_id_fails(self) -> None:
+        """concept_code LIKE without vocabulary_id should error."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code LIKE '308%'
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+        assert "LIKE" in errors[0]
+
+    def test_mismatched_aliases_fails(self) -> None:
+        """concept_code on alias c with vocabulary_id on alias d should error."""
+        sql = """
+        SELECT c.concept_id
+        FROM concept c
+        JOIN concept d ON c.concept_id = d.concept_id
+        WHERE c.concept_code = '308136'
+          AND d.vocabulary_id = 'RxNorm'
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+
+    def test_vocabulary_id_only_in_subquery_fails(self) -> None:
+        """vocabulary_id inside a subquery does not satisfy the outer concept_code."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code = '308136'
+          AND EXISTS (
+            SELECT 1 FROM vocabulary v
+            WHERE v.vocabulary_id = 'RxNorm'
+          )
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+
+    def test_cte_missing_vocabulary_id_fails(self) -> None:
+        """CTE with concept_code but no vocabulary_id should error."""
+        sql = """
+        WITH mapped AS (
+            SELECT c.concept_id
+            FROM concept c
+            WHERE c.concept_code = '665077'
+        )
+        SELECT de.person_id
+        FROM drug_exposure de
+        WHERE de.drug_concept_id IN (SELECT concept_id FROM mapped)
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+
+    # --- Deduplication ---
+
+    def test_single_violation_per_scope(self) -> None:
+        """Multiple concept_code filters in same scope produce only one violation."""
+        sql = """
+        SELECT concept_id FROM concept c
+        WHERE c.concept_code = '123'
+          OR c.concept_code = '456'
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 1
+
+    def test_separate_violations_for_different_aliases(self) -> None:
+        """Two concept table aliases each missing vocabulary_id get separate violations."""
+        sql = """
+        SELECT c1.concept_id, c2.concept_id
+        FROM concept c1
+        JOIN concept c2 ON c1.concept_id = c2.concept_id
+        WHERE c1.concept_code = '123'
+          AND c2.concept_code = '456'
+        """
+        errors = _run_concept_code_rule(sql)
+        assert len(errors) == 2

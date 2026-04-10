@@ -1,15 +1,15 @@
 """Integration tests for the unified validation API."""
 
-import unittest
+import pytest
 
 from fastssv import validate_sql
 
 
-class UnifiedAPITests(unittest.TestCase):
+class TestUnifiedAPI:
     """Tests for the unified validate_sql() API."""
 
-    def test_validate_sql_semantic_only(self) -> None:
-        """Test running only semantic validation."""
+    def test_validate_sql_concept_standardization_only(self) -> None:
+        """Test running only concept standardization validation."""
         # Query properly handles concept_id = 0 with > 0 filter
         # person table doesn't require standard_concept enforcement
         sql = """
@@ -18,10 +18,10 @@ class UnifiedAPITests(unittest.TestCase):
         WHERE gender_concept_id = 8507
         AND gender_concept_id > 0
         """
-        results = validate_sql(sql, validators="semantic")
+        results = validate_sql(sql, validators="concept_standardization")
 
-        self.assertEqual(results["semantic_errors"], [])
-        self.assertEqual(results["all_errors"], [])
+        assert results["category_errors"]["concept_standardization"] == []
+        assert results["all_errors"] == []
 
     def test_validate_sql_all_validators(self) -> None:
         """Test running all validators."""
@@ -46,39 +46,34 @@ class UnifiedAPITests(unittest.TestCase):
         """
         results = validate_sql(sql, validators="all")
 
-        self.assertEqual(results["semantic_errors"], [])
-        self.assertEqual(results["all_errors"], [])
+        assert results["category_errors"]["concept_standardization"] == []
+        assert results["all_errors"] == []
 
     def test_validate_sql_list_of_validators(self) -> None:
         """Test running specific list of validators."""
         sql = """
         SELECT 1 FROM person
         """
-        results = validate_sql(sql, validators=["semantic"])
+        results = validate_sql(sql, validators=["concept_standardization"])
 
         # Result dict has all expected keys
-        self.assertIn("semantic_errors", results)
-        self.assertIn("vocabulary_errors", results)
-        self.assertIn("all_errors", results)
+        assert "category_errors" in results
+        assert "all_errors" in results
 
-        # Only semantic validators ran — no vocabulary errors should be present
-        self.assertEqual(results["vocabulary_errors"], [])
-        self.assertEqual(results["semantic_errors"], [])
-        self.assertEqual(results["all_errors"], [])
+        # Only concept standardization validators ran
+        assert results["category_errors"]["concept_standardization"] == []
+        assert results["all_errors"] == []
 
-    def test_validate_sql_different_dialects(self) -> None:
+    @pytest.mark.parametrize("dialect", ["postgres", "mysql", "sqlite", "duckdb"])
+    def test_validate_sql_different_dialects(self, dialect: str) -> None:
         """Test validation with different SQL dialects."""
         sql = """
         SELECT p.person_id
         FROM person p
         """
 
-        # Should work with different dialects
-        for dialect in ["postgres", "mysql", "sqlite", "duckdb"]:
-            results = validate_sql(sql, validators="all", dialect=dialect)
-            self.assertEqual(results["semantic_errors"], [], f"Unexpected semantic errors for dialect {dialect}")
-            self.assertEqual(results["all_errors"], [], f"Unexpected errors for dialect {dialect}")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        results = validate_sql(sql, validators="all", dialect=dialect)
+        assert results["category_errors"]["concept_standardization"] == [], (
+            f"Unexpected concept standardization errors for dialect {dialect}"
+        )
+        assert results["all_errors"] == [], f"Unexpected errors for dialect {dialect}"
