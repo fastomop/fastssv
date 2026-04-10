@@ -37,6 +37,7 @@ from .clinical_pk_cross_join_validation import ClinicalPkCrossJoinValidationRule
 from .concept_synonym_join_validation import ConceptSynonymJoinValidationRule
 from .payer_plan_period_join_validation import PayerPlanPeriodJoinValidationRule
 from .fact_relationship_join_validation import FactRelationshipJoinValidationRule
+from .clinical_person_id_linkage_validation import ClinicalPersonIdLinkageValidationRule
 
 __all__ = [
     "JoinPathValidationRule",
@@ -72,4 +73,5 @@ __all__ = [
     "ConceptSynonymJoinValidationRule",
     "PayerPlanPeriodJoinValidationRule",
     "FactRelationshipJoinValidationRule",
+    "ClinicalPersonIdLinkageValidationRule",
 ]

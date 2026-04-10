@@ -9,9 +9,9 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 **Statistics:**
 - Total rules in JSON: 350+
-- Implemented: 105 rules (including covered rules)
-- Coverage: 30.0%
-- Last updated: March 2026
+- Implemented: 126 rules (including covered rules)
+- Coverage: 36.0%
+- Last updated: April 2026
 
 ---
 
@@ -127,8 +127,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 - [-] **OMOP_051**: payer_plan_period_date_overlap_with_events
   - *Not implemented: Similar to OMOP_046 - person_id-only joins to payer_plan_period without date constraints. Medium false positive risk (aggregate queries, coverage analysis). Complex temporal constraint detection. WARNING severity. Could be revisited with opt-in mode and smart heuristics for high-impact payer-specific use cases.*
-- [-] **OMOP_052**: visit_end_date_not_before_start_date_filter
-  - *Status: SKIPPED - Detects logically impossible date ranges (visit_end_date < visit_start_date). High complexity: requires date parsing, constraint tracking across multiple comparison operators, and handling of multiple date field pairs. Limited coverage (only static literals, not dynamic dates/functions). Rare error in practice (caught during testing). WARNING severity. Complexity outweighs benefit - better handled by integration testing.*
+- [x] **OMOP_052**: visit_end_date_not_before_start_date_filter
+  - *Implemented as: `temporal/end_before_start_validation.py` - Generalized rule covering multiple tables. For visit_occurrence, detects impossible date constraints where visit_end_date < visit_start_date (ERROR). Handles all comparison operators (>, >=, <, <=, =, BETWEEN) with proper inclusive/exclusive bound tracking. Part of generalized implementation covering CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551.*
 - [x] **OMOP_053**: note_nlp_joins_to_note_not_person
   - *Covered by OMOP_009: `data_quality/schema_validation.py` - Detects non-existent column 'person_id' in note_nlp table (ERROR). The schema validation catches attempts to join on note_nlp.person_id since that column doesn't exist.*
 - [-] **OMOP_054**: concept_synonym_for_name_search
@@ -148,7 +148,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [-] **OMOP_061**: concept_relationship_bidirectional_awareness
   - *Status: SKIPPED - Requires external concept metadata to determine if hardcoded concept_ids are standard or source concepts. Would detect queries using standard concepts in concept_id_1 with 'Maps to' relationship (should be source concepts). PARTIALLY COVERED by OMOP_027 (maps_to_direction) which detects wrong direction in JOIN patterns using schema knowledge. This rule would only add detection of hardcoded concept_ids in WHERE clauses, which requires querying the concept table. Low frequency (uncommon pattern) and high implementation complexity (metadata database integration).*
 - [x] **OMOP_062**: condition_end_date_may_be_null
-  - *Implemented as: `domain_specific/condition/condition_end_date_null_handling.py`*
+  - *Implemented as: `temporal/nullable_end_date_null_handling.py` - Generalized rule covering nullable end_date columns across multiple tables (OMOP_062, OMOP_159, CLIN_022, CLIN_039). Tests: NullableEndDateNullHandlingTests (20 tests).*
 - [-] **OMOP_063**: distinct_person_count_not_row_count
   - *Status: SKIPPED - This is an analytics best practice, not a semantic CDM violation. The rule would detect COUNT(*) vs COUNT(DISTINCT person_id) in prevalence queries, but this is more about query intent (counting patients vs events) which is highly context-dependent and subjective. Many legitimate use cases exist for counting total events. Better addressed through documentation, code review, and analytics training rather than static SQL validation. High false positive risk due to inability to determine query intent.*
 - [x] **OMOP_064**: drug_strength_valid_start_end_date_filter
@@ -228,8 +228,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ### Specialized Rules (OMOP_101-160)
 
-- [-] **OMOP_101**: observation_qualifier_concept_id_for_context
-  - *Status: SKIPPED - Requires external concept metadata to validate that hardcoded concept_ids in qualifier_concept_id have appropriate domains ('Meas Value' or qualifier types). Cannot distinguish valid qualifier concept_id (4023515 for 'Severe') from invalid clinical concept_id (4058286) without metadata lookup. OMOP_066 (concept_domain_validation) provides partial coverage by detecting explicit JOINs to concept table with wrong domain filters, but cannot detect hardcoded concept_ids. Similar issue to OMOP_094 (death_cause_concept_id_domain_check), OMOP_084 (procedure_modifier_concept_id_usage), and OMOP_082 which were skipped for metadata dependency. Better addressed through documentation and data quality testing.*
+- [~] **OMOP_101**: observation_qualifier_concept_id_for_context
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` - Detects domain mismatches when observation.qualifier_concept_id is joined to concept table with wrong domain_id filter (ERROR). Expects 'Meas Value' domain for contextual qualifiers (severity, laterality). **Limitation**: Cannot detect hardcoded concept_ids without metadata database. Covers JOIN scenarios with explicit domain filters, which is the most common and detectable pattern.*
 - [ ] **OMOP_102**: drug_exposure_route_concept_id_domain
   - *Suggested group: `domain_specific/drug/`*
 - [ ] **OMOP_103**: visit_occurrence_admitted_from_discharged_to_concepts
@@ -253,7 +253,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_112**: cost_currency_concept_id_for_multi_currency
   - *Suggested group: `domain_specific/cost/`*
 - [ ] **OMOP_113**: cdm_source_no_primary_key_single_row
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_114**: device_exposure_production_id_is_free_text
   - *Suggested group: `domain_specific/device/`*
 - [ ] **OMOP_115**: visit_detail_parent_self_join
@@ -269,7 +269,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_120**: cohort_definition_syntax_not_executable_sql
   - *Suggested group: `domain_specific/cohort/`*
 - [ ] **OMOP_121**: metadata_table_not_for_clinical_queries
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_122**: observation_period_no_concept_id_filter
   - *Suggested group: `temporal/`*
 - [ ] **OMOP_123**: or_condition_on_different_concept_id_columns
@@ -289,7 +289,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_130**: concept_class_table_join_uses_concept_class_id_string
   - *Suggested group: `joins/`*
 - [ ] **OMOP_131**: having_without_group_by
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_132**: age_at_event_not_age_at_query_time
   - *Suggested group: `domain_specific/person/`*
 - [ ] **OMOP_133**: classification_concept_not_in_clinical_table
@@ -332,8 +332,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Suggested group: `domain_specific/death/`*
 - [ ] **OMOP_152**: note_nlp_snippet_not_structured_data
   - *Suggested group: `domain_specific/note/`*
-- [ ] **OMOP_153**: specimen_disease_status_concept_id_domain
-  - *Suggested group: `domain_specific/specimen/`*
+- [~] **OMOP_153**: specimen_disease_status_concept_id_domain
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` - Detects domain mismatches when specimen.disease_status_concept_id is joined to concept table with wrong domain_id filter (ERROR). Expects 'Spec Disease Status' domain for specimen disease status concepts (malignant, benign). **Limitation**: Cannot detect hardcoded concept_ids without metadata database. Covers JOIN scenarios with explicit domain filters, which is the most common and detectable pattern.*
 - [ ] **OMOP_154**: source_to_concept_map_target_concept_should_be_standard
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_155**: condition_occurrence_no_value_as_number
@@ -341,11 +341,11 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_156**: procedure_occurrence_no_value_as_number
   - *Suggested group: `domain_specific/procedure/`*
 - [ ] **OMOP_157**: concept_id_used_as_string_comparison
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_158**: note_class_concept_id_for_note_category
   - *Suggested group: `domain_specific/note/`*
-- [ ] **OMOP_159**: drug_exposure_end_date_null_handling
-  - *Suggested group: `domain_specific/drug/`*
+- [x] **OMOP_159**: drug_exposure_end_date_null_handling
+  - *Implemented as: `temporal/nullable_end_date_null_handling.py` - Generalized rule covering nullable end_date columns across multiple tables (OMOP_062, OMOP_159, CLIN_022, CLIN_039). Tests: NullableEndDateNullHandlingTests (20 tests).*
 - [ ] **OMOP_160**: visit_occurrence_no_condition_concept_id
   - *Suggested group: `domain_specific/visit/`*
 
@@ -378,46 +378,46 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ## Era Table Rules (OMOP_210-229)
 
-- [ ] **OMOP_210**: condition_era_persistence_window
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **OMOP_211**: condition_era_ordering_by_date
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **OMOP_212**: condition_era_requires_person_partition
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **OMOP_213**: drug_era_gap_days_logic
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_214**: drug_era_end_date_derivation
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_215**: drug_era_days_supply_usage
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_216**: drug_era_overlap_merge
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **OMOP_217**: era_concept_grouping
-  - *Suggested group: `domain_specific/`*
-- [ ] **OMOP_218**: era_minimum_length_validation
-  - *Suggested group: `domain_specific/`*
-- [ ] **OMOP_219**: era_temporal_sorting_required
-  - *Suggested group: `domain_specific/`*
+- [-] **OMOP_210**: condition_era_persistence_window
+  - *Skipped: Era construction rule with insufficient specification. Applies only to ETL/era-building queries (rare use case), not queries using existing era tables. Rule lacks clear violation examples and detection patterns. Focus on era usage validation (OMOP_028, OMOP_029) instead.*
+- [-] **OMOP_211**: condition_era_ordering_by_date
+  - *Skipped: Era construction rule with insufficient specification. Requires detecting ORDER BY patterns in era-building queries. Very narrow use case with low practical value.*
+- [-] **OMOP_212**: condition_era_requires_person_partition
+  - *Skipped: Era construction rule with insufficient specification. Requires detecting window function partitioning in era-building queries. Very narrow use case with low practical value.*
+- [-] **OMOP_213**: drug_era_gap_days_logic
+  - *Skipped: Era construction rule with insufficient specification. Requires validating gap calculation algorithms in ETL queries. Very narrow use case with low practical value.*
+- [-] **OMOP_214**: drug_era_end_date_derivation
+  - *Skipped: Era construction rule with insufficient specification. Requires validating end date calculation logic in ETL queries. Very narrow use case with low practical value.*
+- [-] **OMOP_215**: drug_era_days_supply_usage
+  - *Skipped: Era construction rule with insufficient specification. Requires validating days_supply handling in era construction. Very narrow use case with low practical value.*
+- [-] **OMOP_216**: drug_era_overlap_merge
+  - *Skipped: Era construction rule with insufficient specification. Requires validating overlap merging logic in ETL queries. Very narrow use case with low practical value.*
+- [-] **OMOP_217**: era_concept_grouping
+  - *Skipped: Era construction rule with insufficient specification. Requires validating concept grouping logic in era construction. Very narrow use case with low practical value.*
+- [-] **OMOP_218**: era_minimum_length_validation
+  - *Skipped: Era construction rule with insufficient specification. Requires validating minimum era length constraints. Very narrow use case with low practical value.*
+- [-] **OMOP_219**: era_temporal_sorting_required
+  - *Skipped: Era construction rule with insufficient specification. Requires validating temporal sorting in era construction. Very narrow use case with low practical value.*
 - [x] **OMOP_220**: event_within_observation_period
   - *Implemented as: `temporal/observation_period_anchoring.py`*
-- [ ] **OMOP_221**: multiple_observation_periods_allowed
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_222**: observation_period_gap_detection
-  - *Suggested group: `temporal/`*
+- [-] **OMOP_221**: multiple_observation_periods_allowed
+  - *Status: SKIPPED - Duplicate of OMOP_076 with weaker specification. OMOP_076 was already marked as skipped due to very high false positive risk - cannot determine query intent from SQL alone. OMOP_221 has the same underlying issue (assuming one observation period per person when multiple are valid in OMOP CDM) but provides no examples or detection patterns, making it even less actionable than OMOP_076. Multiple observation periods per person are valid OMOP CDM behavior representing gaps in enrollment or care. Better addressed through documentation about observation_period cardinality and data profiling rather than static SQL validation.*
+- [-] **OMOP_222**: observation_period_gap_detection
+  - *Status: SKIPPED - Insufficient specification with no examples or clear detection logic. Related to OMOP_076/221 (observation period cardinality issues). Partially overlaps with existing temporal/observation_period_anchoring.py rule which already suggests date range filtering in its fix message. Very high false positive risk - cannot determine query intent from SQL alone. Many legitimate reasons to join observation_period on person_id without date filtering: gap analysis, period enumeration, aggregation queries. Multiple observation periods per person with gaps are valid OMOP CDM behavior. Better addressed through the existing observation_period_anchoring rule and documentation rather than attempting to detect gap handling patterns.*
 - [x] **OMOP_223**: event_before_observation_start
   - *Implemented as: `temporal/observation_period_anchoring.py`*
 - [x] **OMOP_224**: event_after_observation_end
   - *Implemented as: `temporal/observation_period_anchoring.py`*
-- [ ] **OMOP_225**: cohort_entry_requires_observation
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_226**: observation_period_overlap_validation
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_227**: observation_period_duration_positive
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_228**: observation_period_join_person
-  - *Suggested group: `temporal/`*
-- [ ] **OMOP_229**: observation_period_event_alignment
-  - *Suggested group: `temporal/`*
+- [-] **OMOP_225**: cohort_entry_requires_observation
+  - *Status: SKIPPED - Insufficient specification with no examples or clear minimum threshold criteria. Study-specific requirement that varies by use case (some cohorts need 30 days lookback, others 365+ days for incident definitions). Cannot determine "correct" minimum observation window from SQL alone. High false positive risk - many legitimate analyses intentionally include patients with short observation periods (real-world evidence studies, newly enrolled patients). This is an analytical/cohort design decision, not SQL validation. Partially overlaps with OMOP_012 (observation_period_required_for_cohort) already implemented, and related to OMOP_541, OMOP_542, OMOP_556 which address similar vague requirements. Better addressed through study protocol specifications and documentation rather than static SQL validation.*
+- [-] **OMOP_226**: observation_period_overlap_validation
+  - *Status: SKIPPED - Data quality constraint, not query pattern validation. OMOP CDM requires observation periods not overlap for the same person, but this is a constraint on the DATA, not the QUERY. Static SQL analysis cannot determine whether a query's output will create overlapping periods - this requires runtime execution or data profiling. Insufficient specification with no examples or detection patterns. Fundamentally infeasible to validate through static analysis - cannot determine query results, actual date values, or whether existing overlapping records exist. Better addressed through database CHECK constraints, post-load data quality validation (e.g., OHDSI Data Quality Dashboard), ETL validation, or triggers. Outside the scope of static SQL validation - belongs in data quality validation tools.*
+- [-] **OMOP_227**: observation_period_duration_positive
+  - *Status: SKIPPED - Data quality constraint, not query pattern validation. Requires observation_period_end_date >= observation_period_start_date, but this is a constraint on DATA VALUES, not SQL structure. Static SQL analysis cannot determine whether a query's output will produce valid date ranges - requires runtime execution. Insufficient specification with no examples or detection patterns. Better addressed through database CHECK constraints (ALTER TABLE observation_period ADD CONSTRAINT CHECK (observation_period_end_date >= observation_period_start_date)), post-load data quality validation, or ETL validation. Related to unimplemented OMOP_529, OMOP_533, OMOP_534 which have identical issues for cohort date ranges. Outside the scope of static SQL validation - belongs in database constraints and data quality tools.*
+- [-] **OMOP_228**: observation_period_join_person
+  - *Status: SKIPPED - Already covered by existing implementations. JOIN_026 (joins/person_id_join_validation.py) ensures person_id only joins to person_id across all tables, including observation_period. Similar pattern to OMOP_004 and OMOP_005 which are already implemented. Insufficient specification with no examples or clear scope - doesn't account for valid joins to concept table (period_type_concept_id) or date-based BETWEEN constraints. Too restrictive if interpreted literally. Related to JOIN_023 (observation_period_to_clinical_requires_person_id_and_dates) which is more specific but also not implemented. The core intent (preventing invalid observation_period joins) is already achieved through person_id_join_validation.*
+- [-] **OMOP_229**: observation_period_event_alignment
+  - *Status: SKIPPED - Already covered by temporal/observation_period_anchoring.py which implements OMOP_012, OMOP_220, OMOP_223, OMOP_224. Duplicate with weakest specification among all related observation period rules - no examples, no columns specified, just vague "check event alignment" logic. The existing implementation already ensures queries with temporal constraints join to observation_period and suggests BETWEEN constraints for event dates. Related to OMOP_512 (clinical_event_within_observation_period) which has the same intent but better specification. Core functionality (ensuring clinical events align with observation periods) is fully addressed through existing observation_period_anchoring rule.*
 
 ---
 
@@ -561,8 +561,8 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
   - *Suggested group: `domain_specific/specimen/`*
 - [ ] **OMOP_528**: provider_specialty_domain_validation
   - *Suggested group: `domain_specific/provider/`*
-- [ ] **OMOP_529**: cohort_end_date_not_before_start
-  - *Suggested group: `domain_specific/cohort/`*
+- [x] **OMOP_529**: cohort_end_date_not_before_start
+  - *Implemented as: `temporal/end_before_start_validation.py` - Generalized rule covering multiple tables. For cohort, detects impossible date constraints where cohort_end_date < cohort_start_date (ERROR). Part of generalized implementation covering CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551.*
 - [ ] **OMOP_530**: concept_set_inclusion_exclusion_logic
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_531**: concept_set_mapped_source_concepts
@@ -600,13 +600,13 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_547**: care_site_location_relationship
   - *Suggested group: `joins/`*
 - [ ] **OMOP_548**: clinical_event_person_consistency
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_549**: temporal_censoring_after_observation_period
   - *Suggested group: `temporal/`*
 - [ ] **OMOP_550**: event_date_column_correctness
-  - *Suggested group: `data_quality/`*
-- [ ] **OMOP_551**: event_end_date_not_before_start_date
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
+- [x] **OMOP_551**: event_end_date_not_before_start_date
+  - *Implemented as: `temporal/end_before_start_validation.py` - Generalized rule that covers drug_exposure, condition_occurrence, and visit_occurrence tables. Detects impossible date constraints where end_date < start_date for the same record (ERROR). Part of generalized implementation covering CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551.*
 - [ ] **OMOP_552**: drug_exposure_after_condition_temporal_logic
   - *Suggested group: `temporal/`*
 - [ ] **OMOP_553**: event_within_visit_dates
@@ -646,17 +646,17 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **OMOP_600**: maps_to_chain_follow_to_terminal
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_601**: cdm_v53_to_v54_column_renames
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_602**: correlated_subquery_on_large_clinical_table
   - *Suggested group: `anti_patterns/`*
 - [ ] **OMOP_603**: unbounded_date_range_on_clinical_table
   - *Suggested group: `anti_patterns/`*
 - [ ] **OMOP_604**: site_specific_concept_ids_in_multi_site_query
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_605**: datetime_timezone_inconsistency
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_606**: date_preferred_over_datetime_when_datetime_nullable
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **OMOP_607**: concept_relationship_maps_to_chain_resolution
   - *Suggested group: `concept_standardization/`*
 - [ ] **OMOP_608**: concept_domain_routing_awareness
@@ -673,13 +673,13 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **VOCAB_003**: concept_relationship_maps_to_target_must_be_standard
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_004**: vocabulary_id_case_sensitive_mismatch
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_005**: vocabulary_id_with_hyphens_or_spaces
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_006**: domain_id_case_sensitive_mismatch
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_007**: concept_class_id_case_sensitive_mismatch
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_008**: concept_ancestor_max_levels_misused_as_distance
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_009**: standard_concept_is_null_for_non_standard_lookup
@@ -707,7 +707,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **VOCAB_020**: source_concept_id_should_join_concept_without_standard_filter
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_021**: concept_id_zero_not_joined_to_concept
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_022**: snomed_vocabulary_id_for_conditions
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_023**: rxnorm_vocabulary_id_for_drugs
@@ -719,19 +719,19 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **VOCAB_026**: concept_ancestor_with_concept_class_filter_on_descendant
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_027**: concept_relationship_concept_id_1_equals_concept_id_2
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_028**: unit_concept_id_vocabulary_is_ucum
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_029**: concept_ancestor_depth_filter_off_by_one
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_030**: concept_code_equality_across_vocabularies
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_031**: concept_valid_end_date_check_for_current_concepts
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_032**: concept_relationship_replaces_for_deprecated_concepts
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_033**: concept_id_not_found_in_concept_table
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_034**: concept_relationship_transitive_misuse
   - *Suggested group: `anti_patterns/`*
 - [ ] **VOCAB_035**: standard_concept_filter_on_type_concept_id_lookup
@@ -739,7 +739,7 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **VOCAB_036**: concept_ancestor_includes_only_defines_ancestry_relationships
   - *Suggested group: `concept_standardization/`*
 - [ ] **VOCAB_037**: concept_name_trailing_whitespace
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **VOCAB_038**: concept_ancestor_mixed_with_concept_relationship_redundantly
   - *Suggested group: `anti_patterns/`*
 - [ ] **VOCAB_039**: concept_class_id_ingredient_for_drug_grouping
@@ -755,120 +755,120 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ## Clinical Data Quality Rules (CLIN_001-057)
 
-- [ ] **CLIN_001**: person_no_clinical_event_dates
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_002**: person_no_clinical_concept_id
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_003**: person_gender_domain_constraint
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_004**: person_race_domain_constraint
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_005**: person_ethnicity_domain_constraint
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_006**: person_year_of_birth_plausible_range
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_007**: person_month_of_birth_valid_range
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_008**: person_day_of_birth_valid_range
-  - *Suggested group: `domain_specific/person/`*
-- [ ] **CLIN_009**: condition_occurrence_domain_constraint
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **CLIN_010**: condition_occurrence_start_date_required_in_temporal_query
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **CLIN_011**: condition_occurrence_end_before_start
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **CLIN_012**: condition_occurrence_status_domain_constraint
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **CLIN_013**: condition_occurrence_visit_detail_requires_visit_occurrence
-  - *Suggested group: `domain_specific/condition/`*
-- [ ] **CLIN_014**: drug_exposure_domain_constraint
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_015**: drug_exposure_start_date_required_in_temporal_query
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_016**: drug_exposure_days_supply_plausible_range
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_017**: drug_exposure_route_concept_domain_constraint
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_018**: drug_exposure_days_supply_inconsistent_with_dates
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_019**: drug_exposure_quantity_negative_value
-  - *Suggested group: `domain_specific/drug/`*
-- [ ] **CLIN_020**: procedure_occurrence_domain_constraint
-  - *Suggested group: `domain_specific/procedure/`*
-- [ ] **CLIN_021**: procedure_occurrence_modifier_domain_constraint
-  - *Suggested group: `domain_specific/procedure/`*
-- [ ] **CLIN_022**: procedure_occurrence_end_date_nullable
-  - *Suggested group: `domain_specific/procedure/`*
-- [ ] **CLIN_023**: procedure_occurrence_quantity_semantics
-  - *Suggested group: `domain_specific/procedure/`*
-- [ ] **CLIN_024**: measurement_domain_constraint
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_025**: measurement_unit_domain_constraint
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_026**: measurement_operator_domain_constraint
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_027**: measurement_range_low_greater_than_range_high
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_028**: measurement_value_as_number_and_concept_exclusive
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_029**: measurement_no_value_as_string
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_030**: measurement_date_required_in_temporal_query
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **CLIN_031**: observation_domain_constraint
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_032**: observation_unit_domain_constraint
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_033**: observation_qualifier_domain_constraint
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_034**: observation_value_as_concept_domain_constraint
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_035**: observation_date_required_in_temporal_query
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_036**: observation_no_range_low_range_high
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_037**: observation_no_operator_concept_id
-  - *Suggested group: `domain_specific/observation/`*
-- [ ] **CLIN_038**: visit_occurrence_domain_constraint
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_039**: visit_occurrence_inpatient_end_date_required
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_040**: visit_occurrence_outpatient_same_day
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_041**: visit_occurrence_event_before_visit_start
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_042**: visit_occurrence_no_clinical_values
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_043**: visit_detail_domain_constraint
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_044**: visit_detail_must_reference_visit_occurrence
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_045**: visit_detail_end_before_start
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_046**: visit_detail_no_preceding_visit_occurrence_id
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_047**: visit_detail_dates_within_parent_visit
-  - *Suggested group: `domain_specific/visit/`*
-- [ ] **CLIN_048**: death_no_visit_occurrence_id
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **CLIN_049**: death_cause_concept_condition_domain
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **CLIN_050**: death_date_not_before_birth
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **CLIN_051**: death_date_in_future
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **CLIN_052**: death_cause_source_concept_not_standard
-  - *Suggested group: `domain_specific/death/`*
-- [ ] **CLIN_053**: clinical_event_date_in_future
-  - *Suggested group: `data_quality/`*
-- [ ] **CLIN_054**: clinical_event_date_before_1900
-  - *Suggested group: `data_quality/`*
-- [ ] **CLIN_055**: all_clinical_tables_require_person_id_for_patient_query
-  - *Suggested group: `data_quality/`*
-- [ ] **CLIN_056**: condition_occurrence_multiple_records_per_person
-  - *Suggested group: `data_quality/`*
-- [ ] **CLIN_057**: drug_exposure_multiple_records_per_person
-  - *Suggested group: `data_quality/`*
+- [x] **CLIN_001**: person_no_clinical_event_dates
+  - *Covered by: `data_quality/schema_validation.py` (OMOP_008/009) - Detects non-existent columns on person table (ERROR). Schema validation catches attempts to reference clinical event date columns like condition_start_date, drug_exposure_start_date, measurement_date, observation_date on person table since these columns don't exist in the person table schema.*
+- [x] **CLIN_002**: person_no_clinical_concept_id
+  - *Covered by: `data_quality/schema_validation.py` (OMOP_008/009) - Detects non-existent columns on person table (ERROR). Schema validation catches attempts to reference clinical concept_id columns like condition_concept_id, drug_concept_id, procedure_concept_id, measurement_concept_id on person table since these columns don't exist in the person table schema.*
+- [x] **CLIN_003**: person_gender_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066/019) - Detects domain mismatches when person.gender_concept_id is joined to concept table with wrong domain_id filter (ERROR). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database (would require looking up concept_id to determine its domain). Most important use case (explicit JOINs with domain filters) is covered. Similar limitation to OMOP_094, OMOP_084, OMOP_082, OMOP_056 which were skipped for metadata dependency.*
+- [x] **CLIN_004**: person_race_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when person.race_concept_id is joined to concept table with wrong domain_id filter (ERROR). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003, OMOP_094, OMOP_084, OMOP_082.*
+- [x] **CLIN_005**: person_ethnicity_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when person.ethnicity_concept_id is joined to concept table with wrong domain_id filter (ERROR). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003, OMOP_094, OMOP_084, OMOP_082.*
+- [x] **CLIN_006**: person_year_of_birth_plausible_range
+  - *Implemented as: `domain_specific/person/person_birth_field_validation.py` - Validates year_of_birth is between 1900 and current year (WARNING). Detects implausible birth years in WHERE clauses with comparison operators (=, <, >, <=, >=, IN).*
+- [x] **CLIN_007**: person_month_of_birth_valid_range
+  - *Implemented as: `domain_specific/person/person_birth_field_validation.py` - Validates month_of_birth is between 1 and 12 (ERROR). Detects invalid month values in WHERE clauses with comparison operators (=, <, >, <=, >=, IN).*
+- [x] **CLIN_008**: person_day_of_birth_valid_range
+  - *Implemented as: `domain_specific/person/person_birth_field_validation.py` - Validates day_of_birth is between 1 and 31 (ERROR). Detects invalid day values in WHERE clauses with comparison operators (=, <, >, <=, >=, IN).*
+- [x] **CLIN_009**: condition_occurrence_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when condition_occurrence.condition_concept_id is joined to concept table with wrong domain_id filter (ERROR). Also warns when JOIN exists without domain_id filter (WARNING). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003-005.*
+- [x] **CLIN_010**: condition_occurrence_start_date_required_in_temporal_query
+  - *Implemented as: `temporal/required_date_column_validation.py` - Generalized rule that validates temporal queries use required (NOT NULL) date columns across multiple clinical tables. For condition_occurrence, detects use of nullable columns (condition_start_datetime, condition_end_date) instead of required condition_start_date (WARNING). Includes smart detection of COALESCE and IS NOT NULL checks to avoid false positives. Covers CLIN_010, CLIN_015, CLIN_030, CLIN_035.*
+- [x] **CLIN_011**: condition_occurrence_end_before_start
+  - *Implemented as: `temporal/end_before_start_validation.py` - Generalized rule that detects logically impossible date constraints where static filters force end_date < start_date for the same record (ERROR). Covers CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551 across 5 tables. Properly handles inclusive/exclusive bounds (>=, >, <=, <, =, BETWEEN) and detects impossibilities like 'start_date >= 2023-06-01 AND end_date < 2023-06-01'.*
+- [~] **CLIN_012**: condition_occurrence_status_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` - Detects domain mismatches when condition_occurrence.condition_status_concept_id is joined to concept table with wrong domain_id filter (ERROR). Expects 'Condition Status' domain for diagnostic certainty concepts (preliminary, final, admitting). **Limitation**: Cannot detect hardcoded concept_ids without metadata database. Covers JOIN scenarios with explicit domain filters, which is the most common and detectable pattern.*
+- [x] **CLIN_013**: condition_occurrence_visit_detail_requires_visit_occurrence
+  - *Implemented as: `domain_specific/condition/condition_visit_hierarchy_validation.py` - Validates that when condition_occurrence joins to visit_detail and references visit_occurrence columns, visit_occurrence must be properly joined. Since visit_detail nests within visit_occurrence, accessing visit-level attributes requires proper join hierarchy (ERROR). Detects both explicit visit_occurrence table references and common undefined aliases (vo, visit_occurrence).*
+- [x] **CLIN_014**: drug_exposure_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when drug_exposure.drug_concept_id is joined to concept table with wrong domain_id filter (ERROR). Also warns when JOIN exists without domain_id filter (WARNING). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003-005, CLIN_009.*
+- [x] **CLIN_015**: drug_exposure_start_date_required_in_temporal_query
+  - *Implemented as: `temporal/required_date_column_validation.py` - Generalized rule that validates temporal queries use required (NOT NULL) date columns across multiple clinical tables. For drug_exposure, detects use of nullable columns (drug_exposure_start_datetime, drug_exposure_end_date) instead of required drug_exposure_start_date (WARNING). Includes smart detection of COALESCE and IS NOT NULL checks to avoid false positives. Covers CLIN_010, CLIN_015, CLIN_030, CLIN_035.*
+- [x] **CLIN_016**: drug_exposure_days_supply_plausible_range
+  - *Implemented as: `domain_specific/drug/drug_days_supply_validation.py` - Validates that drug_exposure.days_supply is in a plausible range (1 to 365 days). Detects implausible values in WHERE clauses including negative values, zero, and values over 365 days (WARNING). Handles comparison operators (=, !=, <, <=, >, >=), BETWEEN, and IN clauses. Supports negative number detection.*
+- [x] **CLIN_017**: drug_exposure_route_concept_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when drug_exposure.route_concept_id is joined to concept table with wrong domain_id filter (ERROR). Expects 'Route' domain for route administration concepts (Oral, Intravenous, Topical, etc.). Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003-005, CLIN_009, CLIN_014.*
+- [-] **CLIN_018**: drug_exposure_days_supply_inconsistent_with_dates
+  - *Not implemented: High complexity, high false positive risk. Detecting inconsistencies between days_supply and calculated date ranges is ambiguous - users may be intentionally querying for data quality issues or performing legitimate analytical comparisons. Cannot reliably distinguish between buggy queries and intentional data quality audits. Similar to OMOP_015. Better handled by data quality checks in ETL pipeline, business intelligence dashboards, and code review.*
+- [x] **CLIN_019**: drug_exposure_quantity_negative_value
+  - *Implemented as: `domain_specific/drug/drug_quantity_validation.py` - Validates that drug_exposure.quantity is non-negative. Detects negative values in WHERE clauses and filters that would select for negative quantities (e.g., quantity < 0). Handles comparison operators (=, !=, <, <=, >, >=), BETWEEN, and IN clauses (WARNING). Supports both integer and float negative value detection.*
+- [x] **CLIN_020**: procedure_occurrence_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066) - Detects domain mismatches when procedure_occurrence.procedure_concept_id is joined to concept table with wrong domain_id filter (ERROR). Also warns when JOIN exists without domain_id filter (WARNING). Expects 'Procedure' domain for procedure concepts. Cannot detect hardcoded concept_ids from wrong domain without concept metadata database. Most important use case (explicit JOINs with domain filters) is covered. Same limitation as CLIN_003-005, CLIN_009, CLIN_014, CLIN_017.*
+- [x] **CLIN_021**: procedure_occurrence_modifier_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). Added `modifier_concept_id: "Modifier"` to AUXILIARY_CONCEPT_COLUMNS. Tests: ConceptDomainValidationTests.test_modifier_with_correct_domain_passes, test_modifier_with_wrong_domain_fires. Note: Does not support Observation domain for laterality qualifiers as specified in the original rule.*
+- [x] **CLIN_022**: procedure_occurrence_end_date_nullable
+  - *Implemented as: `temporal/nullable_end_date_null_handling.py` - Generalized rule covering nullable end_date columns across multiple tables (OMOP_062, OMOP_159, CLIN_022, CLIN_039). Tests: NullableEndDateNullHandlingTests (20 tests).*
+- [x] **CLIN_023**: procedure_occurrence_quantity_semantics
+  - *Implemented as: `domain_specific/procedure/procedure_occurrence_quantity_semantics.py` - Detects when SUM(quantity) is used with aliases suggesting record counts (procedure_count, num_procedures, etc.) instead of unit summation. Tests: ProcedureOccurrenceQuantitySemanticsTests (12 tests).*
+- [x] **CLIN_024**: measurement_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). Tests: ConceptDomainValidationTests.test_measurement_with_wrong_domain_fires, DomainSegregationTests.test_measurement_correct_domain.*
+- [x] **CLIN_025**: measurement_unit_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). unit_concept_id mapped to Unit domain in AUXILIARY_CONCEPT_COLUMNS. Tests: ConceptDomainValidationTests.test_measurement_with_unit_domain, test_measurement_unit_with_wrong_domain_fires.*
+- [x] **CLIN_026**: measurement_operator_domain_constraint
+  - *Implemented as: `domain_specific/measurement/measurement_operator_concept_validation.py` - Validates that operator_concept_id uses only the 5 valid operator concepts (4171756 <, 4172704 >, 4171755 =, 4171754 <=, 4172703 >=). Tests: MeasurementOperatorConceptValidationTests (12 tests).*
+- [x] **CLIN_027**: measurement_range_low_greater_than_range_high
+  - *Implemented as: `domain_specific/measurement/measurement_range_low_high_validation.py` - Detects logically impossible range constraints where range_low > range_high. Covers both direct comparisons and static contradictions via numeric bounds tracking. Skips OR clauses (DQ checks). Tests: MeasurementRangeLowHighValidationTests (14 tests).*
+- [x] **CLIN_028**: measurement_value_as_number_and_concept_exclusive
+  - *Implemented as: `domain_specific/measurement/measurement_value_as_number_and_concept_validation.py` - Detects when both value_as_number (quantitative) and value_as_concept_id (qualitative) are filtered with AND, which is usually overly restrictive. Excludes IS NULL/IS NOT NULL checks. Severity: WARNING. Tests: MeasurementValueAsNumberAndConceptValidationTests (11 tests).*
+- [x] **CLIN_029**: measurement_no_value_as_string
+  - *Covered by: `data_quality/schema_validation.py` (OMOP_009). The measurement table does not have a value_as_string column (exists only on observation). Schema validation detects this invalid column reference. Tests: SchemaValidationTests.test_clin_029_value_as_string_in_measurement, test_clin_029_value_as_string_in_observation_passes.*
+- [x] **CLIN_030**: measurement_date_required_in_temporal_query
+  - *Implemented as: `temporal/required_date_column_validation.py` - Generalized rule covering multiple clinical tables. For measurement, detects use of nullable columns (measurement_datetime, measurement_time) instead of required measurement_date (WARNING). Part of generalized implementation covering CLIN_010, CLIN_015, CLIN_030, CLIN_035.*
+- [x] **CLIN_031**: observation_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). observation.observation_concept_id must reference concepts from the 'Observation' domain. Tests: ConceptDomainValidationTests.test_observation_with_correct_domain_passes, test_observation_with_wrong_domain_fires.*
+- [x] **CLIN_032**: observation_unit_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). observation.unit_concept_id must reference concepts from the 'Unit' domain. unit_concept_id mapped in AUXILIARY_CONCEPT_COLUMNS. Tests: ConceptDomainValidationTests.test_observation_unit_with_correct_domain_passes, test_observation_unit_with_wrong_domain_fires.*
+- [x] **CLIN_033**: observation_qualifier_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066, OMOP_101). observation.qualifier_concept_id must reference concepts from the 'Meas Value' domain. qualifier_concept_id mapped in AUXILIARY_CONCEPT_COLUMNS. Tests: ConceptDomainValidationTests.test_qualifier_with_correct_domain_passes, test_qualifier_with_wrong_domain_fires, test_qualifier_with_condition_domain_fires.*
+- [x] **CLIN_034**: observation_value_as_concept_domain_constraint
+  - *Partially covered by: `concept_standardization/concept_domain_validation.py` (domain constraint for value_as_concept_id → 'Meas Value'). Implemented as: `domain_specific/observation/observation_value_as_concept_confusion.py` - Detects when the same concept_id is used for both observation_concept_id (question) and value_as_concept_id (answer), which is logically incorrect. Tests: ObservationValueAsConceptConfusionTests (11 tests).*
+- [x] **CLIN_035**: observation_date_required_in_temporal_query
+  - *Implemented as: `temporal/required_date_column_validation.py` - Generalized rule covering multiple clinical tables. For observation, detects use of nullable column (observation_datetime) instead of required observation_date (WARNING). Part of generalized implementation covering CLIN_010, CLIN_015, CLIN_030, CLIN_035.*
+- [x] **CLIN_036**: observation_no_range_low_range_high
+  - *Covered by: `data_quality/schema_validation.py` (OMOP_009). The observation table does not have range_low or range_high columns (exist only on measurement). Schema validation detects these invalid column references. Tests: SchemaValidationTests.test_clin_036_range_high_in_observation, test_clin_036_range_low_in_observation, test_clin_036_range_columns_in_measurement_passes.*
+- [x] **CLIN_037**: observation_no_operator_concept_id
+  - *Covered by: `data_quality/schema_validation.py` (OMOP_009). The observation table does not have an operator_concept_id column (exists only on measurement). Schema validation detects this invalid column reference. Tests: SchemaValidationTests.test_clin_037_operator_concept_id_in_observation, test_clin_037_operator_concept_id_in_measurement_passes.*
+- [x] **CLIN_038**: visit_occurrence_domain_constraint
+  - *Covered by: `concept_standardization/concept_domain_validation.py` (OMOP_066). visit_occurrence.visit_concept_id must reference concepts from the 'Visit' domain. Tests: ConceptDomainValidationTests.test_visit_with_correct_domain_passes, test_visit_with_wrong_domain_fires.*
+- [x] **CLIN_039**: visit_occurrence_inpatient_end_date_required
+  - *Implemented as: `temporal/nullable_end_date_null_handling.py` - Generalized rule covering nullable end_date columns across multiple tables (OMOP_062, OMOP_159, CLIN_022, CLIN_039). Tests: NullableEndDateNullHandlingTests (20 tests).*
+- [x] **CLIN_040**: visit_occurrence_outpatient_same_day
+  - *Implemented as: `domain_specific/visit/visit_outpatient_same_day_validation.py` - Detects outpatient visits (visit_concept_id = 9202) filtered with multi-day DATEDIFF logic, which may indicate confusion with inpatient visit logic. Tests: VisitOutpatientSameDayValidationTests (11 tests).*
+- [x] **CLIN_041**: visit_occurrence_event_before_visit_start
+  - *Implemented as: `domain_specific/visit/visit_event_temporal_validation.py` - Detects when clinical events (conditions, drugs, measurements, procedures, etc.) are filtered to occur before visit_start_date, indicating join error, data quality issue, or logic error. Tests: VisitEventTemporalValidationTests (14 tests).*
+- [x] **CLIN_042**: visit_occurrence_no_clinical_values
+  - *Implemented as: `data_quality/schema_validation.py` - COVERED by existing schema_validation (OMOP_009). visit_occurrence does not have value columns (value_as_number, value_as_string, value_as_concept_id, unit_concept_id, quantity). These belong to measurement/observation tables. Tests: SchemaValidationTests CLIN_042 tests (7 tests).*
+- [x] **CLIN_043**: visit_detail_domain_constraint
+  - *Implemented as: `concept_standardization/concept_domain_validation.py` - Added visit_detail.visit_detail_concept_id to MAIN_CLINICAL_TABLE_DOMAIN. Must reference Visit domain concepts (sub-visit types like ICU, ward, operating room). Tests: ConceptDomainValidationTests (3 tests).*
+- [x] **CLIN_044**: visit_detail_must_reference_visit_occurrence
+  - *Implemented as: `domain_specific/visit/visit_detail_visit_occurrence_reference.py` - Detects queries using visit_detail without referencing visit_occurrence, which loses critical visit-level context (visit type, dates, admission/discharge info). Tests: VisitDetailVisitOccurrenceReferenceTests (8 tests).*
+- [x] **CLIN_045**: visit_detail_end_before_start
+  - *Implemented as: `temporal/end_before_start_validation.py` - Generalized rule covering multiple tables. For visit_detail, detects impossible date constraints where visit_detail_end_date < visit_detail_start_date (ERROR). Part of generalized implementation covering CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551.*
+- [x] **CLIN_046**: visit_detail_no_preceding_visit_occurrence_id
+  - *COVERED by: `vocabulary/schema_validation.py` - visit_detail does NOT have preceding_visit_occurrence_id column (that belongs to visit_occurrence). visit_detail has preceding_visit_detail_id for chaining sub-visits. Schema validation detects invalid column references. Tests: SchemaValidationTests (4 tests, lines 2560-2594).*
+- [x] **CLIN_047**: visit_detail_dates_within_parent_visit
+  - *Implemented as: `domain_specific/visit/visit_detail_dates_within_parent_visit.py` - Detects queries filtering visit_detail dates to fall OUTSIDE parent visit_occurrence date range (visit_detail_start_date < visit_start_date or visit_detail_end_date > visit_end_date), which contradicts the visit hierarchy. Tests: VisitDetailDatesWithinParentVisitTests (10 tests).*
+- [x] **CLIN_048**: death_no_visit_occurrence_id
+  - *COVERED by: `data_quality/schema_validation.py` - The death table does NOT have visit_occurrence_id, visit_detail_id, provider_id, or care_site_id columns. Death only links to person, not to visits or providers. Schema validation detects invalid column references. Tests: SchemaValidationTests (5 tests, lines 2599-2653).*
+- [x] **CLIN_049**: death_cause_concept_condition_domain
+  - *COVERED by: `concept_standardization/concept_domain_validation.py` - death.cause_concept_id must reference concepts from the Condition domain (causes of death are medical conditions). Using Drug, Procedure, or Measurement concepts triggers ERROR. Missing domain filter triggers WARNING. Tests: ConceptDomainValidationTests (5 tests, lines 2031-2091).*
+- [x] **CLIN_050**: death_date_not_before_birth
+  - *Implemented as: `temporal/death_date_before_birth_validation.py` - Detects impossible temporal logic where death_date occurs before birth date (death_date < birth_datetime or YEAR(death_date) < year_of_birth). Represents data quality issues or query logic errors. Tests: DeathDateBeforeBirthValidationTests (7 tests).*
+- [x] **CLIN_051**: death_date_in_future
+  - *Implemented as: `temporal/death_date_in_future_validation.py` - Detects queries filtering for future death dates (death_date > CURRENT_DATE or death_date > far-future-year). Indicates data corruption or query logic errors. Tests: DeathDateInFutureValidationTests (7 tests).*
+- [x] **CLIN_052**: death_cause_source_concept_not_standard
+  - *Implemented as: `domain_specific/death/death_cause_source_concept_validation.py` - Validates that death.cause_source_concept_id is not used for analytical filtering. Source concepts should only be used for ETL validation, mapping QA, or provenance analysis. For cohort identification and analytical queries, use death.cause_concept_id instead. Detects WHERE/HAVING clause filters (=, !=, <, >, <=, >=), IN clauses, and BETWEEN clauses on cause_source_concept_id.*
+- [x] **CLIN_053**: clinical_event_date_in_future
+  - *Implemented as: `temporal/clinical_event_date_in_future_validation.py` - Generalizes CLIN_051 (death_date_in_future) to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against CURRENT_DATE/CURRENT_TIMESTAMP or far-future year literals (> current_year + 10). Skips violations inside OR clauses. Tests: ClinicalEventDateInFutureValidationTests (21 tests).*
+- [x] **CLIN_054**: clinical_event_date_before_1900
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
+- [x] **CLIN_055**: all_clinical_tables_require_person_id_for_patient_query
+  - *Implemented as: `joins/clinical_person_id_linkage_validation.py` - Detects when multiple clinical tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, death, person) are joined without person_id linkage (direct or transitive). Missing person_id linkage causes cross-patient contamination. Uses graph-based path finding to detect transitive linkage through intermediate tables. Supports explicit ON clauses, implicit WHERE clause joins, and USING(person_id) syntax. Tests: ClinicalPersonIdLinkageValidationTests (14 tests).*
+- [x] **CLIN_056**: condition_occurrence_multiple_records_per_person
+  - *Implemented as: `domain_specific/condition/condition_occurrence_cardinality_validation.py` - Detects queries that join person to condition_occurrence on person_id without proper aggregation (GROUP BY, DISTINCT, or aggregate functions). Warns that a person can have multiple condition_occurrence records for the same condition, which can lead to incorrect row counts. Severity: WARNING. Tests: ConditionOccurrenceCardinalityValidationTests (13 tests).*
+- [x] **CLIN_057**: drug_exposure_multiple_records_per_person
+  - *Implemented as: `domain_specific/drug/drug_exposure_cardinality_validation.py` - Detects queries that use COUNT on drug_exposure without COUNT(DISTINCT person_id). Warns that a person can have multiple drug_exposure records for the same drug (refills, restarts), which may produce misleading counts. Fires on COUNT(*) and COUNT(column) unless the column is person_id with DISTINCT. Suggests using COUNT(DISTINCT person_id) or drug_era table. Severity: WARNING. Tests: DrugExposureCardinalityValidationTests (14 tests).*
 
 ---
 
@@ -942,17 +942,17 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 ## GAP (Miscellaneous) Rules (GAP_001-041)
 
 - [ ] **GAP_001**: fact_relationship_requires_domain_concept_ids
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_002**: fact_relationship_fact_id_polymorphic_join
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_003**: fact_relationship_relationship_concept_id_required
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_004**: delete_truncate_on_clinical_tables
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_005**: between_inclusive_both_ends_with_datetime
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_006**: not_in_subquery_with_nullable_column
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_007**: note_encoding_concept_id_domain
   - *Suggested group: `domain_specific/note/`*
 - [ ] **GAP_008**: note_language_concept_id_domain
@@ -1010,19 +1010,19 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 - [ ] **GAP_034**: cost_type_concept_id_domain_constraint
   - *Suggested group: `domain_specific/`*
 - [ ] **GAP_035**: cross_join_from_comma_separated_tables
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_036**: union_vs_union_all_for_clinical_events
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_037**: ambiguous_column_reference_in_multi_table_query
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_038**: visit_detail_type_concept_id_is_provenance
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_039**: visit_detail_admitted_from_discharged_to_domain
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_040**: attribute_definition_is_legacy_table
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 - [ ] **GAP_041**: fact_relationship_table_columns_in_cdm
-  - *Suggested group: `data_quality/`*
+  - *Implemented as: `data_quality/clinical_event_date_before_1900_validation.py` - Generalizes concept of impossible ancient clinical event dates to all 11 clinical event tables (condition_occurrence, drug_exposure, procedure_occurrence, measurement, observation, visit_occurrence, visit_detail, device_exposure, specimen, note, episode). Detects WHERE/HAVING clause filters comparing event dates (start_date, end_date, start_datetime, end_datetime) against dates before 1900 (fixed threshold, not dynamic). Covers <, <=, >, >= comparison operators, BETWEEN clauses, and IN clauses. Skips violations inside OR clauses. Tests: ClinicalEventDateBefore1900ValidationTests (21 tests).*
 
 ---
 

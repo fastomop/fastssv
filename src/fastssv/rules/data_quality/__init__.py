@@ -10,6 +10,7 @@ from .column_type_validation import ColumnTypeValidationRule
 from .negative_concept_id_validation import NegativeConceptIdValidationRule
 from .union_concept_id_domain_indicator import UnionConceptIdDomainIndicatorRule
 from .vocabulary_table_protection import VocabularyTableProtectionRule
+from .clinical_event_date_before_1900_validation import ClinicalEventDateBefore1900ValidationRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
@@ -18,4 +19,6 @@ __all__ = [
     "NegativeConceptIdValidationRule",
     "UnionConceptIdDomainIndicatorRule",
     "VocabularyTableProtectionRule",
+    "ClinicalEventDateBefore1900ValidationRule",
 ]
+
