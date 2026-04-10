@@ -232,7 +232,7 @@ def _joins_observation_period_on_person_id(
 class ObservationPeriodAnchoringRule(Rule):
     """Ensures queries with temporal constraints join to observation_period."""
     
-    rule_id = "semantic.observation_period_anchoring"
+    rule_id = "temporal.observation_period_anchoring"
     name = "Observation Period Anchoring"
     description = (
         "Ensures queries with temporal constraints (washout, follow-up, event windows) "

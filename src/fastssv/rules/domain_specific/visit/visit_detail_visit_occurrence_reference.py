@@ -152,7 +152,7 @@ def _find_violations(tree: exp.Expression, aliases: dict) -> List[str]:
 
 @register
 class VisitDetailVisitOccurrenceReferenceRule(Rule):
-    rule_id = "semantic.visit_detail_visit_occurrence_reference"
+    rule_id = "domain_specific.visit_detail_visit_occurrence_reference"
     name = "Visit Detail Visit Occurrence Reference"
 
     description = (

@@ -201,7 +201,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class DrugExposureQuantityMisuseRule(Rule):
     """Detects misuse of quantity as duration."""
 
-    rule_id = "semantic.drug_exposure_quantity_misuse"
+    rule_id = "domain_specific.drug_exposure_quantity_misuse"
     name = "Drug Exposure Quantity Misuse"
     description = (
         "Detects use of drug_exposure.quantity as duration in date logic."

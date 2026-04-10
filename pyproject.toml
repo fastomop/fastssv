@@ -9,6 +9,7 @@ dependencies = [
 	"langfuse>=3.12.1",
 	"matplotlib>=3.10.8",
 	"networkx>=3.6.1",
+	"pytest>=9.0.3",
 	"sqlglot>=24.6.0",
 ]
 

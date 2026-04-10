@@ -120,7 +120,7 @@ def _has_unit_concept_constraint(tree: exp.Expression) -> bool:
 class MeasurementUnitValidationRule(Rule):
     """Detects numeric measurement threshold filters missing a unit_concept_id constraint."""
 
-    rule_id = "semantic.measurement_unit_validation"
+    rule_id = "domain_specific.measurement_unit_validation"
     name = "Measurement Unit Validation"
     description = (
         "Detects queries that filter measurement.value_as_number against a numeric "

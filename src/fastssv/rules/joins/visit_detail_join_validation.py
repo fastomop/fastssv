@@ -150,7 +150,7 @@ def _find_invalid_joins(tree: exp.Expression, aliases: Dict[str, str]) -> List[s
 class VisitDetailJoinValidationRule(Rule):
     """Validates that visit_detail joins to visit_occurrence correctly."""
 
-    rule_id = "semantic.visit_detail_join_validation"
+    rule_id = "joins.visit_detail_join_validation"
     name = "Visit Detail Join Validation"
     description = (
         "Ensures visit_detail joins to visit_occurrence using visit_occurrence_id. "

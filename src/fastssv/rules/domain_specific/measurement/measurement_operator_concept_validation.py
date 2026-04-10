@@ -194,7 +194,7 @@ def _find_violations(
 class MeasurementOperatorConceptValidationRule(Rule):
     """Validate measurement.operator_concept_id uses valid operator concepts."""
 
-    rule_id = "semantic.measurement_operator_concept_validation"
+    rule_id = "domain_specific.measurement_operator_concept_validation"
     name = "Measurement Operator Concept Validation"
 
     description = (

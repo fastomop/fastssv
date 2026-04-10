@@ -220,7 +220,7 @@ def _find_violations(
 class DrugDaysSupplyValidationRule(Rule):
     """Validates that drug_exposure.days_supply contains plausible values."""
 
-    rule_id = "semantic.drug_days_supply_validation"
+    rule_id = "domain_specific.drug_days_supply_validation"
     name = "Drug Days Supply Validation"
     description = (
         "Validates that drug_exposure.days_supply is in a plausible range "

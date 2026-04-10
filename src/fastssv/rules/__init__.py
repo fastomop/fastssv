@@ -21,55 +21,183 @@ from . import (
     temporal,
 )
 
-# For backward compatibility, also provide the legacy functions
 from fastssv.core.base import RuleViolation, Severity
 from fastssv.core.registry import get_all_rules, get_rule, get_rules_by_category
 
 
-def validate_omop_semantic_rules(sql: str, dialect: str = "postgres") -> list[str]:
-    """Legacy function for backward compatibility.
+def validate_anti_patterns(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate OMOP query anti-patterns.
 
-    Runs all semantic rules and returns list of error message strings.
+    Detects common anti-patterns including:
+    - String-based concept identification
+    - Improper type concept usage
+    - Context-dependent vocabulary lookups
+
+    Returns list of error/warning messages.
     """
     from fastssv.core.helpers import parse_sql
 
-    # Check for parse errors first (for backward compatibility)
     trees, parse_error = parse_sql(sql, dialect)
     if parse_error:
         return [parse_error]
 
     violations = []
-    for rule_cls in get_rules_by_category("semantic"):
+    for rule_cls in get_rules_by_category("anti_patterns"):
         rule = rule_cls()
         violations.extend(rule.validate(sql, dialect))
 
-    # Convert to legacy string format
     results = []
     for v in violations:
         prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}OMOP Semantic Rule Violation: {v.message}")
+        results.append(f"{prefix}{v.message}")
 
     return results
 
 
-def validate_omop_vocabulary_rules(sql: str, dialect: str = "postgres") -> list[str]:
-    """Legacy function for backward compatibility.
+def validate_concept_standardization(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate concept standardization rules.
 
-    Runs all vocabulary rules and returns list of error message strings.
+    Enforces:
+    - Standard concept usage
+    - Hierarchy expansion
+    - Invalid reason checks
+    - Domain validation
+    - Source concept handling
+
+    Returns list of error/warning messages.
     """
     from fastssv.core.helpers import parse_sql
 
-    # Check for parse errors first (for backward compatibility)
     trees, parse_error = parse_sql(sql, dialect)
     if parse_error:
         return [parse_error]
 
     violations = []
-    for rule_cls in get_rules_by_category("vocabulary"):
+    for rule_cls in get_rules_by_category("concept_standardization"):
         rule = rule_cls()
         violations.extend(rule.validate(sql, dialect))
 
-    # Convert to legacy string format
+    results = []
+    for v in violations:
+        prefix = "Warning: " if v.severity == Severity.WARNING else ""
+        results.append(f"{prefix}{v.message}")
+
+    return results
+
+
+def validate_data_quality(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate data quality rules.
+
+    Checks:
+    - Schema validation
+    - Unmapped concept handling
+    - Negative concept ID validation
+    - Column type validation
+    - Data quality issues
+
+    Returns list of error/warning messages.
+    """
+    from fastssv.core.helpers import parse_sql
+
+    trees, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    violations = []
+    for rule_cls in get_rules_by_category("data_quality"):
+        rule = rule_cls()
+        violations.extend(rule.validate(sql, dialect))
+
+    results = []
+    for v in violations:
+        prefix = "Warning: " if v.severity == Severity.WARNING else ""
+        results.append(f"{prefix}{v.message}")
+
+    return results
+
+
+def validate_domain_specific(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate domain-specific rules.
+
+    Table-specific validation for:
+    - Condition, drug, measurement, observation
+    - Person, procedure, visit, death domains
+    - Cardinality awareness
+    - Field validation
+
+    Returns list of error/warning messages.
+    """
+    from fastssv.core.helpers import parse_sql
+
+    trees, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    violations = []
+    for rule_cls in get_rules_by_category("domain_specific"):
+        rule = rule_cls()
+        violations.extend(rule.validate(sql, dialect))
+
+    results = []
+    for v in violations:
+        prefix = "Warning: " if v.severity == Severity.WARNING else ""
+        results.append(f"{prefix}{v.message}")
+
+    return results
+
+
+def validate_joins(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate join rules.
+
+    Validates:
+    - Foreign key relationships
+    - Join path correctness
+    - Concept relationship direction
+    - Cross-table linkage requirements
+
+    Returns list of error/warning messages.
+    """
+    from fastssv.core.helpers import parse_sql
+
+    trees, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    violations = []
+    for rule_cls in get_rules_by_category("joins"):
+        rule = rule_cls()
+        violations.extend(rule.validate(sql, dialect))
+
+    results = []
+    for v in violations:
+        prefix = "Warning: " if v.severity == Severity.WARNING else ""
+        results.append(f"{prefix}{v.message}")
+
+    return results
+
+
+def validate_temporal(sql: str, dialect: str = "postgres") -> list[str]:
+    """Validate temporal rules.
+
+    Validates:
+    - Date logic
+    - Observation period constraints
+    - Temporal consistency across clinical events
+    - NULL handling for date columns
+
+    Returns list of error/warning messages.
+    """
+    from fastssv.core.helpers import parse_sql
+
+    trees, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    violations = []
+    for rule_cls in get_rules_by_category("temporal"):
+        rule = rule_cls()
+        violations.extend(rule.validate(sql, dialect))
+
     results = []
     for v in violations:
         prefix = "Warning: " if v.severity == Severity.WARNING else ""
@@ -80,15 +208,19 @@ def validate_omop_vocabulary_rules(sql: str, dialect: str = "postgres") -> list[
 
 __all__ = [
     # Rule modules
+    "anti_patterns",
     "concept_standardization",
-    "temporal",
-    "joins",
     "data_quality",
     "domain_specific",
-    "anti_patterns",
-    # Legacy functions
-    "validate_omop_semantic_rules",
-    "validate_omop_vocabulary_rules",
+    "joins",
+    "temporal",
+    # Validation functions
+    "validate_anti_patterns",
+    "validate_concept_standardization",
+    "validate_data_quality",
+    "validate_domain_specific",
+    "validate_joins",
+    "validate_temporal",
     # Registry access
     "get_all_rules",
     "get_rule",

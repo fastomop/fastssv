@@ -223,7 +223,7 @@ def _detect(
 class ConceptAncestorNameResolutionValidationRule(Rule):
     """Validate concept_ancestor joins match semantic intent."""
 
-    rule_id = "semantic.concept_ancestor_name_resolution"
+    rule_id = "joins.concept_ancestor_name_resolution"
     name = "Concept Ancestor Name Resolution Validation"
 
     description = (

@@ -254,7 +254,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 @register
 class MeasurementRangeLowHighValidationRule(Rule):
-    rule_id = "semantic.measurement_range_low_high_validation"
+    rule_id = "domain_specific.measurement_range_low_high_validation"
     name = "Measurement Range Low/High Validation"
 
     description = (

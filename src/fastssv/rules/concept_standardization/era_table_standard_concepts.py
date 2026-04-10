@@ -155,7 +155,7 @@ def _check_filters(
 class EraTableStandardConceptsRule(Rule):
     """Robust validation for era table standard concept misuse."""
 
-    rule_id = "semantic.era_table_standard_concepts"
+    rule_id = "concept_standardization.era_table_standard_concepts"
     name = "Era Tables Use Standard Concepts Only"
     description = (
         "Era tables contain only standard concepts. Filtering for non-standard "

@@ -124,7 +124,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 @register
 class DeathCauseSourceConceptValidationRule(Rule):
-    rule_id = "semantic.death_cause_source_concept_validation"
+    rule_id = "domain_specific.death_cause_source_concept_validation"
     name = "Death Cause Source Concept Not For Analytical Filtering"
 
     description = (

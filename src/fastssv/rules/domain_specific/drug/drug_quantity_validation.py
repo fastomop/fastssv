@@ -215,7 +215,7 @@ def _find_violations(
 class DrugQuantityValidationRule(Rule):
     """Validate that drug_exposure.quantity is non-negative."""
 
-    rule_id = "semantic.drug_quantity_validation"
+    rule_id = "domain_specific.drug_quantity_validation"
     name = "Drug Quantity Validation"
 
     description = (

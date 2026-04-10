@@ -230,7 +230,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class CareSiteJoinValidationRule(Rule):
     """Robust validation of care_site join path."""
 
-    rule_id = "semantic.care_site_join_validation"
+    rule_id = "joins.care_site_join_validation"
     name = "Care Site Join Path Validation"
     description = (
         "Ensures clinical tables join to location via care_site."

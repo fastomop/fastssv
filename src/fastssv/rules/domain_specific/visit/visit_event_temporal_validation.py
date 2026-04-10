@@ -221,7 +221,7 @@ def _find_violations(
 class VisitEventTemporalValidationRule(Rule):
     """Validate temporal consistency between clinical events and visit start."""
 
-    rule_id = "semantic.visit_event_temporal_validation"
+    rule_id = "domain_specific.visit_event_temporal_validation"
     name = "Visit Event Temporal Validation"
 
     description = (

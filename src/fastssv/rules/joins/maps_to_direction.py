@@ -91,7 +91,7 @@ def _verify_maps_to_direction(tree: exp.Expression, aliases: Dict[str, str]) -> 
 class MapsToDirectionRule(Rule):
     """Checks 'Maps to' relationship direction."""
 
-    rule_id = "semantic.maps_to_direction"
+    rule_id = "joins.maps_to_direction"
     name = "Maps To Direction"
     description = (
         "Verifies that 'Maps to' relationship is used in the correct direction: "

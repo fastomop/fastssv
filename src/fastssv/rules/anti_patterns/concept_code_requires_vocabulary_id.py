@@ -105,7 +105,7 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         seen.add(key)
         if not _has_vocabulary_id_filter(select, alias):
             violations.append(RuleViolation(
-                rule_id="vocabulary.concept_code_requires_vocabulary_id",
+                rule_id="anti_patterns.concept_code_requires_vocabulary_id",
                 severity=Severity.ERROR,
                 message=message,
                 suggested_fix="Add a vocabulary_id filter in the same scope, e.g.: AND <alias>.vocabulary_id = '<vocab>'",
@@ -177,7 +177,7 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
 class ConceptCodeRequiresVocabularyIdRule(Rule):
     """Ensures concept_code filters are always accompanied by vocabulary_id."""
 
-    rule_id = "vocabulary.concept_code_requires_vocabulary_id"
+    rule_id = "anti_patterns.concept_code_requires_vocabulary_id"
     name = "Concept Code Requires Vocabulary ID"
     description = (
         "concept_code is unique only within a vocabulary. "

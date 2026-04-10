@@ -214,7 +214,7 @@ def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 class ConditionOccurrenceCardinalityValidationRule(Rule):
     """Warn about unintended fan-out when joining person to condition_occurrence."""
 
-    rule_id = "semantic.condition_occurrence_cardinality_validation"
+    rule_id = "domain_specific.condition_occurrence_cardinality_validation"
     name = "Condition Occurrence Cardinality Risk"
 
     description = (

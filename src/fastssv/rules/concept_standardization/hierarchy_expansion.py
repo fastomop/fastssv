@@ -199,7 +199,7 @@ def _verify_concept_ancestor_join_direction(
 class HierarchyExpansionRule(Rule):
     """Recommends using concept_ancestor for hierarchy expansion when appropriate."""
 
-    rule_id = "semantic.hierarchy_expansion_required"
+    rule_id = "concept_standardization.hierarchy_expansion_required"
     name = "Hierarchy Expansion Required"
     description = (
         "Requires using concept_ancestor table when filtering on drug_concept_id or "

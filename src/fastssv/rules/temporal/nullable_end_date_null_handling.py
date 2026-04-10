@@ -359,7 +359,7 @@ def _find_violations(
 class NullableEndDateNullHandlingRule(Rule):
     """Validate NULL handling for nullable end_date columns."""
 
-    rule_id = "semantic.nullable_end_date_null_handling"
+    rule_id = "temporal.nullable_end_date_null_handling"
     name = "Nullable End Date NULL Handling"
 
     description = (

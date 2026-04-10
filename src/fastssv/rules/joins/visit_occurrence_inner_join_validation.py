@@ -203,7 +203,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
 class VisitOccurrenceInnerJoinValidationRule(Rule):
     """Detects INNER JOINs to visit_occurrence that may drop data."""
 
-    rule_id = "semantic.visit_occurrence_inner_join_validation"
+    rule_id = "joins.visit_occurrence_inner_join_validation"
     name = "Visit Occurrence INNER JOIN Validation"
     description = (
         "Detects INNER JOINs to visit_occurrence that may exclude events "

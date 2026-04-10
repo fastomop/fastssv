@@ -330,7 +330,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
 
 @register
 class EndBeforeStartValidationRule(Rule):
-    rule_id = "semantic.end_before_start_validation"
+    rule_id = "temporal.end_before_start_validation"
     name = "End Before Start Validation"
     description = "Detects impossible constraints where start_date > end_date"
     severity = Severity.ERROR

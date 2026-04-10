@@ -70,7 +70,7 @@ def _uses_maps_to_relationship(tree: exp.Expression) -> bool:
 class StandardConceptEnforcementRule(Rule):
     """Ensures queries using STANDARD concept fields enforce standard concepts."""
 
-    rule_id = "semantic.standard_concept_enforcement"
+    rule_id = "concept_standardization.standard_concept_enforcement"
     name = "Standard Concept Enforcement"
     description = (
         "Ensures queries using STANDARD concept fields enforce standard concepts "

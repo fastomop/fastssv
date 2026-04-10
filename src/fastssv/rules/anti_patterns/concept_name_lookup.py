@@ -28,7 +28,7 @@ from fastssv.core.registry import register
 class ConceptNameLookupRule(Rule):
     """Warns against filtering by concept_name instead of concept_code/concept_id."""
 
-    rule_id = "vocabulary.concept_name_lookup"
+    rule_id = "anti_patterns.concept_name_lookup"
     name = "Concept Name Lookup Anti-pattern"
     description = (
         "Warns when queries filter by concept_name instead of using concept_code + vocabulary_id "

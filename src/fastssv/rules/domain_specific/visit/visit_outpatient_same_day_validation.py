@@ -243,7 +243,7 @@ def _find_violations(
 class VisitOutpatientSameDayValidationRule(Rule):
     """Validate outpatient visits are not filtered with multi-day date logic."""
 
-    rule_id = "semantic.visit_outpatient_same_day_validation"
+    rule_id = "domain_specific.visit_outpatient_same_day_validation"
     name = "Visit Outpatient Same-Day Validation"
 
     description = (

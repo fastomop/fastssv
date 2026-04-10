@@ -87,7 +87,7 @@ def _check_missing_filters(alias_filter_map: Dict[str, bool]) -> List[str]:
 class ConceptRelationshipRequiresRelationshipIdRule(Rule):
     """Robust validation for concept_relationship usage."""
 
-    rule_id = "semantic.concept_relationship_requires_relationship_id"
+    rule_id = "joins.concept_relationship_requires_relationship_id"
     name = "Concept Relationship Requires Relationship ID Filter"
     description = (
         "Each use of concept_relationship must filter on relationship_id "

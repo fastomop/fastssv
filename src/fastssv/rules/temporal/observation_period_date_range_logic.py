@@ -168,7 +168,7 @@ def _find_comparison_reversed(
 class ObservationPeriodDateRangeLogicRule(Rule):
     """Robust validation for observation_period date range logic."""
 
-    rule_id = "semantic.observation_period_date_range_logic"
+    rule_id = "temporal.observation_period_date_range_logic"
     name = "Observation Period Date Range Logic"
     description = (
         "Ensures clinical event dates are tested within observation_period bounds. "

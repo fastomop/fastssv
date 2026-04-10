@@ -205,12 +205,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--rules",
         nargs="*",
-        help="Specific rule IDs to run (e.g., semantic.standard_concept_enforcement).",
+        help="Specific rule IDs to run (e.g., concept_standardization.standard_concept_enforcement).",
     )
     parser.add_argument(
         "--categories",
         nargs="*",
-        choices=["semantic", "vocabulary"],
+        choices=[
+            "anti_patterns",
+            "concept_standardization",
+            "data_quality",
+            "domain_specific",
+            "joins",
+            "temporal",
+        ],
         help="Rule categories to run (default: all).",
     )
     parser.add_argument(

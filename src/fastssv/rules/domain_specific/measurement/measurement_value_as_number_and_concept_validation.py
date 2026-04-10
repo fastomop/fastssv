@@ -151,7 +151,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class MeasurementValueAsNumberAndConceptValidationRule(Rule):
     """Validate inconsistent filtering of measurement value representations."""
 
-    rule_id = "semantic.measurement_value_as_number_and_concept_validation"
+    rule_id = "domain_specific.measurement_value_as_number_and_concept_validation"
     name = "Measurement Value Representation Consistency"
 
     description = (

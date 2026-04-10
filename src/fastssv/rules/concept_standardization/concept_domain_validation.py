@@ -207,7 +207,7 @@ def _collect_domain_filters(
 
 @register
 class ConceptDomainValidationRule(Rule):
-    rule_id = "semantic.concept_domain_validation"
+    rule_id = "concept_standardization.concept_domain_validation"
     name = "Concept Domain ID Matches Target Table"
     description = (
         "Validates that concept.domain_id matches the expected domain for each "
