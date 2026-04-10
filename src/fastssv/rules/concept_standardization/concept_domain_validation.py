@@ -2,14 +2,15 @@
 
 Merged rule combining domain_segregation and concept_domain_validation.
 
-OMOP semantic rules OMOP_066 + OMOP_019:
+OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_153 + CLIN_043:
 Each concept_id column in OMOP CDM is tied to a specific domain. When a query
 joins a clinical table to the concept table, the domain_id filter on the concept
 table must match that column's expected domain.
 
 Coverage:
-  - Main clinical event tables (9 tables) - WARNING when no domain filter, ERROR when wrong
-  - Auxiliary columns (25+ columns) - ERROR only when wrong domain is specified
+  - Main clinical event tables (10 tables) - WARNING when no domain filter, ERROR when wrong
+  - Auxiliary columns (27+ columns) - ERROR only when wrong domain is specified
+  - Status/qualifier columns (CLIN_012, OMOP_101, OMOP_153) - ERROR when wrong domain
 
 Examples of correct usage:
   Main clinical tables:
@@ -20,6 +21,7 @@ Examples of correct usage:
     - observation.observation_concept_id → domain_id = 'Observation'
     - device_exposure.device_concept_id → domain_id = 'Device'
     - visit_occurrence.visit_concept_id → domain_id = 'Visit'
+    - visit_detail.visit_detail_concept_id → domain_id = 'Visit' (CLIN_043)
     - specimen.specimen_concept_id → domain_id = 'Specimen'
     - death.cause_concept_id → domain_id = 'Condition'
 
@@ -28,6 +30,9 @@ Examples of correct usage:
     - person.race_concept_id → domain_id = 'Race'
     - drug_exposure.route_concept_id → domain_id = 'Route'
     - measurement.unit_concept_id → domain_id = 'Unit'
+    - condition_occurrence.condition_status_concept_id → domain_id = 'Condition Status' (CLIN_012)
+    - observation.qualifier_concept_id → domain_id = 'Meas Value' (OMOP_101)
+    - specimen.disease_status_concept_id → domain_id = 'Spec Disease Status' (OMOP_153)
     - ... and 20+ more
 
 Violation levels:
@@ -61,6 +66,7 @@ MAIN_CLINICAL_TABLE_DOMAIN: Dict[Tuple[str, str], str] = {
     ("observation", "observation_concept_id"): "Observation",
     ("device_exposure", "device_concept_id"): "Device",
     ("visit_occurrence", "visit_concept_id"): "Visit",
+    ("visit_detail", "visit_detail_concept_id"): "Visit",
     ("specimen", "specimen_concept_id"): "Specimen",
     ("death", "cause_concept_id"): "Condition",
 }
@@ -77,6 +83,9 @@ AUXILIARY_CONCEPT_COLUMNS: Dict[str, str] = {
     "anatomic_site_concept_id": "Spec Anatomic Site",
     "disease_status_concept_id": "Spec Disease Status",
     "specialty_concept_id": "Specialty",
+    "condition_status_concept_id": "Condition Status",  # CLIN_012
+    "modifier_concept_id": "Modifier",  # CLIN_021 (procedure modifier)
+    "qualifier_concept_id": "Meas Value",  # OMOP_101 (observation qualifier)
 }
 
 
