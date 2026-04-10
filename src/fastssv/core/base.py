@@ -43,7 +43,7 @@ class Rule(ABC):
     """Base class for all validation rules.
 
     Subclasses must define class attributes:
-        rule_id: Unique identifier (e.g., "semantic.standard_concept_enforcement")
+        rule_id: Unique identifier (e.g., "concept_standardization.standard_concept_enforcement")
         name: Human-readable name (e.g., "Standard Concept Enforcement")
         description: What this rule checks
         severity: Default severity level

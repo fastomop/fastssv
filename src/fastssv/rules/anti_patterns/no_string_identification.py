@@ -105,7 +105,7 @@ def _check_string_match_violations(
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
             violations.append(RuleViolation(
-                rule_id="vocabulary.no_string_identification",
+                rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String matching on source value: {left.sql()} {not_prefix}{op_name} {right.sql()}",
                 suggested_fix="Use *_concept_id or *_source_concept_id instead of string matching",
@@ -139,7 +139,7 @@ def _check_equality_violations(
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
             violations.append(RuleViolation(
-                rule_id="vocabulary.no_string_identification",
+                rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String equality on source value: {left.sql()} = {right.sql()}",
                 suggested_fix="Use *_concept_id instead",
@@ -186,7 +186,7 @@ def _check_in_clause_violations(
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
             violations.append(RuleViolation(
-                rule_id="vocabulary.no_string_identification",
+                rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String IN clause on source value: {col_expr.sql()} {not_prefix}IN ({values_str})",
                 suggested_fix="Use *_concept_id instead",
@@ -200,7 +200,7 @@ def _check_in_clause_violations(
 class NoStringIdentificationRule(Rule):
     """Prevents string matching on *_source_value columns."""
 
-    rule_id = "vocabulary.no_string_identification"
+    rule_id = "anti_patterns.no_string_identification"
     name = "No String Identification"
     description = (
         "Prevents using string matching (LIKE, =, IN) on *_source_value columns "

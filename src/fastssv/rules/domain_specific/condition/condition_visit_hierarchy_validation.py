@@ -183,7 +183,7 @@ class ConditionVisitHierarchyValidationRule(Rule):
     visit_detail must be present.
     """
 
-    rule_id = "semantic.condition_visit_hierarchy_validation"
+    rule_id = "domain_specific.condition_visit_hierarchy_validation"
     name = "Condition Occurrence Visit Hierarchy Validation"
 
     description = (

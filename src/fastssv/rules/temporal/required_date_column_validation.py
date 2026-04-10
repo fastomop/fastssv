@@ -284,7 +284,7 @@ def _find_violations(
 class RequiredDateColumnValidationRule(Rule):
     """Validate safe temporal filtering across OMOP clinical tables."""
 
-    rule_id = "semantic.required_date_column_validation"
+    rule_id = "temporal.required_date_column_validation"
     name = "Required Date Column Validation"
     description = (
         "Temporal queries on clinical tables should use required (NOT NULL) date "

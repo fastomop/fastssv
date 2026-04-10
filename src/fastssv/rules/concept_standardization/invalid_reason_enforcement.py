@@ -145,7 +145,7 @@ def _has_concept_join_with_invalid_reason_filter(tree: exp.Expression) -> bool:
 class InvalidReasonEnforcementRule(Rule):
     """Ensures queries on vocabulary tables filter by invalid_reason."""
 
-    rule_id = "semantic.invalid_reason_enforcement"
+    rule_id = "concept_standardization.invalid_reason_enforcement"
     name = "Invalid Reason Enforcement"
     description = (
         "Ensures queries on vocabulary/concept tables filter by invalid_reason "

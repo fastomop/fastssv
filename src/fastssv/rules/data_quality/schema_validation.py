@@ -19,7 +19,7 @@ from fastssv.schemas import CDM_COLUMNS, get_table_columns
 class SchemaValidationRule(Rule):
     """Validates column references against OMOP CDM schema."""
 
-    rule_id = "vocabulary.schema_validation"
+    rule_id = "data_quality.schema_validation"
     name = "Schema Validation"
     description = (
         "Validates that columns referenced in queries exist in the OMOP CDM schema. "

@@ -208,7 +208,7 @@ def _detect(
 class ConceptRelationshipConceptJoinValidationRule(Rule):
     """Validate CR → concept joins match semantic intent."""
 
-    rule_id = "semantic.concept_relationship_concept_join_validation"
+    rule_id = "joins.concept_relationship_concept_join_validation"
     name = "Concept Relationship to Concept Join Validation"
 
     description = (

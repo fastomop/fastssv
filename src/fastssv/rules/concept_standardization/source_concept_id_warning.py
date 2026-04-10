@@ -147,7 +147,7 @@ def _is_source_exploration_query(tree: exp.Expression) -> bool:
 class SourceConceptIdWarningRule(Rule):
     """Production-grade validation for source_concept_id misuse."""
 
-    rule_id = "semantic.source_concept_id_warning"
+    rule_id = "concept_standardization.source_concept_id_warning"
     name = "Source Concept ID Not For Analytical Filtering"
     description = (
         "Avoid using *_source_concept_id for cohort definition or analytical filtering. "

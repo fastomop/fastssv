@@ -159,7 +159,7 @@ def _find_invalid_values(
 class StandardConceptValueValidationRule(Rule):
     """Robust validation for standard_concept values."""
 
-    rule_id = "semantic.standard_concept_value_validation"
+    rule_id = "concept_standardization.standard_concept_value_validation"
     name = "Standard Concept Value Validation"
     description = (
         "Ensures standard_concept uses only valid values: 'S', 'C', or NULL."

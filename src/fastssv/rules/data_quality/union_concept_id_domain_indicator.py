@@ -235,7 +235,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
 class UnionConceptIdDomainIndicatorRule(Rule):
     """Validates domain disambiguation in UNION queries with concept_id."""
 
-    rule_id = "semantic.union_concept_id_domain_indicator"
+    rule_id = "data_quality.union_concept_id_domain_indicator"
     name = "Union Concept ID Domain Indicator"
     description = (
         "UNION queries combining concept_id values from multiple domains must include "

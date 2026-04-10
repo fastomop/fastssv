@@ -214,7 +214,7 @@ def _find_violations(
 class DrugEraConceptClassValidationRule(Rule):
     """Robust validation for drug_era concept_class_id usage."""
 
-    rule_id = "semantic.drug_era_concept_class_validation"
+    rule_id = "domain_specific.drug_era_concept_class_validation"
     name = "Drug Era Concept Class Validation"
     description = (
         "Ensures drug_era is filtered only on Ingredient-level concepts."

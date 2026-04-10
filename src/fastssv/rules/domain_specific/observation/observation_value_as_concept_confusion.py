@@ -166,7 +166,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 @register
 class ObservationValueAsConceptConfusionRule(Rule):
-    rule_id = "semantic.observation_value_as_concept_confusion"
+    rule_id = "domain_specific.observation_value_as_concept_confusion"
     name = "Observation Value As Concept Confusion"
 
     description = (

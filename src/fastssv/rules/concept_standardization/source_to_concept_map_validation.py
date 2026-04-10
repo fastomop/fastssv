@@ -215,7 +215,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class SourceToConceptMapValidationRule(Rule):
     """Ensures proper filtering of source_to_concept_map."""
 
-    rule_id = "semantic.source_to_concept_map_validation"
+    rule_id = "concept_standardization.source_to_concept_map_validation"
     name = "Source to Concept Map Validation"
     description = (
         "Requires source_vocabulary_id when filtering source_code "

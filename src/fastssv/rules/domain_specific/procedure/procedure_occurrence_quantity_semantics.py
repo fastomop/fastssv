@@ -166,7 +166,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class ProcedureOccurrenceQuantitySemanticsRule(Rule):
     """Validate procedure_occurrence.quantity semantics."""
 
-    rule_id = "semantic.procedure_occurrence_quantity_semantics"
+    rule_id = "domain_specific.procedure_occurrence_quantity_semantics"
     name = "Procedure Occurrence Quantity Semantics"
 
     description = (

@@ -212,7 +212,7 @@ def _handles_zero_concept_id(
 class UnmappedConceptHandlingRule(Rule):
     """Warns when filtering by concept_id without handling unmapped records."""
 
-    rule_id = "semantic.unmapped_concept_handling"
+    rule_id = "data_quality.unmapped_concept_handling"
     name = "Unmapped Concept Handling"
     description = (
         "Warns when filtering clinical tables by specific *_concept_id values "

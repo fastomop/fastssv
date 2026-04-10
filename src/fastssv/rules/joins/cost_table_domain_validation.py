@@ -245,7 +245,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class CostTableDomainValidationRule(Rule):
     """Robust cost domain validation."""
 
-    rule_id = "semantic.cost_table_domain_validation"
+    rule_id = "joins.cost_table_domain_validation"
     name = "Cost Table Domain Validation"
     description = (
         "Ensures cost joins use correct cost_domain_id to disambiguate polymorphic keys."

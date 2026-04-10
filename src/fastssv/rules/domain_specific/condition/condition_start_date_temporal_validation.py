@@ -262,7 +262,7 @@ def _find_violations(
 class ConditionStartDateTemporalValidationRule(Rule):
     """Validate safe temporal filtering in condition_occurrence."""
 
-    rule_id = "semantic.condition_start_date_temporal_validation"
+    rule_id = "domain_specific.condition_start_date_temporal_validation"
     name = "Condition Temporal Column Validation"
     description = (
         "Temporal queries on condition_occurrence should use condition_start_date "

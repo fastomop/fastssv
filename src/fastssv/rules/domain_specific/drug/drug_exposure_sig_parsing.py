@@ -266,7 +266,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class DrugExposureSigParsingRule(Rule):
     """Detect parsing of drug_exposure.sig for structured dose extraction."""
 
-    rule_id = "semantic.drug_exposure_sig_parsing"
+    rule_id = "domain_specific.drug_exposure_sig_parsing"
     name = "Drug Exposure Sig Parsing"
 
     description = (

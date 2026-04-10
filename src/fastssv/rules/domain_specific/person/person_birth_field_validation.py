@@ -284,7 +284,7 @@ def _find_violations(
 class PersonBirthFieldValidationRule(Rule):
     """Validate person birth fields for plausible values."""
 
-    rule_id = "semantic.person_birth_field_validation"
+    rule_id = "domain_specific.person_birth_field_validation"
     name = "Person Birth Field Validation"
 
     description = (

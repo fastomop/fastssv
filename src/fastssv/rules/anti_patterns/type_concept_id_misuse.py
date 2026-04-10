@@ -104,7 +104,7 @@ def _find_type_concept_id_filters(
 class TypeConceptIdMisuseRule(Rule):
     """Detects misuse of *_type_concept_id columns for clinical filtering."""
 
-    rule_id = "semantic.type_concept_id_misuse"
+    rule_id = "anti_patterns.type_concept_id_misuse"
     name = "Type Concept ID Not For Clinical Filtering"
     description = (
         "The *_type_concept_id columns represent record provenance (EHR, claim, etc.), "

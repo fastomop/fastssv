@@ -179,7 +179,7 @@ def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 class DrugExposureCardinalityValidationRule(Rule):
     """Warn about counting drug_exposure rows instead of patients."""
 
-    rule_id = "semantic.drug_exposure_cardinality_validation"
+    rule_id = "domain_specific.drug_exposure_cardinality_validation"
     name = "Drug Exposure Cardinality Awareness"
 
     description = (

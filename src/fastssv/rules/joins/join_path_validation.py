@@ -161,7 +161,7 @@ def _verify_concept_join_path(
 class JoinPathValidationRule(Rule):
     """Validates proper JOIN paths between clinical and vocabulary tables."""
 
-    rule_id = "semantic.join_path_validation"
+    rule_id = "joins.join_path_validation"
     name = "Join Path Validation"
     description = (
         "Verifies that concept or concept_relationship tables are properly joined "

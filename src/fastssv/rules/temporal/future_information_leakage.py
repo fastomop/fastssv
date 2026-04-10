@@ -129,7 +129,7 @@ def _has_observation_period_end_bound(tree: exp.Expression) -> bool:
 class FutureInformationLeakageRule(Rule):
     """Detects cross-table date comparisons not bounded by observation_period_end_date."""
 
-    rule_id = "semantic.future_information_leakage"
+    rule_id = "temporal.future_information_leakage"
     name = "Future Information Leakage"
     description = (
         "Detects queries that compare dates across different clinical event tables "

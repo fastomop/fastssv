@@ -186,7 +186,7 @@ def _check_string_match_violations(
         if key in CONCEPT_STRING_COLUMNS:
             if not _is_inside_concept_id_lookup(left, aliases):
                 violations.append(RuleViolation(
-                    rule_id="vocabulary.concept_lookup_context",
+                    rule_id="anti_patterns.concept_lookup_context",
                     severity=Severity.ERROR,
                     message=f"String matching on concept table outside concept_id lookup: {left.sql()} {not_prefix}{op_name} {right.sql()}",
                     suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
@@ -219,7 +219,7 @@ def _check_equality_violations(
         if key in CONCEPT_STRING_COLUMNS:
             if not _is_inside_concept_id_lookup(left, aliases):
                 violations.append(RuleViolation(
-                    rule_id="vocabulary.concept_lookup_context",
+                    rule_id="anti_patterns.concept_lookup_context",
                     severity=Severity.ERROR,
                     message=f"Concept table string filter outside concept_id lookup: {left.sql()} = {right.sql()}",
                     suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
@@ -264,7 +264,7 @@ def _check_in_clause_violations(
         if key in CONCEPT_STRING_COLUMNS:
             if not _is_inside_concept_id_lookup(col_expr, aliases):
                 violations.append(RuleViolation(
-                    rule_id="vocabulary.concept_lookup_context",
+                    rule_id="anti_patterns.concept_lookup_context",
                     severity=Severity.ERROR,
                     message=f"Concept table string IN clause outside concept_id lookup: {col_expr.sql()} {not_prefix}IN ({values_str})",
                     suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
@@ -278,7 +278,7 @@ def _check_in_clause_violations(
 class ConceptLookupContextRule(Rule):
     """Ensures concept table string filters are in concept_id lookup context."""
 
-    rule_id = "vocabulary.concept_lookup_context"
+    rule_id = "anti_patterns.concept_lookup_context"
     name = "Concept Lookup Context"
     description = (
         "Ensures string filtering on concept table columns is only done inside "

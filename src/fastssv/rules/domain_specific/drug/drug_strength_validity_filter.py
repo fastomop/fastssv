@@ -222,7 +222,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class DrugStrengthValidityFilterRule(Rule):
     """Production-grade validation of drug_strength temporal validity."""
 
-    rule_id = "semantic.drug_strength_validity_filter"
+    rule_id = "domain_specific.drug_strength_validity_filter"
     name = "Drug Strength Validity Filter"
     description = (
         "drug_strength is time-versioned. Queries must filter for currently valid records."

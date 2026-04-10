@@ -215,7 +215,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 @register
 class VisitDetailDatesWithinParentVisitRule(Rule):
-    rule_id = "semantic.visit_detail_dates_within_parent_visit"
+    rule_id = "domain_specific.visit_detail_dates_within_parent_visit"
     name = "Visit Detail Dates Within Parent Visit"
 
     description = (

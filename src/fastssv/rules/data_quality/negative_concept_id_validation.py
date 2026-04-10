@@ -241,7 +241,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class NegativeConceptIdValidationRule(Rule):
     """Validates concept_id values are non-negative."""
 
-    rule_id = "semantic.negative_concept_id_validation"
+    rule_id = "data_quality.negative_concept_id_validation"
     name = "Negative Concept ID Validation"
     description = "Concept IDs must be non-negative integers (>= 0)."
     severity = Severity.ERROR

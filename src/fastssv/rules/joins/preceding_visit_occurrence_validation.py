@@ -167,7 +167,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 class PrecedingVisitOccurrenceValidationRule(Rule):
     """Validates correct usage of preceding_visit_occurrence_id."""
 
-    rule_id = "semantic.preceding_visit_occurrence_validation"
+    rule_id = "joins.preceding_visit_occurrence_validation"
     name = "Preceding Visit Occurrence Validation"
     description = (
         "preceding_visit_occurrence_id must reference visit_occurrence.visit_occurrence_id "

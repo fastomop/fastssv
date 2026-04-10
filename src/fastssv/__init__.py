@@ -13,7 +13,15 @@ from .schemas import CDM_SCHEMA, SOURCE_CONCEPT_FIELDS, SOURCE_VOCABS, STANDARD_
 from . import rules
 
 
-ValidatorType = Literal["semantic", "vocabulary", "all"]
+ValidatorType = Literal[
+    "anti_patterns",
+    "concept_standardization",
+    "data_quality",
+    "domain_specific",
+    "joins",
+    "temporal",
+    "all",
+]
 
 
 def validate_sql(
@@ -27,7 +35,7 @@ def validate_sql(
 
     Args:
         sql: SQL query to validate
-        validators: Which validators to run - 'semantic', 'vocabulary', 'all',
+        validators: Which validators to run - category name or 'all',
                     or list of validator names
         dialect: SQL dialect for parsing (default: postgres)
         rule_ids: Optional list of specific rule IDs to run (overrides validators)
@@ -36,16 +44,21 @@ def validate_sql(
     Returns:
         Dictionary with validation results:
         {
-            'violations': [...],       # List of RuleViolation objects
-            'semantic_errors': [...],  # Semantic errors (for backward compatibility)
-            'vocabulary_errors': [...], # Vocabulary errors (for backward compatibility)
-            'all_errors': [...],       # Combined errors from all validators
+            'violations': [...],         # List of RuleViolation objects
+            'category_errors': {...},    # Errors grouped by category
+            'all_errors': [...],         # Combined errors from all validators
         }
     """
     results = {
         "violations": [],
-        "semantic_errors": [],
-        "vocabulary_errors": [],
+        "category_errors": {
+            "anti_patterns": [],
+            "concept_standardization": [],
+            "data_quality": [],
+            "domain_specific": [],
+            "joins": [],
+            "temporal": [],
+        },
         "all_errors": [],
     }
 
@@ -61,7 +74,14 @@ def validate_sql(
     else:
         # Use validators parameter
         if validators == "all":
-            run_categories = ["semantic", "vocabulary"]
+            run_categories = [
+                "anti_patterns",
+                "concept_standardization",
+                "data_quality",
+                "domain_specific",
+                "joins",
+                "temporal",
+            ]
         elif isinstance(validators, str):
             run_categories = [validators]
         else:
@@ -77,18 +97,16 @@ def validate_sql(
         violations = rule.validate(sql, dialect)
         results["violations"].extend(violations)
 
-        # Populate legacy fields
+        # Populate grouped fields
         for v in violations:
             error_str = f"{v.message}"
             if v.severity == Severity.WARNING:
                 error_str = f"Warning: {error_str}"
 
             results["all_errors"].append(error_str)
-
-            if v.rule_id.startswith("semantic."):
-                results["semantic_errors"].append(error_str)
-            elif v.rule_id.startswith("vocabulary."):
-                results["vocabulary_errors"].append(error_str)
+            category = v.rule_id.split(".", 1)[0]
+            if category in results["category_errors"]:
+                results["category_errors"][category].append(error_str)
 
     return results
 
@@ -132,9 +150,15 @@ def validate_sql_structured(
     return violations
 
 
-# Legacy function imports for backward compatibility
-from .rules import validate_omop_semantic_rules, validate_omop_vocabulary_rules
-
+# Category validation functions
+from .rules import (
+    validate_anti_patterns,
+    validate_concept_standardization,
+    validate_data_quality,
+    validate_domain_specific,
+    validate_joins,
+    validate_temporal,
+)
 
 __all__ = [
     # Main API
@@ -151,9 +175,13 @@ __all__ = [
     "get_rule",
     "get_rules_by_category",
 
-    # Legacy validators
-    "validate_omop_semantic_rules",
-    "validate_omop_vocabulary_rules",
+    # Category validators
+    "validate_anti_patterns",
+    "validate_concept_standardization",
+    "validate_data_quality",
+    "validate_domain_specific",
+    "validate_joins",
+    "validate_temporal",
 
     # Schemas
     "CDM_SCHEMA",
