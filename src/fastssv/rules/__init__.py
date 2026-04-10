@@ -25,6 +25,30 @@ from fastssv.core.base import RuleViolation, Severity
 from fastssv.core.registry import get_all_rules, get_rule, get_rules_by_category
 
 
+def _validate_category(category: str, sql: str, dialect: str) -> list[str]:
+    """Run all rules in *category* and return human-readable messages.
+
+    Parses SQL once up-front so that a parse failure is reported to the
+    caller (instead of every rule silently returning ``[]``).
+    """
+    from fastssv.core.helpers import parse_sql
+
+    _trees, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    violations = []
+    for rule_cls in get_rules_by_category(category):
+        rule = rule_cls()
+        violations.extend(rule.validate(sql, dialect))
+
+    results = []
+    for v in violations:
+        prefix = "Warning: " if v.severity == Severity.WARNING else ""
+        results.append(f"{prefix}{v.message}")
+    return results
+
+
 def validate_anti_patterns(sql: str, dialect: str = "postgres") -> list[str]:
     """Validate OMOP query anti-patterns.
 
@@ -35,23 +59,7 @@ def validate_anti_patterns(sql: str, dialect: str = "postgres") -> list[str]:
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("anti_patterns"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("anti_patterns", sql, dialect)
 
 
 def validate_concept_standardization(sql: str, dialect: str = "postgres") -> list[str]:
@@ -66,23 +74,7 @@ def validate_concept_standardization(sql: str, dialect: str = "postgres") -> lis
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("concept_standardization"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("concept_standardization", sql, dialect)
 
 
 def validate_data_quality(sql: str, dialect: str = "postgres") -> list[str]:
@@ -97,23 +89,7 @@ def validate_data_quality(sql: str, dialect: str = "postgres") -> list[str]:
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("data_quality"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("data_quality", sql, dialect)
 
 
 def validate_domain_specific(sql: str, dialect: str = "postgres") -> list[str]:
@@ -127,23 +103,7 @@ def validate_domain_specific(sql: str, dialect: str = "postgres") -> list[str]:
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("domain_specific"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("domain_specific", sql, dialect)
 
 
 def validate_joins(sql: str, dialect: str = "postgres") -> list[str]:
@@ -157,23 +117,7 @@ def validate_joins(sql: str, dialect: str = "postgres") -> list[str]:
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("joins"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("joins", sql, dialect)
 
 
 def validate_temporal(sql: str, dialect: str = "postgres") -> list[str]:
@@ -187,23 +131,7 @@ def validate_temporal(sql: str, dialect: str = "postgres") -> list[str]:
 
     Returns list of error/warning messages.
     """
-    from fastssv.core.helpers import parse_sql
-
-    trees, parse_error = parse_sql(sql, dialect)
-    if parse_error:
-        return [parse_error]
-
-    violations = []
-    for rule_cls in get_rules_by_category("temporal"):
-        rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
-
-    results = []
-    for v in violations:
-        prefix = "Warning: " if v.severity == Severity.WARNING else ""
-        results.append(f"{prefix}{v.message}")
-
-    return results
+    return _validate_category("temporal", sql, dialect)
 
 
 __all__ = [
