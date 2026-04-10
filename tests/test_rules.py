@@ -194,7 +194,7 @@ class TestCombinedSemanticValidation:
         assert errors == []
 
     def test_invalid_sql(self) -> None:
-        """Invalid SQL should return parse error."""
+        """Invalid SQL should return a parse error message."""
         sql = "SELECT FROM WHERE"
         errors = validate_concept_standardization(sql)
         assert len(errors) > 0
