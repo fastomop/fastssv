@@ -14,17 +14,17 @@ This document provides a comprehensive reference for every validation rule in Fa
 
 | Rule ID | Name | Severity | Category |
 |---------|------|----------|----------|
-| [`semantic.standard_concept_enforcement`](#1-standard-concept-enforcement) | Standard Concept Enforcement | ERROR | Semantic |
-| [`semantic.join_path_validation`](#2-join-path-validation) | Join Path Validation | WARNING | Semantic |
-| [`semantic.hierarchy_expansion_required`](#3-hierarchy-expansion-required) | Hierarchy Expansion Required | ERROR | Semantic |
-| [`semantic.observation_period_anchoring`](#4-observation-period-anchoring) | Observation Period Anchoring | ERROR | Semantic |
-| [`semantic.maps_to_direction`](#5-maps-to-direction) | Maps To Direction | WARNING | Semantic |
-| [`semantic.unmapped_concept_handling`](#6-unmapped-concept-handling) | Unmapped Concept Handling | WARNING | Semantic |
-| [`semantic.invalid_reason_enforcement`](#7-invalid-reason-enforcement) | Invalid Reason Enforcement | ERROR / WARNING | Semantic |
-| [`semantic.domain_segregation`](#8-domain-segregation) | Domain Segregation | ERROR / WARNING | Semantic |
-| [`vocabulary.no_string_identification`](#9-no-string-identification) | No String Identification | ERROR | Vocabulary |
-| [`vocabulary.concept_lookup_context`](#10-concept-lookup-context) | Concept Lookup Context | ERROR | Vocabulary |
-| [`vocabulary.concept_code_requires_vocabulary_id`](#11-concept-code-requires-vocabulary-id) | Concept Code Requires Vocabulary ID | ERROR | Vocabulary |
+| [`concept_standardization.standard_concept_enforcement`](#1-standard-concept-enforcement) | Standard Concept Enforcement | ERROR | concept_standardization |
+| [`joins.join_path_validation`](#2-join-path-validation) | Join Path Validation | WARNING | joins |
+| [`concept_standardization.hierarchy_expansion_required`](#3-hierarchy-expansion-required) | Hierarchy Expansion Required | ERROR | concept_standardization |
+| [`temporal.observation_period_anchoring`](#4-observation-period-anchoring) | Observation Period Anchoring | ERROR | temporal |
+| [`joins.maps_to_direction`](#5-maps-to-direction) | Maps To Direction | WARNING | joins |
+| [`data_quality.unmapped_concept_handling`](#6-unmapped-concept-handling) | Unmapped Concept Handling | WARNING | data_quality |
+| [`concept_standardization.invalid_reason_enforcement`](#7-invalid-reason-enforcement) | Invalid Reason Enforcement | ERROR / WARNING | concept_standardization |
+| [`concept_standardization.concept_domain_validation`](#8-concept-domain-validation) | Concept Domain Validation | ERROR / WARNING | concept_standardization |
+| [`anti_patterns.no_string_identification`](#9-no-string-identification) | No String Identification | ERROR | anti_patterns |
+| [`anti_patterns.concept_lookup_context`](#10-concept-lookup-context) | Concept Lookup Context | ERROR | anti_patterns |
+| [`anti_patterns.concept_code_requires_vocabulary_id`](#11-concept-code-requires-vocabulary-id) | Concept Code Requires Vocabulary ID | ERROR | anti_patterns |
 
 ---
 
@@ -36,15 +36,15 @@ This document provides a comprehensive reference for every validation rule in Fa
 
 ---
 
-## Semantic Rules
+## CDM Compliance Rules
 
-Semantic rules validate whether SQL queries correctly follow the OMOP CDM data model: concept usage, vocabulary relationships, temporal conventions, and schema join paths.
+These rules validate whether SQL queries correctly follow the OMOP CDM data model: concept usage, vocabulary relationships, temporal conventions, and schema join paths. Rules are organized by category: `concept_standardization`, `joins`, `temporal`, and `data_quality`.
 
 ---
 
 ### 1. Standard Concept Enforcement
 
-**Rule ID:** `semantic.standard_concept_enforcement`
+**Rule ID:** `concept_standardization.standard_concept_enforcement`
 **Severity:** ERROR
 
 #### Intent
@@ -117,13 +117,13 @@ JOIN concept c
 #### Related rules
 
 - **Maps To Direction** — validates the correct column roles when using the Maps to pattern.
-- **Domain Segregation** — validates that the standard concepts belong to the right domain.
+- **Concept Domain Validation** — validates that the standard concepts belong to the right domain.
 
 ---
 
 ### 2. Join Path Validation
 
-**Rule ID:** `semantic.join_path_validation`
+**Rule ID:** `joins.join_path_validation`
 **Severity:** WARNING
 
 #### Intent
@@ -190,7 +190,7 @@ JOIN diabetes_concepts dc ON co.condition_concept_id = dc.concept_id;
 
 ### 3. Hierarchy Expansion Required
 
-**Rule ID:** `semantic.hierarchy_expansion_required`
+**Rule ID:** `concept_standardization.hierarchy_expansion_required`
 **Severity:** ERROR
 
 #### Intent
@@ -263,13 +263,13 @@ WHERE de.drug_concept_id IN (
 
 #### Note on concept_ancestor validity
 
-If combining this rule with `semantic.invalid_reason_enforcement`, note that `concept_ancestor` itself has no `invalid_reason` column. The companion rule recommends joining back to `concept` to check `invalid_reason IS NULL` on the ancestor concepts.
+If combining this rule with `concept_standardization.invalid_reason_enforcement`, note that `concept_ancestor` itself has no `invalid_reason` column. The companion rule recommends joining back to `concept` to check `invalid_reason IS NULL` on the ancestor concepts.
 
 ---
 
 ### 4. Observation Period Anchoring
 
-**Rule ID:** `semantic.observation_period_anchoring`
+**Rule ID:** `temporal.observation_period_anchoring`
 **Severity:** ERROR
 
 #### Intent
@@ -355,7 +355,7 @@ WHERE co.condition_start_date >= '2021-01-01';
 
 ### 5. Maps To Direction
 
-**Rule ID:** `semantic.maps_to_direction`
+**Rule ID:** `joins.maps_to_direction`
 **Severity:** WARNING
 
 #### Intent
@@ -435,7 +435,7 @@ JOIN mapped_concepts mc ON co.condition_concept_id = mc.standard_concept_id;
 
 ### 6. Unmapped Concept Handling
 
-**Rule ID:** `semantic.unmapped_concept_handling`
+**Rule ID:** `data_quality.unmapped_concept_handling`
 **Severity:** WARNING
 
 #### Intent
@@ -503,7 +503,7 @@ WHERE person_id = 12345;
 
 ### 7. Invalid Reason Enforcement
 
-**Rule ID:** `semantic.invalid_reason_enforcement`
+**Rule ID:** `concept_standardization.invalid_reason_enforcement`
 **Severity:** ERROR (for direct vocabulary tables) / WARNING (for derived tables)
 
 #### Intent
@@ -597,9 +597,9 @@ JOIN concept c
 
 ---
 
-### 8. Domain Segregation
+### 8. Concept Domain Validation
 
-**Rule ID:** `semantic.domain_segregation`
+**Rule ID:** `concept_standardization.concept_domain_validation`
 **Severity:** ERROR (wrong domain) / WARNING (missing domain)
 
 #### Intent
@@ -726,15 +726,15 @@ WHERE c.standard_concept = 'S';
 
 ---
 
-## Vocabulary Rules
+## Anti-Pattern Rules
 
-Vocabulary rules validate how SQL queries interact with the OMOP vocabulary tables — ensuring concepts are identified correctly, unambiguously, and using the right column semantics.
+These rules detect common anti-patterns when working with OMOP vocabulary tables — ensuring concepts are identified correctly, unambiguously, and using the right column semantics. All rules in this section belong to the `anti_patterns` category.
 
 ---
 
 ### 9. No String Identification
 
-**Rule ID:** `vocabulary.no_string_identification`
+**Rule ID:** `anti_patterns.no_string_identification`
 **Severity:** ERROR
 
 #### Intent
@@ -800,7 +800,7 @@ WHERE condition_source_concept_id = 44828967;  -- ICD-10-CM E11 concept ID
 
 ### 10. Concept Lookup Context
 
-**Rule ID:** `vocabulary.concept_lookup_context`
+**Rule ID:** `anti_patterns.concept_lookup_context`
 **Severity:** ERROR
 
 #### Intent
@@ -892,7 +892,7 @@ WHERE EXISTS (
 
 ### 11. Concept Code Requires Vocabulary ID
 
-**Rule ID:** `vocabulary.concept_code_requires_vocabulary_id`
+**Rule ID:** `anti_patterns.concept_code_requires_vocabulary_id`
 **Severity:** ERROR
 
 #### Intent

@@ -1,10 +1,10 @@
-# Working with Semantic Rules
+# Working with Core Validation Rules
 
-This guide explains how to work with and extend semantic validation rules in FastSSV, which validate OMOP CDM schema relationships and concept usage patterns.
+This guide explains how to work with and extend FastSSV rules that validate OMOP CDM concept usage, joins, and temporal logic.
 
 ## Quick Start
 
-### Using Semantic Validation
+### Using Rule Categories
 
 ```python
 from fastssv import validate_sql_structured
@@ -15,19 +15,19 @@ for v in violations:
     print(f"{v.severity.value}: [{v.rule_id}] {v.message}")
     print(f"  Fix: {v.suggested_fix}")
 
-# Run only semantic rules
-violations = validate_sql_structured(sql_query, categories=["semantic"])
+# Run only concept standardization rules
+violations = validate_sql_structured(sql_query, categories=["concept_standardization"])
 
 # Run specific rule
 violations = validate_sql_structured(
     sql_query,
-    rule_ids=["semantic.standard_concept_enforcement"]
+    rule_ids=["concept_standardization.standard_concept_enforcement"]
 )
 
-# Legacy API (for backward compatibility)
+# Run grouped validation results
 from fastssv import validate_sql
-results = validate_sql(sql_query, categories=["semantic"])
-print(results["semantic_errors"])
+results = validate_sql(sql_query, categories=["concept_standardization"])
+print(results["category_errors"]["concept_standardization"])
 ```
 
 ### CLI Usage
@@ -36,31 +36,31 @@ print(results["semantic_errors"])
 # Run all rules (default, outputs to output/validation_report.json)
 python main.py query.sql
 
-# Run only semantic rules
-python main.py query.sql --categories semantic
+# Run only concept standardization rules
+python main.py query.sql --categories concept_standardization
 
-# Run only vocabulary rules
-python main.py query.sql --categories vocabulary
+# Run only anti-pattern rules
+python main.py query.sql --categories anti_patterns
 
-# Run both semantic and vocabulary
-python main.py query.sql --categories semantic vocabulary
+# Run multiple categories
+python main.py query.sql --categories concept_standardization anti_patterns
 
 # Run specific rules
-python main.py query.sql --rules semantic.standard_concept_enforcement semantic.hierarchy_expansion_required
+python main.py query.sql --rules concept_standardization.standard_concept_enforcement concept_standardization.hierarchy_expansion_required
 
 # Custom output path
 python main.py query.sql --output my_report.json
 ```
 
-## Understanding Semantic Rules
+## Understanding Core Rule Groups
 
-Semantic rules validate OMOP CDM analytical constraints that go beyond SQL syntax. They ensure queries follow OMOP conventions for concept usage, vocabulary relationships, and temporal constraints.
+FastSSV rules validate OMOP CDM analytical constraints that go beyond SQL syntax. They ensure queries follow OMOP conventions for concept usage, vocabulary relationships, join paths, and temporal constraints.
 
-### Current Semantic Rules
+### Current Concept Standardization Rules
 
-FastSSV includes **7 semantic validation rules**:
+FastSSV includes **8 concept standardization rules**:
 
-#### 1. Standard Concept Enforcement (`semantic.standard_concept_enforcement`)
+#### 1. Standard Concept Enforcement (`concept_standardization.standard_concept_enforcement`)
 **Severity:** ERROR
 
 Ensures queries using STANDARD concept fields enforce `concept.standard_concept = 'S'` or use `concept_relationship` with `'Maps to'`.
@@ -79,7 +79,7 @@ WHERE c.standard_concept = 'S'
   AND c.concept_name LIKE '%aspirin%';
 ```
 
-#### 2. Join Path Validation (`semantic.join_path_validation`)
+#### 2. Join Path Validation (`joins.join_path_validation`)
 **Severity:** WARNING
 
 Validates table joins against OMOP CDM v5.4 schema, ensuring proper foreign key → primary key relationships.
@@ -95,7 +95,7 @@ SELECT * FROM condition_occurrence co
 JOIN concept c ON co.condition_concept_id = c.concept_id;
 ```
 
-#### 3. Hierarchy Expansion Required (`semantic.hierarchy_expansion_required`)
+#### 3. Hierarchy Expansion Required (`concept_standardization.hierarchy_expansion_required`)
 **Severity:** ERROR
 
 Ensures `drug_concept_id` and `condition_concept_id` filters use `concept_ancestor` to capture all descendant concepts.
@@ -112,7 +112,7 @@ JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
 WHERE ca.ancestor_concept_id = 1234;  -- Matches all descendants
 ```
 
-#### 4. Observation Period Anchoring (`semantic.observation_period_anchoring`)
+#### 4. Observation Period Anchoring (`temporal.observation_period_anchoring`)
 **Severity:** ERROR
 
 Validates that temporal constraints join to `observation_period` on `person_id` to ensure events fall within valid observation windows.
@@ -131,7 +131,7 @@ WHERE co.condition_start_date > '2020-01-01'
                                   AND op.observation_period_end_date;
 ```
 
-#### 5. Maps-to Direction (`semantic.maps_to_direction`)
+#### 5. Maps-to Direction (`joins.maps_to_direction`)
 **Severity:** ERROR
 
 Validates `concept_relationship` 'Maps to' direction (source → standard, not reversed).
@@ -149,7 +149,7 @@ WHERE cr.relationship_id = 'Maps to'
   AND cr.concept_id_1 = 12345;  -- Source concept maps to standard
 ```
 
-#### 6. Unmapped Concept Handling (`semantic.unmapped_concept_handling`)
+#### 6. Unmapped Concept Handling (`data_quality.unmapped_concept_handling`)
 **Severity:** WARNING
 
 Warns when filtering by `concept_id` without explicitly handling `concept_id = 0` (unmapped records).
@@ -166,7 +166,7 @@ WHERE condition_concept_id = 12345
    OR condition_concept_id = 0;  -- Or explicitly exclude with > 0
 ```
 
-#### 7. Invalid Reason Enforcement (`semantic.invalid_reason_enforcement`)
+#### 7. Invalid Reason Enforcement (`concept_standardization.invalid_reason_enforcement`)
 **Severity:** WARNING
 
 Ensures vocabulary tables filter by `invalid_reason IS NULL` to exclude deprecated or invalid concepts.
@@ -224,12 +224,12 @@ SOURCE_CONCEPT_FIELDS = {
 
 The plugin architecture makes adding new rules straightforward.
 
-### Example: Add Domain Validation Rule
+### Example: Concept Domain Validation Is Already Implemented
 
-Create a rule to ensure concepts match table domains (e.g., Drug domain concepts only in drug_exposure):
+Concept-domain checking already exists as `concept_standardization.concept_domain_validation`, implemented in `src/fastssv/rules/concept_standardization/concept_domain_validation.py`. Do not add a second domain-validation rule.
 
 ```python
-# src/fastssv/rules/semantic/domain_validation.py
+# src/fastssv/rules/concept_standardization/concept_domain_validation.py
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.registry import register
@@ -244,11 +244,7 @@ EXPECTED_DOMAINS = {
     ("device_exposure", "device_concept_id"): "Device",
 }
 
-@register(
-    rule_id="semantic.domain_validation",
-    category="semantic",
-    description="Validates concept domains match table expectations"
-)
+@register
 class DomainValidationRule(Rule):
     """Ensures concepts belong to the correct domain for their table.
 
@@ -257,8 +253,8 @@ class DomainValidationRule(Rule):
     concepts with domain_id = 'Drug'.
     """
 
-    rule_id = "semantic.domain_validation"
-    name = "Domain Validation"
+    rule_id = "concept_standardization.concept_domain_validation"
+    name = "Concept Domain Validation"
     description = "Validates concept domains match table expectations"
     severity = Severity.ERROR
     suggested_fix = "Filter by concept.domain_id or use proper vocabulary mapping"
@@ -315,19 +311,12 @@ class DomainValidationRule(Rule):
         return False
 ```
 
-### Register the New Rule
+### Registration Pattern
 
-Import in `src/fastssv/rules/semantic/__init__.py`:
+Import from the package `__init__.py` for the implementation area:
 
 ```python
-from . import join_path
-from . import standard_concept
-from . import hierarchy_expansion
-from . import temporal_constraint_mapping
-from . import maps_to_direction
-from . import unmapped_concept
-from . import invalid_reason
-from . import domain_validation  # Add this line
+from .concept_domain_validation import ConceptDomainValidationRule
 ```
 
 ### Add Tests
@@ -335,36 +324,37 @@ from . import domain_validation  # Add this line
 ```python
 # tests/test_domain_validation.py
 
-import unittest
-from fastssv.rules.semantic.domain_validation import DomainValidationRule
+import pytest
+from fastssv.rules.concept_standardization.concept_domain_validation import ConceptDomainValidationRule
 
-class TestDomainValidation(unittest.TestCase):
-    def setUp(self):
-        self.rule = DomainValidationRule()
+class TestDomainValidation:
+    @pytest.fixture
+    def rule(self):
+        return ConceptDomainValidationRule()
 
-    def test_valid_domain_filter(self):
+    def test_valid_domain_filter(self, rule):
         sql = """
         SELECT * FROM drug_exposure de
         JOIN concept c ON de.drug_concept_id = c.concept_id
         WHERE c.domain_id = 'Drug'
         """
-        violations = self.rule.validate(sql)
-        self.assertEqual(len(violations), 0)
+        violations = rule.validate(sql)
+        assert len(violations) == 0
 
-    def test_missing_domain_filter(self):
+    def test_missing_domain_filter(self, rule):
         sql = """
         SELECT * FROM drug_exposure de
         JOIN concept c ON de.drug_concept_id = c.concept_id
         WHERE c.concept_name LIKE '%aspirin%'
         """
-        violations = self.rule.validate(sql)
-        self.assertGreater(len(violations), 0)
-        self.assertEqual(violations[0].rule_id, "semantic.domain_validation")
+        violations = rule.validate(sql)
+        assert len(violations) > 0
+        assert violations[0].rule_id == "concept_standardization.concept_domain_validation"
 ```
 
 ## Current Implementation Status
 
-### Implemented Rules (7)
+### Implemented Rules
 
 ✅ **Standard Concept Enforcement** - Validates standard_concept = 'S' usage
 ✅ **Join Path Validation** - Validates OMOP CDM schema joins
@@ -378,7 +368,7 @@ class TestDomainValidation(unittest.TestCase):
 
 The following validation opportunities remain:
 
-🔲 **Domain Validation** - Ensure concepts match table domains (example above)
+✅ **Concept Domain Validation** - Ensures concepts match table domains
 🔲 **Vocabulary-Specific Rules** - Deep validation for specific vocabularies (ICD10CM format, CPT4 ranges)
 🔲 **Unit Validation** - Check measurement.unit_concept_id matches measurement_concept_id
 🔲 **Visit Context Validation** - Ensure visit_occurrence_id foreign keys are used correctly
@@ -392,18 +382,15 @@ The following validation opportunities remain:
 - `src/fastssv/schemas/cdm_schema.py` - OMOP CDM v5.4 table relationships
 
 ### Rule Implementations
-- `src/fastssv/rules/semantic/`
-  - `join_path.py` - Join path validation
-  - `standard_concept.py` - Standard concept enforcement
-  - `hierarchy_expansion.py` - Concept hierarchy expansion
-  - `temporal_constraint_mapping.py` - Observation period anchoring
-  - `maps_to_direction.py` - Maps-to relationship validation
-  - `unmapped_concept.py` - Unmapped concept detection
-  - `invalid_reason.py` - Invalid reason enforcement
+- `src/fastssv/rules/concept_standardization/` - standard concept, invalid reason, hierarchy, concept-domain rules
+- `src/fastssv/rules/joins/` - join path, maps-to direction, concept relationship join rules
+- `src/fastssv/rules/temporal/` - observation-period and temporal logic rules
+- `src/fastssv/rules/data_quality/` - schema and structural validation rules
+- `src/fastssv/rules/domain_specific/` - condition, drug, visit, measurement, and other table-family rules
 
 ### Tests
-- `tests/test_semantic_validation.py` - Main semantic validation tests
-- Individual rule test files as needed
+- `tests/test_rules.py` - Main validation tests for all rules
+- `tests/test_integration.py` - Integration tests for the validation API
 
 ### Main API
 - `src/fastssv/__init__.py` - Public API exports
@@ -412,22 +399,18 @@ The following validation opportunities remain:
 
 ### Step 1: Define the Rule
 
-Create a new file in `src/fastssv/rules/semantic/`:
+Create a new file in the appropriate implementation package:
 
 ```python
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.registry import register
 from fastssv.core.helpers import parse_sql
 
-@register(
-    rule_id="semantic.my_new_rule",
-    category="semantic",
-    description="Brief description of what this validates"
-)
+@register
 class MyNewRule(Rule):
     """Detailed documentation of the OMOP CDM constraint being validated."""
 
-    rule_id = "semantic.my_new_rule"
+    rule_id = "concept_standardization.my_new_rule"
     name = "My New Rule"
     description = "Detailed description"
     severity = Severity.ERROR  # or Severity.WARNING
@@ -447,10 +430,10 @@ class MyNewRule(Rule):
 
 ### Step 2: Register the Rule
 
-Import in `src/fastssv/rules/semantic/__init__.py`:
+Import it from the relevant package `__init__.py`:
 
 ```python
-from . import my_new_rule
+from .my_new_rule import MyNewRule
 ```
 
 ### Step 3: Add Tests
@@ -458,32 +441,36 @@ from . import my_new_rule
 Create `tests/test_my_new_rule.py`:
 
 ```python
-import unittest
-from fastssv.rules.semantic.my_new_rule import MyNewRule
+import pytest
+from fastssv.rules.concept_standardization.my_new_rule import MyNewRule
 
-class TestMyNewRule(unittest.TestCase):
-    def setUp(self):
-        self.rule = MyNewRule()
+class TestMyNewRule:
+    @pytest.fixture
+    def rule(self):
+        return MyNewRule()
 
-    def test_valid_case(self):
+    def test_valid_case(self, rule):
         sql = "SELECT * FROM person"
-        violations = self.rule.validate(sql)
-        self.assertEqual(len(violations), 0)
+        violations = rule.validate(sql)
+        assert len(violations) == 0
 
-    def test_invalid_case(self):
+    def test_invalid_case(self, rule):
         sql = "SELECT * FROM invalid_pattern"
-        violations = self.rule.validate(sql)
-        self.assertGreater(len(violations), 0)
+        violations = rule.validate(sql)
+        assert len(violations) > 0
 ```
 
 ### Step 4: Run Tests
 
 ```bash
-# All semantic tests
-python -m unittest tests.test_semantic_validation -v
+# Run all tests
+pytest tests/ -v
 
-# Specific test
-python -m unittest tests.test_my_new_rule -v
+# Run specific test class
+pytest tests/test_rules.py::TestMyNewRule -v
+
+# Run specific test
+pytest tests/test_rules.py::TestMyNewRule::test_my_specific_case -v
 ```
 
 ## Modifying Field Classifications
@@ -575,7 +562,7 @@ def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
 ### Enable Verbose Output
 
 ```python
-violations = validate_sql_structured(sql, categories=["semantic"])
+violations = validate_sql_structured(sql, categories=["concept_standardization"])
 for v in violations:
     print(f"\nRule: {v.rule_id}")
     print(f"Severity: {v.severity.value}")
@@ -590,7 +577,7 @@ for v in violations:
 ### Test Single Rule
 
 ```python
-from fastssv.rules.semantic.standard_concept import StandardConceptEnforcementRule
+from fastssv.rules.concept_standardization.standard_concept_enforcement import StandardConceptEnforcementRule
 
 rule = StandardConceptEnforcementRule()
 violations = rule.validate(sql, dialect="postgres")
