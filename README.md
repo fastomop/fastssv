@@ -35,7 +35,7 @@ Existing OHDSI tools validate data quality, characterise cohorts, and measure ph
 
 **1. Install**
 ```bash
-pip install fastssv
+uv pip install fastssv
 ```
 
 **2. Validate a SQL file**
@@ -53,7 +53,7 @@ from fastssv import validate_anti_patterns, validate_sql_structured
 cat output/validation_report.json
 ```
 
-For local development in this repository, run `pip install -e ".[dev]"` and then `pytest`.
+For local development in this repository, run `uv pip install -e ".[dev]"` and then `pytest`.
 
 ---
 
