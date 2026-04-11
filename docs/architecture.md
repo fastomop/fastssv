@@ -49,10 +49,10 @@ FastSSV uses a **plugin-based architecture** where validation rules are automati
    - Returns list of `RuleViolation` objects
 
 4. **Main API** (`__init__.py`)
-   - Unified interface: `validate_sql()` (legacy) and `validate_sql_structured()` (recommended)
+   - Unified interface: `validate_sql()` and `validate_sql_structured()`
    - Coordinates multiple rules via registry
    - Supports filtering by rule ID or category
-   - Maintains backward compatibility
+   - Exposes grouped results and structured violations
 
 ## Rule Interface
 
@@ -144,110 +144,63 @@ To add a new validation rule:
            return violations
    ```
 
-3. Import in the category's `__init__.py`:
+3. Import in the package's `__init__.py`:
    ```python
-   # In src/fastssv/rules/category/__init__.py
+   # In src/fastssv/rules/<package>/__init__.py
    from . import my_rule  # This triggers registration
    ```
 
-4. Import the rule from that package's `__init__.py`
-5. Add tests in `tests/test_my_rule.py`
+4. Add tests in `tests/test_my_rule.py`
 
 **That's it!** The rule is automatically discovered and available via:
 - `validate_sql_structured(sql, categories=["category"])`
 - `validate_sql_structured(sql, rule_ids=["category.my_rule"])`
-- CLI: `python main.py query.sql --rules category.my_rule`
+- CLI: `fastssv query.sql --rules category.my_rule`
 
 ## Current Rules
 
-### Core Validation Rules
+### Category Summary
+
+- `anti_patterns`: 10 rules
+- `concept_standardization`: 19 rules
+- `data_quality`: 12 rules
+- `domain_specific`: 21 rules
+- `joins`: 35 rules
+- `temporal`: 9 rules
+
+### Representative Rules
 
 1. **join_path** (`joins.join_path_validation`)
    - **Severity:** WARNING
-   - Validates table joins against OMOP CDM v5.4 schema
-   - Checks join predicates using sqlglot AST
-   - Verifies foreign key → primary key relationships between clinical and vocabulary tables
-   - Handles direct joins, CTE-mediated joins, and concept_ancestor relationships
+   - Validates table joins against the OMOP CDM v5.4 schema graph
 
 2. **standard_concept** (`concept_standardization.standard_concept_enforcement`)
-   - **Severity:** WARNING
+   - **Severity:** ERROR
    - Ensures STANDARD concept fields enforce `concept.standard_concept = 'S'`
-   - Validates use of 'Maps to' relationships via concept_relationship
-   - Detects missing standard concept enforcement in WHERE/JOIN clauses
-   - Prevents queries from using non-standard concepts in analytical fields
 
 3. **hierarchy_expansion** (`concept_standardization.hierarchy_expansion_required`)
    - **Severity:** ERROR
-   - Ensures drug_concept_id and condition_concept_id filters use concept_ancestor
-   - Validates that concept hierarchy is properly expanded to capture descendants
-   - Prevents missing specific formulations (e.g., Metformin → Metformin 500mg, Metformin XR)
-   - Checks for correct join direction (ancestor → descendant)
+   - Ensures drug and condition filters use `concept_ancestor`
 
 4. **observation_period_anchoring** (`temporal.observation_period_anchoring`)
    - **Severity:** ERROR
-   - Validates temporal constraints join to observation_period on person_id
-   - Ensures date filters are anchored within valid observation windows
-   - Covers 12+ clinical tables with temporal data
-   - Detects date column filters and date functions requiring anchoring
+   - Anchors temporal logic to `observation_period`
 
 5. **maps_to_direction** (`joins.maps_to_direction`)
-   - **Severity:** ERROR
-   - Validates concept_relationship 'Maps to' direction
-   - Ensures proper source → standard mapping (not standard → source)
-   - Prevents incorrect reverse mapping usage
+   - **Severity:** WARNING
+   - Validates `'Maps to'` directionality in `concept_relationship`
 
 6. **unmapped_concept** (`data_quality.unmapped_concept_handling`)
-   - **Severity:** ERROR / WARNING
-   - Warns when filtering by concept_id without handling concept_id = 0
-   - Detects missing patterns: >, >=, !=, COALESCE, CASE
-   - Helps prevent silent inclusion/exclusion of unmapped records
-
-7. **invalid_reason** (`concept_standardization.invalid_reason_enforcement`)
-   - **Severity:** ERROR
-   - Ensures vocabulary tables filter by invalid_reason IS NULL
-   - Applies to concept and concept_relationship tables
-   - Prevents using deprecated or invalid concepts
-   - Does NOT apply to clinical event tables (historical data)
-
-### Anti-Pattern Rules (Category: `anti_patterns`)
-
-1. **no_string_id** (`anti_patterns.no_string_identification`)
-   - **Severity:** ERROR
-   - Detects string-based concept lookups (concept_name = 'text')
-   - Identifies string literal matches on _source_value columns
-   - Encourages concept_id-based filtering instead
-
-2. **concept_lookup** (`anti_patterns.concept_lookup_context`)
    - **Severity:** WARNING
-   - Validates concept table string filters are used in concept_id lookup context
-   - Ensures string filters on concept table are properly joined to clinical tables
-   - Prevents orphaned concept table queries
+   - Requires explicit handling of `concept_id = 0`
 
-3. **concept_code_vocab_id** (`anti_patterns.concept_code_requires_vocabulary_id`)
+7. **no_string_id** (`anti_patterns.no_string_identification`)
    - **Severity:** ERROR
-   - **Recently added (PR #16, commit 926909d)**
-   - Ensures concept_code filters include vocabulary_id filter
-   - Rationale: concept_code is unique only within a vocabulary
-   - Detects patterns: concept_code = 'value', IN (...), LIKE/ILIKE
-   - Prevents silently matching unintended concepts from other vocabularies
+   - Prevents portable logic from depending on source text columns
 
 ## Extension Points
 
-The plugin architecture makes it easy to add new rules. Future validation opportunities include:
-
-1. **Domain validation**: Ensure concepts match table domains (e.g., Drug domain concepts only in drug_exposure)
-2. **Deep vocabulary validation**: Validate specific vocabulary-specific constraints (ICD10CM formatting, CPT4 ranges, etc.)
-3. **Temporal information leakage**: Detect future information leakage in time-to-event analyses
-4. **Cohort logic preservation**: Validate that inclusion/exclusion criteria are properly maintained through CTEs
-5. **Unit validation**: Check measurement.unit_concept_id matches measurement_concept_id expected units
-6. **Visit context validation**: Ensure visit_occurrence_id foreign keys are properly used
-
-Simply create a new rule class with the `@register` decorator. No changes to the core architecture needed.
-
-**Already implemented (do not re-implement):**
-- ✅ Concept hierarchy validation (hierarchy_expansion_required)
-- ✅ Temporal constraint validation (observation_period_anchoring)
-- ✅ Concept code uniqueness validation (concept_code_requires_vocabulary_id)
+The plugin architecture makes it easy to add new rules. New rules should extend one of the existing categories unless there is a strong reason to introduce a new package and category prefix.
 
 ## Registry System
 

@@ -34,22 +34,22 @@ print(results["category_errors"]["concept_standardization"])
 
 ```bash
 # Run all rules (default, outputs to output/validation_report.json)
-python main.py query.sql
+fastssv query.sql
 
 # Run only concept standardization rules
-python main.py query.sql --categories concept_standardization
+fastssv query.sql --categories concept_standardization
 
 # Run only anti-pattern rules
-python main.py query.sql --categories anti_patterns
+fastssv query.sql --categories anti_patterns
 
 # Run multiple categories
-python main.py query.sql --categories concept_standardization anti_patterns
+fastssv query.sql --categories concept_standardization anti_patterns
 
 # Run specific rules
-python main.py query.sql --rules concept_standardization.standard_concept_enforcement concept_standardization.hierarchy_expansion_required
+fastssv query.sql --rules concept_standardization.standard_concept_enforcement concept_standardization.hierarchy_expansion_required
 
 # Custom output path
-python main.py query.sql --output my_report.json
+fastssv query.sql --output my_report.json
 ```
 
 ## Understanding Core Rule Groups
@@ -58,7 +58,7 @@ FastSSV rules validate OMOP CDM analytical constraints that go beyond SQL syntax
 
 ### Current Concept Standardization Rules
 
-FastSSV includes **8 concept standardization rules**:
+FastSSV currently includes **19 concept standardization rules**. The examples below highlight a representative subset of the most important patterns, not every rule in the category.
 
 #### 1. Standard Concept Enforcement (`concept_standardization.standard_concept_enforcement`)
 **Severity:** ERROR

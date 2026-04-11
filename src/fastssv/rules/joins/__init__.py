@@ -26,6 +26,7 @@ from .concept_concept_class_join_validation import ConceptConceptClassJoinValida
 from .concept_relationship_relationship_join_validation import ConceptRelationshipRelationshipJoinValidationRule
 from .concept_ancestor_name_resolution_validation import ConceptAncestorNameResolutionValidationRule
 from .concept_relationship_concept_join_validation import ConceptRelationshipConceptJoinValidationRule
+from .concept_relationship_no_join_to_concept_on_both_sides import ConceptRelationshipIncompleteJoinRule
 from .drug_exposure_drug_strength_join_validation import DrugExposureDrugStrengthJoinValidationRule
 from .note_nlp_note_join_validation import NoteNlpNoteJoinValidationRule
 from .death_visit_occurrence_join_validation import DeathVisitOccurrenceJoinValidationRule
@@ -62,6 +63,7 @@ __all__ = [
     "ConceptRelationshipRelationshipJoinValidationRule",
     "ConceptAncestorNameResolutionValidationRule",
     "ConceptRelationshipConceptJoinValidationRule",
+    "ConceptRelationshipIncompleteJoinRule",
     "DrugExposureDrugStrengthJoinValidationRule",
     "NoteNlpNoteJoinValidationRule",
     "DeathVisitOccurrenceJoinValidationRule",

@@ -19,6 +19,10 @@ from .semantic_schema import (
     SOURCE_VOCABS,
     STANDARD_CONCEPT_FIELDS,
 )
+from .concept_class_id_canonical import (
+    CANONICAL_CONCEPT_CLASSES,
+    get_canonical_concept_class,
+)
 
 __all__ = [
     "CDM_SCHEMA",
@@ -37,4 +41,6 @@ __all__ = [
     "SOURCE_CONCEPT_FIELDS",
     "SOURCE_VOCABS",
     "STANDARD_CONCEPT_FIELDS",
+    "CANONICAL_CONCEPT_CLASSES",
+    "get_canonical_concept_class",
 ]

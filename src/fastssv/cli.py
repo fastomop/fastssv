@@ -22,53 +22,28 @@ def _read_sql(sql_file: str | None) -> str:
 
 
 def _clean_llm_output(sql: str) -> str:
-    """Clean SQL from LLM output by removing markdown and explanatory text.
-
-    Handles:
-    - Markdown code fences (```sql, ```postgresql, ```)
-    - Explanatory text before and after SQL
-    - Extra whitespace
-
-    Args:
-        sql: Raw SQL text potentially containing markdown and explanations
-
-    Returns:
-        Cleaned SQL query text
-    """
-    # Try to extract SQL from markdown code fences first
-    # Pattern: ```sql ... ``` or ```postgresql ... ``` or ``` ... ```
+    """Clean SQL from LLM output by removing markdown and explanatory text."""
     fence_pattern = r'```(?:sql|postgresql)?\s*\n(.*?)\n```'
     fence_match = re.search(fence_pattern, sql, re.DOTALL)
 
     if fence_match:
-        # Extract content between code fences
         sql = fence_match.group(1)
     else:
-        # No code fences, remove any stray backticks
         sql = re.sub(r'```(?:sql|postgresql)?\s*', '', sql)
         sql = re.sub(r'```', '', sql)
 
-    # Find the last semicolon position
     last_semicolon = sql.rfind(';')
-
     if last_semicolon != -1:
-        # Keep everything up to and including the last semicolon
         sql = sql[:last_semicolon + 1]
 
-    # Remove any trailing backticks or markdown artifacts
     sql = re.sub(r'`+\s*$', '', sql)
-
     return sql.strip()
 
 
 def _split_queries(sql: str) -> List[str]:
-    """Split SQL content into individual queries by semicolon.
+    """Split SQL content into individual queries by semicolon."""
 
-    Handles semicolons inside strings and comments.
-    """
     def has_sql_content(text: str) -> bool:
-        """Check if text has actual SQL content (not just comments/whitespace)."""
-        # Strip comments
         no_block_comments = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
         no_comments = re.sub(r"--[^\n]*", "", no_block_comments)
         return bool(no_comments.strip())
@@ -85,7 +60,6 @@ def _split_queries(sql: str) -> List[str]:
         char = sql[i]
         next_char = sql[i + 1] if i + 1 < len(sql) else ''
 
-        # Handle line comments
         if not in_single_quote and not in_double_quote and not in_block_comment:
             if char == '-' and next_char == '-':
                 in_line_comment = True
@@ -100,7 +74,6 @@ def _split_queries(sql: str) -> List[str]:
             i += 1
             continue
 
-        # Handle block comments
         if not in_single_quote and not in_double_quote and not in_line_comment:
             if char == '/' and next_char == '*':
                 in_block_comment = True
@@ -118,17 +91,14 @@ def _split_queries(sql: str) -> List[str]:
             i += 1
             continue
 
-        # Handle string literals
         if char == "'" and not in_double_quote:
             in_single_quote = not in_single_quote
         elif char == '"' and not in_single_quote:
             in_double_quote = not in_double_quote
 
-        # Handle semicolon (query separator)
         if char == ';' and not in_single_quote and not in_double_quote:
             current.append(char)
             query = ''.join(current).strip()
-            # Only add if it has actual SQL content (not just comments)
             if query and query != ';' and has_sql_content(query):
                 queries.append(query)
             current = []
@@ -138,9 +108,7 @@ def _split_queries(sql: str) -> List[str]:
         current.append(char)
         i += 1
 
-    # Handle last query (might not end with semicolon)
     remaining = ''.join(current).strip()
-    # Only add if it has actual SQL content (not just comments)
     if remaining and has_sql_content(remaining):
         queries.append(remaining)
 
@@ -159,13 +127,11 @@ def build_validation_result(
 
     is_valid = len(errors) == 0
 
-    # Strip comments, then collapse whitespace and newlines
     no_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
     no_comments = re.sub(r"--[^\n]*", "", no_comments)
     clean_query = " ".join(no_comments.strip().split())
 
     result: Dict[str, Any] = {}
-
     if query_index is not None:
         result["query_index"] = query_index
 
@@ -190,7 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "sql_file",
         nargs="?",
-        help="Path to SQL file. If not provided, reads from stdin."
+        help="Path to SQL file. If not provided, reads from stdin.",
     )
     parser.add_argument(
         "--dialect",
@@ -228,15 +194,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    sql = _read_sql(args.sql_file)
-
-    # Clean LLM output (remove markdown, explanations)
-    sql = _clean_llm_output(sql)
-
-    # Split into individual queries
+    sql = _clean_llm_output(_read_sql(args.sql_file))
     queries = _split_queries(sql)
 
-    # If only one query or --combined flag, use original behavior
     if len(queries) <= 1 or args.combined:
         violations = validate_sql_structured(
             sql,
@@ -246,21 +206,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         validation_result = build_validation_result(sql, violations, args.dialect)
 
-        # Write JSON report to file
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(validation_result, indent=2), encoding="utf-8")
 
-        # Print summary to CLI
         status = "VALID" if validation_result["is_valid"] else "INVALID"
         print(f"Validation {status}")
         print(f"  Errors: {validation_result['error_count']}")
         print(f"  Warnings: {validation_result['warning_count']}")
         print(f"  Report saved to: {output_path.absolute()}")
-
         return 0 if validation_result["is_valid"] else 1
 
-    # Multiple queries: validate each separately
     all_results = []
     any_invalid = False
 
@@ -278,7 +234,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not validation_result["is_valid"]:
             any_invalid = True
 
-    # Output summary
     output = {
         "total_queries": len(queries),
         "valid_queries": sum(1 for r in all_results if r["is_valid"]),
@@ -286,12 +241,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "results": all_results,
     }
 
-    # Write JSON report to file
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
 
-    # Print summary to CLI
     status = "VALID" if not any_invalid else "INVALID"
     print(f"Validation {status}")
     print(f"  Total queries: {output['total_queries']}")
@@ -300,7 +253,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  Report saved to: {output_path.absolute()}")
 
     return 1 if any_invalid else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

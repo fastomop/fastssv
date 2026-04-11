@@ -17,17 +17,19 @@ All validation rules inherit from the abstract `Rule` class:
 
 ```python
 from abc import ABC, abstractmethod
+from typing import List
 
 class Rule(ABC):
     """Abstract base class for validation rules."""
 
-    def __init__(self):
-        self.rule_id = ""
-        self.category = ""
-        self.description = ""
+    rule_id: str
+    name: str
+    description: str
+    severity: Severity
+    suggested_fix: str
 
     @abstractmethod
-    def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
+    def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL query and return violations."""
         pass
 ```
@@ -225,19 +227,19 @@ class TestMyNewRule:
 
 ```bash
 # Run all rules (default)
-python main.py query.sql
+fastssv query.sql
 
 # Run specific category
-python main.py query.sql --categories joins
+fastssv query.sql --categories joins
 
 # Run multiple categories
-python main.py query.sql --categories joins temporal
+fastssv query.sql --categories joins temporal
 
 # Run specific rule
-python main.py query.sql --rules joins.my_new_rule
+fastssv query.sql --rules joins.my_new_rule
 
 # Run multiple specific rules
-python main.py query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
+fastssv query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
 ```
 
 ### Python API
@@ -266,7 +268,16 @@ for v in violations:
 
 ### Core Categories
 
-Examples from the current public categories:
+Current registered category counts:
+
+- `anti_patterns`: 10
+- `concept_standardization`: 19
+- `data_quality`: 12
+- `domain_specific`: 21
+- `joins`: 35
+- `temporal`: 9
+
+Representative examples from the current public categories:
 
 - `joins.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
 - `concept_standardization.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
@@ -388,9 +399,9 @@ if where:
 5. **Testability**: Rules can be tested in isolation
 6. **Maintainability**: Changes to one rule don't affect others
 
-## Migration from Legacy System
+## Migration from Older Patterns
 
-The old validator function pattern:
+An older validator function style looked like this:
 
 ```python
 # OLD (deprecated)
@@ -400,7 +411,7 @@ def validate_join(sql, dialect):
     return errors
 ```
 
-Is replaced by:
+The rule-class pattern used throughout the project looks like this:
 
 ```python
 # NEW (current)
@@ -416,8 +427,6 @@ class JoinPathRule(Rule):
         # validation logic
         return violations
 ```
-
-Legacy functions still work for backward compatibility but are deprecated.
 
 ## Summary
 

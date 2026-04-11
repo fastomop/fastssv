@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-84-orange)
+![Rules](https://img.shields.io/badge/rules-106-orange)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
@@ -33,44 +33,49 @@ Existing OHDSI tools validate data quality, characterise cohorts, and measure ph
 
 ## Quick Start
 
-**1. Install and activate**
+**1. Install**
 ```bash
-uv sync
+pip install fastssv
 ```
 
 **2. Validate a SQL file**
 ```bash
-python main.py path/to/query.sql
+fastssv path/to/query.sql
 ```
 
-**3. Check the report**
+**3. Use it from Python**
+```python
+from fastssv import validate_anti_patterns, validate_sql_structured
+```
+
+**4. Check the report**
 ```bash
 cat output/validation_report.json
 ```
 
-Run the test suite at any point with `pytest tests/`.
+For local development in this repository, run `pip install -e ".[dev]"` and then `pytest`.
 
 ---
 
 ## What FastSSV Catches
 
-FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
+FastSSV ships with 106 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
 
 ### Core Categories
 
-**Anti-Pattern Rules (5 rules)** — Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, and context-dependent vocabulary lookups.
+**Anti-Pattern Rules (10 rules)** — Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, and context-dependent vocabulary lookups.
 
-**Concept Standardization Rules (8 rules)** — Enforce standard concept usage, hierarchy expansion, invalid reason checks, domain validation, and source concept handling.
+**Concept Standardization Rules (19 rules)** — Enforce standard concept usage, hierarchy expansion, concept_ancestor semantics, invalid reason checks, domain and vocabulary validation, source concept handling, and Maps to target correctness.
 
 **Domain-Specific Rules (21 rules)** — Table-specific validation for condition, drug, measurement, observation, person, procedure, visit, and death domains. Includes cardinality awareness, field validation, and domain-specific constraints.
 
-**Join Rules (34 rules)** — Validate foreign key relationships, join path correctness, concept relationship direction, and cross-table linkage requirements.
+**Join Rules (35 rules)** — Validate foreign key relationships, join path correctness, concept relationship direction, cross-table linkage requirements, and incomplete concept_relationship join patterns.
 
 **Temporal Rules (9 rules)** — Validate date logic, observation period constraints, temporal consistency across clinical events, and NULL handling for date columns.
 
-**Data Quality Rules (7 rules)** — Catch schema violations, type mismatches, structural issues, unmapped concepts, and data quality problems in OMOP queries.
+**Data Quality Rules (12 rules)** — Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, and other data quality problems in OMOP queries.
 
-### Key Anti-Pattern Rules (5 rules)
+### Key Anti-Pattern Rules (10 rules)
 
 **Type concept ID misuse** (`anti_patterns.type_concept_id_misuse`, WARNING) — Type concept fields (*_type_concept_id) encode provenance metadata (EHR, claims, registry) and should not be used for clinical filtering. Type concepts indicate data source, not clinical meaning.
 
@@ -82,7 +87,11 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 
 **Concept name lookup anti-pattern** (`anti_patterns.concept_name_lookup`, WARNING) — Filtering by `concept_name` using string matching is fragile and vocabulary-version-dependent. Use concept IDs or concept_code + vocabulary_id instead.
 
-### Key Concept Standardization Rules (8 rules)
+**Concept relationship transitive misuse** (`anti_patterns.concept_relationship_transitive_misuse`, WARNING) — Treating `concept_relationship` as a transitive hierarchy mechanism produces incomplete or semantically wrong expansions. Use `concept_ancestor` for descendant rollups.
+
+**Missing relationship filter in concept_relationship** (`anti_patterns.concept_relationship_missing_relationship_filter`, ERROR) — Querying `concept_relationship` without constraining `relationship_id` mixes unrelated relationship types and produces ambiguous mappings.
+
+### Key Concept Standardization Rules (19 rules)
 
 **Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, ERROR) — Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) must be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. Without this, queries silently include non-standard, source-vocabulary, or metadata concepts.
 
@@ -99,6 +108,10 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 **Source to concept map validation** (`concept_standardization.source_to_concept_map_validation`, WARNING) — When using source_to_concept_map table, ensure proper vocabulary_id and target concept validation.
 
 **Standard concept value validation** (`concept_standardization.standard_concept_value_validation`, ERROR) — Validates that standard_concept column values are valid ('S', 'C', or NULL).
+
+**Concept ancestor cross-domain validation** (`concept_standardization.concept_ancestor_cross_domain`, WARNING) — Expanding a concept hierarchy across mismatched domains can over-broaden cohorts or mix incompatible semantics.
+
+**Maps to target standard validation** (`concept_standardization.maps_to_target_standard_validation`, ERROR) — `'Maps to'` targets should resolve to valid standard concepts. Mapping chains that land on non-standard targets indicate incorrect vocabulary logic.
 
 ### Key Domain-Specific Rules (21 rules)
 
@@ -124,7 +137,7 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 
 **Observation value confusion** (`domain_specific.observation_value_as_concept_confusion`, ERROR) — Observation table uses value_as_concept_id for categorical values, not value_as_number. Mixing these fields causes logical errors.
 
-### Key Join Rules (34 rules)
+### Key Join Rules (35 rules)
 
 **Person ID join validation** (`joins.person_id_join_validation`, ERROR) — All joins from clinical tables to `person` table must use `person_id` as the join key. Using wrong columns (e.g., `person.person_source_value`) produces incorrect results.
 
@@ -154,6 +167,8 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 
 **Concept relationship requires relationship ID** (`joins.concept_relationship_requires_relationship_id`, ERROR) — When querying `concept_relationship`, must filter on `relationship_id` to specify the relationship type (e.g., 'Maps to', 'Is a'). Without this filter, queries mix unrelated concept relationships.
 
+**Concept relationship incomplete join** (`joins.concept_relationship_incomplete_join`, WARNING) — Joining `concept_relationship` to only one concept side is often incomplete when both source and target semantics are required for validation or filtering.
+
 ### Key Temporal Rules (9 rules)
 
 **Observation period anchoring** (`temporal.observation_period_anchoring`, ERROR) — Queries with temporal constraints (washout, follow-up, event windows) must join to `observation_period` on `person_id`. Events outside a patient's observation window may be incomplete or missing.
@@ -174,7 +189,7 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 
 **Required date column validation** (`temporal.required_date_column_validation`, WARNING) — Temporal queries on clinical tables should use required (NOT NULL) date columns instead of nullable columns to avoid silently excluding records.
 
-### Key Data Quality Rules (7 rules)
+### Key Data Quality Rules (12 rules)
 
 **Schema validation** (`data_quality.schema_validation`, ERROR) — Validates that queries reference only valid OMOP CDM v5.4 tables and columns. Catches typos in table/column names, references to non-existent columns, and schema violations like using `concept_ancestor` columns on `concept_relationship` table.
 
@@ -190,13 +205,19 @@ FastSSV ships with 84 validation rules across 6 categories covering OMOP CDM v5.
 
 **Clinical event date before 1900** (`data_quality.clinical_event_date_before_1900_validation`, WARNING) — Warns about suspiciously old dates (before year 1900) in clinical tables, which often indicate missing data coded as `1900-01-01` or data quality issues.
 
-For the complete catalog of all 84 rules with examples, edge cases, and cross-rule interactions, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md).
+**Case-sensitivity validations** (`data_quality.concept_class_id_case_sensitivity`, `data_quality.domain_id_case_sensitivity`, `data_quality.vocabulary_id_validation`, WARNING/ERROR) — Detects case mismatches in canonical vocabulary literals such as `domain_id`, `concept_class_id`, and `vocabulary_id` that silently produce empty results.
+
+**Concept name whitespace** (`data_quality.concept_name_whitespace`, WARNING) — Flags leading or trailing whitespace in `concept_name` equality comparisons, which often indicates accidental copy/paste errors.
+
+**Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) — Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
+
+For a curated reference to core rules and examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 
 ## Example
 
-This query has two violations in the current implementation. It runs cleanly and returns results, but both violations make the cohort analytically incorrect:
+This query has two violations. It runs cleanly and returns results, but both violations make the cohort analytically incorrect:
 
 ```sql
 SELECT person_id
@@ -254,13 +275,13 @@ WHERE ca.ancestor_concept_id IN (201826, 443238)
 
 ```bash
 # All rules (default)
-python main.py query.sql
+fastssv query.sql
 
 # Specific rules
-python main.py query.sql --rules concept_standardization.concept_domain_validation concept_standardization.hierarchy_expansion_required
+fastssv query.sql --rules concept_standardization.concept_domain_validation concept_standardization.hierarchy_expansion_required
 
 # Different dialect
-python main.py query.sql --dialect duckdb
+fastssv query.sql --dialect duckdb
 ```
 
 ---
@@ -330,7 +351,7 @@ FastSSV uses [sqlglot](https://github.com/tobymao/sqlglot) for parsing. Any dial
 
 | Document | Contents |
 |----------|----------|
-| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Complete reference for all 84 rules: intent, examples, edge cases, cross-rule interactions |
+| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Curated reference for representative core rules, examples, edge cases, and cross-rule interactions |
 | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) | Developer guide for extending semantic rules |
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |

@@ -1,6 +1,15 @@
 # FastSSV Rules Reference
 
-This document provides a comprehensive reference for every validation rule in FastSSV. For each rule you will find:
+This document provides a curated reference for representative validation rules in FastSSV. The rule registry currently contains 106 rules across 6 categories:
+
+- `anti_patterns`: 10
+- `concept_standardization`: 19
+- `data_quality`: 12
+- `domain_specific`: 21
+- `joins`: 35
+- `temporal`: 9
+
+For each documented rule you will find:
 
 - **Intent** — the OMOP CDM constraint being enforced and why it matters scientifically
 - **How it works** — what the rule inspects in the SQL AST
@@ -11,6 +20,8 @@ This document provides a comprehensive reference for every validation rule in Fa
 ---
 
 ## Quick Reference
+
+The table below is a representative subset of high-signal rules, not an exhaustive list of all 106 registered rules.
 
 | Rule ID | Name | Severity | Category |
 |---------|------|----------|----------|

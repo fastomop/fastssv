@@ -5,13 +5,13 @@
 ### Command Line Usage
 ```bash
 # Default output to output/validation_report.json
-python main.py query.sql
+fastssv query.sql
 
 # Custom output path
-python main.py query.sql --output my_report.json
+fastssv query.sql --output my_report.json
 
 # With other options
-python main.py query.sql --dialect mysql --categories joins
+fastssv query.sql --dialect mysql --categories joins
 ```
 
 ### Exit Codes
@@ -61,7 +61,7 @@ FastSSV outputs validation results in JSON format for structured, machine-readab
 FastSSV writes JSON validation reports to a file and prints a summary to the terminal:
 
 ```bash
-$ python main.py query.sql
+$ fastssv query.sql
 Validation INVALID
   Errors: 2
   Warnings: 1
@@ -74,7 +74,7 @@ Validation INVALID
 
 **Custom path:** Use `--output` or `-o` flag:
 ```bash
-python main.py query.sql --output my_custom_report.json
+fastssv query.sql --output my_custom_report.json
 ```
 
 The output directory is automatically created if it doesn't exist.
@@ -204,7 +204,7 @@ from pathlib import Path
 
 # Run FastSSV
 result = subprocess.run(
-    ["python", "main.py", "query.sql", "--output", "report.json"],
+    ["fastssv", "query.sql", "--output", "report.json"],
     capture_output=True,
     text=True
 )
@@ -255,6 +255,21 @@ violations = validate_sql_structured(
 violations_dict = [v.to_dict() for v in violations]
 ```
 
+### Python - Grouped Validation Results
+
+```python
+from fastssv import validate_sql
+
+results = validate_sql(sql, categories=["concept_standardization", "temporal"])
+
+print(results.keys())
+# dict_keys(['violations', 'category_errors', 'all_errors'])
+
+for category, messages in results["category_errors"].items():
+    if messages:
+        print(category, len(messages))
+```
+
 ### JavaScript/Node.js
 
 ```javascript
@@ -262,7 +277,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 // Run FastSSV
-execSync('python main.py query.sql --output report.json');
+execSync('fastssv query.sql --output report.json');
 
 // Read JSON report
 const report = JSON.parse(fs.readFileSync('report.json', 'utf8'));
@@ -285,7 +300,7 @@ if (report.is_valid) {
 ```bash
 #!/bin/bash
 
-python main.py query.sql --output result.json
+fastssv query.sql --output result.json
 
 if [ $? -eq 0 ]; then
   echo "✓ Valid"
@@ -352,7 +367,7 @@ jobs:
         run: |
           for sql_file in queries/*.sql; do
             echo "Validating $sql_file..."
-            python main.py "$sql_file" --output "output/$(basename $sql_file .sql).json"
+            fastssv "$sql_file" --output "output/$(basename $sql_file .sql).json"
 
             if [ $? -ne 0 ]; then
               echo "❌ Failed: $sql_file"
@@ -382,7 +397,7 @@ def validate_all_queries(query_dir: Path, output_dir: Path):
         output_file = output_dir / f"{sql_file.stem}.json"
 
         result = subprocess.run(
-            ["python", "main.py", str(sql_file), "--output", str(output_file)],
+            ["fastssv", str(sql_file), "--output", str(output_file)],
             capture_output=True,
             text=True
         )
@@ -466,6 +481,25 @@ else:
 
 ## Schema Reference
 
+### `validate_sql()` Result Schema
+
+The `validate_sql()` helper returns grouped messages rather than the CLI JSON report:
+
+```typescript
+{
+  violations: RuleViolation[],
+  category_errors: {
+    anti_patterns: string[],
+    concept_standardization: string[],
+    data_quality: string[],
+    domain_specific: string[],
+    joins: string[],
+    temporal: string[]
+  },
+  all_errors: string[]
+}
+```
+
 ### Complete Single Query Schema
 
 ```typescript
@@ -509,9 +543,9 @@ else:
 }
 ```
 
-## Schema Versioning
+## Schema Notes
 
-The JSON structure is currently at **version 1.0** and is considered stable. Future versions may add new fields but will maintain backward compatibility.
+The CLI JSON report shape shown above reflects the implementation in `src/fastssv/cli.py`. Optional fields such as `violations`, `location`, and `details` may be omitted when not applicable.
 
 ### Defensive Parsing
 
@@ -539,35 +573,40 @@ for v in violations:
     details = v.get("details", {})
 ```
 
-## Migration from Old Format
+## Current Example
 
-If you have code using the old format (pre-2024), note these changes:
+For the query:
 
-**Old format:**
-```json
-{
-  "rule_id": "...",
-  "message": "...",
-  "severity": "ERROR",
-  "location": ""
-}
+```sql
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_concept_id IN (201826, 443238);
 ```
 
-**New format:**
-```json
-{
-  "rule_id": "...",
-  "severity": "error",
-  "issue": "...",
-  "suggested_fix": "...",
-  "location": "...",
-  "details": {}
-}
-```
+`validate_sql_structured()` currently emits:
 
-**Migration notes:**
-- `severity` values are now lowercase: `"ERROR"` → `"error"`, `"WARNING"` → `"warning"`
-- `message` field renamed to `issue`
-- Added `suggested_fix` field (required)
-- Added `details` field (optional)
-- `location` is now optional (was empty string by default)
+```json
+[
+  {
+    "rule_id": "concept_standardization.hierarchy_expansion_required",
+    "severity": "error",
+    "issue": "Query filters on condition_occurrence.condition_concept_id without hierarchy expansion using concept_ancestor. In OMOP CDM, data is recorded using specific descendant codes (e.g., 'Iron deficiency anemia'), not parent concepts (e.g., 'Anemia'). Filtering directly on concept_id will likely return 0 or incomplete results. Use concept_ancestor to capture all descendant concepts.",
+    "suggested_fix": "Use concept_ancestor for hierarchy expansion: JOIN concept_ancestor ca ON table.concept_id = ca.descendant_concept_id WHERE ca.ancestor_concept_id = <your_target_concept>. This ensures all descendant concepts are captured. Remove the direct concept_id filter and use only the ancestor_concept_id filter in the concept_ancestor join.",
+    "details": {
+      "filtered_columns": [
+        "condition_occurrence.condition_concept_id"
+      ]
+    }
+  },
+  {
+    "rule_id": "data_quality.unmapped_concept_handling",
+    "severity": "warning",
+    "issue": "Query filters condition_occurrence.condition_concept_id by specific value(s) but does not explicitly handle concept_id = 0 (unmapped records). Records where the source code could not be mapped to a standard concept will be silently excluded.",
+    "suggested_fix": "Add: condition_concept_id > 0",
+    "details": {
+      "table": "condition_occurrence",
+      "column": "condition_concept_id"
+    }
+  }
+]
+```

@@ -5,13 +5,46 @@ description = "FastOMOP Semantic Static Validator - A semantic validation framew
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.12"
+authors = [
+	{name = "FastSSV contributors"},
+]
+keywords = ["omop", "sql", "validation", "static-analysis", "cdm"]
+classifiers = [
+	"Development Status :: 4 - Beta",
+	"Intended Audience :: Developers",
+	"License :: OSI Approved :: Apache Software License",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.12",
+	"Topic :: Database",
+	"Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
-	"dotenv>=0.9.9",
-	"langfuse>=3.12.1",
+	"build>=1.4.2",
+	"pip>=26.0.1",
+	"sqlglot>=24.6.0",
+	"twine>=6.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fastomop/fastSSV"
+Repository = "https://github.com/fastomop/fastSSV"
+Issues = "https://github.com/fastomop/fastSSV/issues"
+
+[project.scripts]
+fastssv = "fastssv.cli:main"
+
+[project.optional-dependencies]
+dev = [
+	"build>=1.2.2",
+	"pytest>=9.0.3",
+]
+viz = [
 	"matplotlib>=3.10.8",
 	"networkx>=3.6.1",
-	"pytest>=9.0.3",
-	"sqlglot>=24.6.0",
+]
+langfuse = [
+	"dotenv>=0.9.9",
+	"langfuse>=3.12.1",
 ]
 
 [build-system]
@@ -23,3 +56,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
