@@ -2,7 +2,7 @@
   <img src="docs/logo.png" alt="FastSSV" width="300">
 </p>
 
-# FastSSV — FastOMOP Semantic Static Validator
+# FastSSV — Fast Semantic Static Validator
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)

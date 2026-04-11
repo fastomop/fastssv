@@ -1073,6 +1073,146 @@ class TestMeasurementUnitValidation:
         violations = self._run_rule(sql)
         assert violations == []
 
+
+class TestMeasurementCrossUnitComparison:
+    """Tests for the measurement cross-unit comparison rule (OMOP_232)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.measurement_cross_unit_comparison")()
+        return rule.validate(sql, dialect)
+
+    def test_avg_without_unit_fires(self) -> None:
+        """Aggregating value_as_number without unit_concept_id -> violation."""
+        sql = """
+        SELECT AVG(value_as_number) AS avg_glucose
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert violations[0].rule_id == "domain_specific.measurement_cross_unit_comparison"
+        assert "unit_concept_id" in violations[0].message
+
+    def test_avg_with_unit_passes(self) -> None:
+        """Aggregating value_as_number WITH unit_concept_id -> no violation."""
+        sql = """
+        SELECT AVG(value_as_number) AS avg_glucose
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+          AND unit_concept_id = 8753
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_sum_without_unit_fires(self) -> None:
+        """SUM aggregation without unit_concept_id -> violation."""
+        sql = """
+        SELECT person_id, SUM(value_as_number)
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    def test_min_max_without_unit_fires(self) -> None:
+        """MIN/MAX aggregation without unit_concept_id -> violation."""
+        sql = """
+        SELECT MIN(value_as_number), MAX(value_as_number)
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    def test_multiple_units_in_clause_fires(self) -> None:
+        """unit_concept_id IN (...) with multiple values + aggregation -> violation."""
+        sql = """
+        SELECT AVG(value_as_number)
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+          AND unit_concept_id IN (8753, 8840)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "multiple" in violations[0].message.lower()
+
+    def test_single_unit_in_clause_passes(self) -> None:
+        """unit_concept_id IN (...) with single value -> no violation."""
+        sql = """
+        SELECT AVG(value_as_number)
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+          AND unit_concept_id IN (8753)
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_no_aggregation_no_violation(self) -> None:
+        """Simple SELECT without aggregation -> no violation."""
+        sql = """
+        SELECT person_id, value_as_number
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_count_star_without_unit_passes(self) -> None:
+        """COUNT(*) without unit constraint is OK (counting rows, not values)."""
+        sql = """
+        SELECT COUNT(*) AS patient_count
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_group_by_unit_concept_id_passes(self) -> None:
+        """Aggregating per unit (GROUP BY unit_concept_id) -> no violation."""
+        sql = """
+        SELECT unit_concept_id, AVG(value_as_number)
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY unit_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_unit_in_join_on_satisfies_rule(self) -> None:
+        """unit_concept_id in JOIN ON clause satisfies the constraint."""
+        sql = """
+        SELECT AVG(m.value_as_number)
+        FROM measurement m
+        JOIN concept c ON m.unit_concept_id = c.concept_id
+        WHERE m.measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_non_measurement_table_not_flagged(self) -> None:
+        """Aggregation on non-measurement table -> no violation."""
+        sql = """
+        SELECT AVG(person_id)
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_avg_with_unit_equality_passes(self) -> None:
+        """Aggregation with unit_concept_id = value -> no violation."""
+        sql = """
+        SELECT person_id, AVG(value_as_number) as avg_val
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+          AND unit_concept_id = 8753
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+
 class TestFutureInformationLeakage:
     """Tests for the future information leakage rule."""
 
@@ -12140,6 +12280,213 @@ class TestMeasurementValueAsNumberAndConceptValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+
+class TestMeasurementDuplicateDetection:
+    """Tests for measurement duplicate detection rule (OMOP_238)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.measurement_duplicate_detection")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_238_count_without_natural_key_violation(self) -> None:
+        """Counting measurements without natural key grouping should trigger WARNING."""
+        sql = """
+        SELECT measurement_concept_id, COUNT(*) AS measurement_count
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "duplicate" in violations[0].message.lower()
+        assert "natural key" in violations[0].message.lower()
+        from fastssv.core.base import Severity
+        assert violations[0].severity == Severity.WARNING
+
+    def test_omop_238_avg_without_date_grouping_violation(self) -> None:
+        """Averaging without date in GROUP BY should trigger WARNING."""
+        sql = """
+        SELECT person_id, AVG(value_as_number) AS avg_glucose
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "duplicate" in violations[0].message.lower()
+
+    def test_omop_238_count_star_violation(self) -> None:
+        """COUNT(*) without deduplication should trigger WARNING."""
+        sql = """
+        SELECT COUNT(*) AS total_measurements
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_238_sum_without_dedup_violation(self) -> None:
+        """SUM without natural key grouping should trigger WARNING."""
+        sql = """
+        SELECT person_id, SUM(value_as_number) AS total_value
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_238_natural_key_grouping_correct(self) -> None:
+        """Grouping by natural key should pass (no violation)."""
+        sql = """
+        SELECT person_id, measurement_date, measurement_concept_id,
+               AVG(value_as_number) AS avg_value
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY person_id, measurement_date, measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_with_distinct_correct(self) -> None:
+        """Using DISTINCT should pass (no violation)."""
+        sql = """
+        SELECT DISTINCT person_id, measurement_concept_id, measurement_date
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_with_row_number_correct(self) -> None:
+        """Using ROW_NUMBER for deduplication should pass."""
+        sql = """
+        WITH ranked AS (
+          SELECT *,
+            ROW_NUMBER() OVER (
+              PARTITION BY person_id, measurement_concept_id, measurement_date
+              ORDER BY measurement_datetime NULLS LAST
+            ) AS rn
+          FROM measurement
+        )
+        SELECT * FROM ranked WHERE rn = 1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_single_person_query_correct(self) -> None:
+        """Query for single person has low duplicate risk - should pass."""
+        sql = """
+        SELECT AVG(value_as_number) AS avg_glucose
+        FROM measurement
+        WHERE person_id = 123456
+          AND measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_with_measurement_datetime_filter_correct(self) -> None:
+        """Using measurement_datetime in WHERE suggests time precision - should pass."""
+        sql = """
+        SELECT person_id, AVG(value_as_number) AS avg_glucose
+        FROM measurement
+        WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-12-31'
+          AND measurement_concept_id = 3004410
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_no_aggregation_correct(self) -> None:
+        """Query without aggregation should pass."""
+        sql = """
+        SELECT person_id, measurement_date, value_as_number
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_no_measurement_table_correct(self) -> None:
+        """Query without measurement table should pass."""
+        sql = """
+        SELECT person_id, COUNT(*) AS observation_count
+        FROM observation
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_count_distinct_person_id_violation(self) -> None:
+        """COUNT(DISTINCT person_id) without date grouping should still warn."""
+        sql = """
+        SELECT measurement_concept_id, COUNT(DISTINCT person_id) AS patient_count
+        FROM measurement
+        GROUP BY measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        # This is a borderline case - COUNT(DISTINCT person_id) might be intentional
+        # but still sensitive to duplicates at different granularity
+        assert len(violations) == 1
+
+    def test_omop_238_with_rank_dedup_correct(self) -> None:
+        """Using RANK for deduplication should pass."""
+        sql = """
+        WITH ranked AS (
+          SELECT *,
+            RANK() OVER (
+              PARTITION BY person_id, measurement_concept_id, measurement_date
+              ORDER BY value_as_number DESC
+            ) AS rnk
+          FROM measurement
+        )
+        SELECT * FROM ranked WHERE rnk = 1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_238_multiple_aggregations_violation(self) -> None:
+        """Multiple aggregations without natural key should trigger WARNING."""
+        sql = """
+        SELECT
+          person_id,
+          COUNT(*) AS n_measurements,
+          AVG(value_as_number) AS avg_value,
+          MIN(value_as_number) AS min_value
+        FROM measurement
+        WHERE measurement_concept_id = 3004410
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_238_aliased_table_violation(self) -> None:
+        """Should detect violations with aliased measurement table."""
+        sql = """
+        SELECT m.person_id, AVG(m.value_as_number) AS avg_glucose
+        FROM measurement m
+        WHERE m.measurement_concept_id = 3004410
+        GROUP BY m.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_238_join_with_natural_key_correct(self) -> None:
+        """Join with proper grouping should pass."""
+        sql = """
+        SELECT p.person_id, m.measurement_date, m.measurement_concept_id,
+               AVG(m.value_as_number) AS avg_value
+        FROM person p
+        JOIN measurement m ON p.person_id = m.person_id
+        WHERE m.measurement_concept_id = 3004410
+        GROUP BY p.person_id, m.measurement_date, m.measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
 class TestClinicalPersonIdLinkageValidation:
     """Tests for CLIN_055: clinical tables require person_id linkage."""
 

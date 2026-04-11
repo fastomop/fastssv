@@ -425,24 +425,25 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 - [x] **OMOP_230**: measurement_requires_unit
   - *Implemented as: `domain_specific/measurement/measurement_unit_validation.py`*
-- [ ] **OMOP_231**: measurement_unit_standardization
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_232**: measurement_cross_unit_comparison
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_233**: measurement_range_usage
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_234**: measurement_operator_handling
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_235**: measurement_value_type_validation
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_236**: measurement_null_value_handling
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_237**: measurement_time_alignment
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_238**: measurement_duplicate_detection
-  - *Suggested group: `domain_specific/measurement/`*
-- [ ] **OMOP_239**: measurement_unit_grouping
-  - *Suggested group: `domain_specific/measurement/`*
+- [x] **OMOP_231**: measurement_unit_standardization
+  - *Covered by: `concept_standardization/standard_concept_enforcement.py`*
+  - *Note: unit_concept_id columns already in STANDARD_CONCEPT_FIELDS - enforced as ERROR (stricter than spec WARNING)*
+- [x] **OMOP_232**: measurement_cross_unit_comparison
+  - *Implemented as: `domain_specific/measurement/measurement_cross_unit_comparison.py`*
+- [-] **OMOP_233**: measurement_range_usage
+  - *Not implemented: High false positive risk. Cannot distinguish legitimate hardcoded clinical thresholds (e.g., ADA HbA1c ≥6.5% for diabetes diagnosis) from abnormality detection. Reference range columns (range_low/range_high) are often NULL in real datasets. Context-dependent - static analysis cannot determine query intent. Better handled by code review and developer guidelines.*
+- [-] **OMOP_234**: measurement_operator_handling
+  - *Covered by OMOP_060 skip decision: Detects queries filtering value_as_number without accounting for operator_concept_id ('<', '>', '=', etc.). Very high complexity and false positive risk - hard to determine if query SHOULD check operator_concept_id. Only affects 5-15% of measurements where operator is populated. Subjective detection ("accounting for" can mean explicit filter, CASE statement, or intentionally ignoring). Better handled through education and documentation. Note: CLIN_026 (measurement_operator_concept_validation) already validates operator_concept_id uses valid values when present.*
+- [-] **OMOP_235**: measurement_value_type_validation
+  - *Covered by OMOP_045 skip decision: Requires external concept metadata to distinguish qualitative (categorical) from quantitative (numeric) measurements. Would detect queries filtering value_as_number for categorical measurement_concept_ids that should use value_as_concept_id instead. High false positive risk without domain knowledge database. Static SQL analysis cannot access OMOP vocabulary to determine measurement type. Better handled by data profiling tools and ETL validation. Note: CLIN_028 (measurement_value_as_number_and_concept_validation) already detects overly restrictive AND filters on both columns.*
+- [-] **OMOP_236**: measurement_null_value_handling
+  - *Not implemented: Very high false positive risk. SQL already handles NULLs correctly in comparisons (value_as_number > 7.0 excludes NULLs automatically) and aggregations (AVG/SUM/MIN/MAX ignore NULLs). Explicit IS NOT NULL is redundant in 95% of cases. Context-dependent - COUNT(*) vs COUNT(value_as_number) depends on analysis intent (sometimes counting all measurements including categorical ones is correct). Low actionability - most flagged queries are already correct. The rare legitimate cases (arithmetic on value_as_number returning NULL) are better handled by code review. Pattern similar to nullable_end_date_null_handling, but that rule detects actual bugs (date arithmetic) while this would mostly flag redundant code.*
+- [x] **OMOP_237**: measurement_time_alignment
+  - *Covered by CLIN_030: `temporal/required_date_column_validation.py` - Detects when queries use nullable columns (measurement_datetime, measurement_time) instead of required measurement_date for temporal filtering (WARNING). Part of generalized required date column validation covering CLIN_010, CLIN_015, CLIN_030, CLIN_035. Includes smart detection of COALESCE and IS NOT NULL checks to avoid false positives. Tests: test_clin_030_measurement_datetime_violation, test_clin_030_measurement_time_violation, test_clin_030_measurement_date_correct.*
+- [x] **OMOP_238**: measurement_duplicate_detection
+  - *Implemented as: `domain_specific/measurement/measurement_duplicate_detection.py` - Detects queries that aggregate or count measurement records without handling potential duplicates on the natural key (person_id, measurement_concept_id, measurement_date). Unlike drug_exposure or condition_occurrence where multiple records are expected, measurement duplicates often indicate ETL errors or data quality issues (WARNING). Includes smart detection of natural key grouping, DISTINCT, ROW_NUMBER deduplication, and low-risk patterns (single person queries, measurement_datetime filters). Tests: test_omop_238_count_without_natural_key_violation, test_omop_238_natural_key_grouping_correct, test_omop_238_with_row_number_correct.*
+- [-] **OMOP_239**: measurement_unit_grouping
+  - *Skipped: Best practice suggestion rather than correctness issue. OMOP_232 (measurement_cross_unit_comparison) already prevents the critical problem of mixing different units in aggregations. OMOP_239 would suggest adding unit_concept_id to GROUP BY clauses for explicitness/interpretability even when results are technically correct. This is overly pedantic - when queries properly constrain to a single unit (via WHERE unit_concept_id = X), adding unit to GROUP BY provides minimal value while adding noise. The distinction between "wrong results" (OMOP_232) and "missing context in correct results" (OMOP_239) is too subtle for practical SQL validation. Developers working with measurement data are expected to understand unit context from their WHERE clauses. If needed in the future, could be implemented as INFO severity rather than WARNING to distinguish from actual data quality issues.*
 
 ---
 
