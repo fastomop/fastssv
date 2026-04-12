@@ -16,6 +16,10 @@ from .domain_id_case_sensitivity import DomainIdCaseSensitivityRule
 from .concept_class_id_case_sensitivity import ConceptClassIdCaseSensitivityRule
 from .standard_concept_null_handling import StandardConceptNullHandlingRule
 from .concept_name_whitespace import ConceptNameWhitespaceRule
+from .note_nlp_offset_is_character_position import NoteNlpOffsetIsCharacterPositionRule
+from .note_nlp_term_modifiers_is_free_text import NoteNlpTermModifiersIsFreeTextRule
+from .note_nlp_nlp_date_for_temporal_filtering import NoteNlpNlpDateForTemporalFilteringRule
+from .union_vs_union_all_clinical_events import UnionVsUnionAllClinicalEventsRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
@@ -30,5 +34,9 @@ __all__ = [
     "ConceptClassIdCaseSensitivityRule",
     "StandardConceptNullHandlingRule",
     "ConceptNameWhitespaceRule",
+    "NoteNlpOffsetIsCharacterPositionRule",
+    "NoteNlpTermModifiersIsFreeTextRule",
+    "NoteNlpNlpDateForTemporalFilteringRule",
+    "UnionVsUnionAllClinicalEventsRule",
 ]
 

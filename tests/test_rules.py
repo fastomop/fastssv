@@ -20812,3 +20812,193 @@ class TestCommaSeparatedCrossJoin:
         violations = self._run_rule(sql)
         # measurement is not joined to co or de
         assert len(violations) > 0
+
+
+# --- GAP_036: UNION vs UNION ALL for Clinical Events ---
+
+
+class TestUnionVsUnionAllClinicalEvents:
+    """Tests for GAP_036 - UNION vs UNION ALL for clinical event tables."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.data_quality.union_vs_union_all_clinical_events import (
+            UnionVsUnionAllClinicalEventsRule,
+        )
+
+        rule = UnionVsUnionAllClinicalEventsRule()
+        return rule.validate(sql, dialect)
+
+    def test_gap_036_union_without_all_clinical_events(self) -> None:
+        """GAP_036: UNION without ALL for clinical events should fail."""
+        sql = """
+        SELECT person_id, condition_start_date AS event_date
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        UNION
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "union_without_all_clinical_events" in violations[0].details["issue"]
+
+    def test_gap_036_union_all_clinical_events(self) -> None:
+        """GAP_036: UNION ALL for clinical events should pass."""
+        sql = """
+        SELECT person_id, condition_start_date AS event_date
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        UNION ALL
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_036_union_without_all_visits(self) -> None:
+        """GAP_036: UNION without ALL for visit tables should fail."""
+        sql = """
+        SELECT person_id, visit_start_date
+        FROM visit_occurrence
+        WHERE visit_concept_id = 9203
+        UNION
+        SELECT person_id, visit_start_date
+        FROM visit_detail
+        WHERE visit_detail_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_036_union_without_all_vocabulary_tables(self) -> None:
+        """GAP_036: UNION without ALL for vocabulary tables should pass."""
+        sql = """
+        SELECT concept_id, concept_name
+        FROM concept
+        WHERE vocabulary_id = 'SNOMED'
+        UNION
+        SELECT concept_id, concept_name
+        FROM concept
+        WHERE vocabulary_id = 'LOINC'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_036_multiple_unions_mixed(self) -> None:
+        """GAP_036: Multiple UNIONs with mixed ALL/non-ALL should flag non-ALL."""
+        sql = """
+        SELECT person_id, condition_start_date AS event_date
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        UNION ALL
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        WHERE drug_concept_id = 1125315
+        UNION
+        SELECT person_id, procedure_date
+        FROM procedure_occurrence
+        WHERE procedure_concept_id = 4301351
+        """
+        violations = self._run_rule(sql)
+        # Should detect the second UNION (without ALL)
+        assert len(violations) == 1
+
+    def test_gap_036_union_without_all_measurement(self) -> None:
+        """GAP_036: UNION without ALL for measurement table should fail."""
+        sql = """
+        SELECT person_id, measurement_date
+        FROM measurement
+        WHERE measurement_concept_id = 3004249
+        UNION
+        SELECT person_id, observation_date
+        FROM observation
+        WHERE observation_concept_id = 4013886
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_036_union_all_multiple_clinical_events(self) -> None:
+        """GAP_036: UNION ALL for multiple clinical event tables should pass."""
+        sql = """
+        SELECT person_id, condition_start_date AS event_date
+        FROM condition_occurrence
+        UNION ALL
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        UNION ALL
+        SELECT person_id, procedure_date
+        FROM procedure_occurrence
+        UNION ALL
+        SELECT person_id, measurement_date
+        FROM measurement
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_036_union_without_all_episode(self) -> None:
+        """GAP_036: UNION without ALL for episode table should fail."""
+        sql = """
+        SELECT person_id, episode_start_date
+        FROM episode
+        WHERE episode_concept_id = 32533
+        UNION
+        SELECT person_id, episode_start_date
+        FROM episode
+        WHERE episode_concept_id = 32534
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_036_union_without_all_device_exposure(self) -> None:
+        """GAP_036: UNION without ALL for device_exposure should fail."""
+        sql = """
+        SELECT person_id, device_exposure_start_date
+        FROM device_exposure
+        WHERE device_concept_id = 4324879
+        UNION
+        SELECT person_id, device_exposure_start_date
+        FROM device_exposure
+        WHERE device_concept_id = 4324880
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_036_union_all_specimen_note(self) -> None:
+        """GAP_036: UNION ALL for specimen and note tables should pass."""
+        sql = """
+        SELECT person_id, specimen_date
+        FROM specimen
+        WHERE specimen_concept_id = 4034850
+        UNION ALL
+        SELECT person_id, note_date
+        FROM note
+        WHERE note_type_concept_id = 44814645
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_036_single_select_no_union(self) -> None:
+        """GAP_036: Single SELECT without UNION should pass."""
+        sql = """
+        SELECT person_id, condition_start_date
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_036_union_without_all_subquery(self) -> None:
+        """GAP_036: UNION without ALL in subquery should be detected."""
+        sql = """
+        SELECT * FROM (
+            SELECT person_id, condition_start_date AS event_date
+            FROM condition_occurrence
+            UNION
+            SELECT person_id, drug_exposure_start_date
+            FROM drug_exposure
+        ) events
+        WHERE event_date > '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
