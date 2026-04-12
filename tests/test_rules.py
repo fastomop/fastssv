@@ -20693,3 +20693,122 @@ class TestNoStringIdentification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+
+class TestCommaSeparatedCrossJoin:
+    """Tests for GAP_035: comma_separated_cross_join."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.comma_separated_cross_join")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation tests ---
+
+    def test_gap_035_two_clinical_tables_no_join(self) -> None:
+        """GAP_035: Two clinical tables with comma, no join condition should error."""
+        sql = """
+        SELECT * FROM condition_occurrence, drug_exposure
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_occurrence" in violations[0].message
+        assert "drug_exposure" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_035_three_clinical_tables_no_join(self) -> None:
+        """GAP_035: Three clinical tables with commas, no join should error."""
+        sql = """
+        SELECT * FROM condition_occurrence, drug_exposure, measurement
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    def test_gap_035_clinical_and_person_no_join(self) -> None:
+        """GAP_035: Clinical table and person with comma, no join should error."""
+        sql = """
+        SELECT * FROM condition_occurrence co, person p
+        WHERE co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    def test_gap_035_with_aliases_no_join(self) -> None:
+        """GAP_035: Aliased tables with comma, no join should error."""
+        sql = """
+        SELECT co.person_id, de.drug_concept_id
+        FROM condition_occurrence co, drug_exposure de
+        WHERE co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    # --- Correct pattern tests ---
+
+    def test_gap_035_with_where_join_condition(self) -> None:
+        """GAP_035: Comma-separated with WHERE join condition should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co, drug_exposure de
+        WHERE co.person_id = de.person_id
+          AND co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_with_explicit_join(self) -> None:
+        """GAP_035: Explicit JOIN...ON should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_single_table(self) -> None:
+        """GAP_035: Single table query should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_vocabulary_tables_cross_join(self) -> None:
+        """GAP_035: Small vocabulary table cross joins should pass."""
+        sql = """
+        SELECT * FROM concept c1, concept c2
+        WHERE c1.vocabulary_id = 'SNOMED' AND c2.vocabulary_id = 'LOINC'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_left_join(self) -> None:
+        """GAP_035: LEFT JOIN should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        LEFT JOIN drug_exposure de ON co.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_multiple_join_conditions(self) -> None:
+        """GAP_035: Multiple join conditions in WHERE should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co, drug_exposure de, measurement m
+        WHERE co.person_id = de.person_id
+          AND de.person_id = m.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_035_mixed_join_styles(self) -> None:
+        """GAP_035: Mixed explicit JOIN and comma should detect unjoined table."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id, measurement m
+        """
+        violations = self._run_rule(sql)
+        # measurement is not joined to co or de
+        assert len(violations) > 0

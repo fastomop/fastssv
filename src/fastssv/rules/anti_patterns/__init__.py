@@ -13,6 +13,8 @@ from .standard_concept_or_with_classification import StandardConceptOrWithClassi
 from .concept_relationship_missing_relationship_filter import ConceptRelationshipMissingRelationshipFilterRule
 from .concept_relationship_transitive_misuse import ConceptRelationshipTransitiveMisuseRule
 from .concept_ancestor_mixed_with_concept_relationship_redundantly import ConceptAncestorMixedWithConceptRelationshipRedundantlyRule
+from .destructive_operations_on_clinical_tables import DestructiveOperationsOnClinicalTablesRule
+from .comma_separated_cross_join import CommaSeparatedCrossJoinRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -25,4 +27,6 @@ __all__ = [
     "ConceptRelationshipMissingRelationshipFilterRule",
     "ConceptRelationshipTransitiveMisuseRule",
     "ConceptAncestorMixedWithConceptRelationshipRedundantlyRule",
+    "DestructiveOperationsOnClinicalTablesRule",
+    "CommaSeparatedCrossJoinRule",
 ]
