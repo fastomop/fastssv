@@ -20629,3 +20629,67 @@ class TestNoStringIdentification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    # --- GAP_032: condition_occurrence condition_status_source_value ---
+
+    def test_gap_032_condition_status_source_value_equality(self) -> None:
+        """GAP_032: Filtering on condition_occurrence.condition_status_source_value should error."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_status_source_value = 'Final'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_status_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_032_condition_status_source_value_like(self) -> None:
+        """GAP_032: LIKE pattern on condition_occurrence.condition_status_source_value should error."""
+        sql = """
+        SELECT person_id, condition_concept_id
+        FROM condition_occurrence
+        WHERE condition_status_source_value LIKE '%Preliminary%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_status_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_032_condition_status_source_value_in_clause(self) -> None:
+        """GAP_032: IN clause on condition_occurrence.condition_status_source_value should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence
+        WHERE condition_status_source_value IN ('Final', 'Preliminary', 'Admitting')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_status_source_value" in violations[0].message
+
+    def test_gap_032_condition_status_source_value_qualified(self) -> None:
+        """GAP_032: Qualified condition_status_source_value should error."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_status_source_value = 'Final'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_status_source_value" in violations[0].message
+
+    def test_gap_032_condition_status_concept_id_correct(self) -> None:
+        """GAP_032: Using condition_status_concept_id should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_status_concept_id = 32902
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_032_multiple_status_filters_correct(self) -> None:
+        """GAP_032: Using IN with condition_status_concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence
+        WHERE condition_status_concept_id IN (32902, 32893, 32896)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0

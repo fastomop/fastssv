@@ -23,6 +23,7 @@ from fastssv.core.registry import register
 SOURCE_VALUE_COLUMNS = {
     # Clinical event tables
     ("condition_occurrence", "condition_source_value"),
+    ("condition_occurrence", "condition_status_source_value"),
     ("drug_exposure", "drug_source_value"),
     ("drug_exposure", "route_source_value"),
     ("drug_exposure", "dose_unit_source_value"),
