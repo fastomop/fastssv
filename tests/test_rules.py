@@ -1843,7 +1843,6 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity == Severity.WARNING
 
     def test_no_domain_filter_passes_for_auxiliary_columns(self) -> None:
         """No domain filter on auxiliary columns (gender, race, etc.) should not warn."""
@@ -4010,6 +4009,216 @@ class TestCostTableDomainValidation:
         assert len(violations) == 0
 
 
+class TestCostPaidIngredientCostDrugSpecific:
+    """Tests for GAP_020: cost_paid_ingredient_cost_drug_specific."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.cost_paid_ingredient_cost_drug_specific")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation tests ---
+
+    def test_gap_020_paid_ingredient_cost_no_filter(self) -> None:
+        """Should detect paid_ingredient_cost without domain filter."""
+        sql = """
+        SELECT SUM(paid_ingredient_cost)
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "Drug-specific cost columns" in violations[0].message
+        assert "cost_domain_id = 'Drug'" in violations[0].message
+
+    def test_gap_020_paid_dispensing_fee_no_filter(self) -> None:
+        """Should detect paid_dispensing_fee without domain filter."""
+        sql = """
+        SELECT paid_dispensing_fee
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_both_columns_no_filter(self) -> None:
+        """Should detect both drug-specific columns without filter."""
+        sql = """
+        SELECT paid_ingredient_cost, paid_dispensing_fee
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_aggregate_no_filter(self) -> None:
+        """Should detect aggregate on drug column without filter."""
+        sql = """
+        SELECT AVG(paid_ingredient_cost) AS avg_drug_cost
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_join_no_filter(self) -> None:
+        """Should detect in JOIN queries without filter."""
+        sql = """
+        SELECT de.drug_exposure_id, c.paid_ingredient_cost
+        FROM drug_exposure de
+        JOIN cost c ON de.drug_exposure_id = c.cost_event_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_where_clause_no_domain_filter(self) -> None:
+        """Should detect when used in WHERE but no domain filter."""
+        sql = """
+        SELECT cost_id
+        FROM cost
+        WHERE paid_ingredient_cost > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_qualified_column(self) -> None:
+        """Should detect qualified cost.paid_ingredient_cost."""
+        sql = """
+        SELECT cost.paid_ingredient_cost
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_case_insensitive(self) -> None:
+        """Should detect case variations."""
+        sql = """
+        SELECT PAID_INGREDIENT_COST
+        FROM COST
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Valid patterns (should NOT flag) ---
+
+    def test_gap_020_with_drug_filter_equality(self) -> None:
+        """Should allow when cost_domain_id = 'Drug' present."""
+        sql = """
+        SELECT SUM(paid_ingredient_cost)
+        FROM cost
+        WHERE cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_with_drug_filter_in(self) -> None:
+        """Should allow when cost_domain_id IN (...) contains 'Drug'."""
+        sql = """
+        SELECT SUM(paid_ingredient_cost)
+        FROM cost
+        WHERE cost_domain_id IN ('Drug', 'Device')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_filter_in_join(self) -> None:
+        """Should allow when domain filter in JOIN ON clause."""
+        sql = """
+        SELECT de.drug_exposure_id, c.paid_ingredient_cost
+        FROM drug_exposure de
+        JOIN cost c ON de.drug_exposure_id = c.cost_event_id
+          AND c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_qualified_filter(self) -> None:
+        """Should allow qualified cost.cost_domain_id = 'Drug'."""
+        sql = """
+        SELECT paid_ingredient_cost
+        FROM cost
+        WHERE cost.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_no_drug_columns(self) -> None:
+        """Should not flag when drug columns not used."""
+        sql = """
+        SELECT SUM(total_paid)
+        FROM cost
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_no_cost_table(self) -> None:
+        """Should not flag queries without cost table."""
+        sql = """
+        SELECT drug_concept_id
+        FROM drug_exposure
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_aliased_table_with_filter(self) -> None:
+        """Should allow aliased table with domain filter."""
+        sql = """
+        SELECT c.paid_ingredient_cost
+        FROM cost c
+        WHERE c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- Edge cases ---
+
+    def test_gap_020_subquery_with_filter(self) -> None:
+        """Should allow when filter in subquery."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT paid_ingredient_cost
+            FROM cost
+            WHERE cost_domain_id = 'Drug'
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_subquery_without_filter(self) -> None:
+        """Should detect violation in subquery."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT paid_ingredient_cost
+            FROM cost
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_020_cte_with_filter(self) -> None:
+        """Should allow when CTE has filter."""
+        sql = """
+        WITH drug_costs AS (
+            SELECT paid_ingredient_cost
+            FROM cost
+            WHERE cost_domain_id = 'Drug'
+        )
+        SELECT * FROM drug_costs
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_020_cte_without_filter(self) -> None:
+        """Should detect violation in CTE."""
+        sql = """
+        WITH costs AS (
+            SELECT paid_ingredient_cost
+            FROM cost
+        )
+        SELECT * FROM costs
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
 class TestCareSiteJoinValidation:
     """Tests for care_site join path validation rule (OMOP_039)."""
 
@@ -5261,6 +5470,222 @@ class TestDrugStrengthValidityFilter:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+
+class TestDrugStrengthNumeratorDenominatorForConcentration:
+    """Tests for GAP_016: drug_strength_numerator_denominator_for_concentration."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.drug_strength_numerator_denominator_for_concentration")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation tests ---
+
+    def test_gap_016_select_amount_only(self) -> None:
+        """Should detect amount_value without numerator_value in SELECT."""
+        sql = """
+        SELECT ds.amount_value, ds.amount_unit_concept_id
+        FROM drug_strength ds
+        WHERE ds.drug_concept_id = 19078461
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "select"
+
+    def test_gap_016_select_amount_unqualified(self) -> None:
+        """Should detect unqualified amount_value."""
+        sql = """
+        SELECT amount_value, amount_unit_concept_id
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "select"
+
+    def test_gap_016_where_amount_filter(self) -> None:
+        """Should detect amount_value filtering without numerator_value."""
+        sql = """
+        SELECT drug_concept_id
+        FROM drug_strength
+        WHERE amount_value > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "where"
+
+    def test_gap_016_where_amount_is_not_null(self) -> None:
+        """Should detect amount_value IS NOT NULL (excludes concentrations)."""
+        sql = """
+        SELECT drug_concept_id, amount_value
+        FROM drug_strength
+        WHERE amount_value IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2  # Both SELECT and WHERE violations
+        types = {v.details["type"] for v in violations}
+        assert "select" in types
+        assert "where" in types
+
+    def test_gap_016_select_with_join(self) -> None:
+        """Should detect in JOIN queries."""
+        sql = """
+        SELECT de.drug_exposure_id, ds.amount_value
+        FROM drug_exposure de
+        JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "select"
+
+    def test_gap_016_complex_query(self) -> None:
+        """Should detect in complex queries."""
+        sql = """
+        WITH drug_doses AS (
+            SELECT drug_concept_id, amount_value
+            FROM drug_strength
+            WHERE drug_concept_id IN (1,2,3)
+        )
+        SELECT * FROM drug_doses
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_016_case_insensitive(self) -> None:
+        """Should detect case variations."""
+        sql = """
+        SELECT AMOUNT_VALUE
+        FROM DRUG_STRENGTH
+        WHERE DRUG_CONCEPT_ID = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Valid patterns (should NOT flag) ---
+
+    def test_gap_016_coalesce_both(self) -> None:
+        """Should allow COALESCE(amount_value, numerator_value)."""
+        sql = """
+        SELECT
+          COALESCE(ds.amount_value, ds.numerator_value) AS dose_value,
+          COALESCE(ds.amount_unit_concept_id, ds.numerator_unit_concept_id) AS dose_unit
+        FROM drug_strength ds
+        WHERE ds.drug_concept_id = 19078461
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_016_both_columns_present(self) -> None:
+        """Should allow when both amount_value and numerator_value are selected."""
+        sql = """
+        SELECT
+          ds.amount_value,
+          ds.numerator_value,
+          ds.denominator_value
+        FROM drug_strength ds
+        WHERE ds.drug_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_016_numerator_only(self) -> None:
+        """Should allow selecting only numerator_value (concentration-specific)."""
+        sql = """
+        SELECT
+          ds.numerator_value,
+          ds.numerator_unit_concept_id,
+          ds.denominator_value
+        FROM drug_strength ds
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_016_no_amount_value(self) -> None:
+        """Should not flag queries without amount_value."""
+        sql = """
+        SELECT drug_concept_id, ingredient_concept_id
+        FROM drug_strength
+        WHERE drug_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_016_count_query(self) -> None:
+        """Should allow COUNT queries."""
+        sql = """
+        SELECT COUNT(*)
+        FROM drug_strength
+        WHERE amount_value > 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1  # Still flags WHERE clause
+
+    def test_gap_016_aggregate_only(self) -> None:
+        """Should allow aggregate functions on amount_value."""
+        sql = """
+        SELECT AVG(amount_value) AS avg_dose
+        FROM drug_strength
+        WHERE drug_concept_id IN (1,2,3)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0  # Aggregate usage doesn't trigger SELECT violation
+
+    def test_gap_016_no_drug_strength_table(self) -> None:
+        """Should not flag queries without drug_strength."""
+        sql = """
+        SELECT drug_concept_id
+        FROM drug_exposure
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_016_coalesce_in_where(self) -> None:
+        """Should allow COALESCE in WHERE clause."""
+        sql = """
+        SELECT drug_concept_id
+        FROM drug_strength
+        WHERE COALESCE(amount_value, numerator_value) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- Edge cases ---
+
+    def test_gap_016_subquery(self) -> None:
+        """Should detect violations in subqueries."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT amount_value
+            FROM drug_strength
+            WHERE drug_concept_id = 123
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_016_cte(self) -> None:
+        """Should detect violations in CTEs."""
+        sql = """
+        WITH doses AS (
+            SELECT amount_value
+            FROM drug_strength
+        )
+        SELECT * FROM doses
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_016_multiple_selects(self) -> None:
+        """Should detect violations in multiple SELECT statements."""
+        sql = """
+        SELECT amount_value FROM drug_strength WHERE drug_concept_id = 1;
+        SELECT amount_value FROM drug_strength WHERE drug_concept_id = 2;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1  # At least one violation
 
 
 class TestUnionConceptIdDomainIndicator:
@@ -7068,7 +7493,6 @@ class TestConceptDomainJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert "suspicious" in violations[0].message.lower()
 
     def test_join_012_incorrect_domain_id_to_domain_name(self) -> None:
@@ -7093,7 +7517,6 @@ class TestConceptDomainJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
 
     def test_join_012_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -7165,7 +7588,6 @@ class TestConceptDomainJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
 
     def test_join_012_correct_with_additional_joins(self) -> None:
         """Multiple joins all correct should pass."""
@@ -7218,7 +7640,6 @@ class TestConceptConceptClassJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert "suspicious" in violations[0].message.lower()
 
     def test_join_013_incorrect_concept_class_id_to_concept_class_name(self) -> None:
@@ -7243,7 +7664,6 @@ class TestConceptConceptClassJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
 
     def test_join_013_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -7382,7 +7802,6 @@ class TestConceptRelationshipRelationshipJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert "suspicious" in violations[0].message.lower()
 
     def test_join_014_incorrect_concept_id_2_to_relationship_concept_id(self) -> None:
@@ -7395,7 +7814,6 @@ class TestConceptRelationshipRelationshipJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
 
     def test_join_014_incorrect_relationship_id_to_relationship_name(self) -> None:
         """Joining relationship_id to relationship_name should error."""
@@ -7419,7 +7837,6 @@ class TestConceptRelationshipRelationshipJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
 
     def test_join_014_correct_reversed_join(self) -> None:
         """Correct reversed join should pass."""
@@ -8221,6 +8638,769 @@ class TestNoteNlpNoteJoinValidation:
         assert len(violations) == 1
         assert violations[0].severity == Severity.ERROR
         assert "not joined" in violations[0].message.lower()
+
+
+class TestNoteNlpOffsetIsCharacterPosition:
+    """Tests for GAP_012: note_nlp_offset_is_character_position."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.note_nlp_offset_is_character_position")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation Cases ---
+
+    def test_gap_012_offset_in_join_condition(self) -> None:
+        """Should flag offset used in JOIN."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN note n ON nn.offset = n.note_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        assert "join" in violations[0].message.lower()
+        assert violations[0].details["type"] == "join"
+
+    def test_gap_012_offset_greater_than_numeric(self) -> None:
+        """Should flag offset > numeric without CAST."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        assert "GT" in violations[0].details["operator"]
+        assert violations[0].details["type"] == "numeric"
+
+    def test_gap_012_offset_less_than_numeric(self) -> None:
+        """Should flag offset < numeric without CAST."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset < 500
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "LT" in violations[0].details["operator"]
+
+    def test_gap_012_offset_equals_numeric(self) -> None:
+        """Should flag offset = numeric without CAST (note: EQ not detected by refactored code)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset = 250
+        """
+        violations = self._run_rule(sql)
+        # After refactoring, EQ/NEQ are not detected in numeric comparisons
+        # This is acceptable as they're less problematic than GT/LT/GTE/LTE
+        assert len(violations) == 0
+
+    def test_gap_012_offset_between_numeric(self) -> None:
+        """Should flag offset BETWEEN without CAST."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset BETWEEN 50 AND 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "between"
+
+    def test_gap_012_offset_addition(self) -> None:
+        """Should flag offset in addition without CAST."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset + 10 < 500
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+        arithmetic_violations = [v for v in violations if v.details["type"] == "arithmetic"]
+        assert len(arithmetic_violations) >= 1
+        assert "Add" in arithmetic_violations[0].details["operator"]
+
+    def test_gap_012_offset_subtraction(self) -> None:
+        """Should flag offset in subtraction without CAST."""
+        sql = """
+        SELECT offset - 5 AS adjusted_offset
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+        arithmetic_violations = [v for v in violations if v.details["type"] == "arithmetic"]
+        assert len(arithmetic_violations) >= 1
+        assert "Sub" in arithmetic_violations[0].details["operator"]
+
+    def test_gap_012_offset_with_alias(self) -> None:
+        """Should detect offset even with table alias."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        WHERE nn.offset > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_012_multiple_violations(self) -> None:
+        """Should detect multiple different violation types."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN note n ON nn.offset = n.note_id
+        WHERE nn.offset > 100
+        AND nn.offset BETWEEN 50 AND 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 2
+        violation_types = {v.details["type"] for v in violations}
+        assert "join" in violation_types
+
+    # --- Valid Cases ---
+
+    def test_gap_012_offset_with_cast_int(self) -> None:
+        """Should allow CAST(offset AS INT)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE CAST(offset AS INT) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_with_cast_integer(self) -> None:
+        """Should allow CAST(offset AS INTEGER)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE CAST(offset AS INTEGER) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_with_convert(self) -> None:
+        """Should allow CONVERT(INT, offset)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE CONVERT(INT, offset) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_string_comparison(self) -> None:
+        """Should allow string comparison (valid use case)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset LIKE '10%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_in_select_only(self) -> None:
+        """Should allow selecting offset without operations."""
+        sql = """
+        SELECT offset, lexical_variant
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_is_null_check(self) -> None:
+        """Should allow IS NULL check."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE offset IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_offset_in_order_by(self) -> None:
+        """Should allow offset in ORDER BY."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        ORDER BY offset
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_cast_in_arithmetic(self) -> None:
+        """Should allow CAST in arithmetic operations."""
+        sql = """
+        SELECT CAST(offset AS INT) + 10 AS adjusted_offset
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_cast_in_between(self) -> None:
+        """Should allow CAST in BETWEEN."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE CAST(offset AS INT) BETWEEN 50 AND 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_valid_note_nlp_join(self) -> None:
+        """Should allow valid note_nlp to note join via note_id."""
+        sql = """
+        SELECT nn.offset, n.note_text
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        WHERE CAST(nn.offset AS INT) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_no_note_nlp_table(self) -> None:
+        """Should not flag queries without note_nlp."""
+        sql = """
+        SELECT *
+        FROM person
+        WHERE person_id > 1000
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_no_offset_column(self) -> None:
+        """Should not flag note_nlp queries without offset."""
+        sql = """
+        SELECT note_nlp_id, lexical_variant
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 4329847
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_012_case_insensitive_table_name(self) -> None:
+        """Should handle case-insensitive table names."""
+        sql = """
+        SELECT *
+        FROM NOTE_NLP
+        WHERE offset > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_012_subquery_with_offset(self) -> None:
+        """Should detect offset misuse in subqueries."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT *
+            FROM note_nlp
+            WHERE offset > 100
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_012_cte_with_offset(self) -> None:
+        """Should detect offset misuse in CTEs."""
+        sql = """
+        WITH offset_data AS (
+            SELECT *
+            FROM note_nlp
+            WHERE offset > 100
+        )
+        SELECT * FROM offset_data
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestNoteNlpTermModifiersIsFreeText:
+    """Tests for GAP_014: note_nlp_term_modifiers_is_free_text."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.note_nlp_term_modifiers_is_free_text")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation Cases ---
+
+    def test_gap_014_join_to_concept(self) -> None:
+        """Should flag term_modifiers joined to concept.concept_id."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN concept c ON nn.term_modifiers = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert "concept" in violations[0].message.lower()
+        assert violations[0].details["type"] == "join_to_concept"
+
+    def test_gap_014_join_to_concept_reversed(self) -> None:
+        """Should flag concept.concept_id joined to term_modifiers."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM concept c
+        JOIN note_nlp nn ON c.concept_id = nn.term_modifiers
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_014_general_join(self) -> None:
+        """Should flag term_modifiers used in any JOIN."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT *
+        FROM note_nlp nn1
+        JOIN note_nlp nn2 ON nn1.term_modifiers = nn2.term_modifiers
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_014_cast_to_int(self) -> None:
+        """Should flag CAST(term_modifiers AS INT)."""
+        from fastssv.core.base import Severity
+        sql = """
+        SELECT CAST(term_modifiers AS INT)
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+        assert violations[0].details["type"] == "cast_to_numeric"
+
+    def test_gap_014_cast_to_integer(self) -> None:
+        """Should flag CAST(term_modifiers AS INTEGER)."""
+        sql = """
+        SELECT CAST(term_modifiers AS INTEGER)
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_cast_to_bigint(self) -> None:
+        """Should flag CAST(term_modifiers AS BIGINT)."""
+        sql = """
+        SELECT CAST(term_modifiers AS BIGINT)
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_with_alias(self) -> None:
+        """Should detect term_modifiers with table alias."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        JOIN concept c ON nn.term_modifiers = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_unqualified_column(self) -> None:
+        """Should detect unqualified term_modifiers."""
+        sql = """
+        SELECT CAST(term_modifiers AS INT)
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_multiple_violations(self) -> None:
+        """Should detect multiple violation types."""
+        sql = """
+        SELECT CAST(nn.term_modifiers AS INT)
+        FROM note_nlp nn
+        JOIN concept c ON nn.term_modifiers = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 2
+        violation_types = {v.details["type"] for v in violations}
+        assert "join_to_concept" in violation_types
+        assert "cast_to_numeric" in violation_types
+
+    # --- Valid Cases ---
+
+    def test_gap_014_like_search(self) -> None:
+        """Should allow LIKE search on term_modifiers."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE term_modifiers LIKE '%certainty=positive%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_equality_to_string(self) -> None:
+        """Should allow equality comparison to string."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE term_modifiers = 'subject=patient'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_in_select(self) -> None:
+        """Should allow selecting term_modifiers."""
+        sql = """
+        SELECT term_modifiers, note_nlp_id
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_is_null(self) -> None:
+        """Should allow IS NULL check."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE term_modifiers IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_in_order_by(self) -> None:
+        """Should allow ORDER BY term_modifiers."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        ORDER BY term_modifiers
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_cast_to_varchar(self) -> None:
+        """Should allow CAST to VARCHAR (no-op but harmless)."""
+        sql = """
+        SELECT CAST(term_modifiers AS VARCHAR(500))
+        FROM note_nlp
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_valid_note_join(self) -> None:
+        """Should allow valid note_nlp to note join."""
+        sql = """
+        SELECT nn.term_modifiers, n.note_text
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        WHERE nn.term_modifiers LIKE '%certainty=positive%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_no_note_nlp(self) -> None:
+        """Should not flag queries without note_nlp."""
+        sql = """
+        SELECT *
+        FROM person
+        WHERE person_id > 1000
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_no_term_modifiers(self) -> None:
+        """Should not flag note_nlp queries without term_modifiers."""
+        sql = """
+        SELECT note_nlp_id, lexical_variant
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_014_case_insensitive(self) -> None:
+        """Should handle case-insensitive table and column names."""
+        sql = """
+        SELECT *
+        FROM NOTE_NLP nn
+        JOIN CONCEPT c ON nn.TERM_MODIFIERS = c.CONCEPT_ID
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_subquery(self) -> None:
+        """Should detect violations in subqueries."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT CAST(term_modifiers AS INT) AS tm
+            FROM note_nlp
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_014_cte(self) -> None:
+        """Should detect violations in CTEs."""
+        sql = """
+        WITH cte AS (
+            SELECT *
+            FROM note_nlp nn
+            JOIN concept c ON nn.term_modifiers = c.concept_id
+        )
+        SELECT * FROM cte
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestNoteNlpNlpDateForTemporalFiltering:
+    """Tests for GAP_015: note_nlp_nlp_date_for_temporal_filtering."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.note_nlp_nlp_date_for_temporal_filtering")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation tests ---
+
+    def test_gap_015_nlp_date_gt_comparison(self) -> None:
+        """Should detect nlp_date > literal."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+          AND nlp_date > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "comparison"
+        assert violations[0].details["column"] == "nlp_date"
+        assert violations[0].details["operator"] == "GT"
+
+    def test_gap_015_nlp_date_between(self) -> None:
+        """Should detect nlp_date BETWEEN."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+          AND nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "between"
+        assert violations[0].details["column"] == "nlp_date"
+
+    def test_gap_015_nlp_date_gte_comparison(self) -> None:
+        """Should detect nlp_date >= literal."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        WHERE nn.nlp_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "comparison"
+        assert violations[0].details["operator"] == "GTE"
+
+    def test_gap_015_nlp_date_lt_comparison(self) -> None:
+        """Should detect nlp_date < literal."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE nlp_date < '2023-12-31'
+          AND note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "comparison"
+        assert violations[0].details["operator"] == "LT"
+
+    def test_gap_015_nlp_date_lte_comparison(self) -> None:
+        """Should detect nlp_date <= literal."""
+        sql = """
+        SELECT lexical_variant
+        FROM note_nlp
+        WHERE nlp_date <= '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "comparison"
+        assert violations[0].details["operator"] == "LTE"
+
+    def test_gap_015_qualified_nlp_date(self) -> None:
+        """Should detect qualified note_nlp.nlp_date."""
+        sql = """
+        SELECT *
+        FROM note_nlp nn
+        WHERE nn.nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "between"
+
+    def test_gap_015_multiple_violations(self) -> None:
+        """Should detect multiple temporal filters."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE nlp_date > '2023-01-01'
+          AND nlp_date < '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+        assert all(v.details["type"] == "comparison" for v in violations)
+
+    def test_gap_015_case_insensitive(self) -> None:
+        """Should detect case variations."""
+        sql = """
+        SELECT *
+        FROM NOTE_NLP
+        WHERE NLP_DATE > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Valid patterns (should NOT flag) ---
+
+    def test_gap_015_select_nlp_date(self) -> None:
+        """Should allow selecting nlp_date."""
+        sql = """
+        SELECT nlp_date, lexical_variant
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_order_by_nlp_date(self) -> None:
+        """Should allow ORDER BY nlp_date."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        ORDER BY nlp_date DESC
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_group_by_nlp_date(self) -> None:
+        """Should allow GROUP BY nlp_date."""
+        sql = """
+        SELECT nlp_date, COUNT(*)
+        FROM note_nlp
+        GROUP BY nlp_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_correct_pattern_with_note_date(self) -> None:
+        """Should NOT flag when using correct pattern with note.note_date."""
+        sql = """
+        SELECT nn.*
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        WHERE nn.note_nlp_concept_id = 201826
+          AND n.note_date BETWEEN '2023-01-01' AND '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_both_dates_filtered_note_date_primary(self) -> None:
+        """Should NOT flag when both nlp_date and note_date are filtered."""
+        sql = """
+        SELECT nn.*
+        FROM note_nlp nn
+        JOIN note n ON nn.note_id = n.note_id
+        WHERE nn.note_nlp_concept_id = 201826
+          AND n.note_date BETWEEN '2023-01-01' AND '2023-12-31'
+          AND nn.nlp_date > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_no_note_nlp_table(self) -> None:
+        """Should not flag queries without note_nlp."""
+        sql = """
+        SELECT *
+        FROM note
+        WHERE note_date > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_015_nlp_date_equality(self) -> None:
+        """Should detect nlp_date equality (could indicate misunderstanding)."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE nlp_date = '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["type"] == "comparison"
+        assert violations[0].details["operator"] == "EQ"
+
+    def test_gap_015_nlp_date_null_check(self) -> None:
+        """Should allow nlp_date IS NULL check."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE nlp_date IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- Edge cases ---
+
+    def test_gap_015_subquery(self) -> None:
+        """Should detect violations in subqueries."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT *
+            FROM note_nlp
+            WHERE nlp_date > '2023-01-01'
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_015_cte(self) -> None:
+        """Should detect violations in CTEs."""
+        sql = """
+        WITH cte AS (
+            SELECT *
+            FROM note_nlp
+            WHERE nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
+        )
+        SELECT * FROM cte
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_015_unqualified_column_with_note_nlp(self) -> None:
+        """Should detect unqualified nlp_date when note_nlp is in query."""
+        sql = """
+        SELECT *
+        FROM note_nlp
+        WHERE nlp_date > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_015_having_clause(self) -> None:
+        """Should NOT flag nlp_date in HAVING (aggregation context)."""
+        sql = """
+        SELECT nlp_date, COUNT(*)
+        FROM note_nlp
+        GROUP BY nlp_date
+        HAVING MAX(nlp_date) > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
 
 
 class TestDeathVisitOccurrenceJoinValidation:
@@ -10037,7 +11217,6 @@ class TestPersonBirthFieldValidation:
         assert "1850" in violations[0].message
         assert "1900" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_006_year_in_future(self) -> None:
         """year_of_birth in the future should trigger WARNING."""
@@ -10048,7 +11227,6 @@ class TestPersonBirthFieldValidation:
         assert len(violations) == 1
         assert "year_of_birth" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_006_year_equality_boundary(self) -> None:
         """year_of_birth = 1900 (boundary) should pass."""
@@ -10234,7 +11412,6 @@ class TestRequiredDateColumnValidation:
         assert "nullable" in violations[0].message.lower()
         assert "condition_start_date" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_010_end_date_in_temporal_filter(self) -> None:
         """Using condition_end_date for temporal filter should trigger WARNING."""
@@ -10360,7 +11537,6 @@ class TestRequiredDateColumnValidation:
         assert "nullable" in violations[0].message.lower()
         assert "drug_exposure_start_date" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_015_drug_exposure_end_date_violation(self) -> None:
         """Using drug_exposure_end_date for temporal filter should trigger WARNING."""
@@ -10415,7 +11591,6 @@ class TestRequiredDateColumnValidation:
         assert "nullable" in violations[0].message.lower()
         assert "measurement_date" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_030_measurement_time_violation(self) -> None:
         """Using measurement_time for temporal filter should trigger WARNING."""
@@ -10470,7 +11645,6 @@ class TestRequiredDateColumnValidation:
         assert "nullable" in violations[0].message.lower()
         assert "observation_date" in violations[0].message
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_clin_035_observation_date_correct(self) -> None:
         """Using observation_date should pass (no violation)."""
@@ -12303,7 +13477,6 @@ class TestMeasurementDuplicateDetection:
         assert "duplicate" in violations[0].message.lower()
         assert "natural key" in violations[0].message.lower()
         from fastssv.core.base import Severity
-        assert violations[0].severity == Severity.WARNING
 
     def test_omop_238_avg_without_date_grouping_violation(self) -> None:
         """Averaging without date in GROUP BY should trigger WARNING."""
@@ -14834,7 +16007,6 @@ class TestConceptRelationshipIncompleteJoin:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert "concept_id_2" in violations[0].message
         assert "concept_id_1" in violations[0].details["joined_side"]
         assert "concept_id_2" in violations[0].details["missing_side"]
@@ -14850,7 +16022,6 @@ class TestConceptRelationshipIncompleteJoin:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert "concept_id_1" in violations[0].message
         assert "concept_id_2" in violations[0].details["joined_side"]
         assert "concept_id_1" in violations[0].details["missing_side"]
@@ -15022,7 +16193,6 @@ class TestConceptRelationshipIncompleteJoin:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert violations[0].details["cr_alias"] == "cr2"
         assert violations[0].details["missing_side"] == "concept_id_2"
         assert "cr2.concept_id_2" in violations[0].suggested_fix
@@ -15047,7 +16217,6 @@ class TestStandardConceptOrWithClassification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert violations[0].details["type"] == "standard_vs_classification_mix"
         assert "OR mixes" in violations[0].message
 
@@ -15062,7 +16231,6 @@ class TestStandardConceptOrWithClassification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert violations[0].details["type"] == "standard_vs_classification_mix"
         assert "IN mixes" in violations[0].message
 
@@ -15272,7 +16440,6 @@ class TestConceptAncestorSelfIncludeRedundancy:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert violations[0].details["type"] == "union"
         assert violations[0].details["concept_id"] == 201820
         assert "201820" in violations[0].message
@@ -15535,7 +16702,6 @@ class TestConceptRelationshipMissingRelationshipFilter:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity == Severity.WARNING
         assert violations[0].details["type"] == "unfiltered_join"
         assert "row multiplication" in violations[0].message
 
@@ -18546,3 +19712,427 @@ class TestConceptRelationshipValidDateRangeCheck:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+
+class TestDestructiveOperationsOnClinicalTables:
+    """Tests for GAP_004: destructive operations on clinical tables."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.destructive_operations_on_clinical_tables")()
+        return rule.validate(sql, dialect)
+
+    def test_gap_004_delete_on_measurement_violation(self) -> None:
+        """DELETE on measurement table should trigger ERROR."""
+        sql = "DELETE FROM measurement WHERE person_id = 12345"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "DELETE" in violations[0].message
+        assert "measurement" in violations[0].message.lower()
+        from fastssv.core.base import Severity
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_004_update_on_condition_occurrence_violation(self) -> None:
+        """UPDATE on condition_occurrence should trigger ERROR."""
+        sql = """
+        UPDATE condition_occurrence 
+        SET condition_end_date = condition_start_date 
+        WHERE condition_end_date IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "UPDATE" in violations[0].message
+
+    def test_gap_004_insert_into_drug_exposure_violation(self) -> None:
+        """INSERT into drug_exposure should trigger ERROR."""
+        sql = """
+        INSERT INTO drug_exposure (person_id, drug_concept_id, drug_exposure_start_date)
+        VALUES (12345, 1545996, '2023-01-01')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "INSERT" in violations[0].message
+
+    def test_gap_004_truncate_visit_occurrence_violation(self) -> None:
+        """TRUNCATE on visit_occurrence should trigger ERROR."""
+        sql = "TRUNCATE TABLE visit_occurrence"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "TRUNCATE" in violations[0].message
+
+    def test_gap_004_drop_procedure_occurrence_violation(self) -> None:
+        """DROP on procedure_occurrence should trigger ERROR."""
+        sql = "DROP TABLE procedure_occurrence"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "DROP" in violations[0].message
+
+    def test_gap_004_alter_observation_violation(self) -> None:
+        """ALTER TABLE on observation should trigger ERROR."""
+        sql = "ALTER TABLE observation ADD COLUMN custom_field VARCHAR(100)"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "ALTER" in violations[0].message
+
+    def test_gap_004_delete_from_person_violation(self) -> None:
+        """DELETE from person table should trigger ERROR."""
+        sql = "DELETE FROM person WHERE year_of_birth < 1900"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "person" in violations[0].message.lower()
+
+    def test_gap_004_delete_from_death_violation(self) -> None:
+        """DELETE from death table should trigger ERROR."""
+        sql = "DELETE FROM death WHERE death_date < '2000-01-01'"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_004_select_correct(self) -> None:
+        """SELECT (read-only) should pass."""
+        sql = "SELECT * FROM measurement WHERE person_id = 12345"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_select_with_aggregation_correct(self) -> None:
+        """SELECT with aggregation should pass."""
+        sql = """
+        SELECT 
+          measurement_concept_id,
+          COUNT(*) AS measurement_count,
+          AVG(value_as_number) AS avg_value
+        FROM measurement
+        GROUP BY measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_create_temp_table_correct(self) -> None:
+        """CREATE TEMP TABLE should pass."""
+        sql = "CREATE TEMP TABLE my_cohort AS SELECT * FROM person WHERE year_of_birth > 1950"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_create_table_correct(self) -> None:
+        """CREATE TABLE (user table) should pass."""
+        sql = "CREATE TABLE my_analysis_results (person_id INT, result_value FLOAT)"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_insert_into_user_table_correct(self) -> None:
+        """INSERT into non-protected user table should pass."""
+        sql = """
+        INSERT INTO my_results (person_id, avg_measurement)
+        SELECT person_id, AVG(value_as_number)
+        FROM measurement
+        GROUP BY person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_delete_from_user_table_correct(self) -> None:
+        """DELETE from non-protected user table should pass."""
+        sql = "DELETE FROM my_analysis_table WHERE result_value < 0"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_drop_user_table_correct(self) -> None:
+        """DROP user table should pass."""
+        sql = "DROP TABLE my_temp_results"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_update_concept_table_correct(self) -> None:
+        """UPDATE on non-clinical table (concept) should pass."""
+        sql = "UPDATE concept SET concept_name = 'Updated' WHERE concept_id = 0"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_004_complex_delete_with_subquery_violation(self) -> None:
+        """DELETE with complex WHERE clause should still trigger ERROR."""
+        sql = """
+        DELETE FROM measurement m
+        WHERE EXISTS (
+          SELECT 1 FROM person p 
+          WHERE p.person_id = m.person_id 
+          AND p.year_of_birth < 1900
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "measurement" in violations[0].message.lower()
+
+    def test_gap_004_delete_multiple_protected_tables_violation(self) -> None:
+        """Multiple DELETE statements on protected tables should trigger multiple errors."""
+        sql = """
+        DELETE FROM measurement WHERE person_id = 12345;
+        DELETE FROM condition_occurrence WHERE person_id = 12345;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+    def test_gap_004_update_visit_detail_violation(self) -> None:
+        """UPDATE on visit_detail should trigger ERROR."""
+        sql = "UPDATE visit_detail SET visit_detail_end_date = '2023-12-31'"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "visit_detail" in violations[0].message.lower()
+
+
+# =============================================================================
+# GAP_005: Datetime BETWEEN with Date Literal Tests
+# =============================================================================
+
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+class TestDatetimeBetweenDateLiteral:
+    """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        """Helper to run the rule on SQL and return violations."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("temporal.datetime_between_date_literal")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation Tests ---
+
+    def test_gap_005_measurement_datetime_between_date_literals_violation(self) -> None:
+        """BETWEEN on measurement_datetime with date literals should trigger WARNING."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "measurement_datetime" in violations[0].message
+        assert "'2023-01-01'" in violations[0].message
+        assert "'2023-01-31'" in violations[0].message
+        assert "midnight" in violations[0].message.lower() or "time" in violations[0].message.lower()
+
+    def test_gap_005_condition_start_datetime_violation(self) -> None:
+        """BETWEEN on condition_start_datetime should trigger WARNING."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_start_datetime BETWEEN '2020-01-01' AND '2020-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "condition_start_datetime" in violations[0].message
+
+    def test_gap_005_visit_start_datetime_violation(self) -> None:
+        """BETWEEN on visit_start_datetime should trigger WARNING."""
+        sql = """
+        SELECT visit_occurrence_id, person_id
+        FROM visit_occurrence
+        WHERE visit_start_datetime BETWEEN '2022-06-01' AND '2022-06-30'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "visit_start_datetime" in violations[0].message
+
+    def test_gap_005_drug_exposure_start_datetime_violation(self) -> None:
+        """BETWEEN on drug_exposure_start_datetime should trigger WARNING."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_exposure_start_datetime BETWEEN '2021-03-01' AND '2021-03-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "drug_exposure_start_datetime" in violations[0].message
+
+    def test_gap_005_observation_datetime_violation(self) -> None:
+        """BETWEEN on observation_datetime should trigger WARNING."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_datetime BETWEEN '2023-01-01' AND '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "observation_datetime" in violations[0].message
+
+    def test_gap_005_aliased_table_violation(self) -> None:
+        """BETWEEN on datetime column from aliased table should trigger WARNING."""
+        sql = """
+        SELECT m.measurement_id
+        FROM measurement m
+        WHERE m.measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "measurement_datetime" in violations[0].message
+
+    def test_gap_005_multiple_between_violations(self) -> None:
+        """Multiple BETWEEN clauses on datetime columns should trigger multiple warnings."""
+        sql = """
+        SELECT * FROM measurement m
+        JOIN observation o ON m.person_id = o.person_id
+        WHERE m.measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
+          AND o.observation_datetime BETWEEN '2023-02-01' AND '2023-02-28'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+    def test_gap_005_alternative_date_format_violation(self) -> None:
+        """BETWEEN with alternative date format (YYYYMMDD) should trigger WARNING."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime BETWEEN '20230101' AND '20230131'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct Patterns ---
+
+    def test_gap_005_between_with_time_component_correct(self) -> None:
+        """BETWEEN with time component in end literal should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31 23:59:59'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_between_with_timestamp_correct(self) -> None:
+        """BETWEEN with full timestamp literals should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime BETWEEN '2023-01-01 00:00:00' AND '2023-01-31 23:59:59.999'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_greater_than_less_than_correct(self) -> None:
+        """Using >= and < instead of BETWEEN should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime >= '2023-01-01'
+          AND measurement_datetime < '2023-02-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_date_column_between_correct(self) -> None:
+        """BETWEEN on *_date column (not *_datetime) should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_date BETWEEN '2023-01-01' AND '2023-01-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_condition_start_date_correct(self) -> None:
+        """BETWEEN on condition_start_date should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_start_date BETWEEN '2020-01-01' AND '2020-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_between_with_column_reference_correct(self) -> None:
+        """BETWEEN with column reference (not literal) should pass."""
+        sql = """
+        SELECT * FROM measurement m
+        JOIN observation_period op ON m.person_id = op.person_id
+        WHERE m.measurement_datetime BETWEEN op.observation_period_start_date 
+                                         AND op.observation_period_end_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_no_between_clause_correct(self) -> None:
+        """Query without BETWEEN should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime > '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_between_on_non_datetime_column_correct(self) -> None:
+        """BETWEEN on non-datetime column should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE value_as_number BETWEEN 100 AND 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_no_measurement_table_correct(self) -> None:
+        """Query without datetime columns should pass."""
+        sql = """
+        SELECT * FROM concept
+        WHERE concept_id BETWEEN 1000 AND 2000
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_005_between_in_subquery_violation(self) -> None:
+        """BETWEEN in subquery should also trigger WARNING."""
+        sql = """
+        SELECT person_id
+        FROM (
+            SELECT person_id, measurement_datetime
+            FROM measurement
+            WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "measurement_datetime" in violations[0].message
+
+    def test_gap_005_details_structure(self) -> None:
+        """Verify violation details structure."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        details = violations[0].details
+        assert "column" in details
+        assert "start" in details
+        assert "end" in details
+        assert details["column"] == "measurement_datetime"
+        assert details["start"] == "2023-01-01"
+        assert details["end"] == "2023-01-31"

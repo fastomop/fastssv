@@ -27,4 +27,7 @@ from .visit import *  # noqa: F401, F403
 # Import death rules
 from .death import *  # noqa: F401, F403
 
-__all__ = []
+# Import cost rules
+from .cost_paid_ingredient_cost_drug_specific import CostPaidIngredientCostDrugSpecificRule
+
+__all__ = ["CostPaidIngredientCostDrugSpecificRule"]
