@@ -11,6 +11,7 @@ This file contains comprehensive tests for all validation rule categories:
 
 import pytest
 
+from fastssv.core.base import Severity
 from fastssv.rules import validate_concept_standardization
 
 
@@ -2444,6 +2445,66 @@ class TestSourceConceptIdWarning:
         violations = self._run_rule(sql)
         assert len(violations) > 0
 
+    def test_visit_detail_source_concept_id_warns(self) -> None:
+        """Filtering on visit_detail_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM visit_detail
+        WHERE visit_detail_source_concept_id = 32037
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "visit_detail_source_concept_id" in violations[0].message
+        assert "visit_detail_concept_id" in violations[0].message
+
+    def test_visit_source_concept_id_warns(self) -> None:
+        """GAP_024: Filtering on visit_occurrence.visit_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM visit_occurrence
+        WHERE visit_source_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "visit_source_concept_id" in violations[0].message
+        assert "visit_concept_id" in violations[0].message
+
+    def test_gender_source_concept_id_warns(self) -> None:
+        """GAP_025: Filtering on person.gender_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM person
+        WHERE gender_source_concept_id = 8532
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "gender_source_concept_id" in violations[0].message
+        assert "gender_concept_id" in violations[0].message
+
+    def test_race_source_concept_id_warns(self) -> None:
+        """GAP_025: Filtering on person.race_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM person
+        WHERE race_source_concept_id = 8527
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "race_source_concept_id" in violations[0].message
+        assert "race_concept_id" in violations[0].message
+
+    def test_ethnicity_source_concept_id_warns(self) -> None:
+        """GAP_025: Filtering on person.ethnicity_source_concept_id should warn."""
+        sql = """
+        SELECT person_id
+        FROM person
+        WHERE ethnicity_source_concept_id = 38003563
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "ethnicity_source_concept_id" in violations[0].message
+        assert "ethnicity_concept_id" in violations[0].message
+
     def test_multiple_source_concept_id_filters_warns_multiple(self) -> None:
         """Multiple source_concept_id filters should generate multiple warnings."""
         sql = """
@@ -2473,6 +2534,88 @@ class TestSourceConceptIdWarning:
         """
         violations = self._run_rule(sql)
         assert violations == []
+
+    def test_gap_028_unit_source_concept_id_warns(self) -> None:
+        """GAP_028: Filtering on measurement.unit_source_concept_id should warn."""
+        sql = """
+        SELECT * FROM measurement WHERE unit_source_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "unit_source_concept_id" in violations[0].message
+        assert "unit_concept_id" in violations[0].message
+
+    def test_gap_028_unit_source_concept_id_in_clause_warns(self) -> None:
+        """GAP_028: IN clause with unit_source_concept_id should warn."""
+        sql = """
+        SELECT person_id, value_as_number
+        FROM measurement
+        WHERE unit_source_concept_id IN (8840, 8753, 9546)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "unit_source_concept_id" in violations[0].message
+
+    def test_gap_028_unit_source_concept_id_qualified_warns(self) -> None:
+        """GAP_028: Qualified unit_source_concept_id should warn."""
+        sql = """
+        SELECT m.person_id, m.value_as_number
+        FROM measurement m
+        WHERE m.unit_source_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "unit_source_concept_id" in violations[0].message
+
+    def test_gap_028_unit_concept_id_does_not_warn(self) -> None:
+        """GAP_028: Using standard unit_concept_id should not warn."""
+        sql = """
+        SELECT * FROM measurement WHERE unit_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_gap_028_unit_source_concept_id_in_select_not_flagged(self) -> None:
+        """GAP_028: Selecting unit_source_concept_id (not filtering) should not warn."""
+        sql = """
+        SELECT person_id, unit_source_concept_id, value_as_number
+        FROM measurement
+        WHERE unit_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_gap_028_unit_source_concept_id_source_exploration_not_flagged(self) -> None:
+        """GAP_028: Source exploration queries should not warn."""
+        sql = """
+        SELECT unit_source_concept_id, unit_source_value, COUNT(*)
+        FROM measurement
+        WHERE unit_source_concept_id = 8840
+        GROUP BY unit_source_concept_id, unit_source_value
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_gap_028_unit_source_concept_id_not_equal_warns(self) -> None:
+        """GAP_028: NEQ operator with unit_source_concept_id should warn."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE unit_source_concept_id != 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+
+    def test_gap_028_unit_source_concept_id_join_with_measurement_warns(self) -> None:
+        """GAP_028: Filtering unit_source_concept_id in JOIN query should warn."""
+        sql = """
+        SELECT m.person_id, m.value_as_number, p.gender_concept_id
+        FROM measurement m
+        JOIN person p ON m.person_id = p.person_id
+        WHERE m.unit_source_concept_id = 8840
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "unit_source_concept_id" in violations[0].message
 
 
 class TestSchemaValidation:
@@ -20136,3 +20279,187 @@ class TestDatetimeBetweenDateLiteral:
         assert details["column"] == "measurement_datetime"
         assert details["start"] == "2023-01-01"
         assert details["end"] == "2023-01-31"
+
+
+class TestNoStringIdentification:
+    """Tests for anti_patterns.no_string_identification rule (covers GAP_022, GAP_023, GAP_018)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.no_string_identification")()
+        return rule.validate(sql, dialect)
+
+    # --- GAP_022: visit_detail admitted/discharged source values ---
+
+    def test_gap_022_visit_detail_admitted_from_source_value_equality(self) -> None:
+        """GAP_022: Filtering on visit_detail.admitted_from_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_detail
+        WHERE admitted_from_source_value = 'Emergency'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "admitted_from_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_022_visit_detail_admitted_from_source_value_like(self) -> None:
+        """GAP_022: LIKE pattern on visit_detail.admitted_from_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_detail
+        WHERE admitted_from_source_value LIKE '%Emergency%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "admitted_from_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_022_visit_detail_discharged_to_source_value_in(self) -> None:
+        """GAP_022: IN clause on visit_detail.discharged_to_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_detail
+        WHERE discharged_to_source_value IN ('Home', 'SNF', 'Hospital')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "discharged_to_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_022_visit_detail_concept_id_correct(self) -> None:
+        """GAP_022: Using admitted_from_concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_detail
+        WHERE admitted_from_concept_id = 8870
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- GAP_023: visit_occurrence admitted/discharged source values ---
+
+    def test_gap_023_visit_occurrence_admitted_from_source_value_equality(self) -> None:
+        """GAP_023: Filtering on visit_occurrence.admitted_from_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence
+        WHERE admitted_from_source_value = 'ER'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "admitted_from_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_023_visit_occurrence_discharged_to_source_value_equality(self) -> None:
+        """GAP_023: Filtering on visit_occurrence.discharged_to_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence
+        WHERE discharged_to_source_value = 'Home'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "discharged_to_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_023_visit_occurrence_discharged_to_source_value_like(self) -> None:
+        """GAP_023: LIKE pattern on visit_occurrence.discharged_to_source_value should error."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence
+        WHERE discharged_to_source_value LIKE '%Home%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "discharged_to_source_value" in violations[0].message
+
+    def test_gap_023_visit_occurrence_concept_id_correct(self) -> None:
+        """GAP_023: Using discharged_to_concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM visit_occurrence
+        WHERE discharged_to_concept_id = 8536
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- General source_value tests ---
+
+    def test_condition_source_value_string_match(self) -> None:
+        """String matching on condition_source_value should error."""
+        sql = """
+        SELECT *
+        FROM condition_occurrence
+        WHERE condition_source_value LIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "condition_source_value" in violations[0].message
+
+    def test_drug_source_value_in_clause(self) -> None:
+        """IN clause on drug_source_value should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure
+        WHERE drug_source_value IN ('ASP001', 'ASP002')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "drug_source_value" in violations[0].message
+
+    def test_source_value_select_only_passes(self) -> None:
+        """Selecting source_value without filtering should pass."""
+        sql = """
+        SELECT condition_source_value, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_source_value
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_026_drug_exposure_dose_unit_source_value_equality(self) -> None:
+        """GAP_026: Filtering on drug_exposure.dose_unit_source_value should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure
+        WHERE dose_unit_source_value = 'mg'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "dose_unit_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_026_drug_exposure_dose_unit_source_value_in_clause(self) -> None:
+        """GAP_026: IN clause on drug_exposure.dose_unit_source_value should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure
+        WHERE dose_unit_source_value IN ('mg', 'mcg', 'g')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "dose_unit_source_value" in violations[0].message
+
+    def test_gap_027_drug_exposure_route_source_value_equality(self) -> None:
+        """GAP_027: Filtering on drug_exposure.route_source_value should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure
+        WHERE route_source_value = 'PO'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "route_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_027_drug_exposure_route_source_value_like(self) -> None:
+        """GAP_027: LIKE pattern on drug_exposure.route_source_value should error."""
+        sql = """
+        SELECT *
+        FROM drug_exposure
+        WHERE route_source_value LIKE '%oral%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "route_source_value" in violations[0].message

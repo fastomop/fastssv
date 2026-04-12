@@ -42,6 +42,11 @@ SOURCE_CONCEPT_ID_COLUMNS: Set[str] = {
     "device_source_concept_id",
     "visit_source_concept_id",
     "specimen_source_concept_id",
+    "visit_detail_source_concept_id",
+    "gender_source_concept_id",
+    "race_source_concept_id",
+    "ethnicity_source_concept_id",
+    "unit_source_concept_id",
 }
 
 SOURCE_TO_STANDARD: Dict[str, str] = {
@@ -53,6 +58,11 @@ SOURCE_TO_STANDARD: Dict[str, str] = {
     "device_source_concept_id": "device_concept_id",
     "visit_source_concept_id": "visit_concept_id",
     "specimen_source_concept_id": "specimen_concept_id",
+    "visit_detail_source_concept_id": "visit_detail_concept_id",
+    "gender_source_concept_id": "gender_concept_id",
+    "race_source_concept_id": "race_concept_id",
+    "ethnicity_source_concept_id": "ethnicity_concept_id",
+    "unit_source_concept_id": "unit_concept_id",
 }
 
 
