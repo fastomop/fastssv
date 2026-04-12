@@ -20514,3 +20514,75 @@ class TestNoStringIdentification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    # --- GAP_030: observation value_source_value ---
+
+    def test_gap_030_observation_value_source_value_equality(self) -> None:
+        """GAP_030: Filtering on observation.value_source_value should error."""
+        sql = """
+        SELECT * FROM observation WHERE value_source_value = 'Yes'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_030_observation_value_source_value_like(self) -> None:
+        """GAP_030: LIKE pattern on observation.value_source_value should error."""
+        sql = """
+        SELECT person_id, observation_concept_id
+        FROM observation
+        WHERE value_source_value LIKE '%smoker%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_030_observation_value_source_value_in_clause(self) -> None:
+        """GAP_030: IN clause on observation.value_source_value should error."""
+        sql = """
+        SELECT *
+        FROM observation
+        WHERE value_source_value IN ('Yes', 'No', 'Unknown')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+
+    def test_gap_030_observation_value_source_value_qualified(self) -> None:
+        """GAP_030: Qualified observation.value_source_value should error."""
+        sql = """
+        SELECT o.person_id
+        FROM observation o
+        WHERE o.value_source_value = 'Positive'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+
+    def test_gap_030_observation_value_as_concept_id_correct(self) -> None:
+        """GAP_030: Using value_as_concept_id should pass."""
+        sql = """
+        SELECT * FROM observation WHERE value_as_concept_id = 4188539
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_030_observation_value_as_number_correct(self) -> None:
+        """GAP_030: Using value_as_number should pass."""
+        sql = """
+        SELECT * FROM observation WHERE value_as_number > 5.0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_030_observation_value_as_string_correct(self) -> None:
+        """GAP_030: Using value_as_string for non-coded text should pass."""
+        sql = """
+        SELECT person_id, value_as_string
+        FROM observation
+        WHERE observation_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0

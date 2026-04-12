@@ -33,6 +33,7 @@ SOURCE_VALUE_COLUMNS = {
     ("measurement", "value_source_value"),
     ("observation", "observation_source_value"),
     ("observation", "unit_source_value"),
+    ("observation", "value_source_value"),
     ("observation", "qualifier_source_value"),
     ("device_exposure", "device_source_value"),
     ("visit_occurrence", "visit_source_value"),
