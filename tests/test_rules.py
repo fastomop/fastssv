@@ -20463,3 +20463,54 @@ class TestNoStringIdentification:
         violations = self._run_rule(sql)
         assert len(violations) > 0
         assert "route_source_value" in violations[0].message
+
+    # --- GAP_029: measurement value_source_value ---
+
+    def test_gap_029_measurement_value_source_value_equality(self) -> None:
+        """GAP_029: Filtering on measurement.value_source_value should error."""
+        sql = """
+        SELECT * FROM measurement WHERE value_source_value = 'Positive'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_029_measurement_value_source_value_like(self) -> None:
+        """GAP_029: LIKE pattern on measurement.value_source_value should error."""
+        sql = """
+        SELECT person_id, value_as_number
+        FROM measurement
+        WHERE value_source_value LIKE '%Positive%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_029_measurement_value_source_value_in_clause(self) -> None:
+        """GAP_029: IN clause on measurement.value_source_value should error."""
+        sql = """
+        SELECT *
+        FROM measurement
+        WHERE value_source_value IN ('Positive', 'Negative', 'Indeterminate')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "value_source_value" in violations[0].message
+
+    def test_gap_029_measurement_value_as_concept_id_correct(self) -> None:
+        """GAP_029: Using value_as_concept_id should pass."""
+        sql = """
+        SELECT * FROM measurement WHERE value_as_concept_id = 45884084
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_029_measurement_value_as_number_correct(self) -> None:
+        """GAP_029: Using value_as_number should pass."""
+        sql = """
+        SELECT * FROM measurement WHERE value_as_number > 10.0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
