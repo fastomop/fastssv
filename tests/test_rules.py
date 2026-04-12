@@ -20586,3 +20586,46 @@ class TestNoStringIdentification:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    # --- GAP_031: observation qualifier_source_value ---
+
+    def test_gap_031_observation_qualifier_source_value_equality(self) -> None:
+        """GAP_031: Filtering on observation.qualifier_source_value should error."""
+        sql = """
+        SELECT * FROM observation WHERE qualifier_source_value = 'severe'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "qualifier_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_031_observation_qualifier_source_value_like(self) -> None:
+        """GAP_031: LIKE pattern on observation.qualifier_source_value should error."""
+        sql = """
+        SELECT person_id, observation_concept_id
+        FROM observation
+        WHERE qualifier_source_value LIKE '%moderate%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "qualifier_source_value" in violations[0].message
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_031_observation_qualifier_source_value_in_clause(self) -> None:
+        """GAP_031: IN clause on observation.qualifier_source_value should error."""
+        sql = """
+        SELECT *
+        FROM observation
+        WHERE qualifier_source_value IN ('mild', 'moderate', 'severe')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "qualifier_source_value" in violations[0].message
+
+    def test_gap_031_observation_qualifier_concept_id_correct(self) -> None:
+        """GAP_031: Using qualifier_concept_id should pass."""
+        sql = """
+        SELECT * FROM observation WHERE qualifier_concept_id = 4023515
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
