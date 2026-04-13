@@ -10,6 +10,7 @@ from .drug_exposure_sig_parsing import DrugExposureSigParsingRule
 from .drug_quantity_validation import DrugQuantityValidationRule
 from .drug_strength_validity_filter import DrugStrengthValidityFilterRule
 from .drug_exposure_cardinality_validation import DrugExposureCardinalityValidationRule
+from .drug_strength_numerator_denominator_for_concentration import DrugStrengthNumeratorDenominatorForConcentrationRule
 
 __all__ = [
     "DrugDaysSupplyValidationRule",
@@ -19,4 +20,5 @@ __all__ = [
     "DrugQuantityValidationRule",
     "DrugStrengthValidityFilterRule",
     "DrugExposureCardinalityValidationRule",
+    "DrugStrengthNumeratorDenominatorForConcentrationRule",
 ]

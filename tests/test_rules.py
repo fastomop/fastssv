@@ -21002,3 +21002,452 @@ class TestUnionVsUnionAllClinicalEvents:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+
+# --- GAP_037: Ambiguous Column Reference ---
+
+
+class TestAmbiguousColumnReference:
+    """Tests for GAP_037 - Ambiguous column reference in multi-table queries."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.ambiguous_column_reference import (
+            AmbiguousColumnReferenceRule,
+        )
+
+        rule = AmbiguousColumnReferenceRule()
+        return rule.validate(sql, dialect)
+
+    def test_gap_037_unqualified_person_id_in_where(self) -> None:
+        """GAP_037: Unqualified person_id in WHERE should warn."""
+        sql = """
+        SELECT co.person_id, co.condition_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        WHERE person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+        assert "ambiguous" in violations[0].message.lower()
+
+    def test_gap_037_unqualified_person_id_in_select(self) -> None:
+        """GAP_037: Unqualified person_id in SELECT should warn."""
+        sql = """
+        SELECT person_id, condition_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        WHERE co.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_037_qualified_columns(self) -> None:
+        """GAP_037: Fully qualified columns should pass."""
+        sql = """
+        SELECT co.person_id, co.condition_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        WHERE co.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_037_single_table_query(self) -> None:
+        """GAP_037: Single table queries cannot have ambiguous columns."""
+        sql = """
+        SELECT person_id, condition_concept_id
+        FROM condition_occurrence
+        WHERE person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_037_unqualified_provider_id(self) -> None:
+        """GAP_037: Unqualified provider_id should warn."""
+        sql = """
+        SELECT provider_id, COUNT(*)
+        FROM drug_exposure de
+        JOIN provider pr ON de.provider_id = pr.provider_id
+        GROUP BY provider_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message.lower()
+
+    def test_gap_037_unqualified_care_site_id(self) -> None:
+        """GAP_037: Unqualified care_site_id should warn."""
+        sql = """
+        SELECT care_site_id, visit_start_date
+        FROM visit_occurrence vo
+        JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+        WHERE care_site_id = 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "care_site_id" in violations[0].message.lower()
+
+    def test_gap_037_unqualified_visit_occurrence_id(self) -> None:
+        """GAP_037: Unqualified visit_occurrence_id should warn."""
+        sql = """
+        SELECT visit_occurrence_id, condition_concept_id
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE visit_occurrence_id = 500
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_037_unqualified_visit_detail_id(self) -> None:
+        """GAP_037: Unqualified visit_detail_id should warn."""
+        sql = """
+        SELECT visit_detail_id, measurement_concept_id
+        FROM measurement m
+        JOIN visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
+        ORDER BY visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_037_multiple_unqualified_columns(self) -> None:
+        """GAP_037: Multiple unqualified ambiguous columns should warn once each."""
+        sql = """
+        SELECT person_id, provider_id, condition_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        JOIN provider pr ON co.provider_id = pr.provider_id
+        WHERE person_id = 12345 AND provider_id = 100
+        """
+        violations = self._run_rule(sql)
+        # Should detect both person_id and provider_id (deduplicated)
+        assert len(violations) == 2
+
+    def test_gap_037_mixed_qualified_unqualified(self) -> None:
+        """GAP_037: Mix of qualified and unqualified should warn on unqualified."""
+        sql = """
+        SELECT co.person_id, provider_id, co.condition_concept_id
+        FROM condition_occurrence co
+        JOIN provider pr ON co.provider_id = pr.provider_id
+        WHERE co.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        # Only provider_id is unqualified
+        assert len(violations) == 1
+        assert "provider_id" in violations[0].message.lower()
+
+    def test_gap_037_join_on_clause_excluded(self) -> None:
+        """GAP_037: JOIN ON clauses should not trigger warnings (always qualified)."""
+        sql = """
+        SELECT co.person_id, co.condition_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON person_id = person_id
+        WHERE co.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        # JOIN ON uses unqualified, but that's a different error (not ambiguous reference)
+        # Our rule should not flag JOIN ON clauses
+        assert len(violations) == 0
+
+    def test_gap_037_three_table_join(self) -> None:
+        """GAP_037: Three table joins with unqualified columns."""
+        sql = """
+        SELECT person_id, condition_concept_id, drug_concept_id
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        JOIN drug_exposure de ON p.person_id = de.person_id
+        WHERE person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "person_id" in violations[0].message.lower()
+
+    def test_gap_037_subquery_single_table(self) -> None:
+        """GAP_037: Subquery with single table should not warn."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT person_id, condition_concept_id
+            FROM condition_occurrence
+            WHERE person_id = 12345
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_037_non_ambiguous_column(self) -> None:
+        """GAP_037: Non-ambiguous columns should not warn."""
+        sql = """
+        SELECT condition_concept_id, condition_start_date
+        FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# --- GAP_039: Visit Detail Admitted/Discharged Domain ---
+
+
+class TestVisitDetailAdmittedDischargedDomain:
+    """Tests for GAP_039 - visit_detail admitted_from/discharged_to domain validation."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.domain_specific.visit.visit_detail_admitted_discharged_domain import (
+            VisitDetailAdmittedDischargedDomainRule,
+        )
+
+        rule = VisitDetailAdmittedDischargedDomainRule()
+        return rule.validate(sql, dialect)
+
+    def test_gap_039_hardcoded_admitted_from(self) -> None:
+        """GAP_039: Hardcoded admitted_from_concept_id without domain validation should warn."""
+        sql = """
+        SELECT * FROM visit_detail
+        WHERE admitted_from_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "admitted_from_concept_id" in violations[0].message.lower()
+        assert "domain" in violations[0].message.lower()
+        assert violations[0].severity == Severity.WARNING
+
+    def test_gap_039_hardcoded_discharged_to(self) -> None:
+        """GAP_039: Hardcoded discharged_to_concept_id without domain validation should warn."""
+        sql = """
+        SELECT * FROM visit_detail
+        WHERE discharged_to_concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "discharged_to_concept_id" in violations[0].message.lower()
+
+    def test_gap_039_hardcoded_in_clause(self) -> None:
+        """GAP_039: Hardcoded IN clause should warn."""
+        sql = """
+        SELECT * FROM visit_detail
+        WHERE admitted_from_concept_id IN (201826, 312327, 4329847)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "201826" in violations[0].message
+
+    def test_gap_039_both_columns_hardcoded(self) -> None:
+        """GAP_039: Both columns with hardcoded IDs should warn twice."""
+        sql = """
+        SELECT * FROM visit_detail
+        WHERE admitted_from_concept_id = 201826
+          AND discharged_to_concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+    def test_gap_039_with_domain_validation_pass(self) -> None:
+        """GAP_039: Query with domain validation should pass."""
+        sql = """
+        SELECT vd.*
+        FROM visit_detail vd
+        JOIN concept c ON vd.admitted_from_concept_id = c.concept_id
+        WHERE c.domain_id = 'Visit'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_with_domain_validation_in_clause(self) -> None:
+        """GAP_039: Query with domain_id IN clause should pass."""
+        sql = """
+        SELECT vd.*
+        FROM visit_detail vd
+        JOIN concept c ON vd.discharged_to_concept_id = c.concept_id
+        WHERE c.domain_id IN ('Visit', 'Place of Service')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_no_hardcoded_filter(self) -> None:
+        """GAP_039: No hardcoded filtering should pass."""
+        sql = """
+        SELECT vd.*
+        FROM visit_detail vd
+        JOIN concept c ON vd.admitted_from_concept_id = c.concept_id
+        WHERE c.concept_name LIKE '%Emergency%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_visit_occurrence_excluded(self) -> None:
+        """GAP_039: visit_occurrence should not trigger (different table)."""
+        sql = """
+        SELECT * FROM visit_occurrence
+        WHERE admitted_from_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_no_visit_detail_table(self) -> None:
+        """GAP_039: Queries without visit_detail should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_place_of_service_domain(self) -> None:
+        """GAP_039: Place of Service domain should also pass validation."""
+        sql = """
+        SELECT vd.*
+        FROM visit_detail vd
+        JOIN concept c ON vd.discharged_to_concept_id = c.concept_id
+        WHERE c.domain_id = 'Place of Service'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_039_aliased_table(self) -> None:
+        """GAP_039: Aliased tables should be detected."""
+        sql = """
+        SELECT * FROM visit_detail vd
+        WHERE vd.admitted_from_concept_id = 8870
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_039_select_without_filter(self) -> None:
+        """GAP_039: SELECT without WHERE filter should pass."""
+        sql = """
+        SELECT vd.admitted_from_concept_id, vd.discharged_to_concept_id
+        FROM visit_detail vd
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+
+# --- GAP_040: Attribute Definition Invalid Join ---
+
+
+class TestAttributeDefinitionInvalidJoin:
+    """Tests for GAP_040 - attribute_definition invalid join detection."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.attribute_definition_invalid_join import (
+            AttributeDefinitionInvalidJoinRule,
+        )
+
+        rule = AttributeDefinitionInvalidJoinRule()
+        return rule.validate(sql, dialect)
+
+    def test_gap_040_join_to_person(self) -> None:
+        """GAP_040: Joining attribute_definition to person should error."""
+        sql = """
+        SELECT * FROM attribute_definition ad
+        JOIN person p ON ad.attribute_definition_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "attribute_definition" in violations[0].message.lower()
+        assert "person" in violations[0].message.lower()
+        assert violations[0].severity == Severity.ERROR
+
+    def test_gap_040_join_to_condition_occurrence(self) -> None:
+        """GAP_040: Joining attribute_definition to clinical table should error."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN attribute_definition ad ON co.condition_occurrence_id = ad.attribute_definition_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "condition_occurrence" in violations[0].message.lower()
+
+    def test_gap_040_cross_join(self) -> None:
+        """GAP_040: Cross join with attribute_definition should error."""
+        sql = """
+        SELECT * FROM attribute_definition, person
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_040_left_join_from_person(self) -> None:
+        """GAP_040: LEFT JOIN from another table should error."""
+        sql = """
+        SELECT * FROM person p
+        LEFT JOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_040_multiple_tables(self) -> None:
+        """GAP_040: Multiple tables with attribute_definition should error."""
+        sql = """
+        SELECT * FROM attribute_definition ad
+        JOIN person p ON ad.attribute_definition_id = p.person_id
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "person" in violations[0].message.lower()
+
+    def test_gap_040_join_to_concept(self) -> None:
+        """GAP_040: Joining to vocabulary tables should error."""
+        sql = """
+        SELECT * FROM attribute_definition ad
+        JOIN concept c ON ad.attribute_definition_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_040_standalone_query_pass(self) -> None:
+        """GAP_040: Standalone query should pass."""
+        sql = """
+        SELECT * FROM attribute_definition
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_040_standalone_with_filter_pass(self) -> None:
+        """GAP_040: Standalone query with filter should pass."""
+        sql = """
+        SELECT * FROM attribute_definition
+        WHERE attribute_definition_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_040_not_used_pass(self) -> None:
+        """GAP_040: Queries without attribute_definition should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_040_subquery_standalone_pass(self) -> None:
+        """GAP_040: Subquery with only attribute_definition should pass."""
+        sql = """
+        SELECT * FROM person
+        WHERE person_id IN (
+            SELECT attribute_definition_id FROM attribute_definition
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_gap_040_aliased_table(self) -> None:
+        """GAP_040: Aliased attribute_definition in join should error."""
+        sql = """
+        SELECT * FROM attribute_definition ad, drug_exposure de
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_gap_040_right_join(self) -> None:
+        """GAP_040: RIGHT JOIN should also be detected."""
+        sql = """
+        SELECT * FROM person p
+        RIGHT JOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+

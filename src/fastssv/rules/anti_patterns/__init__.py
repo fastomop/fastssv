@@ -15,6 +15,9 @@ from .concept_relationship_transitive_misuse import ConceptRelationshipTransitiv
 from .concept_ancestor_mixed_with_concept_relationship_redundantly import ConceptAncestorMixedWithConceptRelationshipRedundantlyRule
 from .destructive_operations_on_clinical_tables import DestructiveOperationsOnClinicalTablesRule
 from .comma_separated_cross_join import CommaSeparatedCrossJoinRule
+from .ambiguous_column_reference import AmbiguousColumnReferenceRule
+from .join_key_validation import JoinKeyValidationRule
+from .attribute_definition_invalid_join import AttributeDefinitionInvalidJoinRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -29,4 +32,7 @@ __all__ = [
     "ConceptAncestorMixedWithConceptRelationshipRedundantlyRule",
     "DestructiveOperationsOnClinicalTablesRule",
     "CommaSeparatedCrossJoinRule",
+    "AmbiguousColumnReferenceRule",
+    "JoinKeyValidationRule",
+    "AttributeDefinitionInvalidJoinRule",
 ]

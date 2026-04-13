@@ -69,22 +69,18 @@ Note: UNION without ALL is acceptable for:
     - Non-event data where duplicates are truly errors
 """
 
-from typing import Dict, List, Optional
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    normalize_name,
-    parse_sql,
-)
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
 
 
 # --- Constants -------------------------------------------------------------
 
-# Clinical event tables where duplicates are legitimate separate events
-CLINICAL_EVENT_TABLES = {
+CLINICAL_EVENT_TABLES: Set[str] = {
     "condition_occurrence",
     "drug_exposure",
     "procedure_occurrence",
@@ -109,24 +105,40 @@ def _is_clinical_event_table(table: Optional[str]) -> bool:
     return _norm(table) in CLINICAL_EVENT_TABLES if table else False
 
 
-def _has_clinical_event_table(query: exp.Expression) -> bool:
-    """Check if query references any clinical event tables."""
-    for table in query.find_all(exp.Table):
-        if _is_clinical_event_table(table.name):
-            return True
-    return False
+def _has_clinical_event_table(node: exp.Expression) -> bool:
+    """Check if any part of a query branch references clinical event tables."""
+    return any(
+        _is_clinical_event_table(t.name)
+        for t in node.find_all(exp.Table)
+    )
 
 
 def _is_union_without_all(union: exp.Union) -> bool:
-    """Check if UNION is without ALL (deduplicating)."""
-    # In sqlglot, UNION has a 'distinct' argument
-    # distinct=True means UNION (removes duplicates)
-    # distinct=False means UNION ALL (keeps all rows)
-    distinct = union.args.get("distinct")
+    """
+    Detect UNION (deduplicating) vs UNION ALL.
 
-    # If distinct is explicitly True, it's UNION without ALL
-    # If distinct is None or False, it's UNION ALL
-    return distinct is True
+    sqlglot uses:
+    - distinct=True  -> UNION (removes duplicates)
+    - distinct=False -> UNION ALL (keeps all rows)
+    """
+    return union.args.get("distinct", False) is True
+
+
+def _is_safely_deduplicated(union: exp.Union) -> bool:
+    """
+    Suppress warning if parent SELECT explicitly uses DISTINCT,
+    indicating intentional deduplication.
+    """
+    parent = union.parent
+
+    while parent:
+        if isinstance(parent, exp.Select):
+            if parent.args.get("distinct"):
+                return True
+            return False
+        parent = parent.parent
+
+    return False
 
 
 # --- Rule ------------------------------------------------------------------
@@ -139,65 +151,71 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
     name = "UNION vs UNION ALL for Clinical Events"
 
     description = (
-        "Detects UNION without ALL when combining clinical event data. "
-        "UNION removes duplicates, but identical-looking rows often represent "
-        "legitimately separate events (e.g., two ER visits on the same day). "
-        "Use UNION ALL to preserve all events."
+        "Detects UNION (without ALL) when combining clinical event data. "
+        "UNION removes duplicates, but identical-looking rows may represent "
+        "distinct clinical events. Use UNION ALL to preserve all events."
     )
 
     severity = Severity.WARNING
 
     suggested_fix = (
-        "Change UNION to UNION ALL to preserve all clinical events. "
-        "If deduplication is intentional, add a comment explaining why."
+        "Replace UNION with UNION ALL to preserve all clinical events. "
+        "If deduplication is intentional, document it explicitly."
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
+        # --- Fast pre-check ---
+        if "union" not in sql.lower():
+            return []
+
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
+        seen: Set[str] = set()
 
         for tree in trees:
             if not tree:
                 continue
 
-            # Find all UNION operations
             for union in tree.find_all(exp.Union):
-                # Check if it's UNION without ALL (deduplicating)
+                # Skip UNION ALL
                 if not _is_union_without_all(union):
                     continue
 
-                # Check if any branch queries clinical event tables
-                has_clinical = False
+                # Skip safe intentional deduplication
+                if _is_safely_deduplicated(union):
+                    continue
 
-                # Check left branch (union.this)
-                if union.this and _has_clinical_event_table(union.this):
-                    has_clinical = True
+                # Check both branches (robust to nesting)
+                if not (
+                    (union.this and _has_clinical_event_table(union.this)) or
+                    (union.expression and _has_clinical_event_table(union.expression))
+                ):
+                    continue
 
-                # Check right branch (union.expression)
-                if union.expression and _has_clinical_event_table(union.expression):
-                    has_clinical = True
+                # Deduplicate violations
+                key = union.sql()
+                if key in seen:
+                    continue
+                seen.add(key)
 
-                if has_clinical:
-                    # Violation: UNION without ALL on clinical event tables
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                "UNION without ALL detected for clinical event tables. "
-                                "This removes duplicate rows, but identical-looking events "
-                                "are often legitimately separate (e.g., two ER visits on the "
-                                "same day). Use UNION ALL to preserve all events unless "
-                                "deduplication is explicitly intended."
-                            ),
-                            severity=self.severity,
-                            suggested_fix=self.suggested_fix,
-                            details={
-                                "issue": "union_without_all_clinical_events",
-                            },
-                        )
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            "UNION (without ALL) detected when combining clinical event data. "
+                            "This removes duplicate rows, but identical rows may represent "
+                            "distinct clinical events (e.g., multiple visits on the same day)."
+                        ),
+                        severity=self.severity,
+                        suggested_fix=self.suggested_fix,
+                        details={
+                            "issue": "union_without_all_clinical_events",
+                            "union_sql": union.sql(),
+                        },
                     )
+                )
 
         return violations
 
