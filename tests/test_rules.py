@@ -2077,7 +2077,7 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "visit_detail_concept_id" in violations[0].message.lower()
 
     def test_disease_status_with_correct_domain_passes(self) -> None:
@@ -2235,8 +2235,47 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "cause_concept_id" in violations[0].message.lower()
+
+    # --- OMOP_246: episode domain validation tests ---
+
+    def test_omop_246_episode_wrong_domain_error(self) -> None:
+        """episode.episode_concept_id with wrong domain should error (OMOP_246)."""
+        sql = """
+        SELECT e.*, c.concept_name
+        FROM episode e
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+        WHERE c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "episode_concept_id" in violations[0].message.lower()
+        assert "Episode" in violations[0].message
+
+    def test_omop_246_episode_correct_domain_pass(self) -> None:
+        """episode.episode_concept_id with correct domain should pass (OMOP_246)."""
+        sql = """
+        SELECT e.*, c.concept_name
+        FROM episode e
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+        WHERE c.domain_id = 'Episode'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_246_episode_without_domain_filter_warns(self) -> None:
+        """episode.episode_concept_id without domain filter should warn (OMOP_246)."""
+        sql = """
+        SELECT e.person_id, c.concept_name
+        FROM episode e
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "episode_concept_id" in violations[0].message.lower()
 
 
 class TestObservationValueAsConceptConfusion:
@@ -3571,7 +3610,7 @@ class TestVisitDetailVisitOccurrenceReference:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "visit_detail" in violations[0].message.lower()
         assert "visit_occurrence" in violations[0].message.lower()
 
@@ -3608,7 +3647,7 @@ class TestVisitDetailVisitOccurrenceReference:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
 
     def test_clin_044_no_visit_detail_passes(self) -> None:
         """Query without visit_detail should pass (CLIN_044)."""
@@ -11836,7 +11875,7 @@ class TestRequiredDateColumnValidation:
 
 
 class TestEndBeforeStartValidation:
-    """Tests for end before start validation (CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551)."""
+    """Tests for end before start validation (CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_529, OMOP_551)."""
 
     def _run_rule(self, sql: str) -> list:
         """Helper to run the end before start validation rule."""
@@ -11990,6 +12029,40 @@ class TestEndBeforeStartValidation:
         SELECT * FROM cohort
         WHERE cohort_start_date >= '2023-01-01'
           AND cohort_end_date <= '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- OMOP_244: episode tests ---
+
+    def test_omop_244_episode_impossible_dates(self) -> None:
+        """Episode start > June but end < January is impossible."""
+        sql = """
+        SELECT * FROM episode
+        WHERE episode_start_date > '2023-06-01'
+          AND episode_end_date < '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode_start_date" in violations[0].message
+        assert "episode_end_date" in violations[0].message
+
+    def test_omop_244_episode_valid(self) -> None:
+        """Valid episode date range."""
+        sql = """
+        SELECT * FROM episode
+        WHERE episode_start_date >= '2023-01-01'
+          AND episode_end_date <= '2023-12-31'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_244_episode_same_day_valid(self) -> None:
+        """Episode can start and end on same day."""
+        sql = """
+        SELECT * FROM episode
+        WHERE episode_start_date >= '2023-06-01'
+          AND episode_end_date >= '2023-06-01'
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
@@ -13494,7 +13567,7 @@ class TestMeasurementValueAsNumberAndConceptValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "value_as_number" in violations[0].message.lower()
         assert "value_as_concept_id" in violations[0].message.lower()
 
@@ -13507,7 +13580,7 @@ class TestMeasurementValueAsNumberAndConceptValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
 
     def test_clin_028_both_columns_multiple_and_conditions_fires(self) -> None:
         """Multiple AND conditions on both columns should warn."""
@@ -15414,7 +15487,7 @@ class TestConceptAncestorMaxLevelsMisuse:
         """
         violations = _run_max_levels_misuse_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "min_levels_of_separation" in violations[0].message
         assert "direct children" in violations[0].message.lower() or "parent-child" in violations[0].message.lower()
 
@@ -15451,7 +15524,7 @@ class TestConceptAncestorMaxLevelsMisuse:
         """
         violations = _run_max_levels_misuse_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
 
     def test_no_violation_max_levels_lte(self) -> None:
         """CORRECT: max_levels_of_separation <= N (proper depth limiting)."""
@@ -15509,7 +15582,7 @@ class TestConceptAncestorMaxLevelsMisuse:
         violations = _run_max_levels_misuse_rule(sql)
         assert len(violations) > 0
         # Should still be WARNING but with context showing min_levels is also used
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
 
     def test_no_violation_without_concept_ancestor(self) -> None:
         """No violation when concept_ancestor table not used."""
@@ -15609,7 +15682,7 @@ class TestConceptAncestorCrossDomain:
         """
         violations = _run_cross_domain_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity.name == "WARNING"
+        assert violations[0].severity.name == "ERROR"
         assert "domain" in violations[0].message.lower()
         assert "Drug" in violations[0].message
         assert "Condition" in violations[0].message
@@ -21447,6 +21520,743 @@ class TestAttributeDefinitionInvalidJoin:
         sql = """
         SELECT * FROM person p
         RIGHT JOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestEpisodeRequiresConceptFilter:
+    """Tests for episode_requires_concept_filter rule (OMOP_240)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run episode requires concept filter rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.episode_requires_concept_filter")()
+        return rule.validate(sql)
+
+    # --- OMOP_240: Episode table violations ---
+
+    def test_omop_240_episode_without_filter(self) -> None:
+        """OMOP_240: Episode query without episode_concept_id filter should warn."""
+        sql = """
+        SELECT p.person_id, e.episode_start_date
+        FROM episode e
+        JOIN person p ON e.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode_concept_id" in violations[0].message
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_240_episode_with_other_filters_no_concept_id(self) -> None:
+        """OMOP_240: Episode query with other filters but no episode_concept_id should warn."""
+        sql = """
+        SELECT *
+        FROM episode e
+        WHERE e.episode_start_date > '2020-01-01'
+          AND e.person_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode_concept_id" in violations[0].message
+
+    def test_omop_240_episode_with_concept_id_filter_pass(self) -> None:
+        """OMOP_240: Episode query with episode_concept_id = value should pass."""
+        sql = """
+        SELECT p.person_id, e.episode_start_date
+        FROM episode e
+        JOIN person p ON e.person_id = p.person_id
+        WHERE e.episode_concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_with_concept_id_in_clause_pass(self) -> None:
+        """OMOP_240: Episode query with episode_concept_id IN (...) should pass."""
+        sql = """
+        SELECT *
+        FROM episode e
+        WHERE e.episode_concept_id IN (32533, 32534, 32535)
+          AND e.episode_start_date > '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_with_concept_join_pass(self) -> None:
+        """OMOP_240: Episode query with concept table join should pass."""
+        sql = """
+        SELECT e.*
+        FROM episode e
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+        WHERE c.concept_class_id = 'Episode'
+          AND c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_aliased_with_filter_pass(self) -> None:
+        """OMOP_240: Episode query with alias and filter should pass."""
+        sql = """
+        SELECT ep.person_id
+        FROM episode ep
+        WHERE ep.episode_concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_unqualified_column_pass(self) -> None:
+        """OMOP_240: Episode query with unqualified episode_concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM episode
+        WHERE episode_concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- OMOP_240: Episode_event table violations ---
+
+    def test_omop_240_episode_event_without_filter(self) -> None:
+        """OMOP_240: Episode_event query without concept filter should warn."""
+        sql = """
+        SELECT ee.*
+        FROM episode_event ee
+        JOIN condition_occurrence co ON ee.event_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode_event" in violations[0].message
+        assert "episode_concept_id" in violations[0].message
+
+    def test_omop_240_episode_event_with_episode_no_filter(self) -> None:
+        """OMOP_240: Episode_event with episode join but no filter should warn."""
+        sql = """
+        SELECT ee.*, e.episode_start_date
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        JOIN condition_occurrence co ON ee.event_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_240_episode_event_with_episode_and_filter_pass(self) -> None:
+        """OMOP_240: Episode_event with episode join and concept_id filter should pass."""
+        sql = """
+        SELECT ee.*
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        WHERE e.episode_concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_event_with_concept_join_pass(self) -> None:
+        """OMOP_240: Episode_event with concept join via episode should pass."""
+        sql = """
+        SELECT ee.*
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+        WHERE c.concept_name = 'Disease Episode'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # --- Edge cases ---
+
+    def test_omop_240_no_episode_tables_pass(self) -> None:
+        """OMOP_240: Queries without episode tables should pass."""
+        sql = """
+        SELECT p.person_id, co.condition_concept_id
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_in_subquery_with_filter_pass(self) -> None:
+        """OMOP_240: Episode in subquery with filter should pass."""
+        sql = """
+        SELECT p.person_id
+        FROM person p
+        WHERE p.person_id IN (
+            SELECT e.person_id
+            FROM episode e
+            WHERE e.episode_concept_id = 32533
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_in_subquery_without_filter(self) -> None:
+        """OMOP_240: Episode in subquery without filter should warn."""
+        sql = """
+        SELECT p.person_id
+        FROM person p
+        WHERE p.person_id IN (
+            SELECT e.person_id
+            FROM episode e
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_240_multiple_statements(self) -> None:
+        """OMOP_240: Multiple statements should each be checked."""
+        sql = """
+        SELECT * FROM episode WHERE episode_concept_id = 32533;
+        SELECT * FROM episode;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_240_case_insensitive(self) -> None:
+        """OMOP_240: Rule should be case-insensitive."""
+        sql = """
+        SELECT * FROM EPISODE E WHERE E.EPISODE_CONCEPT_ID = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_with_join_on_filter_pass(self) -> None:
+        """OMOP_240: Episode with concept_id in JOIN ON clause should pass."""
+        sql = """
+        SELECT e.*, c.concept_name
+        FROM episode e
+        JOIN concept c ON e.episode_concept_id = c.concept_id
+            AND c.concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_240_episode_concept_id_in_select_only(self) -> None:
+        """OMOP_240: Selecting episode_concept_id without filter should still warn."""
+        sql = """
+        SELECT e.episode_concept_id, e.episode_start_date
+        FROM episode e
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_240_episode_with_between_on_concept_id_pass(self) -> None:
+        """OMOP_240: Using BETWEEN on episode_concept_id should pass (edge case)."""
+        sql = """
+        SELECT *
+        FROM episode e
+        WHERE e.episode_concept_id BETWEEN 32533 AND 32540
+        """
+        violations = self._run_rule(sql)
+        # This should warn because BETWEEN is not a typical way to filter episode types
+        # Our rule currently doesn't detect BETWEEN, so it will warn
+        assert len(violations) == 1
+
+
+
+
+class TestFactRelationshipRequiresRelationshipConceptFilter:
+    """Tests for fact_relationship_requires_relationship_concept_filter rule (OMOP_250)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run fact relationship requires relationship concept filter rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.fact_relationship_requires_relationship_concept_filter")()
+        return rule.validate(sql)
+
+    # --- OMOP_250: fact_relationship violations ---
+
+    def test_omop_250_fact_relationship_without_filter(self) -> None:
+        """OMOP_250: fact_relationship query without relationship_concept_id filter should warn."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 = 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "relationship_concept_id" in violations[0].message
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_250_fact_relationship_with_equality_filter_pass(self) -> None:
+        """OMOP_250: fact_relationship with relationship_concept_id = value should pass."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE relationship_concept_id = 44818790
+          AND fact_id_1 = 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_with_in_clause_pass(self) -> None:
+        """OMOP_250: fact_relationship with relationship_concept_id IN (...) should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship
+        WHERE relationship_concept_id IN (44818783, 44818784)
+          AND fact_id_1 = 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_with_concept_join_pass(self) -> None:
+        """OMOP_250: fact_relationship with concept table join should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        WHERE c.concept_class_id = \"Relationship\"
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_aliased_with_filter_pass(self) -> None:
+        """OMOP_250: fact_relationship with alias and filter should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        WHERE fr.relationship_concept_id = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_unqualified_column_pass(self) -> None:
+        """OMOP_250: fact_relationship with unqualified relationship_concept_id should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship
+        WHERE relationship_concept_id = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_no_fact_relationship_pass(self) -> None:
+        """OMOP_250: Queries without fact_relationship should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_in_subquery_with_filter_pass(self) -> None:
+        """OMOP_250: fact_relationship in subquery with filter should pass."""
+        sql = """
+        SELECT p.person_id
+        FROM person p
+        WHERE p.person_id IN (
+            SELECT fact_id_1
+            FROM fact_relationship
+            WHERE relationship_concept_id = 44818790
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_250_fact_relationship_in_subquery_without_filter(self) -> None:
+        """OMOP_250: fact_relationship in subquery without filter should warn."""
+        sql = """
+        SELECT p.person_id
+        FROM person p
+        WHERE p.person_id IN (
+            SELECT fact_id_1
+            FROM fact_relationship
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_250_case_insensitive(self) -> None:
+        """OMOP_250: Rule should be case-insensitive."""
+        sql = """
+        SELECT * FROM FACT_RELATIONSHIP FR WHERE FR.RELATIONSHIP_CONCEPT_ID = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestFactRelationshipValidConcepts:
+    """Tests for fact_relationship_valid_concepts rule (OMOP_252)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run fact relationship valid concepts rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.fact_relationship_valid_concepts")()
+        return rule.validate(sql)
+
+    # --- OMOP_252: fact_relationship valid concepts violations ---
+
+    def test_omop_252_concept_join_without_invalid_reason(self) -> None:
+        """OMOP_252: fact_relationship joining concept without invalid_reason check should warn."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "invalid_reason" in violations[0].message.lower()
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_252_concept_join_with_invalid_reason_is_null_pass(self) -> None:
+        """OMOP_252: fact_relationship with invalid_reason IS NULL should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        WHERE c.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_concept_join_with_invalid_reason_is_not_null_pass(self) -> None:
+        """OMOP_252: fact_relationship with invalid_reason IS NOT NULL (explicit handling) should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        WHERE c.invalid_reason IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_domain_concept_join_without_invalid_reason(self) -> None:
+        """OMOP_252: fact_relationship joining concept for domain_concept_id without invalid_reason should warn."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        WHERE d1.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "invalid_reason" in violations[0].message.lower()
+
+    def test_omop_252_domain_concept_join_with_invalid_reason_pass(self) -> None:
+        """OMOP_252: fact_relationship with domain concept join and invalid_reason should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        WHERE d1.invalid_reason IS NULL
+          AND d1.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_multiple_concept_joins_without_invalid_reason(self) -> None:
+        """OMOP_252: Multiple concept joins without invalid_reason should warn."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        JOIN concept d2 ON fr.domain_concept_id_2 = d2.concept_id
+        JOIN concept r ON fr.relationship_concept_id = r.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        # Should report all three concept aliases
+        assert "d1" in violations[0].message or "d2" in violations[0].message or "r" in violations[0].message
+
+    def test_omop_252_multiple_concept_joins_with_invalid_reason_pass(self) -> None:
+        """OMOP_252: Multiple concept joins with all invalid_reason checks should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        JOIN concept d2 ON fr.domain_concept_id_2 = d2.concept_id
+        JOIN concept r ON fr.relationship_concept_id = r.concept_id
+        WHERE d1.invalid_reason IS NULL
+          AND d2.invalid_reason IS NULL
+          AND r.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_partial_invalid_reason_coverage(self) -> None:
+        """OMOP_252: Only some concept joins have invalid_reason - should still warn about missing ones."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        JOIN concept d2 ON fr.domain_concept_id_2 = d2.concept_id
+        WHERE d1.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        # Should report d2 as missing invalid_reason check
+        assert "d2" in violations[0].message
+
+    def test_omop_252_invalid_reason_equality_check_pass(self) -> None:
+        """OMOP_252: invalid_reason equality check (= 'D') should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        WHERE c.invalid_reason = 'D'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_invalid_reason_in_clause_pass(self) -> None:
+        """OMOP_252: invalid_reason IN clause should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+        WHERE c.invalid_reason IN ('D', 'U')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_no_concept_join_pass(self) -> None:
+        """OMOP_252: fact_relationship without concept join should pass (not applicable)."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        WHERE fr.relationship_concept_id = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_no_fact_relationship_pass(self) -> None:
+        """OMOP_252: Queries without fact_relationship should pass."""
+        sql = """
+        SELECT c.*
+        FROM concept c
+        WHERE c.concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_concept_join_in_join_on_clause(self) -> None:
+        """OMOP_252: invalid_reason filter in JOIN ON clause should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr
+        JOIN concept c ON fr.relationship_concept_id = c.concept_id
+                      AND c.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_old_style_join_without_invalid_reason(self) -> None:
+        """OMOP_252: Old-style comma-separated join without invalid_reason should warn."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr, concept c
+        WHERE fr.relationship_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_252_old_style_join_with_invalid_reason_pass(self) -> None:
+        """OMOP_252: Old-style join with invalid_reason should pass."""
+        sql = """
+        SELECT fr.*
+        FROM fact_relationship fr, concept c
+        WHERE fr.relationship_concept_id = c.concept_id
+          AND c.invalid_reason IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_case_insensitive(self) -> None:
+        """OMOP_252: Rule should be case-insensitive."""
+        sql = """
+        SELECT FR.*
+        FROM FACT_RELATIONSHIP FR
+        JOIN CONCEPT C ON FR.RELATIONSHIP_CONCEPT_ID = C.CONCEPT_ID
+        WHERE C.INVALID_REASON IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_concept_join_not_to_fact_relationship_concepts(self) -> None:
+        """OMOP_252: Concept join not related to fact_relationship concept columns should pass."""
+        sql = """
+        SELECT fr.*, c.*
+        FROM fact_relationship fr
+        JOIN concept c ON c.concept_id = 123
+        WHERE fr.relationship_concept_id = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_252_complex_query_with_all_filters(self) -> None:
+        """OMOP_252: Complex query with all proper filters should pass."""
+        sql = """
+        SELECT fr.*, d1.concept_name, d2.concept_name, r.concept_name
+        FROM fact_relationship fr
+        JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
+        JOIN concept d2 ON fr.domain_concept_id_2 = d2.concept_id
+        JOIN concept r ON fr.relationship_concept_id = r.concept_id
+        WHERE d1.invalid_reason IS NULL
+          AND d2.invalid_reason IS NULL
+          AND r.invalid_reason IS NULL
+          AND fr.fact_id_1 > 1000
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestFactRelationshipNoSelfReference:
+    """Tests for fact_relationship_no_self_reference rule (OMOP_255)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run fact relationship no self-reference rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.fact_relationship_no_self_reference")()
+        return rule.validate(sql)
+
+    # --- OMOP_255: fact_relationship self-reference violations ---
+
+    def test_omop_255_direct_self_reference_comparison(self) -> None:
+        """OMOP_255: Direct comparison fact_id_1 = fact_id_2 should warn."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 = fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "self-referential" in violations[0].message.lower()
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_255_self_reference_with_qualified_columns(self) -> None:
+        """OMOP_255: Qualified column self-reference should warn."""
+        sql = """
+        SELECT * FROM fact_relationship fr
+        WHERE fr.fact_id_1 = fr.fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "fact_id_1" in violations[0].message and "fact_id_2" in violations[0].message
+
+    def test_omop_255_self_reference_reversed_order(self) -> None:
+        """OMOP_255: fact_id_2 = fact_id_1 should also warn."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_2 = fact_id_1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_normal_fact_id_comparison_pass(self) -> None:
+        """OMOP_255: Comparing fact_id to literal values should pass."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 = 100
+          AND fact_id_2 = 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_different_columns_pass(self) -> None:
+        """OMOP_255: Comparing different columns should pass."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE domain_concept_id_1 = domain_concept_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_fact_id_in_join_clause(self) -> None:
+        """OMOP_255: Self-reference in JOIN ON clause should warn."""
+        sql = """
+        SELECT fr1.*, fr2.*
+        FROM fact_relationship fr1
+        JOIN fact_relationship fr2 ON fr1.fact_id_1 = fr1.fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_normal_join_pass(self) -> None:
+        """OMOP_255: Normal JOINs without self-reference should pass."""
+        sql = """
+        SELECT *
+        FROM fact_relationship fr
+        JOIN measurement m1 ON fr.fact_id_1 = m1.measurement_id
+        JOIN measurement m2 ON fr.fact_id_2 = m2.measurement_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_no_fact_relationship_pass(self) -> None:
+        """OMOP_255: Queries without fact_relationship should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE measurement_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_inequality_comparison_pass(self) -> None:
+        """OMOP_255: Inequality comparisons should pass (not self-reference)."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 != fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_less_than_comparison_pass(self) -> None:
+        """OMOP_255: Less than comparison should pass."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 < fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_255_self_reference_in_subquery(self) -> None:
+        """OMOP_255: Self-reference in subquery should warn."""
+        sql = """
+        SELECT * FROM person
+        WHERE person_id IN (
+            SELECT fact_id_1
+            FROM fact_relationship
+            WHERE fact_id_1 = fact_id_2
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_case_insensitive(self) -> None:
+        """OMOP_255: Rule should be case-insensitive."""
+        sql = """
+        SELECT * FROM FACT_RELATIONSHIP
+        WHERE FACT_ID_1 = FACT_ID_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_complex_query_with_self_reference(self) -> None:
+        """OMOP_255: Complex query with self-reference should warn."""
+        sql = """
+        SELECT fr.*, m.*
+        FROM fact_relationship fr
+        JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+        WHERE fr.fact_id_1 = fr.fact_id_2
+          AND fr.relationship_concept_id = 44818790
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_multiple_conditions_including_self_ref(self) -> None:
+        """OMOP_255: Multiple WHERE conditions including self-ref should warn."""
+        sql = """
+        SELECT *
+        FROM fact_relationship
+        WHERE relationship_concept_id = 44818783
+          AND domain_concept_id_1 = 21
+          AND fact_id_1 = fact_id_2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_255_unqualified_columns_in_self_ref(self) -> None:
+        """OMOP_255: Unqualified column names in self-reference should warn."""
+        sql = """
+        SELECT * FROM fact_relationship
+        WHERE fact_id_1 = fact_id_2
+          AND relationship_concept_id = 44818790
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1

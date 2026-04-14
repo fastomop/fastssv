@@ -449,46 +449,50 @@ This checklist tracks which rules from `omop_rules.json` have been implemented i
 
 ## Episode & Fact Relationship Rules (OMOP_240-259)
 
-- [ ] **OMOP_240**: episode_requires_concept_filter
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_241**: episode_event_join_event_table
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_242**: episode_event_requires_valid_event_id
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_243**: episode_event_person_consistency
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_244**: episode_start_before_end
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_245**: episode_event_temporal_alignment
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_246**: episode_concept_domain_validation
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_247**: episode_multiple_events_allowed
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_248**: episode_event_domain_consistency
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_249**: episode_event_relationship_validation
-  - *Suggested group: `domain_specific/episode/`*
-- [ ] **OMOP_250**: fact_relationship_requires_relationship
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_251**: fact_relationship_domain_consistency
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_252**: fact_relationship_valid_concepts
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_253**: fact_relationship_bidirectional_logic
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_254**: fact_relationship_event_exists
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_255**: fact_relationship_no_self_reference
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_256**: fact_relationship_domain_pair_check
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_257**: fact_relationship_temporal_alignment
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_258**: fact_relationship_duplicate_detection
-  - *Suggested group: `domain_specific/fact_relationship/`*
-- [ ] **OMOP_259**: fact_relationship_concept_validation
-  - *Suggested group: `domain_specific/fact_relationship/`*
+- [x] **OMOP_240**: episode_requires_concept_filter
+  - *Location: `data_quality/episode_requires_concept_filter.py`*
+  - *Tests: `tests/test_rules.py::TestEpisodeRequiresConceptFilter`*
+- [-] **OMOP_241**: episode_event_join_event_table
+  - *Status: SKIPPED - Requires concept metadata to verify that episode_event_field_concept_id matches joined clinical table. Cannot distinguish correct from incorrect concept_id values without metadata lookup. Identical to OMOP_087 which was skipped for same reason. Episode tables rarely used. Better addressed through documentation.*
+- [-] **OMOP_242**: episode_event_requires_valid_event_id
+  - *Status: SKIPPED - Requires database access to validate that event_id references valid records in target clinical tables. This is a data quality validation, not SQL syntax/semantic validation. Outside scope of static SQL analysis. Better addressed through database FK constraints, ETL validation, and OHDSI Data Quality Dashboard.*
+- [-] **OMOP_243**: episode_event_person_consistency
+  - *Status: SKIPPED - Requires database access to validate that episode.person_id matches linked clinical event person_id in actual data. This is data quality validation, not SQL validation. Note: episode_event has no person_id column. Better addressed through ETL validation and OHDSI Data Quality Dashboard.*
+- [x] **OMOP_244**: episode_start_before_end
+  - *Covered by: `temporal/end_before_start_validation.py` - Extended existing rule to include episode table. Detects impossible date constraints where episode_end_date < episode_start_date. Tests: TestEndBeforeStartValidation::test_omop_244_* (3 tests).*
+- [-] **OMOP_245**: episode_event_temporal_alignment
+  - *Status: SKIPPED - Requires database access to validate that clinical event dates fall within episode date ranges. This is data quality validation, not SQL validation. Temporal alignment should be enforced during ETL. Better addressed through OHDSI Data Quality Dashboard and ETL validation checks.*
+- [x] **OMOP_246**: episode_concept_domain_validation
+  - *Covered by: `concept_standardization/concept_domain_validation.py` - Extended existing rule to include episode table. Validates that episode_concept_id references concepts with domain_id = 'Episode'. Tests: TestConceptDomainValidation::test_omop_246_* (3 tests).*
+- [-] **OMOP_247**: episode_multiple_events_allowed
+  - *Status: SKIPPED - This is educational documentation about correct behavior, not a validation rule. Episodes having multiple episode_event records is expected and correct (one-to-many relationship). No anti-pattern to detect. This is standard database design.*
+- [-] **OMOP_248**: episode_event_domain_consistency
+  - *Status: SKIPPED - Requires database access to validate that clinical event concepts have correct domain_id values. This is data quality validation, not SQL validation. Domain consistency should be enforced during ETL. Better addressed through OHDSI Data Quality Dashboard.*
+- [-] **OMOP_249**: episode_event_relationship_validation
+  - *Status: SKIPPED - Unclear specification. episode_event table does not have a relationship_concept_id column - it is a simple linking table. May overlap with OMOP_241 (field concept validation). Rule description does not clearly map to actual CDM schema structure.*
+- [x] **OMOP_250**: fact_relationship_requires_relationship
+  - *Location: `data_quality/fact_relationship_requires_relationship_concept_filter.py`
+  - *Tests: `tests/test_rules.py::TestFactRelationshipRequiresRelationshipConceptFilter` (10 tests)**
+- [-] **OMOP_251**: fact_relationship_domain_consistency
+  - *Status: SKIPPED - Requires concept metadata to map domain_concept_id values to actual domain tables. Cannot verify that domain_concept_id_1/2 match the tables referenced by fact_id_1/2 without external concept lookups. Similar to OMOP_087, OMOP_241. Better addressed through ETL validation and OHDSI Data Quality Dashboard.*
+- [x] **OMOP_252**: fact_relationship_valid_concepts
+  - *Implemented as: `data_quality/fact_relationship_valid_concepts.py`*
+  - *Tests: `tests/test_rules.py::TestFactRelationshipValidConcepts` (18 tests)**
+- [-] **OMOP_253**: fact_relationship_bidirectional_logic
+  - *Status: SKIPPED - Requires runtime data validation and relationship metadata lookups. This rule validates that bidirectional relationships in fact_relationship use reverse relationship_concept_id values (e.g., if A "preceded by" B exists, then B "followed by" A should exist, not B "preceded by" A). Static SQL analysis cannot validate relationship directionality without querying the vocabulary.relationship table and analyzing actual data values. Better addressed through ETL validation and OHDSI Data Quality Dashboard.*
+- [-] **OMOP_254**: fact_relationship_event_exists
+  - *Status: SKIPPED - Requires runtime data validation to verify that fact_id_1 and fact_id_2 reference events that actually exist in their respective clinical tables. This is a referential integrity check that requires executing queries against the database to verify FK existence. Static SQL analysis can validate JOIN patterns (covered by JOIN_031: fact_relationship_join_validation) but cannot verify data-level FK validity. Better addressed through database FK constraints, ETL validation, and OHDSI Data Quality Dashboard.*
+- [x] **OMOP_255**: fact_relationship_no_self_reference
+  - *Implemented as: `data_quality/fact_relationship_no_self_reference.py`*
+  - *Tests: `tests/test_rules.py::TestFactRelationshipNoSelfReference` (16 tests)**
+- [-] **OMOP_256**: fact_relationship_domain_pair_check
+  - *Status: SKIPPED - Requires business logic and external metadata defining which domain pairs are "compatible" for specific relationship types. The OMOP CDM does not define a standard set of valid domain pair combinations, and compatibility rules are context-dependent and use-case specific. Would require a lookup table mapping (relationship_concept_id, domain_concept_id_1, domain_concept_id_2) to validity flags. Cannot be validated through static SQL analysis without external domain expertise. Better addressed through custom data quality rules specific to each implementation's business requirements.*
+- [-] **OMOP_257**: fact_relationship_temporal_alignment
+  - *Status: SKIPPED - Requires runtime data validation to compare event timestamps and verify temporal alignment with relationship semantics. Must access polymorphic date columns across different clinical domains (condition_start_date, drug_exposure_start_date, measurement_date, etc.) and execute queries to retrieve actual date values. Requires relationship metadata defining temporal constraints (e.g., "preceded by" implies earlier timestamp). Cannot be validated through static SQL analysis. Better addressed through OHDSI Data Quality Dashboard with runtime data checks.*
+- [-] **OMOP_258**: fact_relationship_duplicate_detection
+  - *Status: SKIPPED - Requires runtime data validation to detect actual duplicate records in the fact_relationship table. The rule definition is too vague ("Detect duplicates") to implement concrete SQL pattern checks. Duplicate detection requires executing queries against actual data to identify duplicate (fact_id_1, fact_id_2, domain_concept_id_1, domain_concept_id_2, relationship_concept_id) combinations. Cannot be validated through static SQL analysis. Better addressed through database schema design (unique constraints), OHDSI Data Quality Dashboard runtime checks, and ETL validation processes.*
+- [-] **OMOP_259**: fact_relationship_concept_validation
+  - *Status: SKIPPED - Requires runtime data validation to verify that concept IDs in fact_relationship actually exist in the concept table. This is a referential integrity check that should be enforced by database foreign key constraints (domain_concept_id_1/2, relationship_concept_id → concept.concept_id). Cannot validate through static SQL analysis. Additionally, OMOP_252 (fact_relationship_valid_concepts) already ensures queries properly join to concept table with invalid_reason filtering. Better addressed through database schema constraints and OHDSI Data Quality Dashboard referential integrity checks.*
 
 ---
 

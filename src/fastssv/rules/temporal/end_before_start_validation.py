@@ -1,6 +1,6 @@
 """End Before Start Validation Rule.
 
-OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_529, OMOP_551:
+OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_529, OMOP_551:
 Detects logically impossible date constraints where static filters force
 end_date < start_date for the same record.
 
@@ -25,6 +25,9 @@ Covered Tables and Column Pairs:
 
     cohort:
         - cohort_start_date, cohort_end_date (OMOP_529)
+
+    episode:
+        - episode_start_date, episode_end_date (OMOP_244)
 
 Example Violations:
     -- ERROR: Start must be after June, but end must be before January
@@ -93,6 +96,10 @@ TABLE_CONFIGS = {
     "cohort": {
         "start": "cohort_start_date",
         "end": "cohort_end_date",
+    },
+    "episode": {
+        "start": "episode_start_date",
+        "end": "episode_end_date",
     },
 }
 
