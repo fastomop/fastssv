@@ -171,7 +171,7 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
         "on max_levels_of_separation is unreliable."
     )
 
-    severity = Severity.WARNING
+    severity = Severity.ERROR
 
     suggested_fix = (
         "Use min_levels_of_separation = 1 for direct relationships, "
@@ -231,7 +231,7 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=message,
-                        severity=Severity.WARNING,
+                        severity=self.severity,
                         suggested_fix=fix,
                         details={
                             "operator": op,

@@ -292,7 +292,7 @@ class ConceptAncestorCrossDomainValidation(Rule):
         "Hierarchies are domain-specific and do not cross domains."
     )
 
-    severity = Severity.WARNING
+    severity = Severity.ERROR
 
     suggested_fix = (
         "Match descendant domain_id to the ancestor's domain, or use "
@@ -334,7 +334,7 @@ class ConceptAncestorCrossDomainValidation(Rule):
                             f"{issue['ancestor_ids']} belong to domains {issue['expected_domains']}. "
                             f"Hierarchies are domain-specific."
                         ),
-                        severity=Severity.WARNING,
+                        severity=self.severity,
                         suggested_fix=(
                             f"Use domain_id in {issue['expected_domains']} or use "
                             f"concept_relationship for cross-domain logic."

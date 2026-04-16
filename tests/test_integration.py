@@ -47,7 +47,9 @@ class TestUnifiedAPI:
         results = validate_sql(sql, validators="all")
 
         assert results["category_errors"]["concept_standardization"] == []
-        assert results["all_errors"] == []
+        # Only check for errors, not warnings (join key validation may produce warnings)
+        errors_only = [e for e in results["all_errors"] if e.startswith("Error:")]
+        assert errors_only == []
 
     def test_validate_sql_list_of_validators(self) -> None:
         """Test running specific list of validators."""

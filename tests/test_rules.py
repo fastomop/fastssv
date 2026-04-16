@@ -859,7 +859,7 @@ class TestDomainSegregation:
     # --- No domain filter -> WARNING ---
 
     def test_no_domain_filter_warns(self) -> None:
-        """concept join without domain_id filter should produce a WARNING."""
+        """concept join without domain_id filter should produce an ERROR."""
         sql = """
         SELECT co.condition_concept_id
         FROM condition_occurrence co
@@ -867,14 +867,11 @@ class TestDomainSegregation:
         WHERE c.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        warnings = [e for e in errors if e.startswith("Warning:")]
-        assert len(warnings) > 0
-        # Should not be an error
         errors_only = [e for e in errors if e.startswith("Error:")]
-        assert errors_only == []
+        assert len(errors_only) > 0
 
     def test_no_domain_filter_drug_warns(self) -> None:
-        """drug_exposure join to concept without domain_id should produce WARNING."""
+        """drug_exposure join to concept without domain_id should produce an ERROR."""
         sql = """
         SELECT de.drug_concept_id
         FROM drug_exposure de
@@ -882,8 +879,8 @@ class TestDomainSegregation:
         WHERE c.invalid_reason IS NULL
         """
         errors = self._run_rule(sql)
-        warnings = [e for e in errors if e.startswith("Warning:")]
-        assert len(warnings) > 0
+        errors_only = [e for e in errors if e.startswith("Error:")]
+        assert len(errors_only) > 0
 
     # --- No concept table -> no violation ---
 

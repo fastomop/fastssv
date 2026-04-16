@@ -40,8 +40,7 @@ Examples of correct usage:
     - ... and 20+ more
 
 Violation levels:
-  - ERROR: domain_id filter is present but specifies the wrong domain
-  - WARNING: (main tables only) concept join exists without any domain_id filter
+  - ERROR: domain_id filter is missing or specifies the wrong domain
 """
 
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -267,7 +266,7 @@ class ConceptDomainValidationRule(Rule):
                 if not values:
                     if col_type == "main":
                         violations.append(self.create_violation(
-                            severity=Severity.WARNING,
+                            severity=Severity.ERROR,
                             message=(
                                 f"{table}.{col} joined to concept '{concept_alias}' "
                                 f"without domain_id filter. Expected domain '{expected}'."

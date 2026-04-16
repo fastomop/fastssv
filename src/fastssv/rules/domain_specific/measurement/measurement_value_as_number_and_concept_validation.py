@@ -159,7 +159,7 @@ class MeasurementValueAsNumberAndConceptValidationRule(Rule):
         "which may indicate inconsistent use of quantitative and qualitative representations."
     )
 
-    severity = Severity.WARNING
+    severity = Severity.ERROR
     suggested_fix = "Use OR or separate logic depending on measurement type"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

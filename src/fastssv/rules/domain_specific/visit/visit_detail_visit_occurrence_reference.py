@@ -160,7 +160,7 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
         "visit_occurrence context or join."
     )
 
-    severity = Severity.WARNING
+    severity = Severity.ERROR
     suggested_fix = (
         "Ensure visit_detail is correctly linked to visit_occurrence "
         "via visit_occurrence_id when visit-level context is needed"

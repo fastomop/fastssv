@@ -253,7 +253,7 @@ class EpisodeRequiresConceptFilterRule(Rule):
         "clarity and optimal query performance."
     )
 
-    severity = Severity.WARNING  # Can be upgraded to ERROR if desired
+    severity = Severity.ERROR
 
     suggested_fix = (
         "Add a filter on episode_concept_id (e.g., WHERE episode_concept_id = <id>) "
