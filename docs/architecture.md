@@ -161,12 +161,14 @@ To add a new validation rule:
 
 ### Category Summary
 
-- `anti_patterns`: 10 rules
-- `concept_standardization`: 19 rules
-- `data_quality`: 12 rules
-- `domain_specific`: 21 rules
-- `joins`: 35 rules
-- `temporal`: 9 rules
+- `anti_patterns`: 22 rules
+- `concept_standardization`: 20 rules
+- `data_quality`: 24 rules
+- `domain_specific`: 39 rules
+- `joins`: 36 rules
+- `temporal`: 10 rules
+
+**Total: 151 rules**
 
 ### Representative Rules
 
