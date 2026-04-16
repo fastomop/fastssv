@@ -2,15 +2,16 @@
 
 Merged rule combining domain_segregation and concept_domain_validation.
 
-OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_153 + CLIN_043 + OMOP_246:
+OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_102 + OMOP_103 + OMOP_153 + CLIN_043 + OMOP_246:
 Each concept_id column in OMOP CDM is tied to a specific domain. When a query
 joins a clinical table to the concept table, the domain_id filter on the concept
 table must match that column's expected domain.
 
 Coverage:
   - Main clinical event tables (11 tables) - WARNING when no domain filter, ERROR when wrong
-  - Auxiliary columns (27+ columns) - ERROR only when wrong domain is specified
+  - Auxiliary columns (29+ columns) - ERROR only when wrong domain is specified
   - Status/qualifier columns (CLIN_012, OMOP_101, OMOP_153) - ERROR when wrong domain
+  - Multi-domain columns (OMOP_103) - Support multiple valid domains
 
 Examples of correct usage:
   Main clinical tables:
@@ -29,11 +30,13 @@ Examples of correct usage:
   Auxiliary columns:
     - person.gender_concept_id → domain_id = 'Gender' (OMOP_019)
     - person.race_concept_id → domain_id = 'Race'
-    - drug_exposure.route_concept_id → domain_id = 'Route'
+    - drug_exposure.route_concept_id → domain_id = 'Route' (OMOP_102)
     - measurement.unit_concept_id → domain_id = 'Unit'
     - condition_occurrence.condition_status_concept_id → domain_id = 'Condition Status' (CLIN_012)
     - observation.qualifier_concept_id → domain_id = 'Meas Value' (OMOP_101)
     - specimen.disease_status_concept_id → domain_id = 'Spec Disease Status' (OMOP_153)
+    - visit_occurrence.admitted_from_concept_id → domain_id IN ('Visit', 'Place of Service') (OMOP_103)
+    - visit_occurrence.discharged_to_concept_id → domain_id IN ('Visit', 'Place of Service') (OMOP_103)
     - ... and 20+ more
 
 Violation levels:
@@ -41,7 +44,7 @@ Violation levels:
   - WARNING: (main tables only) concept join exists without any domain_id filter
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from sqlglot import exp
 
@@ -73,7 +76,7 @@ MAIN_CLINICAL_TABLE_DOMAIN: Dict[Tuple[str, str], str] = {
     ("episode", "episode_concept_id"): "Episode",
 }
 
-AUXILIARY_CONCEPT_COLUMNS: Dict[str, str] = {
+AUXILIARY_CONCEPT_COLUMNS: Dict[str, Union[str, List[str]]] = {
     "gender_concept_id": "Gender",
     "race_concept_id": "Race",
     "ethnicity_concept_id": "Ethnicity",
@@ -88,6 +91,8 @@ AUXILIARY_CONCEPT_COLUMNS: Dict[str, str] = {
     "condition_status_concept_id": "Condition Status",  # CLIN_012
     "modifier_concept_id": "Modifier",  # CLIN_021 (procedure modifier)
     "qualifier_concept_id": "Meas Value",  # OMOP_101 (observation qualifier)
+    "admitted_from_concept_id": ["Visit", "Place of Service"],  # OMOP_103
+    "discharged_to_concept_id": ["Visit", "Place of Service"],  # OMOP_103
 }
 
 
@@ -245,10 +250,16 @@ class ConceptDomainValidationRule(Rule):
 
                 if col_type == "main":
                     expected = MAIN_CLINICAL_TABLE_DOMAIN[(table, col)]
+                    expected_domains = [expected]  # Single domain for main tables
                 else:
-                    expected = AUXILIARY_CONCEPT_COLUMNS[col]
+                    expected_raw = AUXILIARY_CONCEPT_COLUMNS[col]
+                    # Support both single domain (str) and multiple domains (list)
+                    expected_domains = (
+                        expected_raw if isinstance(expected_raw, list) else [expected_raw]
+                    )
+                    expected = expected_domains[0]  # Primary domain for messages
 
-                expected_norm = _norm(expected)
+                expected_norms = {_norm(d) for d in expected_domains}
 
                 values = domain_filters.get(concept_alias, set())
 
@@ -268,21 +279,30 @@ class ConceptDomainValidationRule(Rule):
                     continue
 
                 # --- Wrong domain ---
-                if expected_norm not in values:
+                # Check if ANY of the actual values match ANY expected domain
+                if not (values & expected_norms):
                     actual = ", ".join(sorted(v.capitalize() for v in values))
+                    if len(expected_domains) > 1:
+                        expected_msg = " OR ".join(f"'{d}'" for d in expected_domains)
+                        suggested_fix = (
+                            f"Use: {concept_alias}.domain_id IN ('{expected_domains[0]}', "
+                            f"'{expected_domains[1]}')"
+                        )
+                    else:
+                        expected_msg = f"'{expected}'"
+                        suggested_fix = f"Use: {concept_alias}.domain_id = '{expected}'"
+
                     violations.append(self.create_violation(
                         severity=Severity.ERROR,
                         message=(
-                            f"Domain mismatch for {table}.{col}: expected '{expected}', "
+                            f"Domain mismatch for {table}.{col}: expected {expected_msg}, "
                             f"found ({actual})."
                         ),
-                        suggested_fix=(
-                            f"Use: {concept_alias}.domain_id = '{expected}'"
-                        ),
+                        suggested_fix=suggested_fix,
                     ))
 
-                # --- Optional: multi-domain warning ---
-                elif len(values) > 1:
+                # --- Optional: multi-domain warning (only if not all valid) ---
+                elif len(values) > 1 and not values.issubset(expected_norms):
                     violations.append(self.create_violation(
                         severity=Severity.WARNING,
                         message=(

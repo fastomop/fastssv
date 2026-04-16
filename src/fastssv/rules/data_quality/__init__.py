@@ -7,6 +7,7 @@ Foundational data integrity checks.
 from .unmapped_concept_handling import UnmappedConceptHandlingRule
 from .schema_validation import SchemaValidationRule
 from .column_type_validation import ColumnTypeValidationRule
+from .concept_id_string_comparison import ConceptIdStringComparisonRule
 from .negative_concept_id_validation import NegativeConceptIdValidationRule
 from .union_concept_id_domain_indicator import UnionConceptIdDomainIndicatorRule
 from .vocabulary_table_protection import VocabularyTableProtectionRule
@@ -24,11 +25,15 @@ from .episode_requires_concept_filter import EpisodeRequiresConceptFilterRule
 from .fact_relationship_requires_relationship_concept_filter import FactRelationshipRequiresRelationshipConceptFilterRule
 from .fact_relationship_valid_concepts import FactRelationshipValidConceptsRule
 from .fact_relationship_no_self_reference import FactRelationshipNoSelfReferenceRule
+from .location_state_zip_not_joined_to_concept import LocationStateZipNotJoinedToConceptRule
+from .condition_occurrence_stop_reason_is_free_text import ConditionOccurrenceStopReasonIsFreeTextRule
+from .drug_exposure_lot_number_is_free_text import DrugExposureLotNumberIsFreeTextRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
     "SchemaValidationRule",
     "ColumnTypeValidationRule",
+    "ConceptIdStringComparisonRule",
     "NegativeConceptIdValidationRule",
     "UnionConceptIdDomainIndicatorRule",
     "VocabularyTableProtectionRule",
@@ -46,5 +51,8 @@ __all__ = [
     "FactRelationshipRequiresRelationshipConceptFilterRule",
     "FactRelationshipValidConceptsRule",
     "FactRelationshipNoSelfReferenceRule",
+    "LocationStateZipNotJoinedToConceptRule",
+    "ConditionOccurrenceStopReasonIsFreeTextRule",
+    "DrugExposureLotNumberIsFreeTextRule",
 ]
 

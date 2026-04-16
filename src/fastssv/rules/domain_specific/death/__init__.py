@@ -1,10 +1,7 @@
-"""Death Domain Rules.
+"""Death-specific domain validation rules."""
 
-Rules specific to death-related OMOP CDM tables and concepts.
-"""
-
-from .death_cause_source_concept_validation import DeathCauseSourceConceptValidationRule
+from .death_join_to_person_not_to_clinical_event import DeathJoinToPersonNotToClinicalEventRule
 
 __all__ = [
-    "DeathCauseSourceConceptValidationRule",
+    "DeathJoinToPersonNotToClinicalEventRule",
 ]

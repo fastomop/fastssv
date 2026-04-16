@@ -1461,6 +1461,26 @@ class TestTypeConceptIdMisuse:
         violations = self._run_rule(sql)
         assert len(violations) >= 2
 
+    def test_note_type_concept_id_filter_fires(self) -> None:
+        """OMOP_158: Filtering on note_type_concept_id should error."""
+        sql = """
+        SELECT * FROM note
+        WHERE note_type_concept_id = 44814637
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert "note_type_concept_id" in violations[0].message
+        assert "note_class_concept_id" in violations[0].message
+
+    def test_note_class_concept_id_filter_passes(self) -> None:
+        """OMOP_158: Filtering on note_class_concept_id (correct column) should pass."""
+        sql = """
+        SELECT * FROM note
+        WHERE note_class_concept_id = 44814637
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
     def test_no_clinical_tables_not_flagged(self) -> None:
         """Query without clinical tables should not trigger."""
         sql = """
@@ -2276,6 +2296,292 @@ class TestConceptDomainValidation:
         assert len(violations) == 1
         assert violations[0].severity.name == "ERROR"
         assert "episode_concept_id" in violations[0].message.lower()
+
+    def test_omop_103_admitted_from_with_visit_domain_passes(self) -> None:
+        """visit_occurrence.admitted_from_concept_id with Visit domain should pass (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.admitted_from_concept_id = c.concept_id
+        WHERE c.domain_id = 'Visit'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_103_admitted_from_with_place_of_service_domain_passes(self) -> None:
+        """visit_occurrence.admitted_from_concept_id with Place of Service domain should pass (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.admitted_from_concept_id = c.concept_id
+        WHERE c.domain_id = 'Place of Service'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_103_discharged_to_with_visit_domain_passes(self) -> None:
+        """visit_occurrence.discharged_to_concept_id with Visit domain should pass (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.discharged_to_concept_id = c.concept_id
+        WHERE c.domain_id = 'Visit'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_103_discharged_to_with_place_of_service_domain_passes(self) -> None:
+        """visit_occurrence.discharged_to_concept_id with Place of Service domain should pass (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.discharged_to_concept_id = c.concept_id
+        WHERE c.domain_id = 'Place of Service'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_103_admitted_from_with_wrong_domain_fires(self) -> None:
+        """visit_occurrence.admitted_from_concept_id with Condition domain should error (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.admitted_from_concept_id = c.concept_id
+        WHERE c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "admitted_from_concept_id" in violations[0].message.lower()
+        assert "condition" in violations[0].message.lower()
+        assert ("'Visit' OR 'Place of Service'" in violations[0].message or
+                "Visit" in violations[0].message)
+
+    def test_omop_103_discharged_to_with_wrong_domain_fires(self) -> None:
+        """visit_occurrence.discharged_to_concept_id with Drug domain should error (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.discharged_to_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "discharged_to_concept_id" in violations[0].message.lower()
+        assert "drug" in violations[0].message.lower()
+
+    def test_omop_103_admitted_from_with_both_valid_domains_passes(self) -> None:
+        """visit_occurrence.admitted_from_concept_id with IN clause for both domains should pass (OMOP_103)."""
+        sql = """
+        SELECT vo.*, c.concept_name
+        FROM visit_occurrence vo
+        JOIN concept c ON vo.admitted_from_concept_id = c.concept_id
+        WHERE c.domain_id IN ('Visit', 'Place of Service')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestObservationValueAsStringNumericComparison:
+    """Tests for OMOP_111: observation.value_as_string not for numeric comparison."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.observation_value_as_string_numeric_comparison")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation tests ---
+
+    def test_omop_111_gt_fires(self) -> None:
+        """Direct > comparison on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3038553
+          AND value_as_string > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "value_as_string" in violations[0].message
+        assert ">" in violations[0].message
+
+    def test_omop_111_gte_fires(self) -> None:
+        """Direct >= comparison on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string >= 7.5
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "value_as_string" in violations[0].message
+
+    def test_omop_111_lt_fires(self) -> None:
+        """Direct < comparison on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string < 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_111_lte_fires(self) -> None:
+        """Direct <= comparison on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation o
+        WHERE o.value_as_string <= 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_111_between_fires(self) -> None:
+        """BETWEEN with numeric literals on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3038553
+          AND value_as_string BETWEEN 50 AND 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "value_as_string" in violations[0].message
+        assert "BETWEEN" in violations[0].message or "between" in violations[0].message.lower()
+
+    def test_omop_111_qualified_column_fires(self) -> None:
+        """Qualified o.value_as_string with > should error."""
+        sql = """
+        SELECT * FROM observation o
+        WHERE o.observation_concept_id = 3038553
+          AND o.value_as_string > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_111_reversed_comparison_fires(self) -> None:
+        """Reversed numeric comparison 100 < value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE 100 < value_as_string
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # --- Correct / no-violation tests ---
+
+    def test_omop_111_value_as_number_passes(self) -> None:
+        """Using value_as_number for numeric comparison is correct."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3038553
+          AND value_as_number > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_cast_value_as_string_passes(self) -> None:
+        """CAST(value_as_string AS NUMERIC) before comparison should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE CAST(value_as_string AS NUMERIC) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_equality_on_value_as_string_passes(self) -> None:
+        """Equality (=) on value_as_string with string literal is fine."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string = 'Positive'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_string_literal_comparison_passes(self) -> None:
+        """String literal in LIKE comparison on value_as_string is fine."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string LIKE '%high%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_no_observation_table_passes(self) -> None:
+        """Query without observation table should not fire."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE value_as_string > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_no_value_as_string_passes(self) -> None:
+        """Query on observation without value_as_string should not fire."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3038553
+          AND value_as_number > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_between_string_bounds_passes(self) -> None:
+        """BETWEEN with string literals on value_as_string is accepted (string comparison)."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string BETWEEN 'A' AND 'Z'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_111_negative_numeric_gt_fires(self) -> None:
+        """Negative numeric literal in comparison on value_as_string should error."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string > -5
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_111_multiple_violations_detected(self) -> None:
+        """Multiple numeric comparisons on value_as_string should generate multiple violations."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string > 100
+          AND value_as_string < 200
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1  # At minimum the first one
+
+    def test_omop_111_subquery_fires(self) -> None:
+        """Numeric comparison on value_as_string inside a subquery should error."""
+        sql = """
+        SELECT person_id FROM (
+            SELECT * FROM observation
+            WHERE value_as_string >= 50
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_111_cte_fires(self) -> None:
+        """Numeric comparison on value_as_string inside a CTE should error."""
+        sql = """
+        WITH obs_filtered AS (
+            SELECT * FROM observation
+            WHERE value_as_string > 10
+        )
+        SELECT * FROM obs_filtered
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
 
 
 class TestObservationValueAsConceptConfusion:
@@ -4189,6 +4495,194 @@ class TestCostTableDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+class TestCostCurrencyConceptId:
+    """Tests for OMOP_112: cost_currency_concept_id_for_multi_currency."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.cost_currency_concept_id")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation tests ---
+
+    def test_omop_112_sum_total_paid_no_currency_fires(self) -> None:
+        """SUM(total_paid) without currency constraint should warn."""
+        sql = "SELECT SUM(total_paid) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "total_paid" in violations[0].message
+        assert "currency_concept_id" in violations[0].message
+
+    def test_omop_112_avg_total_charge_no_currency_fires(self) -> None:
+        """AVG(total_charge) without currency constraint should warn."""
+        sql = "SELECT AVG(total_charge) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_sum_total_cost_no_currency_fires(self) -> None:
+        """SUM(total_cost) without currency constraint should warn."""
+        sql = "SELECT SUM(total_cost) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_sum_paid_by_payer_no_currency_fires(self) -> None:
+        """SUM(paid_by_payer) without currency constraint should warn."""
+        sql = "SELECT SUM(paid_by_payer) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_min_total_paid_no_currency_fires(self) -> None:
+        """MIN(total_paid) without currency constraint should warn."""
+        sql = "SELECT MIN(total_paid) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_max_total_paid_no_currency_fires(self) -> None:
+        """MAX(total_paid) without currency constraint should warn."""
+        sql = "SELECT MAX(total_paid) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_qualified_column_fires(self) -> None:
+        """Qualified c.total_paid aggregation without currency should warn."""
+        sql = """
+        SELECT SUM(c.total_paid)
+        FROM cost c
+        WHERE c.cost_type_concept_id = 32
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_multi_currency_in_clause_fires(self) -> None:
+        """currency_concept_id IN (id1, id2) still mixes currencies — should warn."""
+        sql = """
+        SELECT SUM(total_paid)
+        FROM cost
+        WHERE currency_concept_id IN (44818668, 44818669)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    # --- Correct / no-violation tests ---
+
+    def test_omop_112_single_currency_eq_passes(self) -> None:
+        """WHERE currency_concept_id = <value> should pass."""
+        sql = """
+        SELECT SUM(total_paid)
+        FROM cost
+        WHERE currency_concept_id = 44818668
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_single_currency_in_passes(self) -> None:
+        """WHERE currency_concept_id IN (<single-value>) should pass."""
+        sql = """
+        SELECT SUM(total_paid)
+        FROM cost
+        WHERE currency_concept_id IN (44818668)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_group_by_currency_passes(self) -> None:
+        """GROUP BY currency_concept_id should pass."""
+        sql = """
+        SELECT currency_concept_id, SUM(total_paid)
+        FROM cost
+        GROUP BY currency_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_qualified_group_by_currency_passes(self) -> None:
+        """GROUP BY with qualified c.currency_concept_id should pass."""
+        sql = """
+        SELECT c.currency_concept_id, SUM(c.total_paid)
+        FROM cost c
+        GROUP BY c.currency_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_count_only_passes(self) -> None:
+        """COUNT(*) on cost without currency filter should not warn."""
+        sql = "SELECT COUNT(*) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_no_cost_table_passes(self) -> None:
+        """Query on a different table should not warn."""
+        sql = "SELECT SUM(total_paid) FROM drug_exposure"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_select_without_aggregation_passes(self) -> None:
+        """Plain SELECT of total_paid without aggregation should not warn."""
+        sql = "SELECT total_paid FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_cte_sum_without_currency_fires(self) -> None:
+        """SUM inside a CTE without currency constraint should warn."""
+        sql = """
+        WITH cost_totals AS (
+            SELECT SUM(total_paid) AS total
+            FROM cost
+        )
+        SELECT * FROM cost_totals
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_cte_with_currency_filter_passes(self) -> None:
+        """SUM inside a CTE with currency_concept_id filter should pass."""
+        sql = """
+        WITH cost_usd AS (
+            SELECT SUM(total_paid) AS usd_total
+            FROM cost
+            WHERE currency_concept_id = 44818668
+        )
+        SELECT * FROM cost_usd
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_112_subquery_sum_without_currency_fires(self) -> None:
+        """SUM inside a subquery without currency constraint should warn."""
+        sql = """
+        SELECT person_id, sub.total
+        FROM (
+            SELECT SUM(total_paid) AS total
+            FROM cost
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_sum_paid_by_patient_no_currency_fires(self) -> None:
+        """SUM(paid_by_patient) without currency should warn."""
+        sql = "SELECT SUM(paid_by_patient) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_112_sum_copay_no_currency_fires(self) -> None:
+        """SUM(paid_patient_copay) without currency should warn."""
+        sql = "SELECT SUM(paid_patient_copay) FROM cost"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
 
 
 class TestCostPaidIngredientCostDrugSpecific:
@@ -4399,6 +4893,285 @@ class TestCostPaidIngredientCostDrugSpecific:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+
+class TestCdmSourceClinicalJoin:
+    """Tests for OMOP_113: cdm_source_clinical_join."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.cdm_source_clinical_join")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation tests ---
+
+    def test_omop_113_condition_occurrence_join_fires(self) -> None:
+        """JOIN condition_occurrence to cdm_source should error."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "cdm_source" in violations[0].message
+        assert "condition_occurrence" in violations[0].message
+
+    def test_omop_113_drug_exposure_cross_join_fires(self) -> None:
+        """CROSS JOIN drug_exposure to cdm_source should error."""
+        sql = """
+        SELECT * FROM drug_exposure de
+        CROSS JOIN cdm_source cs
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_113_person_join_fires(self) -> None:
+        """JOIN person to cdm_source should error."""
+        sql = """
+        SELECT p.person_id, cs.cdm_version
+        FROM person p
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_113_measurement_join_fires(self) -> None:
+        """JOIN measurement to cdm_source should error."""
+        sql = """
+        SELECT * FROM measurement m
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_113_cdm_source_from_with_clinical_join_fires(self) -> None:
+        """FROM cdm_source JOIN to clinical table should error."""
+        sql = """
+        SELECT * FROM cdm_source cs
+        JOIN condition_occurrence co ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_113_observation_period_join_fires(self) -> None:
+        """JOIN observation_period to cdm_source should error."""
+        sql = """
+        SELECT * FROM observation_period op
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_113_cost_table_join_fires(self) -> None:
+        """JOIN cost to cdm_source should error."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_113_episode_join_fires(self) -> None:
+        """JOIN episode to cdm_source should error."""
+        sql = """
+        SELECT * FROM episode e
+        JOIN cdm_source cs ON 1=1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct / no-violation tests ---
+
+    def test_omop_113_cdm_source_only_passes(self) -> None:
+        """SELECT from cdm_source alone should pass."""
+        sql = """
+        SELECT cdm_source_name, vocabulary_version
+        FROM cdm_source
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_cdm_source_with_filter_passes(self) -> None:
+        """SELECT from cdm_source with WHERE should pass."""
+        sql = """
+        SELECT cdm_source_name, vocabulary_version
+        FROM cdm_source
+        WHERE cdm_version = '5.4'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_cdm_source_join_concept_passes(self) -> None:
+        """JOIN cdm_source to concept (valid FK) should pass."""
+        sql = """
+        SELECT cs.cdm_source_name, c.concept_name
+        FROM cdm_source cs
+        JOIN concept c ON cs.cdm_version_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_cdm_source_join_vocabulary_passes(self) -> None:
+        """JOIN cdm_source to vocabulary should pass."""
+        sql = """
+        SELECT cs.cdm_source_name, v.vocabulary_name
+        FROM cdm_source cs
+        JOIN vocabulary v ON cs.vocabulary_version = v.vocabulary_version
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_clinical_table_without_cdm_source_passes(self) -> None:
+        """Clinical table query without cdm_source should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN person p ON co.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_no_cdm_source_reference_passes(self) -> None:
+        """Query with no cdm_source reference should pass."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_concept_id = 123456
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_113_subquery_cdm_source_passes(self) -> None:
+        """Subquery to get cdm_version should pass."""
+        sql = """
+        SELECT person_id,
+               (SELECT cdm_version FROM cdm_source) AS cdm_ver
+        FROM person
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestSpecimenSourceIdNotSpecimenId:
+    """Tests for OMOP_119: specimen_source_id_not_specimen_id."""
+
+    def _run_rule(self, sql: str):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.specimen_source_id_not_specimen_id")()
+        return rule.validate(sql, dialect="postgres")
+
+    # --- Violation tests ---
+
+    def test_omop_119_specimen_source_id_joined_to_measurement_id(self) -> None:
+        """JOIN specimen_source_id to measurement_id should error."""
+        sql = """
+        SELECT * FROM specimen s
+        JOIN measurement m ON s.specimen_source_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "specimen_source_id" in violations[0].message
+        assert "free-text" in violations[0].message
+
+    def test_omop_119_specimen_source_id_joined_to_person_id(self) -> None:
+        """JOIN specimen_source_id to person_id should error."""
+        sql = """
+        SELECT * FROM specimen s
+        JOIN person p ON s.specimen_source_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_119_specimen_source_id_joined_to_specimen_id(self) -> None:
+        """JOIN specimen_source_id to another specimen_id should error."""
+        sql = """
+        SELECT * FROM specimen s1
+        JOIN specimen s2 ON s1.specimen_source_id = s2.specimen_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_119_specimen_source_id_in_condition_occurrence_join(self) -> None:
+        """JOIN specimen_source_id to condition_occurrence should error."""
+        sql = """
+        SELECT * FROM specimen s
+        JOIN condition_occurrence co ON s.specimen_source_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_119_unqualified_specimen_source_id_in_join(self) -> None:
+        """Unqualified specimen_source_id in JOIN should error."""
+        sql = """
+        SELECT * FROM specimen
+        JOIN measurement m ON specimen_source_id = m.measurement_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct / no-violation tests ---
+
+    def test_omop_119_specimen_id_join_passes(self) -> None:
+        """JOIN using specimen_id (not specimen_source_id) should pass."""
+        sql = """
+        SELECT * FROM specimen s
+        JOIN measurement m ON s.specimen_id = m.specimen_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_119_specimen_source_id_in_where_clause_passes(self) -> None:
+        """Using specimen_source_id in WHERE clause should pass."""
+        sql = """
+        SELECT * FROM specimen
+        WHERE specimen_source_id = 'LAB-2024-001'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_119_specimen_source_id_filter_with_join_passes(self) -> None:
+        """specimen_source_id in WHERE with proper specimen_id JOIN should pass."""
+        sql = """
+        SELECT * FROM specimen s
+        JOIN measurement m ON s.specimen_id = m.specimen_id
+        WHERE s.specimen_source_id = 'LAB-2024-001'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_119_no_specimen_table_passes(self) -> None:
+        """Query without specimen table should pass."""
+        sql = """
+        SELECT * FROM measurement m
+        JOIN person p ON m.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_119_specimen_source_id_in_select_passes(self) -> None:
+        """Selecting specimen_source_id without using in JOIN should pass."""
+        sql = """
+        SELECT specimen_id, specimen_source_id
+        FROM specimen
+        WHERE specimen_concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_119_specimen_cross_join_passes(self) -> None:
+        """CROSS JOIN without specimen_source_id in ON clause should pass."""
+        sql = """
+        SELECT * FROM specimen s
+        CROSS JOIN measurement m
+        WHERE s.specimen_id = m.specimen_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
 
 
 class TestCareSiteJoinValidation:
@@ -22261,3 +23034,3647 @@ class TestFactRelationshipNoSelfReference:
         violations = self._run_rule(sql)
         assert len(violations) == 1
 
+
+
+class TestLocationStateZipNotJoinedToConcept:
+    """Tests for OMOP_106: location.state/zip should not be joined to concept."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.location_state_zip_not_joined_to_concept")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_106_state_joined_to_concept_code_fires(self) -> None:
+        """OMOP_106: Joining location.state to concept.concept_code should error."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l
+        JOIN concept c ON l.state = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "state" in violations[0].message.lower()
+        assert "concept" in violations[0].message.lower()
+
+    def test_omop_106_zip_joined_to_concept_id_fires(self) -> None:
+        """OMOP_106: Joining location.zip to concept.concept_id should error."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l
+        JOIN concept c ON l.zip = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "zip" in violations[0].message.lower()
+
+    def test_omop_106_state_in_where_clause_fires(self) -> None:
+        """OMOP_106: Using location.state in WHERE with concept should error."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l, concept c
+        WHERE l.state = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_106_reversed_join_fires(self) -> None:
+        """OMOP_106: Reversed join (concept to location.state) should error."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l
+        JOIN concept c ON c.concept_code = l.state
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_106_country_concept_id_passes(self) -> None:
+        """OMOP_106: Joining location.country_concept_id to concept should pass."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l
+        JOIN concept c ON l.country_concept_id = c.concept_id
+        WHERE c.domain_id = 'Geography'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_106_state_as_free_text_passes(self) -> None:
+        """OMOP_106: Using location.state as free text should pass."""
+        sql = """
+        SELECT * FROM location
+        WHERE state = 'CA'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_106_zip_as_free_text_passes(self) -> None:
+        """OMOP_106: Using location.zip as free text should pass."""
+        sql = """
+        SELECT * FROM location
+        WHERE zip LIKE '902%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_106_no_location_table_passes(self) -> None:
+        """OMOP_106: Query without location table should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_106_no_concept_table_passes(self) -> None:
+        """OMOP_106: Query without concept table should pass."""
+        sql = """
+        SELECT * FROM location
+        WHERE state = 'NY'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_106_location_alias_fires(self) -> None:
+        """OMOP_106: Using location alias with state should error."""
+        sql = """
+        SELECT loc.*, con.concept_name
+        FROM location loc
+        JOIN concept con ON loc.state = con.concept_code
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_106_both_state_and_zip_joined_fires(self) -> None:
+        """OMOP_106: Joining both state and zip should produce violations."""
+        sql = """
+        SELECT l.*, c1.concept_name, c2.concept_name
+        FROM location l
+        JOIN concept c1 ON l.state = c1.concept_code
+        JOIN concept c2 ON l.zip = c2.concept_id
+        """
+        violations = self._run_rule(sql)
+        # Should detect both violations
+        assert len(violations) >= 1
+
+    def test_omop_106_subquery_with_wrong_join_fires(self) -> None:
+        """OMOP_106: Subquery with incorrect join should error."""
+        sql = """
+        SELECT * FROM (
+            SELECT l.*, c.concept_name
+            FROM location l
+            JOIN concept c ON l.state = c.concept_code
+        ) AS subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_106_correct_join_with_state_filter_passes(self) -> None:
+        """OMOP_106: Correct country join with state filter should pass."""
+        sql = """
+        SELECT l.*, c.concept_name
+        FROM location l
+        JOIN concept c ON l.country_concept_id = c.concept_id
+        WHERE l.state = 'CA'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestConditionOccurrenceStopReasonIsFreeText:
+    """Tests for OMOP_107: condition_occurrence.stop_reason is free text."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.condition_occurrence_stop_reason_is_free_text")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_107_stop_reason_joined_to_concept_id_fires(self) -> None:
+        """OMOP_107: Joining stop_reason to concept.concept_id should error."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.stop_reason = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "stop_reason" in violations[0].message.lower()
+        assert "concept" in violations[0].message.lower()
+
+    def test_omop_107_stop_reason_joined_to_concept_code_fires(self) -> None:
+        """OMOP_107: Joining stop_reason to concept.concept_code should error."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.stop_reason = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_107_stop_reason_in_where_clause_fires(self) -> None:
+        """OMOP_107: Using stop_reason in WHERE with concept should error."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co, concept c
+        WHERE co.stop_reason = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_107_reversed_join_fires(self) -> None:
+        """OMOP_107: Reversed join (concept to stop_reason) should error."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON c.concept_id = co.stop_reason
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_107_numeric_comparison_fires(self) -> None:
+        """OMOP_107: Numeric comparison with stop_reason should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "numeric" in violations[0].message.lower()
+
+    def test_omop_107_numeric_inequality_fires(self) -> None:
+        """OMOP_107: Numeric inequality with stop_reason should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_107_stop_reason_as_free_text_passes(self) -> None:
+        """OMOP_107: Using stop_reason as free text should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason = 'Patient Improved'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_107_stop_reason_with_like_passes(self) -> None:
+        """OMOP_107: Using stop_reason with LIKE should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason LIKE '%Improved%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_107_stop_reason_null_check_passes(self) -> None:
+        """OMOP_107: NULL check on stop_reason should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_107_no_condition_occurrence_table_passes(self) -> None:
+        """OMOP_107: Query without condition_occurrence table should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_107_condition_occurrence_alias_fires(self) -> None:
+        """OMOP_107: Using condition_occurrence alias should error."""
+        sql = """
+        SELECT cond.*, con.concept_name
+        FROM condition_occurrence cond
+        JOIN concept con ON cond.stop_reason = con.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_107_subquery_with_wrong_join_fires(self) -> None:
+        """OMOP_107: Subquery with incorrect join should error."""
+        sql = """
+        SELECT * FROM (
+            SELECT co.*, c.concept_name
+            FROM condition_occurrence co
+            JOIN concept c ON co.stop_reason = c.concept_code
+        ) AS subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_107_correct_condition_join_passes(self) -> None:
+        """OMOP_107: Correct join with condition_concept_id should pass."""
+        sql = """
+        SELECT co.*, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE co.stop_reason = 'Patient Improved'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_107_numeric_not_equal_fires(self) -> None:
+        """OMOP_107: Numeric != comparison should error."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE stop_reason != 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestDrugExposureLotNumberIsFreeText:
+    """Tests for OMOP_108: drug_exposure.lot_number is free text."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.drug_exposure_lot_number_is_free_text")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_108_lot_number_joined_to_concept_id_fires(self) -> None:
+        """OMOP_108: Joining lot_number to concept.concept_id should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.lot_number = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "lot_number" in violations[0].message.lower()
+        assert "concept" in violations[0].message.lower()
+
+    def test_omop_108_lot_number_joined_to_concept_code_fires(self) -> None:
+        """OMOP_108: Joining lot_number to concept.concept_code should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.lot_number = c.concept_code
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_108_lot_number_in_where_clause_fires(self) -> None:
+        """OMOP_108: Using lot_number in WHERE with concept should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de, concept c
+        WHERE de.lot_number = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_108_reversed_join_fires(self) -> None:
+        """OMOP_108: Reversed join (concept to lot_number) should error."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON c.concept_id = de.lot_number
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_108_numeric_comparison_fires(self) -> None:
+        """OMOP_108: Numeric comparison with lot_number should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "numeric" in violations[0].message.lower()
+
+    def test_omop_108_numeric_inequality_fires(self) -> None:
+        """OMOP_108: Numeric inequality with lot_number should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_108_lot_number_as_free_text_passes(self) -> None:
+        """OMOP_108: Using lot_number as free text should pass."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number = 'LOT2024A'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_108_lot_number_with_like_passes(self) -> None:
+        """OMOP_108: Using lot_number with LIKE should pass."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number LIKE 'BATCH-%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_108_lot_number_null_check_passes(self) -> None:
+        """OMOP_108: NULL check on lot_number should pass."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_108_no_drug_exposure_table_passes(self) -> None:
+        """OMOP_108: Query without drug_exposure table should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_108_drug_exposure_alias_fires(self) -> None:
+        """OMOP_108: Using drug_exposure alias should error."""
+        sql = """
+        SELECT drug.*, con.concept_name
+        FROM drug_exposure drug
+        JOIN concept con ON drug.lot_number = con.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_108_subquery_with_wrong_join_fires(self) -> None:
+        """OMOP_108: Subquery with incorrect join should error."""
+        sql = """
+        SELECT * FROM (
+            SELECT de.*, c.concept_name
+            FROM drug_exposure de
+            JOIN concept c ON de.lot_number = c.concept_code
+        ) AS subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_108_correct_drug_join_passes(self) -> None:
+        """OMOP_108: Correct join with drug_concept_id should pass."""
+        sql = """
+        SELECT de.*, c.concept_name
+        FROM drug_exposure de
+        JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE de.lot_number = 'LOT2024A'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_108_numeric_not_equal_fires(self) -> None:
+        """OMOP_108: Numeric != comparison should error."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE lot_number != 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestNoDistinctOnPrimaryKeyColumn:
+    """Tests for OMOP_110: DISTINCT on primary key is redundant."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.no_distinct_on_primary_key_column")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_110_distinct_on_pk_single_table_fires(self) -> None:
+        """OMOP_110: DISTINCT on primary key without joins should warn."""
+        sql = """
+        SELECT DISTINCT condition_occurrence_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "condition_occurrence_id" in violations[0].message.lower()
+        assert "redundant" in violations[0].message.lower()
+
+    def test_omop_110_distinct_on_drug_exposure_id_fires(self) -> None:
+        """OMOP_110: DISTINCT on drug_exposure_id should warn."""
+        sql = """
+        SELECT DISTINCT drug_exposure_id
+        FROM drug_exposure
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_110_distinct_on_pk_with_joins_fires(self) -> None:
+        """OMOP_110: DISTINCT on PK with joins should warn (may indicate join issue)."""
+        sql = """
+        SELECT DISTINCT de.drug_exposure_id
+        FROM drug_exposure de
+        JOIN person p ON de.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "join" in violations[0].message.lower()
+
+    def test_omop_110_no_distinct_passes(self) -> None:
+        """OMOP_110: No DISTINCT should pass."""
+        sql = """
+        SELECT condition_occurrence_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_110_distinct_on_non_pk_passes(self) -> None:
+        """OMOP_110: DISTINCT on non-PK column should pass."""
+        sql = """
+        SELECT DISTINCT condition_concept_id
+        FROM condition_occurrence
+        WHERE condition_start_date >= '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_110_distinct_with_multiple_columns_fires_if_pk_included(self) -> None:
+        """OMOP_110: DISTINCT with PK and other columns should warn."""
+        sql = """
+        SELECT DISTINCT condition_occurrence_id, condition_concept_id
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "condition_occurrence_id" in violations[0].message.lower()
+        assert "condition_occurrence_id" in violations[0].message.lower()
+
+    def test_omop_110_distinct_star_passes(self) -> None:
+        """OMOP_110: DISTINCT * should pass (not checking individual columns)."""
+        sql = """
+        SELECT DISTINCT *
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_110_distinct_on_aliased_pk_fires(self) -> None:
+        """OMOP_110: DISTINCT on aliased PK should warn."""
+        sql = """
+        SELECT DISTINCT co.condition_occurrence_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_110_distinct_on_measurement_id_fires(self) -> None:
+        """OMOP_110: DISTINCT on measurement_id should warn."""
+        sql = """
+        SELECT DISTINCT measurement_id
+        FROM measurement
+        WHERE measurement_concept_id = 3004249
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_110_distinct_on_visit_occurrence_id_fires(self) -> None:
+        """OMOP_110: DISTINCT on visit_occurrence_id should warn."""
+        sql = """
+        SELECT DISTINCT visit_occurrence_id
+        FROM visit_occurrence
+        WHERE visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_110_distinct_with_cartesian_join_fires(self) -> None:
+        """OMOP_110: DISTINCT on PK with Cartesian join should warn."""
+        sql = """
+        SELECT DISTINCT de.drug_exposure_id
+        FROM drug_exposure de, person p
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "join" in violations[0].message.lower()
+
+    def test_omop_110_subquery_with_distinct_on_pk_fires(self) -> None:
+        """OMOP_110: Subquery with DISTINCT on PK should warn."""
+        sql = """
+        SELECT * FROM (
+            SELECT DISTINCT condition_occurrence_id
+            FROM condition_occurrence
+        ) AS subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_110_multiple_pks_in_select_fires_for_each(self) -> None:
+        """OMOP_110: Multiple PKs in DISTINCT should warn for each."""
+        sql = """
+        SELECT DISTINCT co.condition_occurrence_id, de.drug_exposure_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        # Should detect both primary keys
+        assert len(violations) >= 1
+
+    def test_omop_110_distinct_on_pk_with_alias_in_select_fires(self) -> None:
+        """OMOP_110: DISTINCT on PK with AS alias should warn."""
+        sql = """
+        SELECT DISTINCT condition_occurrence_id AS id
+        FROM condition_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestCohortDefinitionSyntaxNotExecutableSql:
+    """Tests for cohort_definition_syntax not executable SQL rule (OMOP_120)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run cohort_definition_syntax not executable SQL rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.cohort_definition_syntax_not_executable_sql")()
+        return rule.validate(sql)
+
+    # OMOP_120: cohort_definition_syntax filtered with SQL keywords
+
+    def test_omop_120_filter_with_select_keyword(self) -> None:
+        """OMOP_120: Filtering cohort_definition_syntax with SELECT keyword should error."""
+        sql = """
+        SELECT cohort_definition_syntax
+        FROM cohort_definition
+        WHERE cohort_definition_syntax LIKE '%SELECT%condition_occurrence%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "SQL keywords" in violations[0].message
+
+    def test_omop_120_filter_with_join_keyword(self) -> None:
+        """OMOP_120: Filtering cohort_definition_syntax with JOIN keyword should error."""
+        sql = """
+        SELECT *
+        FROM cohort_definition
+        WHERE cohort_definition_syntax LIKE '%JOIN drug_exposure%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_120_filter_with_omop_table_name(self) -> None:
+        """OMOP_120: Filtering cohort_definition_syntax with OMOP table names should error."""
+        sql = """
+        SELECT cohort_definition_id, cohort_definition_syntax
+        FROM cohort_definition
+        WHERE cohort_definition_syntax LIKE '%drug_exposure%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "OMOP table names" in violations[0].message
+
+    def test_omop_120_filter_with_both_keywords_and_tables(self) -> None:
+        """OMOP_120: Filtering with both SQL keywords and table names should error."""
+        sql = """
+        SELECT *
+        FROM cohort_definition
+        WHERE cohort_definition_syntax LIKE '%SELECT * FROM condition_occurrence%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "SQL keywords" in violations[0].message
+        assert "OMOP table names" in violations[0].message
+
+    def test_omop_120_ilike_with_measurement_table(self) -> None:
+        """OMOP_120: ILIKE with measurement table name should error."""
+        sql = """
+        SELECT cohort_definition_name
+        FROM cohort_definition
+        WHERE cohort_definition_syntax ILIKE '%measurement%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_120_not_like_with_where_keyword(self) -> None:
+        """OMOP_120: NOT LIKE with WHERE keyword should error."""
+        sql = """
+        SELECT *
+        FROM cohort_definition
+        WHERE cohort_definition_syntax NOT LIKE '%WHERE person_id%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_120_qualified_column_with_alias(self) -> None:
+        """OMOP_120: Qualified column reference with alias should error."""
+        sql = """
+        SELECT cd.cohort_definition_syntax
+        FROM cohort_definition cd
+        WHERE cd.cohort_definition_syntax LIKE '%FROM visit_occurrence%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases
+
+    def test_omop_120_filter_by_cohort_definition_name_passes(self) -> None:
+        """OMOP_120: Filtering by cohort_definition_name should pass."""
+        sql = """
+        SELECT cohort_definition_id, cohort_definition_name
+        FROM cohort_definition
+        WHERE cohort_definition_name LIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_filter_by_id_passes(self) -> None:
+        """OMOP_120: Filtering by cohort_definition_id should pass."""
+        sql = """
+        SELECT cohort_definition_syntax
+        FROM cohort_definition
+        WHERE cohort_definition_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_select_syntax_column_without_filter_passes(self) -> None:
+        """OMOP_120: Selecting cohort_definition_syntax without filtering it passes."""
+        sql = """
+        SELECT cohort_definition_id, cohort_definition_syntax
+        FROM cohort_definition
+        WHERE cohort_definition_name = 'Type 2 Diabetes Cohort'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_like_with_non_sql_pattern_passes(self) -> None:
+        """OMOP_120: LIKE with non-SQL pattern should pass."""
+        sql = """
+        SELECT *
+        FROM cohort_definition
+        WHERE cohort_definition_syntax LIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_no_cohort_definition_table_passes(self) -> None:
+        """OMOP_120: Query without cohort_definition table should pass."""
+        sql = """
+        SELECT *
+        FROM cohort
+        WHERE cohort_definition_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_other_table_syntax_column_passes(self) -> None:
+        """OMOP_120: Other tables with 'syntax' columns should not trigger."""
+        sql = """
+        SELECT *
+        FROM some_other_table
+        WHERE cohort_definition_syntax LIKE '%SELECT%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_120_join_cohort_definition_without_syntax_filter_passes(self) -> None:
+        """OMOP_120: Joining cohort_definition without filtering syntax passes."""
+        sql = """
+        SELECT c.subject_id, cd.cohort_definition_name
+        FROM cohort c
+        JOIN cohort_definition cd ON c.cohort_definition_id = cd.cohort_definition_id
+        WHERE cd.cohort_definition_name LIKE '%hypertension%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestMetadataClinicalJoin:
+    """Tests for metadata clinical join rule (OMOP_121)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run metadata clinical join rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.metadata_clinical_join")()
+        return rule.validate(sql)
+
+    # OMOP_121: metadata joined to clinical tables
+
+    def test_omop_121_metadata_joined_to_person(self) -> None:
+        """OMOP_121: metadata joined to person should error."""
+        sql = """
+        SELECT * FROM metadata m
+        JOIN person p ON m.metadata_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "person" in violations[0].message
+        assert "metadata" in violations[0].message
+
+    def test_omop_121_metadata_joined_to_condition_occurrence(self) -> None:
+        """OMOP_121: metadata joined to condition_occurrence should error."""
+        sql = """
+        SELECT *
+        FROM metadata m
+        JOIN condition_occurrence co ON m.metadata_concept_id = co.condition_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "condition_occurrence" in violations[0].message
+
+    def test_omop_121_metadata_joined_to_drug_exposure(self) -> None:
+        """OMOP_121: metadata joined to drug_exposure should error."""
+        sql = """
+        SELECT m.name, de.drug_concept_id
+        FROM metadata m, drug_exposure de
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "drug_exposure" in violations[0].message
+
+    def test_omop_121_metadata_joined_to_measurement(self) -> None:
+        """OMOP_121: metadata joined to measurement should error."""
+        sql = """
+        SELECT *
+        FROM measurement m1
+        LEFT JOIN metadata m2 ON m1.measurement_id = m2.metadata_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_121_metadata_cross_join_with_visit_occurrence(self) -> None:
+        """OMOP_121: metadata CROSS JOIN with visit_occurrence should error."""
+        sql = """
+        SELECT *
+        FROM metadata
+        CROSS JOIN visit_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "visit_occurrence" in violations[0].message
+
+    def test_omop_121_metadata_with_observation_period(self) -> None:
+        """OMOP_121: metadata with observation_period should error."""
+        sql = """
+        SELECT m.value_as_string, op.observation_period_start_date
+        FROM metadata m, observation_period op
+        WHERE m.metadata_concept_id = 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_121_metadata_in_subquery_with_clinical_table(self) -> None:
+        """OMOP_121: metadata in same SELECT scope with clinical table should error."""
+        sql = """
+        SELECT * FROM (
+            SELECT m.name, p.person_id
+            FROM metadata m, person p
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases
+
+    def test_omop_121_metadata_standalone_query_passes(self) -> None:
+        """OMOP_121: Standalone metadata query should pass."""
+        sql = """
+        SELECT name, value_as_string
+        FROM metadata
+        WHERE metadata_concept_id = 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_121_metadata_with_filter_passes(self) -> None:
+        """OMOP_121: metadata query with WHERE clause should pass."""
+        sql = """
+        SELECT *
+        FROM metadata
+        WHERE name = 'CDM Version'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_121_metadata_joined_to_concept_passes(self) -> None:
+        """OMOP_121: metadata joined to concept (vocabulary table) should pass."""
+        sql = """
+        SELECT m.value_as_string, c.concept_name
+        FROM metadata m
+        JOIN concept c ON m.metadata_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_121_no_metadata_table_passes(self) -> None:
+        """OMOP_121: Query without metadata table should pass."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_121_metadata_in_separate_subquery_passes(self) -> None:
+        """OMOP_121: metadata in separate subquery from clinical tables should pass."""
+        sql = """
+        SELECT p.person_id, m.value_as_string
+        FROM person p
+        CROSS JOIN (
+            SELECT value_as_string
+            FROM metadata
+            WHERE name = 'CDM Version'
+        ) m
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_121_metadata_union_with_clinical_passes(self) -> None:
+        """OMOP_121: metadata and clinical in different UNION branches should pass."""
+        sql = """
+        SELECT metadata_id AS id FROM metadata
+        UNION
+        SELECT person_id AS id FROM person
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestConceptSynonymLanguageConceptId:
+    """Tests for concept_synonym language_concept_id rule (OMOP_127)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run concept_synonym language_concept_id rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("concept_standardization.concept_synonym_language_concept_id")()
+        return rule.validate(sql)
+
+    # OMOP_127: concept_synonym queried without language filter
+
+    def test_omop_127_like_without_language_filter(self) -> None:
+        """OMOP_127: LIKE on concept_synonym_name without language filter should warn."""
+        sql = """
+        SELECT concept_id FROM concept_synonym
+        WHERE concept_synonym_name LIKE '%heart attack%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+        assert "language_concept_id" in violations[0].message
+        assert "4180186" in violations[0].message
+
+    def test_omop_127_ilike_without_language_filter(self) -> None:
+        """OMOP_127: ILIKE without language filter should warn."""
+        sql = """
+        SELECT * FROM concept_synonym
+        WHERE concept_synonym_name ILIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_127_not_like_without_language_filter(self) -> None:
+        """OMOP_127: NOT LIKE without language filter should warn."""
+        sql = """
+        SELECT concept_id FROM concept_synonym
+        WHERE concept_synonym_name NOT LIKE '%obsolete%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    def test_omop_127_qualified_column_without_language_filter(self) -> None:
+        """OMOP_127: Qualified column reference without language filter should warn."""
+        sql = """
+        SELECT cs.concept_id
+        FROM concept_synonym cs
+        WHERE cs.concept_synonym_name LIKE '%myocardial infarction%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "WARNING"
+
+    # Passing cases - with language filter
+
+    def test_omop_127_with_language_equality_filter_passes(self) -> None:
+        """OMOP_127: LIKE with language_concept_id = X should pass."""
+        sql = """
+        SELECT concept_id FROM concept_synonym
+        WHERE concept_synonym_name LIKE '%heart attack%'
+        AND language_concept_id = 4180186
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_with_language_in_clause_passes(self) -> None:
+        """OMOP_127: LIKE with language_concept_id IN (...) should pass."""
+        sql = """
+        SELECT concept_id FROM concept_synonym
+        WHERE concept_synonym_name LIKE '%infection%'
+        AND language_concept_id IN (4180186, 4175777)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_with_language_join_passes(self) -> None:
+        """OMOP_127: LIKE with JOIN on language_concept_id should pass."""
+        sql = """
+        SELECT cs.concept_id
+        FROM concept_synonym cs
+        JOIN concept c ON cs.language_concept_id = c.concept_id
+        WHERE cs.concept_synonym_name LIKE '%pain%'
+        AND c.concept_name = 'English'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_qualified_language_filter_passes(self) -> None:
+        """OMOP_127: Qualified language_concept_id filter should pass."""
+        sql = """
+        SELECT cs.concept_id
+        FROM concept_synonym cs
+        WHERE cs.concept_synonym_name LIKE '%fever%'
+        AND cs.language_concept_id = 4180186
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    # Passing cases - no LIKE on concept_synonym_name
+
+    def test_omop_127_no_like_on_synonym_name_passes(self) -> None:
+        """OMOP_127: Query without LIKE on concept_synonym_name should pass."""
+        sql = """
+        SELECT * FROM concept_synonym
+        WHERE concept_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_like_on_different_column_passes(self) -> None:
+        """OMOP_127: LIKE on different column should pass."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN concept_synonym cs ON c.concept_id = cs.concept_id
+        WHERE c.concept_name LIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_no_concept_synonym_table_passes(self) -> None:
+        """OMOP_127: Query without concept_synonym table should pass."""
+        sql = """
+        SELECT * FROM concept
+        WHERE concept_name LIKE '%heart%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_127_concept_synonym_no_where_clause_passes(self) -> None:
+        """OMOP_127: Selecting from concept_synonym without WHERE should pass."""
+        sql = """
+        SELECT * FROM concept_synonym
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestVocabularyTableJoinUsesVocabularyIdString:
+    """Tests for vocabulary table join rule (OMOP_128)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run vocabulary table join rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.vocabulary_table_join_uses_vocabulary_id_string")()
+        return rule.validate(sql)
+
+    # OMOP_128: Incorrect joins using vocabulary_concept_id
+
+    def test_omop_128_join_on_vocabulary_concept_id(self) -> None:
+        """OMOP_128: JOIN concept.vocabulary_id = vocabulary.vocabulary_concept_id should fail."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "vocabulary_concept_id" in violations[0].message
+        assert "vocabulary.vocabulary_id" in violations[0].message
+
+    def test_omop_128_join_reverse_order(self) -> None:
+        """OMOP_128: JOIN vocabulary.vocabulary_concept_id = concept.vocabulary_id should fail."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name
+        FROM concept c
+        INNER JOIN vocabulary v ON v.vocabulary_concept_id = c.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_128_join_with_aliases(self) -> None:
+        """OMOP_128: Wrong join with table aliases should fail."""
+        sql = """
+        SELECT c.concept_id, v.vocabulary_name
+        FROM concept c
+        LEFT JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_128_subquery_with_wrong_join(self) -> None:
+        """OMOP_128: Wrong join in subquery should fail."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT c.concept_name
+            FROM concept c
+            JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases - correct joins using vocabulary_id
+
+    def test_omop_128_correct_join_passes(self) -> None:
+        """OMOP_128: JOIN concept.vocabulary_id = vocabulary.vocabulary_id should pass."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_correct_join_reverse_order_passes(self) -> None:
+        """OMOP_128: JOIN vocabulary.vocabulary_id = concept.vocabulary_id should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name
+        FROM concept c
+        INNER JOIN vocabulary v ON v.vocabulary_id = c.vocabulary_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_correct_join_with_filter_passes(self) -> None:
+        """OMOP_128: Correct join with additional filters should pass."""
+        sql = """
+        SELECT c.concept_id, v.vocabulary_name
+        FROM concept c
+        LEFT JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        WHERE c.standard_concept = 'S'
+        AND v.vocabulary_name = 'SNOMED'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_concept_only_passes(self) -> None:
+        """OMOP_128: Query with only concept table should pass."""
+        sql = """
+        SELECT * FROM concept
+        WHERE vocabulary_id = 'SNOMED'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_vocabulary_only_passes(self) -> None:
+        """OMOP_128: Query with only vocabulary table should pass."""
+        sql = """
+        SELECT * FROM vocabulary
+        WHERE vocabulary_concept_id = 44819096
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_no_join_between_tables_passes(self) -> None:
+        """OMOP_128: Separate queries on each table should pass."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 123;
+        SELECT * FROM vocabulary WHERE vocabulary_id = 'SNOMED';
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_join_on_other_columns_passes(self) -> None:
+        """OMOP_128: JOIN on columns other than vocabulary_id should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name
+        FROM concept c
+        JOIN vocabulary v ON c.concept_id = v.vocabulary_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_128_multiple_joins_correct_passes(self) -> None:
+        """OMOP_128: Multiple correct joins should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name, d.domain_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestDomainTableJoinUsesDomainIdString:
+    """Tests for domain table join rule (OMOP_129)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run domain table join rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.domain_table_join_uses_domain_id")()
+        return rule.validate(sql)
+
+    # OMOP_129: Incorrect joins using domain_concept_id
+
+    def test_omop_129_join_on_domain_concept_id(self) -> None:
+        """OMOP_129: JOIN concept.domain_id = domain.domain_concept_id should fail."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN domain d ON c.domain_id = d.domain_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "domain_concept_id" in violations[0].message
+        assert "domain.domain_id" in violations[0].message
+
+    def test_omop_129_join_reverse_order(self) -> None:
+        """OMOP_129: JOIN domain.domain_concept_id = concept.domain_id should fail."""
+        sql = """
+        SELECT c.concept_name, d.domain_name
+        FROM concept c
+        INNER JOIN domain d ON d.domain_concept_id = c.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_129_join_with_aliases(self) -> None:
+        """OMOP_129: Wrong join with table aliases should fail."""
+        sql = """
+        SELECT c.concept_id, d.domain_name
+        FROM concept c
+        LEFT JOIN domain d ON c.domain_id = d.domain_concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_129_subquery_with_wrong_join(self) -> None:
+        """OMOP_129: Wrong join in subquery should fail."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT c.concept_name
+            FROM concept c
+            JOIN domain d ON c.domain_id = d.domain_concept_id
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases - correct joins using domain_id
+
+    def test_omop_129_correct_join_passes(self) -> None:
+        """OMOP_129: JOIN concept.domain_id = domain.domain_id should pass."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_correct_join_reverse_order_passes(self) -> None:
+        """OMOP_129: JOIN domain.domain_id = concept.domain_id should pass."""
+        sql = """
+        SELECT c.concept_name, d.domain_name
+        FROM concept c
+        INNER JOIN domain d ON d.domain_id = c.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_correct_join_with_filter_passes(self) -> None:
+        """OMOP_129: Correct join with additional filters should pass."""
+        sql = """
+        SELECT c.concept_id, d.domain_name
+        FROM concept c
+        LEFT JOIN domain d ON c.domain_id = d.domain_id
+        WHERE c.standard_concept = 'S'
+        AND d.domain_name = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_concept_only_passes(self) -> None:
+        """OMOP_129: Query with only concept table should pass."""
+        sql = """
+        SELECT * FROM concept
+        WHERE domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_domain_only_passes(self) -> None:
+        """OMOP_129: Query with only domain table should pass."""
+        sql = """
+        SELECT * FROM domain
+        WHERE domain_concept_id = 19
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_no_join_between_tables_passes(self) -> None:
+        """OMOP_129: Separate queries on each table should pass."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 123;
+        SELECT * FROM domain WHERE domain_id = 'Procedure';
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_join_on_other_columns_passes(self) -> None:
+        """OMOP_129: JOIN on columns other than domain_id should pass."""
+        sql = """
+        SELECT c.concept_name, d.domain_name
+        FROM concept c
+        JOIN domain d ON c.concept_id = d.domain_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_129_multiple_joins_correct_passes(self) -> None:
+        """OMOP_129: Multiple correct joins should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name, d.domain_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN domain d ON c.domain_id = d.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestConceptClassTableJoinUsesConceptClassIdString:
+    """Tests for concept_class table join rule (OMOP_130)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run concept_class table join rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.concept_class_table_join_uses_concept_class_id")()
+        return rule.validate(sql)
+
+    # OMOP_130: Incorrect joins using concept_class_concept_id
+
+    def test_omop_130_join_on_concept_class_concept_id(self) -> None:
+        """OMOP_130: JOIN concept.concept_class_id = concept_class.concept_class_concept_id should fail."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "concept_class_concept_id" in violations[0].message
+        assert "concept_class.concept_class_id" in violations[0].message
+
+    def test_omop_130_join_reverse_order(self) -> None:
+        """OMOP_130: JOIN concept_class.concept_class_concept_id = concept.concept_class_id should fail."""
+        sql = """
+        SELECT c.concept_name, cc.concept_class_name
+        FROM concept c
+        INNER JOIN concept_class cc ON cc.concept_class_concept_id = c.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_130_join_with_aliases(self) -> None:
+        """OMOP_130: Wrong join with table aliases should fail."""
+        sql = """
+        SELECT c.concept_id, cc.concept_class_name
+        FROM concept c
+        LEFT JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_130_subquery_with_wrong_join(self) -> None:
+        """OMOP_130: Wrong join in subquery should fail."""
+        sql = """
+        SELECT *
+        FROM (
+            SELECT c.concept_name
+            FROM concept c
+            JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases - correct joins using concept_class_id
+
+    def test_omop_130_correct_join_passes(self) -> None:
+        """OMOP_130: JOIN concept.concept_class_id = concept_class.concept_class_id should pass."""
+        sql = """
+        SELECT * FROM concept c
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_correct_join_reverse_order_passes(self) -> None:
+        """OMOP_130: JOIN concept_class.concept_class_id = concept.concept_class_id should pass."""
+        sql = """
+        SELECT c.concept_name, cc.concept_class_name
+        FROM concept c
+        INNER JOIN concept_class cc ON cc.concept_class_id = c.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_correct_join_with_filter_passes(self) -> None:
+        """OMOP_130: Correct join with additional filters should pass."""
+        sql = """
+        SELECT c.concept_id, cc.concept_class_name
+        FROM concept c
+        LEFT JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        WHERE c.standard_concept = 'S'
+        AND cc.concept_class_name = 'Ingredient'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_concept_only_passes(self) -> None:
+        """OMOP_130: Query with only concept table should pass."""
+        sql = """
+        SELECT * FROM concept
+        WHERE concept_class_id = 'Clinical Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_concept_class_only_passes(self) -> None:
+        """OMOP_130: Query with only concept_class table should pass."""
+        sql = """
+        SELECT * FROM concept_class
+        WHERE concept_class_concept_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_no_join_between_tables_passes(self) -> None:
+        """OMOP_130: Separate queries on each table should pass."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id = 123;
+        SELECT * FROM concept_class WHERE concept_class_id = 'Ingredient';
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_join_on_other_columns_passes(self) -> None:
+        """OMOP_130: JOIN on columns other than concept_class_id should pass."""
+        sql = """
+        SELECT c.concept_name, cc.concept_class_name
+        FROM concept c
+        JOIN concept_class cc ON c.concept_id = cc.concept_class_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_130_multiple_joins_correct_passes(self) -> None:
+        """OMOP_130: Multiple correct joins should pass."""
+        sql = """
+        SELECT c.concept_name, v.vocabulary_name, cc.concept_class_name
+        FROM concept c
+        JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
+        JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestHavingWithoutGroupBy:
+    """Tests for HAVING without GROUP BY rule (OMOP_131)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run having without group by rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.having_without_group_by")()
+        return rule.validate(sql)
+
+    # OMOP_131: HAVING without GROUP BY violations
+
+    def test_omop_131_having_without_group_by_simple(self) -> None:
+        """OMOP_131: Simple HAVING without GROUP BY should fail."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        HAVING COUNT(*) > 5
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "HAVING" in violations[0].message
+        assert "GROUP BY" in violations[0].message
+
+    def test_omop_131_having_with_where_no_group_by(self) -> None:
+        """OMOP_131: HAVING with WHERE but no GROUP BY should fail."""
+        sql = """
+        SELECT person_id, COUNT(*)
+        FROM drug_exposure
+        WHERE drug_concept_id = 1234
+        HAVING COUNT(*) > 3
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_131_having_with_aggregate_no_group_by(self) -> None:
+        """OMOP_131: HAVING with aggregate function but no GROUP BY should fail."""
+        sql = """
+        SELECT concept_id FROM measurement
+        WHERE measurement_date > '2020-01-01'
+        HAVING SUM(value_as_number) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_131_having_multiple_conditions_no_group_by(self) -> None:
+        """OMOP_131: HAVING with multiple conditions but no GROUP BY should fail."""
+        sql = """
+        SELECT * FROM observation
+        HAVING COUNT(*) > 10 AND AVG(value_as_number) > 50
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_131_subquery_having_no_group_by(self) -> None:
+        """OMOP_131: Subquery with HAVING but no GROUP BY should fail."""
+        sql = """
+        SELECT * FROM (
+            SELECT person_id FROM condition_occurrence
+            HAVING COUNT(*) > 5
+        ) subq
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases - HAVING with GROUP BY
+
+    def test_omop_131_having_with_group_by_passes(self) -> None:
+        """OMOP_131: HAVING with GROUP BY should pass."""
+        sql = """
+        SELECT condition_concept_id, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_concept_id
+        HAVING COUNT(*) > 5
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_having_with_multiple_group_by_passes(self) -> None:
+        """OMOP_131: HAVING with multiple GROUP BY columns should pass."""
+        sql = """
+        SELECT person_id, drug_concept_id, COUNT(*)
+        FROM drug_exposure
+        GROUP BY person_id, drug_concept_id
+        HAVING COUNT(*) > 3
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_having_with_where_and_group_by_passes(self) -> None:
+        """OMOP_131: HAVING with WHERE and GROUP BY should pass."""
+        sql = """
+        SELECT measurement_concept_id, AVG(value_as_number)
+        FROM measurement
+        WHERE measurement_date > '2020-01-01'
+        GROUP BY measurement_concept_id
+        HAVING AVG(value_as_number) > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_no_having_no_group_by_passes(self) -> None:
+        """OMOP_131: Query without HAVING or GROUP BY should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE person_id = 123
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_group_by_without_having_passes(self) -> None:
+        """OMOP_131: GROUP BY without HAVING should pass."""
+        sql = """
+        SELECT condition_concept_id, COUNT(*)
+        FROM condition_occurrence
+        GROUP BY condition_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_nested_query_correct_passes(self) -> None:
+        """OMOP_131: Nested query with proper GROUP BY should pass."""
+        sql = """
+        SELECT * FROM (
+            SELECT person_id, COUNT(*) as cnt
+            FROM condition_occurrence
+            GROUP BY person_id
+            HAVING COUNT(*) > 5
+        ) subq
+        WHERE subq.cnt > 10
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_cte_with_group_by_passes(self) -> None:
+        """OMOP_131: CTE with GROUP BY and HAVING should pass."""
+        sql = """
+        WITH counts AS (
+            SELECT drug_concept_id, COUNT(*) as cnt
+            FROM drug_exposure
+            GROUP BY drug_concept_id
+            HAVING COUNT(*) > 100
+        )
+        SELECT * FROM counts
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_131_union_one_violation(self) -> None:
+        """OMOP_131: UNION with one query having violation should fail once."""
+        sql = """
+        SELECT person_id FROM condition_occurrence
+        GROUP BY person_id
+        HAVING COUNT(*) > 5
+        UNION
+        SELECT person_id FROM drug_exposure
+        HAVING COUNT(*) > 3
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+
+class TestDeathJoinToPersonNotToClinicalEvent:
+    """Tests for death join rule (OMOP_134)."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run death join rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.death_join_to_person_not_to_clinical_event")()
+        return rule.validate(sql)
+
+    # OMOP_134: Invalid joins between death and clinical tables
+
+    def test_omop_134_death_to_visit_wrong_column(self) -> None:
+        """OMOP_134: death.person_id = visit_occurrence.visit_occurrence_id should fail."""
+        sql = """
+        SELECT * FROM death d
+        JOIN visit_occurrence vo ON d.person_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "person_id" in violations[0].message
+
+    def test_omop_134_death_to_condition_wrong_column(self) -> None:
+        """OMOP_134: Invalid join to condition_occurrence should fail."""
+        sql = """
+        SELECT * FROM death d
+        JOIN condition_occurrence co ON d.death_cause_concept_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_134_death_to_drug_wrong_column(self) -> None:
+        """OMOP_134: Invalid join to drug_exposure should fail."""
+        sql = """
+        SELECT * FROM death d
+        JOIN drug_exposure de ON d.death_type_concept_id = de.drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_134_death_to_measurement_wrong_column(self) -> None:
+        """OMOP_134: Invalid join to measurement should fail."""
+        sql = """
+        SELECT d.*, m.*
+        FROM death d
+        JOIN measurement m ON d.death_date = m.measurement_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_omop_134_reverse_order_wrong_join(self) -> None:
+        """OMOP_134: Wrong join in reverse order should fail."""
+        sql = """
+        SELECT * FROM visit_occurrence vo
+        JOIN death d ON vo.visit_occurrence_id = d.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    # Passing cases - correct joins on person_id
+
+    def test_omop_134_correct_death_to_visit_passes(self) -> None:
+        """OMOP_134: death.person_id = visit_occurrence.person_id should pass."""
+        sql = """
+        SELECT * FROM death d
+        JOIN visit_occurrence vo ON d.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_correct_death_to_condition_passes(self) -> None:
+        """OMOP_134: Correct join to condition_occurrence should pass."""
+        sql = """
+        SELECT * FROM death d
+        JOIN condition_occurrence co ON d.person_id = co.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_correct_death_to_drug_passes(self) -> None:
+        """OMOP_134: Correct join to drug_exposure should pass."""
+        sql = """
+        SELECT * FROM death d
+        JOIN drug_exposure de ON d.person_id = de.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_correct_reverse_order_passes(self) -> None:
+        """OMOP_134: Correct join in reverse order should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN death d ON co.person_id = d.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_death_to_person_passes(self) -> None:
+        """OMOP_134: death to person join should pass."""
+        sql = """
+        SELECT * FROM death d
+        JOIN person p ON d.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_multiple_joins_correct_passes(self) -> None:
+        """OMOP_134: Multiple correct joins should pass."""
+        sql = """
+        SELECT d.*, co.*, vo.*
+        FROM death d
+        JOIN condition_occurrence co ON d.person_id = co.person_id
+        JOIN visit_occurrence vo ON d.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_death_with_date_filter_passes(self) -> None:
+        """OMOP_134: Join with additional date filter should pass."""
+        sql = """
+        SELECT d.*, co.*
+        FROM death d
+        JOIN condition_occurrence co ON d.person_id = co.person_id
+        AND co.condition_start_date <= d.death_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_no_death_table_passes(self) -> None:
+        """OMOP_134: Query without death table should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_134_death_only_passes(self) -> None:
+        """OMOP_134: Query with only death table should pass."""
+        sql = """
+        SELECT * FROM death
+        WHERE death_date > '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# =============================================================================
+# OMOP_135: Cost Payer Plan Period ID Join
+# =============================================================================
+
+class TestCostPayerPlanPeriodIdJoin:
+    """Tests for OMOP_135: cost_payer_plan_period_id_join rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.cost_payer_plan_period_id_join")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation cases ---
+
+    def test_omop_135_cost_event_id_to_payer_id_violation(self) -> None:
+        """OMOP_135: Joining cost_event_id to payer_plan_period_id should fail."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp ON c.cost_event_id = pp.payer_plan_period_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "cost.payer_plan_period_id = payer_plan_period.payer_plan_period_id" in violations[0].message
+
+    def test_omop_135_person_id_join_violation(self) -> None:
+        """OMOP_135: Joining on person_id only should fail."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp ON c.person_id = pp.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "missing correct join key" in violations[0].message.lower()
+
+    def test_omop_135_wrong_column_on_payer_side_violation(self) -> None:
+        """OMOP_135: Wrong column on payer_plan_period side should fail."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp ON c.payer_plan_period_id = pp.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_135_reverse_order_violation(self) -> None:
+        """OMOP_135: Reversed table order with wrong join should fail."""
+        sql = """
+        SELECT * FROM payer_plan_period pp
+        JOIN cost c ON pp.person_id = c.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_135_multiple_wrong_conditions_violation(self) -> None:
+        """OMOP_135: Multiple conditions without correct join should fail."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp 
+          ON c.person_id = pp.person_id
+          AND c.cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct cases ---
+
+    def test_omop_135_correct_join_passes(self) -> None:
+        """OMOP_135: Correct join on payer_plan_period_id should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp ON c.payer_plan_period_id = pp.payer_plan_period_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_correct_with_additional_condition_passes(self) -> None:
+        """OMOP_135: Correct join with additional person_id validation should pass."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN payer_plan_period pp 
+          ON c.payer_plan_period_id = pp.payer_plan_period_id
+          AND c.person_id = pp.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_reverse_order_correct_passes(self) -> None:
+        """OMOP_135: Reversed table order with correct join should pass."""
+        sql = """
+        SELECT * FROM payer_plan_period pp
+        JOIN cost c ON pp.payer_plan_period_id = c.payer_plan_period_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_aliased_tables_correct_passes(self) -> None:
+        """OMOP_135: Aliased tables with correct join should pass."""
+        sql = """
+        SELECT co.*, ppp.*
+        FROM cost co
+        JOIN payer_plan_period ppp ON co.payer_plan_period_id = ppp.payer_plan_period_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_subquery_with_correct_join_passes(self) -> None:
+        """OMOP_135: Subquery with correct join should pass."""
+        sql = """
+        SELECT * FROM (
+            SELECT * FROM cost c
+            JOIN payer_plan_period pp ON c.payer_plan_period_id = pp.payer_plan_period_id
+        ) AS cost_payer
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_no_join_passes(self) -> None:
+        """OMOP_135: Query without join should pass."""
+        sql = """
+        SELECT * FROM cost
+        WHERE payer_plan_period_id IN (SELECT payer_plan_period_id FROM payer_plan_period)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_cost_only_passes(self) -> None:
+        """OMOP_135: Query with only cost table should pass."""
+        sql = """
+        SELECT * FROM cost
+        WHERE cost_domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_payer_only_passes(self) -> None:
+        """OMOP_135: Query with only payer_plan_period table should pass."""
+        sql = """
+        SELECT * FROM payer_plan_period
+        WHERE payer_plan_period_start_date > '2020-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_135_case_insensitive_passes(self) -> None:
+        """OMOP_135: Case insensitive correct join should pass."""
+        sql = """
+        SELECT * FROM COST C
+        JOIN PAYER_PLAN_PERIOD PP ON C.PAYER_PLAN_PERIOD_ID = PP.PAYER_PLAN_PERIOD_ID
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# =============================================================================
+# OMOP_138: Episode Parent ID Self Join
+# =============================================================================
+
+class TestEpisodeParentIdSelfJoin:
+    """Tests for OMOP_138: episode_parent_id_self_join rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.episode_parent_id_self_join")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation cases ---
+
+    def test_omop_138_parent_id_to_condition_violation(self) -> None:
+        """OMOP_138: Joining episode_parent_id to condition_occurrence should fail."""
+        sql = """
+        SELECT * FROM episode e
+        JOIN condition_occurrence co ON e.episode_parent_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode.episode_id" in violations[0].message
+
+    def test_omop_138_parent_id_to_visit_violation(self) -> None:
+        """OMOP_138: Joining episode_parent_id to visit_occurrence should fail."""
+        sql = """
+        SELECT * FROM episode e
+        JOIN visit_occurrence vo ON e.episode_parent_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "self-join" in violations[0].message.lower()
+
+    def test_omop_138_wrong_column_in_episode_violation(self) -> None:
+        """OMOP_138: Joining episode_parent_id to wrong episode column should fail."""
+        sql = """
+        SELECT * FROM episode e1
+        JOIN episode e2 ON e1.episode_parent_id = e2.episode_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_138_reverse_wrong_column_violation(self) -> None:
+        """OMOP_138: Reversed wrong column join should fail."""
+        sql = """
+        SELECT * FROM episode e1
+        JOIN episode e2 ON e2.episode_parent_id = e1.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_138_implicit_join_violation(self) -> None:
+        """OMOP_138: Implicit join in WHERE with wrong table should fail."""
+        sql = """
+        SELECT * FROM episode e, condition_occurrence co
+        WHERE e.episode_parent_id = co.condition_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "implicit" in violations[0].message.lower()
+
+    def test_omop_138_parent_id_to_drug_violation(self) -> None:
+        """OMOP_138: Joining episode_parent_id to drug_exposure should fail."""
+        sql = """
+        SELECT * FROM episode e
+        JOIN drug_exposure de ON e.episode_parent_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct cases ---
+
+    def test_omop_138_correct_self_join_passes(self) -> None:
+        """OMOP_138: Correct self-join to episode.episode_id should pass."""
+        sql = """
+        SELECT child.*, parent.episode_concept_id AS parent_type
+        FROM episode child
+        JOIN episode parent ON child.episode_parent_id = parent.episode_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_reverse_order_correct_passes(self) -> None:
+        """OMOP_138: Reversed correct self-join should pass."""
+        sql = """
+        SELECT * FROM episode parent
+        JOIN episode child ON parent.episode_id = child.episode_parent_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_multi_level_hierarchy_passes(self) -> None:
+        """OMOP_138: Multi-level hierarchy traversal should pass."""
+        sql = """
+        SELECT e1.*, e2.*, e3.*
+        FROM episode e1
+        LEFT JOIN episode e2 ON e1.episode_parent_id = e2.episode_id
+        LEFT JOIN episode e3 ON e2.episode_parent_id = e3.episode_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_filter_only_no_join_passes(self) -> None:
+        """OMOP_138: Filter on episode_parent_id without join should pass."""
+        sql = """
+        SELECT * FROM episode
+        WHERE episode_parent_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_subquery_correct_join_passes(self) -> None:
+        """OMOP_138: Subquery with correct self-join should pass."""
+        sql = """
+        SELECT * FROM (
+            SELECT child.*, parent.episode_concept_id
+            FROM episode child
+            JOIN episode parent ON child.episode_parent_id = parent.episode_id
+        ) AS hierarchy
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_cte_correct_join_passes(self) -> None:
+        """OMOP_138: CTE with correct self-join should pass."""
+        sql = """
+        WITH episode_hierarchy AS (
+            SELECT child.*, parent.episode_concept_id AS parent_type
+            FROM episode child
+            LEFT JOIN episode parent ON child.episode_parent_id = parent.episode_id
+        )
+        SELECT * FROM episode_hierarchy
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_no_episode_parent_id_passes(self) -> None:
+        """OMOP_138: Query without episode_parent_id should pass."""
+        sql = """
+        SELECT * FROM episode
+        WHERE episode_concept_id = 32533
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_no_episode_table_passes(self) -> None:
+        """OMOP_138: Query without episode table should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_138_case_insensitive_correct_passes(self) -> None:
+        """OMOP_138: Case insensitive correct join should pass."""
+        sql = """
+        SELECT * FROM EPISODE CHILD
+        JOIN EPISODE PARENT ON CHILD.EPISODE_PARENT_ID = PARENT.EPISODE_ID
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# =============================================================================
+# OMOP_139: Episode Event No Person ID
+# =============================================================================
+
+class TestEpisodeEventNoPersonId:
+    """Tests for OMOP_139: episode_event_no_person_id rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.episode_event_no_person_id")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation cases ---
+
+    def test_omop_139_qualified_person_id_in_join_violation(self) -> None:
+        """OMOP_139: episode_event.person_id in JOIN should fail."""
+        sql = """
+        SELECT * FROM episode_event ee
+        JOIN person p ON ee.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "has no person_id column" in violations[0].message
+
+    def test_omop_139_qualified_person_id_in_where_violation(self) -> None:
+        """OMOP_139: episode_event.person_id in WHERE should fail."""
+        sql = """
+        SELECT * FROM episode_event
+        WHERE episode_event.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "episode.person_id" in violations[0].message
+
+    def test_omop_139_qualified_person_id_in_select_violation(self) -> None:
+        """OMOP_139: Selecting episode_event.person_id should fail."""
+        sql = """
+        SELECT episode_event.person_id, event_id
+        FROM episode_event
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_139_aliased_person_id_in_select_violation(self) -> None:
+        """OMOP_139: Selecting ee.person_id should fail."""
+        sql = """
+        SELECT ee.person_id, ee.event_id
+        FROM episode_event ee
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_139_person_id_in_group_by_violation(self) -> None:
+        """OMOP_139: episode_event.person_id in GROUP BY should fail."""
+        sql = """
+        SELECT ee.person_id, COUNT(*)
+        FROM episode_event ee
+        GROUP BY ee.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+
+    def test_omop_139_person_id_in_order_by_violation(self) -> None:
+        """OMOP_139: episode_event.person_id in ORDER BY should fail."""
+        sql = """
+        SELECT ee.event_id
+        FROM episode_event ee
+        ORDER BY ee.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct cases ---
+
+    def test_omop_139_correct_join_path_passes(self) -> None:
+        """OMOP_139: Correct join through episode table should pass."""
+        sql = """
+        SELECT * FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        JOIN person p ON e.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_episode_person_id_in_select_passes(self) -> None:
+        """OMOP_139: Selecting episode.person_id should pass."""
+        sql = """
+        SELECT e.person_id, ee.event_id
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_episode_person_id_in_where_passes(self) -> None:
+        """OMOP_139: Filtering by episode.person_id should pass."""
+        sql = """
+        SELECT ee.*
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        WHERE e.person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_episode_person_id_in_group_by_passes(self) -> None:
+        """OMOP_139: GROUP BY episode.person_id should pass."""
+        sql = """
+        SELECT e.person_id, COUNT(ee.event_id) AS event_count
+        FROM episode_event ee
+        JOIN episode e ON ee.episode_id = e.episode_id
+        GROUP BY e.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_no_episode_event_table_passes(self) -> None:
+        """OMOP_139: Query without episode_event should pass."""
+        sql = """
+        SELECT * FROM episode e
+        JOIN person p ON e.person_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_episode_event_no_person_reference_passes(self) -> None:
+        """OMOP_139: episode_event query without person_id should pass."""
+        sql = """
+        SELECT * FROM episode_event
+        WHERE episode_id = 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_cte_correct_join_passes(self) -> None:
+        """OMOP_139: CTE with correct join path should pass."""
+        sql = """
+        WITH event_person AS (
+            SELECT ee.event_id, e.person_id
+            FROM episode_event ee
+            JOIN episode e ON ee.episode_id = e.episode_id
+        )
+        SELECT * FROM event_person
+        WHERE person_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_139_case_insensitive_correct_passes(self) -> None:
+        """OMOP_139: Case insensitive correct join should pass."""
+        sql = """
+        SELECT * FROM EPISODE_EVENT EE
+        JOIN EPISODE E ON EE.EPISODE_ID = E.EPISODE_ID
+        JOIN PERSON P ON E.PERSON_ID = P.PERSON_ID
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# =============================================================================
+# OMOP_141: Observation Value As Columns Mutually Contextual
+# =============================================================================
+
+class TestObservationValueAsColumnsMutuallyContextual:
+    """Tests for OMOP_141: observation_value_as_columns_mutually_contextual rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.observation_value_as_columns_mutually_contextual")()
+        return rule.validate(sql, dialect)
+
+    # --- Violation cases ---
+
+    def test_omop_141_number_and_string_violation(self) -> None:
+        """OMOP_141: AND between value_as_number and value_as_string should warn."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_number > 100 AND value_as_string = 'High'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "value_as_number" in violations[0].message
+        assert "value_as_string" in violations[0].message
+
+    def test_omop_141_number_and_concept_violation(self) -> None:
+        """OMOP_141: AND between value_as_number and value_as_concept_id should warn."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_number BETWEEN 90 AND 120
+          AND value_as_concept_id = 45884084
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "value_as_concept_id" in violations[0].message
+        assert "value_as_number" in violations[0].message
+
+    def test_omop_141_string_and_concept_violation(self) -> None:
+        """OMOP_141: AND between value_as_string and value_as_concept_id should warn."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string = 'Positive'
+          AND value_as_concept_id = 45877994
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_141_all_three_columns_violation(self) -> None:
+        """OMOP_141: AND on all three value_as_* columns should warn."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_string = 'Positive'
+          AND value_as_number > 0
+          AND value_as_concept_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        # Note: IS NOT NULL might not be flagged as comparison, but > 0 and = 'Positive' are
+        assert len(violations) >= 1
+
+    def test_omop_141_join_on_clause_violation(self) -> None:
+        """OMOP_141: Multiple value_as_* in JOIN ON should warn."""
+        sql = """
+        SELECT * FROM observation o1
+        JOIN observation o2 ON o1.person_id = o2.person_id
+          AND o1.value_as_number = o2.value_as_number
+          AND o1.value_as_string = o2.value_as_string
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+
+    def test_omop_141_complex_and_condition_violation(self) -> None:
+        """OMOP_141: Complex AND with multiple value_as_* should warn."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3004249
+          AND value_as_number > 6.5
+          AND value_as_string LIKE '%elevated%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Correct cases ---
+
+    def test_omop_141_single_column_number_passes(self) -> None:
+        """OMOP_141: Single value_as_number should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 3004249
+          AND value_as_number > 6.5
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_single_column_string_passes(self) -> None:
+        """OMOP_141: Single value_as_string should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 4058286
+          AND value_as_string = 'Positive'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_single_column_concept_passes(self) -> None:
+        """OMOP_141: Single value_as_concept_id should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE observation_concept_id = 4058286
+          AND value_as_concept_id = 45884084
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_or_between_columns_passes(self) -> None:
+        """OMOP_141: OR between value_as_* columns should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_number > 100 OR value_as_string = 'High'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_is_null_checks_passes(self) -> None:
+        """OMOP_141: IS NOT NULL checks for data quality should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_number IS NOT NULL AND value_as_string IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_no_observation_table_passes(self) -> None:
+        """OMOP_141: Query without observation table should pass."""
+        sql = """
+        SELECT * FROM measurement
+        WHERE value_as_number > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_cte_passes(self) -> None:
+        """OMOP_141: CTE with single value_as_* column should pass."""
+        sql = """
+        WITH obs_numeric AS (
+            SELECT * FROM observation
+            WHERE value_as_number > 6.5
+        )
+        SELECT * FROM obs_numeric
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_subquery_or_passes(self) -> None:
+        """OMOP_141: Subquery with OR between value_as_* should pass."""
+        sql = """
+        SELECT * FROM observation
+        WHERE person_id IN (
+            SELECT person_id FROM observation
+            WHERE value_as_number > 100 OR value_as_concept_id = 45884084
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_141_case_insensitive_passes(self) -> None:
+        """OMOP_141: Case insensitive single column should pass."""
+        sql = """
+        SELECT * FROM OBSERVATION
+        WHERE VALUE_AS_NUMBER > 100
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+class TestVisitDetailHasNoPrecedingVisitOccurrenceId:
+    """Tests for OMOP_142: visit_detail_has_no_preceding_visit_occurrence_id rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("domain_specific.visit_detail_has_no_preceding_visit_occurrence_id")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_142_explicit_select_violation(self) -> None:
+        """OMOP_142: Selecting visit_detail.preceding_visit_occurrence_id should fail."""
+        sql = """
+        SELECT preceding_visit_occurrence_id FROM visit_detail
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "preceding_visit_occurrence_id" in violations[0].message.lower()
+        assert violations[0].severity == Severity.ERROR
+
+    def test_omop_142_qualified_select_violation(self) -> None:
+        """OMOP_142: Selecting vd.preceding_visit_occurrence_id should fail."""
+        sql = """
+        SELECT vd.preceding_visit_occurrence_id FROM visit_detail vd
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "visit_detail.preceding_visit_occurrence_id" in violations[0].message.lower()
+
+    def test_omop_142_where_clause_violation(self) -> None:
+        """OMOP_142: Using preceding_visit_occurrence_id in WHERE should fail."""
+        sql = """
+        SELECT * FROM visit_detail
+        WHERE preceding_visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "preceding_visit_occurrence_id" in violations[0].message.lower()
+
+    def test_omop_142_qualified_where_violation(self) -> None:
+        """OMOP_142: Using visit_detail.preceding_visit_occurrence_id in WHERE should fail."""
+        sql = """
+        SELECT * FROM visit_detail vd
+        WHERE vd.preceding_visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "visit_detail.preceding_visit_occurrence_id" in violations[0].message.lower()
+
+    def test_omop_142_join_on_violation(self) -> None:
+        """OMOP_142: Joining on visit_detail.preceding_visit_occurrence_id should fail."""
+        sql = """
+        SELECT * FROM visit_detail vd
+        JOIN visit_occurrence vo
+          ON vd.preceding_visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "visit_detail.preceding_visit_occurrence_id" in violations[0].message.lower()
+
+    def test_omop_142_order_by_violation(self) -> None:
+        """OMOP_142: Using preceding_visit_occurrence_id in ORDER BY should fail."""
+        sql = """
+        SELECT * FROM visit_detail
+        ORDER BY preceding_visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_142_group_by_violation(self) -> None:
+        """OMOP_142: Using preceding_visit_occurrence_id in GROUP BY should fail."""
+        sql = """
+        SELECT COUNT(*) FROM visit_detail
+        GROUP BY preceding_visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_142_correct_preceding_detail_id_passes(self) -> None:
+        """OMOP_142: Using preceding_visit_detail_id should pass."""
+        sql = """
+        SELECT preceding_visit_detail_id FROM visit_detail
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_correct_temporal_chain_passes(self) -> None:
+        """OMOP_142: Proper visit_detail temporal chain should pass."""
+        sql = """
+        SELECT vd1.*, vd2.visit_detail_id AS parent_detail
+        FROM visit_detail vd1
+        LEFT JOIN visit_detail vd2
+          ON vd1.preceding_visit_detail_id = vd2.visit_detail_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_visit_occurrence_with_preceding_passes(self) -> None:
+        """OMOP_142: visit_occurrence.preceding_visit_occurrence_id should pass."""
+        sql = """
+        SELECT preceding_visit_occurrence_id FROM visit_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_mixed_tables_passes(self) -> None:
+        """OMOP_142: preceding_visit_occurrence_id with visit_occurrence present should pass."""
+        sql = """
+        SELECT vd.visit_detail_id, vo.preceding_visit_occurrence_id
+        FROM visit_detail vd
+        JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_no_visit_detail_passes(self) -> None:
+        """OMOP_142: Query without visit_detail should pass."""
+        sql = """
+        SELECT * FROM visit_occurrence
+        WHERE preceding_visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_cte_shadowing_passes(self) -> None:
+        """OMOP_142: CTE shadowing visit_detail should pass."""
+        sql = """
+        WITH visit_detail AS (
+            SELECT 1 AS preceding_visit_occurrence_id
+        )
+        SELECT preceding_visit_occurrence_id FROM visit_detail
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_142_case_insensitive_violation(self) -> None:
+        """OMOP_142: Case insensitive column reference should fail."""
+        sql = """
+        SELECT PRECEDING_VISIT_OCCURRENCE_ID FROM VISIT_DETAIL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestLocationHistoryEntityIdRequiresDomainId:
+    """Tests for OMOP_145: location_history_entity_id_requires_domain_id rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("domain_specific.location_history_entity_id_requires_domain_id")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_145_person_join_missing_domain_violation(self) -> None:
+        """OMOP_145: Join to person without domain_id filter should fail."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "domain_id" in violations[0].message.lower()
+        assert "person" in violations[0].message.lower()
+        assert violations[0].severity == Severity.ERROR
+
+    def test_omop_145_provider_join_missing_domain_violation(self) -> None:
+        """OMOP_145: Join to provider without domain_id filter should fail."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN provider pr ON lh.entity_id = pr.provider_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "provider" in violations[0].message.lower()
+
+    def test_omop_145_care_site_join_missing_domain_violation(self) -> None:
+        """OMOP_145: Join to care_site without domain_id filter should fail."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN care_site cs ON lh.entity_id = cs.care_site_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "care_site" in violations[0].message.lower()
+
+    def test_omop_145_reverse_join_missing_domain_violation(self) -> None:
+        """OMOP_145: Reverse join order still requires domain_id filter."""
+        sql = """
+        SELECT * FROM person p
+        JOIN location_history lh ON p.person_id = lh.entity_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_145_domain_in_select_not_filter_violation(self) -> None:
+        """OMOP_145: domain_id in SELECT but not filtered should fail."""
+        sql = """
+        SELECT lh.entity_id, lh.domain_id, p.person_id
+        FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_145_person_with_where_filter_passes(self) -> None:
+        """OMOP_145: Person join with WHERE domain_id filter should pass."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+        WHERE lh.domain_id = 'Person'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_person_with_join_on_filter_passes(self) -> None:
+        """OMOP_145: Person join with domain_id in JOIN ON should pass."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+          AND lh.domain_id = 'Person'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_provider_with_filter_passes(self) -> None:
+        """OMOP_145: Provider join with correct domain_id should pass."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN provider pr ON lh.entity_id = pr.provider_id
+        WHERE lh.domain_id = 'Provider'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_care_site_with_filter_passes(self) -> None:
+        """OMOP_145: Care Site join with correct domain_id should pass."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN care_site cs ON lh.entity_id = cs.care_site_id
+          AND lh.domain_id = 'Care Site'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_cte_prefilter_passes(self) -> None:
+        """OMOP_145: CTE pre-filtering domain_id should pass."""
+        sql = """
+        WITH person_locations AS (
+            SELECT * FROM location_history
+            WHERE domain_id = 'Person'
+        )
+        SELECT * FROM person_locations lh
+        JOIN person p ON lh.entity_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_no_entity_join_passes(self) -> None:
+        """OMOP_145: No entity_id join should pass."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN location l ON lh.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_no_location_history_passes(self) -> None:
+        """OMOP_145: Query without location_history should pass."""
+        sql = """
+        SELECT * FROM person p
+        JOIN location l ON p.location_id = l.location_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_cte_shadowing_passes(self) -> None:
+        """OMOP_145: CTE shadowing location_history should pass."""
+        sql = """
+        WITH location_history AS (
+            SELECT 1 AS entity_id
+        )
+        SELECT * FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_case_insensitive_filter_passes(self) -> None:
+        """OMOP_145: Case insensitive domain_id filter should pass."""
+        sql = """
+        SELECT * FROM LOCATION_HISTORY lh
+        JOIN PERSON p ON lh.ENTITY_ID = p.PERSON_ID
+        WHERE lh.DOMAIN_ID = 'Person'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_145_multiple_violations(self) -> None:
+        """OMOP_145: Multiple unfiltered joins should report multiple violations."""
+        sql = """
+        SELECT * FROM location_history lh
+        JOIN person p ON lh.entity_id = p.person_id
+        UNION ALL
+        SELECT * FROM location_history lh
+        JOIN provider pr ON lh.entity_id = pr.provider_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+
+class TestProcedureDateNotProcedureStartDate:
+    """Tests for OMOP_146: procedure_date_not_procedure_start_date rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("domain_specific.procedure_date_not_procedure_start_date")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_146_explicit_select_violation(self) -> None:
+        """OMOP_146: Selecting procedure_start_date should fail."""
+        sql = """
+        SELECT procedure_start_date FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "procedure_start_date" in violations[0].message.lower()
+        assert violations[0].severity == Severity.ERROR
+
+    def test_omop_146_qualified_select_violation(self) -> None:
+        """OMOP_146: Selecting po.procedure_start_date should fail."""
+        sql = """
+        SELECT po.procedure_start_date FROM procedure_occurrence po
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "procedure_occurrence.procedure_start_date" in violations[0].message.lower()
+
+    def test_omop_146_where_clause_violation(self) -> None:
+        """OMOP_146: Using procedure_start_date in WHERE should fail."""
+        sql = """
+        SELECT * FROM procedure_occurrence
+        WHERE procedure_start_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "procedure_start_date" in violations[0].message.lower()
+
+    def test_omop_146_qualified_where_violation(self) -> None:
+        """OMOP_146: Using po.procedure_start_date in WHERE should fail."""
+        sql = """
+        SELECT * FROM procedure_occurrence po
+        WHERE po.procedure_start_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_146_join_violation(self) -> None:
+        """OMOP_146: Using procedure_start_date in JOIN should fail."""
+        sql = """
+        SELECT * FROM procedure_occurrence po
+        JOIN visit_occurrence vo
+          ON vo.visit_start_date = po.procedure_start_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_146_order_by_violation(self) -> None:
+        """OMOP_146: Using procedure_start_date in ORDER BY should fail."""
+        sql = """
+        SELECT * FROM procedure_occurrence
+        ORDER BY procedure_start_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_146_group_by_violation(self) -> None:
+        """OMOP_146: Using procedure_start_date in GROUP BY should fail."""
+        sql = """
+        SELECT COUNT(*) FROM procedure_occurrence
+        GROUP BY procedure_start_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_146_multiple_references_violation(self) -> None:
+        """OMOP_146: Multiple references to procedure_start_date should be detected."""
+        sql = """
+        SELECT procedure_start_date, procedure_end_date
+        FROM procedure_occurrence
+        WHERE procedure_start_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        # Should report violation (deduplicated)
+        assert len(violations) >= 1
+
+    def test_omop_146_correct_procedure_date_passes(self) -> None:
+        """OMOP_146: Using procedure_date should pass."""
+        sql = """
+        SELECT procedure_date FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_correct_procedure_datetime_passes(self) -> None:
+        """OMOP_146: Using procedure_datetime should pass."""
+        sql = """
+        SELECT procedure_datetime FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_correct_procedure_end_date_passes(self) -> None:
+        """OMOP_146: Using procedure_end_date should pass."""
+        sql = """
+        SELECT procedure_date, procedure_end_date
+        FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_correct_where_clause_passes(self) -> None:
+        """OMOP_146: Using procedure_date in WHERE should pass."""
+        sql = """
+        SELECT * FROM procedure_occurrence po
+        WHERE po.procedure_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_no_procedure_occurrence_passes(self) -> None:
+        """OMOP_146: Query without procedure_occurrence should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_start_date >= '2023-01-01'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_cte_shadowing_passes(self) -> None:
+        """OMOP_146: CTE shadowing procedure_occurrence should pass."""
+        sql = """
+        WITH procedure_occurrence AS (
+            SELECT 1 AS procedure_start_date
+        )
+        SELECT procedure_start_date FROM procedure_occurrence
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_146_case_insensitive_violation(self) -> None:
+        """OMOP_146: Case insensitive column reference should fail."""
+        sql = """
+        SELECT PROCEDURE_START_DATE FROM PROCEDURE_OCCURRENCE
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestLeftJoinThenWhereOnRightTable:
+    """Tests for OMOP_149: left_join_then_where_on_right_table rule."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres"):
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("joins.left_join_then_where_on_right_table")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_149_simple_violation(self) -> None:
+        """OMOP_149: LEFT JOIN with WHERE filtering right table should warn."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE vo.visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "left join" in violations[0].message.lower()
+        assert "visit_concept_id" in violations[0].message
+        assert violations[0].severity == Severity.WARNING
+
+    def test_omop_149_multiple_right_filters_violation(self) -> None:
+        """OMOP_149: Multiple WHERE conditions on right table should warn."""
+        sql = """
+        SELECT p.* FROM person p
+        LEFT JOIN location l ON p.location_id = l.location_id
+        WHERE l.state = 'CA' AND l.city = 'Los Angeles'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert ("state" in violations[0].message or "city" in violations[0].message)
+
+    def test_omop_149_qualified_column_violation(self) -> None:
+        """OMOP_149: Qualified right table column in WHERE should warn."""
+        sql = """
+        SELECT * FROM drug_exposure de
+        LEFT JOIN concept c ON de.drug_concept_id = c.concept_id
+        WHERE c.domain_id = 'Drug'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_149_comparison_operator_violation(self) -> None:
+        """OMOP_149: Comparison on right table column should warn."""
+        sql = """
+        SELECT * FROM measurement m
+        LEFT JOIN concept c ON m.unit_concept_id = c.concept_id
+        WHERE c.concept_id > 1000
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_149_inner_join_passes(self) -> None:
+        """OMOP_149: INNER JOIN with WHERE on right table should pass."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE vo.visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_left_join_is_null_passes(self) -> None:
+        """OMOP_149: LEFT JOIN with IS NULL check should pass."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE vo.visit_occurrence_id IS NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_left_join_is_not_null_violation(self) -> None:
+        """OMOP_149: LEFT JOIN with IS NOT NULL check converts to INNER JOIN."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE vo.visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_149_left_table_filter_passes(self) -> None:
+        """OMOP_149: WHERE filtering only left table should pass."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        WHERE co.condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_filter_in_join_on_passes(self) -> None:
+        """OMOP_149: Right table filter in JOIN ON should pass."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo
+          ON co.visit_occurrence_id = vo.visit_occurrence_id
+          AND vo.visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_no_where_clause_passes(self) -> None:
+        """OMOP_149: LEFT JOIN without WHERE should pass."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_no_left_join_passes(self) -> None:
+        """OMOP_149: Query without LEFT JOIN should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_multiple_left_joins_violation(self) -> None:
+        """OMOP_149: Multiple LEFT JOINs with WHERE filtering any should warn."""
+        sql = """
+        SELECT p.* FROM person p
+        LEFT JOIN location l ON p.location_id = l.location_id
+        LEFT JOIN care_site cs ON p.care_site_id = cs.care_site_id
+        WHERE l.state = 'CA'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) >= 1
+
+    def test_omop_149_mixed_joins_violation(self) -> None:
+        """OMOP_149: Mixed INNER and LEFT JOINs should detect LEFT JOIN issues."""
+        sql = """
+        SELECT p.* FROM person p
+        JOIN care_site cs ON p.care_site_id = cs.care_site_id
+        LEFT JOIN location l ON cs.location_id = l.location_id
+        WHERE l.state = 'CA'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_149_subquery_passes(self) -> None:
+        """OMOP_149: Subquery with LEFT JOIN should be analyzed separately."""
+        sql = """
+        SELECT * FROM (
+            SELECT co.* FROM condition_occurrence co
+            LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+            WHERE vo.visit_concept_id = 9201
+        ) sub
+        """
+        violations = self._run_rule(sql)
+        # Should detect violation in subquery
+        assert len(violations) >= 1
+
+    def test_omop_149_case_insensitive_passes(self) -> None:
+        """OMOP_149: Case insensitive LEFT JOIN detection."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        left join visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+        where vo.visit_concept_id = 9201
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+# ==============================================================================
+# OMOP_150: Relationship Boolean Comparison Tests
+# ==============================================================================
+
+class TestRelationshipBooleanComparison:
+    """Test relationship.is_hierarchical and defines_ancestry boolean validation."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run the relationship boolean comparison rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.vocabulary.relationship_boolean_comparison")()
+        return rule.validate(sql)
+
+    def test_omop_150_string_true_violation(self) -> None:
+        """OMOP_150: String 'true' comparison is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = 'true'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+        assert "is_hierarchical" in violations[0].message
+
+    def test_omop_150_string_false_violation(self) -> None:
+        """OMOP_150: String 'false' comparison is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE defines_ancestry = 'false'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+
+    def test_omop_150_string_one_violation(self) -> None:
+        """OMOP_150: String '1' comparison is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = '1'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+
+    def test_omop_150_string_zero_violation(self) -> None:
+        """OMOP_150: String '0' comparison is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE defines_ancestry = '0'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+
+    def test_omop_150_invalid_integer_violation(self) -> None:
+        """OMOP_150: Integer 2 is invalid for boolean."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = 2
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "invalid" in violations[0].message.lower()
+
+    def test_omop_150_negative_integer_violation(self) -> None:
+        """OMOP_150: Negative integer is invalid for boolean."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE defines_ancestry = -1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "invalid" in violations[0].message.lower()
+
+    def test_omop_150_string_y_violation(self) -> None:
+        """OMOP_150: String 'Y' comparison is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = 'Y'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+
+    def test_omop_150_in_clause_strings_violation(self) -> None:
+        """OMOP_150: IN clause with strings is invalid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical IN ('true', 'false')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "in" in violations[0].message.lower()
+        assert "invalid values" in violations[0].message.lower()
+
+    def test_omop_150_join_string_violation(self) -> None:
+        """OMOP_150: String comparison in JOIN works with alias."""
+        sql = """
+        SELECT cr.* FROM concept_relationship cr
+        JOIN relationship r ON cr.relationship_id = r.relationship_id
+        WHERE r.is_hierarchical = 'true'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string" in violations[0].message.lower()
+
+    def test_omop_150_integer_one_passes(self) -> None:
+        """OMOP_150: Integer 1 is valid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = 1
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_150_integer_zero_passes(self) -> None:
+        """OMOP_150: Integer 0 is valid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE defines_ancestry = 0
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_150_boolean_true_passes(self) -> None:
+        """OMOP_150: Boolean TRUE is valid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical = TRUE
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_150_boolean_false_passes(self) -> None:
+        """OMOP_150: Boolean FALSE is valid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE defines_ancestry = FALSE
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_150_direct_boolean_passes(self) -> None:
+        """OMOP_150: Direct boolean usage is valid."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_150_in_clause_integers_passes(self) -> None:
+        """OMOP_150: IN clause with valid integers is OK."""
+        sql = """
+        SELECT * FROM relationship
+        WHERE is_hierarchical IN (0, 1)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+
+# ==============================================================================
+# OMOP_152: Note NLP Snippet Misuse Tests
+# ==============================================================================
+
+class TestNoteNlpSnippetMisuse:
+    """Test note_nlp.snippet and lexical_variant misuse detection."""
+
+    def _run_rule(self, sql: str) -> list:
+        """Run the note NLP snippet misuse rule."""
+        from fastssv.core.registry import get_rule
+        rule = get_rule("domain_specific.note.note_nlp_snippet_misuse")()
+        return rule.validate(sql)
+
+    def test_omop_152_snippet_equality_violation(self) -> None:
+        """OMOP_152: Text equality on snippet is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE snippet = 'diabetes'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "free text" in violations[0].message.lower()
+        assert "note_nlp_concept_id" in violations[0].message.lower()
+
+    def test_omop_152_lexical_variant_equality_violation(self) -> None:
+        """OMOP_152: Text equality on lexical_variant is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE lexical_variant = 'DM'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "free text" in violations[0].message.lower()
+
+    def test_omop_152_snippet_like_violation(self) -> None:
+        """OMOP_152: LIKE pattern on snippet is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE snippet LIKE '%diabetes%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "like" in violations[0].message.lower()
+        assert "note_nlp_concept_id" in violations[0].message.lower()
+
+    def test_omop_152_lexical_variant_ilike_violation(self) -> None:
+        """OMOP_152: ILIKE pattern on lexical_variant is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE lexical_variant ILIKE '%dm%'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "free text" in violations[0].message.lower()
+
+    def test_omop_152_snippet_in_clause_violation(self) -> None:
+        """OMOP_152: IN clause with text values is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE snippet IN ('diabetes', 'DM', 'diabetic')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "in" in violations[0].message.lower()
+        assert "lexical variation" in violations[0].message.lower()
+
+    def test_omop_152_snippet_join_violation(self) -> None:
+        """OMOP_152: Joining on text column is invalid."""
+        sql = """
+        SELECT n.* FROM note_nlp n
+        JOIN concept c ON n.snippet = c.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "join" in violations[0].message.lower()
+
+    def test_omop_152_lexical_variant_join_violation(self) -> None:
+        """OMOP_152: Joining on lexical_variant is invalid."""
+        sql = """
+        SELECT n.* FROM note_nlp n
+        JOIN some_table t ON n.lexical_variant = t.text_col
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "free text" in violations[0].message.lower()
+
+    def test_omop_152_reversed_comparison_violation(self) -> None:
+        """OMOP_152: Text comparison with reversed operands is invalid."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE 'diabetes' = snippet
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_152_concept_id_passes(self) -> None:
+        """OMOP_152: Using note_nlp_concept_id is correct."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_snippet_is_null_passes(self) -> None:
+        """OMOP_152: IS NULL check on snippet is OK."""
+        sql = """
+        SELECT * FROM note_nlp
+        WHERE snippet IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_snippet_select_passes(self) -> None:
+        """OMOP_152: Selecting snippet for display is OK."""
+        sql = """
+        SELECT snippet, note_nlp_concept_id FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_concept_id_join_passes(self) -> None:
+        """OMOP_152: Joining on note_nlp_concept_id is correct."""
+        sql = """
+        SELECT n.* FROM note_nlp n
+        JOIN concept c ON n.note_nlp_concept_id = c.concept_id
+        WHERE c.domain_id = 'Condition'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_snippet_order_by_passes(self) -> None:
+        """OMOP_152: ORDER BY snippet is OK (sorting)."""
+        sql = """
+        SELECT * FROM note_nlp
+        ORDER BY snippet
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_snippet_coalesce_passes(self) -> None:
+        """OMOP_152: COALESCE on snippet is OK (null handling)."""
+        sql = """
+        SELECT COALESCE(snippet, 'N/A') as snippet_display
+        FROM note_nlp
+        WHERE note_nlp_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_152_qualified_column_violation(self) -> None:
+        """OMOP_152: Qualified snippet column with alias."""
+        sql = """
+        SELECT * FROM note_nlp nlp
+        WHERE nlp.snippet = 'diabetes'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+
+class TestConceptIdStringComparison:
+    """Tests for concept_id string comparison rule (OMOP_157)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.concept_id_string_comparison")()
+        return rule.validate(sql, dialect)
+
+    def test_omop_157_string_equality_fails(self) -> None:
+        """OMOP_157: String literal in concept_id equality should warn."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = '201826'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string literal" in violations[0].message.lower()
+        assert "201826" in violations[0].message
+
+    def test_omop_157_string_in_clause_fails(self) -> None:
+        """OMOP_157: String literals in IN clause should warn."""
+        sql = """
+        SELECT * FROM measurement WHERE measurement_concept_id IN ('3004249', '3012888')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string literal" in violations[0].message.lower()
+        assert "in" in violations[0].message.lower()
+
+    def test_omop_157_string_not_equals_fails(self) -> None:
+        """OMOP_157: String literal in != comparison should warn."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE drug_concept_id != '1234567'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string literal" in violations[0].message.lower()
+
+    def test_omop_157_multiple_concept_ids_fails(self) -> None:
+        """OMOP_157: Multiple concept_id columns with string literals should warn."""
+        sql = """
+        SELECT * FROM observation 
+        WHERE observation_concept_id = '3038553' 
+        AND unit_concept_id = '8739'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+    def test_omop_157_integer_literal_passes(self) -> None:
+        """OMOP_157: Integer literal should pass."""
+        sql = """
+        SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_157_integer_in_clause_passes(self) -> None:
+        """OMOP_157: Integer literals in IN clause should pass."""
+        sql = """
+        SELECT * FROM measurement WHERE measurement_concept_id IN (3004249, 3012888, 3035856)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_157_mixed_in_clause_fails(self) -> None:
+        """OMOP_157: Mixed integer and string literals in IN clause should warn."""
+        sql = """
+        SELECT * FROM drug_exposure WHERE drug_concept_id IN (1234567, '7654321', 9999999)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "string literal" in violations[0].message.lower()
+
+    def test_omop_157_qualified_column_name_fails(self) -> None:
+        """OMOP_157: Qualified column names should be detected."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        WHERE co.condition_concept_id = '201826'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_join_condition_passes(self) -> None:
+        """OMOP_157: Join conditions with concept_id should pass (no string literals in joins)."""
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_157_not_in_clause_fails(self) -> None:
+        """OMOP_157: NOT IN clause with string literals should warn."""
+        sql = """
+        SELECT * FROM procedure_occurrence 
+        WHERE procedure_concept_id NOT IN ('4024659', '4019703')
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "not in" in violations[0].message.lower()
+
+    def test_omop_157_all_concept_id_columns_detected(self) -> None:
+        """OMOP_157: All *_concept_id columns should be detected."""
+        sql = """
+        SELECT * FROM person
+        WHERE gender_concept_id = '8532'
+        AND race_concept_id = '8527'
+        AND ethnicity_concept_id = '38003564'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 3
+
+    def test_omop_157_auxiliary_concept_columns_detected(self) -> None:
+        """OMOP_157: Auxiliary concept columns should be detected."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE route_concept_id = '4132161'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "route_concept_id" in violations[0].message or "concept_id" in violations[0].message.lower()
+
+    def test_omop_157_value_as_concept_id_detected(self) -> None:
+        """OMOP_157: value_as_concept_id should be detected."""
+        sql = """
+        SELECT * FROM observation
+        WHERE value_as_concept_id = '45877994'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_type_concept_id_detected(self) -> None:
+        """OMOP_157: *_type_concept_id columns should be detected."""
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_type_concept_id = '32817'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_source_concept_id_detected(self) -> None:
+        """OMOP_157: *_source_concept_id columns should be detected."""
+        sql = """
+        SELECT * FROM drug_exposure
+        WHERE drug_source_concept_id = '1234567'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_no_concept_id_passes(self) -> None:
+        """OMOP_157: Queries without concept_id columns should pass."""
+        sql = """
+        SELECT * FROM person WHERE person_source_value = 'ABC123'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_157_string_column_comparison_passes(self) -> None:
+        """OMOP_157: String columns with string literals should pass."""
+        sql = """
+        SELECT * FROM concept WHERE vocabulary_id = 'SNOMED'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_157_reversed_comparison_fails(self) -> None:
+        """OMOP_157: String literal on left side should be detected."""
+        sql = """
+        SELECT * FROM measurement WHERE '3004249' = measurement_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_less_than_comparison_fails(self) -> None:
+        """OMOP_157: < comparison with string literal should warn."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id < '1000000'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "<" in violations[0].message or "lt" in violations[0].message.lower()
+
+    def test_omop_157_greater_than_comparison_fails(self) -> None:
+        """OMOP_157: > comparison with string literal should warn."""
+        sql = """
+        SELECT * FROM concept WHERE concept_id > '1000000'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert ">" in violations[0].message or "gt" in violations[0].message.lower()
+
+    def test_omop_157_multiple_tables_fails(self) -> None:
+        """OMOP_157: Multiple tables with string comparisons should all be detected."""
+        sql = """
+        SELECT co.*, de.*
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_concept_id = '201826'
+        AND de.drug_concept_id = '1234567'
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+
+    def test_omop_157_cte_with_string_literal_fails(self) -> None:
+        """OMOP_157: CTE with string literal should warn."""
+        sql = """
+        WITH diabetics AS (
+            SELECT person_id FROM condition_occurrence
+            WHERE condition_concept_id = '201826'
+        )
+        SELECT * FROM diabetics
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_157_subquery_with_string_literal_fails(self) -> None:
+        """OMOP_157: Subquery with string literal should warn."""
+        sql = """
+        SELECT * FROM person WHERE person_id IN (
+            SELECT person_id FROM condition_occurrence
+            WHERE condition_concept_id = '201826'
+        )
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1

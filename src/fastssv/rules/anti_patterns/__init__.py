@@ -18,6 +18,13 @@ from .comma_separated_cross_join import CommaSeparatedCrossJoinRule
 from .ambiguous_column_reference import AmbiguousColumnReferenceRule
 from .join_key_validation import JoinKeyValidationRule
 from .attribute_definition_invalid_join import AttributeDefinitionInvalidJoinRule
+from .no_distinct_on_primary_key_column import NoDistinctOnPrimaryKeyColumnRule
+from .cdm_source_clinical_join import CdmSourceClinicalJoinRule
+from .metadata_clinical_join import MetadataClinicalJoinRule
+from .vocabulary_table_join_uses_vocabulary_id_string import VocabularyTableJoinUsesVocabularyIdStringRule
+from .domain_table_join_uses_domain_id_string import DomainTableJoinUsesDomainIdRule
+from .concept_class_table_join_uses_concept_class_id_string import ConceptClassTableJoinUsesConceptClassIdRule
+from .having_without_group_by import HavingWithoutGroupByRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -35,4 +42,11 @@ __all__ = [
     "AmbiguousColumnReferenceRule",
     "JoinKeyValidationRule",
     "AttributeDefinitionInvalidJoinRule",
+    "NoDistinctOnPrimaryKeyColumnRule",
+    "CdmSourceClinicalJoinRule",
+    "MetadataClinicalJoinRule",
+    "VocabularyTableJoinUsesVocabularyIdStringRule",
+    "DomainTableJoinUsesDomainIdRule",
+    "ConceptClassTableJoinUsesConceptClassIdRule",
+    "HavingWithoutGroupByRule",
 ]
