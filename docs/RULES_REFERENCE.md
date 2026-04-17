@@ -1,14 +1,14 @@
 # FastSSV Rules Reference
 
-This document provides comprehensive documentation for all 151 validation rules in FastSSV.
+This document provides comprehensive documentation for all 156 validation rules in FastSSV.
 
 The rule registry contains:
 
 - **anti_patterns**: 22 rules
-- **concept_standardization**: 20 rules
-- **data_quality**: 24 rules
-- **domain_specific**: 39 rules
-- **joins**: 36 rules
+- **concept_standardization**: 21 rules
+- **data_quality**: 26 rules
+- **domain_specific**: 40 rules
+- **joins**: 37 rules
 - **temporal**: 10 rules
 
 For each rule you will find:
@@ -59,6 +59,7 @@ For each rule you will find:
 | `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | ERROR | concept_standardization |
 | `concept_standardization.standard_concept_value_validation` | [Standard Concept Value Validation](#concept-standardization-standard-concept-value-validation) | ERROR | concept_standardization |
 | `concept_standardization.unit_vocabulary_validation` | [Unit Vocabulary Validation](#concept-standardization-unit-vocabulary-validation) | WARNING | concept_standardization |
+| `concept_standardization.maps_to_chain_follow_to_terminal` | [Maps To Chain Follow To Terminal](#concept-standardization-maps-to-chain-follow-to-terminal) | WARNING | concept_standardization |
 | `joins.care_site_id_join_validation` | [Care Site ID Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
 | `joins.care_site_join_validation` | [Care Site Join Path Validation](#joins-care-site-join-validation) | WARNING | joins |
 | `joins.care_site_location_join_validation` | [Care Site to Location Join Validation](#joins-care-site-location-join-validation) | ERROR | joins |
@@ -95,6 +96,7 @@ For each rule you will find:
 | `joins.visit_detail_join_validation` | [Visit Detail Join Validation](#joins-visit-detail-join-validation) | WARNING | joins |
 | `joins.visit_occurrence_id_join_validation` | [Visit Occurrence ID Join Validation](#joins-visit-occurrence-id-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_inner_join_validation` | [Visit Occurrence INNER JOIN Validation](#joins-visit-occurrence-inner-join-validation) | WARNING | joins |
+| `joins.observation_period_join_validation` | [Observation Period Join Validation](#joins-observation-period-join-validation) | WARNING | joins |
 | `temporal.clinical_event_date_in_future_validation` | [Clinical Event Date Should Not Be In Future](#temporal-clinical-event-date-in-future-validation) | WARNING | temporal |
 | `temporal.datetime_between_date_literal` | [Datetime BETWEEN with Date Literal](#temporal-datetime-between-date-literal) | WARNING | temporal |
 | `temporal.death_date_before_birth_validation` | [Death Date Before Birth Validation](#temporal-death-date-before-birth-validation) | ERROR | temporal |
@@ -190,6 +192,7 @@ For each rule you will find:
 | `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Reference](#domain-specific-visit-detail-visit-occurrence-reference) | WARNING | domain_specific |
 | `domain_specific.visit_event_temporal_validation` | [Visit Event Temporal Validation](#domain-specific-visit-event-temporal-validation) | WARNING | domain_specific |
 | `domain_specific.visit_outpatient_same_day_validation` | [Visit Outpatient Same-Day Validation](#domain-specific-visit-outpatient-same-day-validation) | WARNING | domain_specific |
+| `domain_specific.cdm_v53_to_v54_column_renames` | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
 
 
 ---
