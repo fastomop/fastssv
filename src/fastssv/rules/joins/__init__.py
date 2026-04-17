@@ -40,6 +40,7 @@ from .payer_plan_period_join_validation import PayerPlanPeriodJoinValidationRule
 from .fact_relationship_join_validation import FactRelationshipJoinValidationRule
 from .clinical_person_id_linkage_validation import ClinicalPersonIdLinkageValidationRule
 from .left_join_then_where_on_right_table import LeftJoinThenWhereOnRightTableRule
+from .observation_period_join_validation import ObservationPeriodJoinValidationRule
 
 __all__ = [
     "JoinPathValidationRule",
@@ -78,4 +79,5 @@ __all__ = [
     "FactRelationshipJoinValidationRule",
     "ClinicalPersonIdLinkageValidationRule",
     "LeftJoinThenWhereOnRightTableRule",
+    "ObservationPeriodJoinValidationRule",
 ]

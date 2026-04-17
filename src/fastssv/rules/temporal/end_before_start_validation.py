@@ -1,6 +1,6 @@
 """End Before Start Validation Rule.
 
-OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_529, OMOP_551:
+OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_401, OMOP_515, OMOP_526, OMOP_529, OMOP_551:
 Detects logically impossible date constraints where static filters force
 end_date < start_date for the same record.
 
@@ -15,7 +15,10 @@ Covered Tables and Column Pairs:
         - condition_start_date, condition_end_date (CLIN_011, OMOP_551)
 
     drug_exposure:
-        - drug_exposure_start_date, drug_exposure_end_date (OMOP_551)
+        - drug_exposure_start_date, drug_exposure_end_date (OMOP_515, OMOP_551)
+
+    device_exposure:
+        - device_exposure_start_date, device_exposure_end_date (OMOP_526)
 
     visit_occurrence:
         - visit_start_date, visit_end_date (OMOP_052, OMOP_551)
@@ -28,6 +31,9 @@ Covered Tables and Column Pairs:
 
     episode:
         - episode_start_date, episode_end_date (OMOP_244)
+
+    payer_plan_period:
+        - payer_plan_period_start_date, payer_plan_period_end_date (OMOP_401)
 
 Example Violations:
     -- ERROR: Start must be after June, but end must be before January
@@ -85,6 +91,10 @@ TABLE_CONFIGS = {
         "start": "drug_exposure_start_date",
         "end": "drug_exposure_end_date",
     },
+    "device_exposure": {
+        "start": "device_exposure_start_date",
+        "end": "device_exposure_end_date",
+    },
     "visit_occurrence": {
         "start": "visit_start_date",
         "end": "visit_end_date",
@@ -100,6 +110,10 @@ TABLE_CONFIGS = {
     "episode": {
         "start": "episode_start_date",
         "end": "episode_end_date",
+    },
+    "payer_plan_period": {
+        "start": "payer_plan_period_start_date",
+        "end": "payer_plan_period_end_date",
     },
 }
 

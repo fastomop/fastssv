@@ -1,6 +1,6 @@
 """Provider Join Validation Rule.
 
-OMOP semantic rule JOIN_001:
+OMOP semantic rules JOIN_001, OMOP_516:
 Clinical event tables must join to provider via provider_id on both sides.
 Joining on person_id, care_site_id, or any other column is incorrect.
 

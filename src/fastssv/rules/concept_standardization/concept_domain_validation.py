@@ -2,7 +2,7 @@
 
 Merged rule combining domain_segregation and concept_domain_validation.
 
-OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_102 + OMOP_103 + OMOP_153 + CLIN_043 + OMOP_246:
+OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_102 + OMOP_103 + OMOP_153 + CLIN_043 + OMOP_246 + OMOP_508 + OMOP_509 + OMOP_521 + OMOP_528:
 Each concept_id column in OMOP CDM is tied to a specific domain. When a query
 joins a clinical table to the concept table, the domain_id filter on the concept
 table must match that column's expected domain.
@@ -20,7 +20,7 @@ Examples of correct usage:
     - procedure_occurrence.procedure_concept_id → domain_id = 'Procedure'
     - measurement.measurement_concept_id → domain_id = 'Measurement'
     - observation.observation_concept_id → domain_id = 'Observation'
-    - device_exposure.device_concept_id → domain_id = 'Device'
+    - device_exposure.device_concept_id → domain_id = 'Device' (OMOP_508)
     - visit_occurrence.visit_concept_id → domain_id = 'Visit'
     - visit_detail.visit_detail_concept_id → domain_id = 'Visit' (CLIN_043)
     - specimen.specimen_concept_id → domain_id = 'Specimen'
@@ -30,8 +30,9 @@ Examples of correct usage:
   Auxiliary columns:
     - person.gender_concept_id → domain_id = 'Gender' (OMOP_019)
     - person.race_concept_id → domain_id = 'Race'
-    - drug_exposure.route_concept_id → domain_id = 'Route' (OMOP_102)
-    - measurement.unit_concept_id → domain_id = 'Unit'
+    - drug_exposure.route_concept_id → domain_id = 'Route' (OMOP_102, OMOP_521)
+    - measurement.unit_concept_id → domain_id = 'Unit' (OMOP_509)
+    - provider.specialty_concept_id → domain_id = 'Specialty' (OMOP_528)
     - condition_occurrence.condition_status_concept_id → domain_id = 'Condition Status' (CLIN_012)
     - observation.qualifier_concept_id → domain_id = 'Meas Value' (OMOP_101)
     - specimen.disease_status_concept_id → domain_id = 'Spec Disease Status' (OMOP_153)

@@ -1,6 +1,6 @@
 """Observation Period Date Range Logic Rule.
 
-OMOP semantic rule OMOP_033:
+OMOP semantic rules OMOP_033, OMOP_512:
 When using observation_period to validate patient enrollment, the clinical event
 date must fall BETWEEN observation_period_start_date AND observation_period_end_date.
 

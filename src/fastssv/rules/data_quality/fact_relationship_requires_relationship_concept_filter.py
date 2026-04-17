@@ -1,8 +1,9 @@
 """Fact Relationship Requires Relationship Concept Filter Rule.
 
-OMOP semantic rule OMOP_250:
+OMOP semantic rules OMOP_250, OMOP_507:
 Fact relationship queries should filter by relationship_concept_id to ensure semantic
-clarity and optimal query performance.
+clarity and optimal query performance. Fact relationship records must specify the
+relationship_concept_id describing the relationship between two facts.
 
 The Problem:
     The fact_relationship table links facts across different domain tables using
@@ -19,7 +20,7 @@ Common relationship types include:
     - "Causally related to" (concept_id 44818888)
 
 Violation patterns:
-    -- WRONG: No relationship_concept_id filter
+    -- WRONG: No relationship_concept_id filter (OMOP_507)
     SELECT * FROM fact_relationship
     WHERE fact_id_1 = 100;
 
@@ -29,7 +30,7 @@ Violation patterns:
     WHERE domain_concept_id_1 = 19;
 
 Correct patterns:
-    -- CORRECT: Filter by specific relationship type
+    -- CORRECT: Filter by specific relationship type (OMOP_507)
     SELECT * FROM fact_relationship
     WHERE relationship_concept_id = 44818790  -- "Has temporal context"
       AND fact_id_1 = 100;

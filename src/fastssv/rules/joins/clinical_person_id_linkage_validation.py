@@ -1,6 +1,6 @@
 """Clinical Tables Person ID Linkage Validation Rule.
 
-OMOP semantic rule CLIN_055: all_clinical_tables_require_person_id_for_patient_query
+OMOP semantic rules CLIN_055, OMOP_517: all_clinical_tables_require_person_id_for_patient_query
 
 When combining data across multiple clinical tables for patient-level analysis,
 all tables must be linked through person_id (directly or transitively). Missing

@@ -1,8 +1,9 @@
 """Episode Requires Concept Filter Rule.
 
-OMOP semantic rule OMOP_240:
+OMOP semantic rules OMOP_240, OMOP_505:
 Episode queries should filter by episode_concept_id to ensure semantic clarity
-and optimal query performance.
+and optimal query performance. Additionally, episode_event records must be linked
+to episode using episode_event.episode_id = episode.episode_id.
 
 The Problem:
     The episode table in OMOP CDM represents aggregated clinical events spanning
@@ -32,7 +33,7 @@ Violation patterns:
     FROM episode e
     WHERE e.episode_start_date > '2020-01-01';
 
-    -- WRONG: episode_event without concept filter
+    -- WRONG: episode_event without concept filter (OMOP_505)
     SELECT ee.*
     FROM episode_event ee
     JOIN condition_occurrence co ON ee.event_id = co.condition_occurrence_id;
@@ -57,7 +58,7 @@ Correct patterns:
     WHERE c.concept_class_id = 'Episode'
       AND c.standard_concept = 'S';
 
-    -- CORRECT: episode_event with concept filter via join
+    -- CORRECT: episode_event with concept filter via join (OMOP_505)
     SELECT ee.*
     FROM episode_event ee
     JOIN episode e ON ee.episode_id = e.episode_id

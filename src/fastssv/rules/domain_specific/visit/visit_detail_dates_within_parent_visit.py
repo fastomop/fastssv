@@ -1,6 +1,6 @@
 """Visit Detail Dates Within Parent Visit Rule.
 
-OMOP semantic rule CLIN_047: visit_detail_dates_within_parent_visit
+OMOP semantic rules CLIN_047, OMOP_510, OMOP_519: visit_detail_dates_within_parent_visit
 
 visit_detail represents sub-visit details (ICU stays, ward transfers, operating
 room time) that are nested within a parent visit_occurrence. By definition,

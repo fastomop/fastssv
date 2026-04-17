@@ -5,6 +5,8 @@ from .visit_event_temporal_validation import VisitEventTemporalValidationRule
 from .visit_detail_visit_occurrence_reference import VisitDetailVisitOccurrenceReferenceRule
 from .visit_detail_dates_within_parent_visit import VisitDetailDatesWithinParentVisitRule
 from .visit_detail_admitted_discharged_domain import VisitDetailAdmittedDischargedDomainRule
+from .visit_occurrence_type_domain import VisitOccurrenceTypeDomainRule
+from .cdm_v53_to_v54_column_renames import CdmV53ToV54ColumnRenamesRule
 
 __all__ = [
     "VisitOutpatientSameDayValidationRule",
@@ -12,4 +14,6 @@ __all__ = [
     "VisitDetailVisitOccurrenceReferenceRule",
     "VisitDetailDatesWithinParentVisitRule",
     "VisitDetailAdmittedDischargedDomainRule",
+    "VisitOccurrenceTypeDomainRule",
+    "CdmV53ToV54ColumnRenamesRule",
 ]

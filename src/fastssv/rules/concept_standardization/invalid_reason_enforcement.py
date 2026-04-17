@@ -1,6 +1,6 @@
 """Invalid Reason Enforcement Rule.
 
-OMOP semantic rule:
+OMOP semantic rule OMOP_501:
 When querying vocabulary/concept tables (concept, concept_relationship,
 concept_ancestor, etc.), queries must filter by invalid_reason to ensure
 only valid concepts are used, or explicitly handle invalid concepts.

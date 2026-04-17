@@ -24,6 +24,7 @@ from .unit_vocabulary_validation import UnitVocabularyValidationRule
 from .concept_class_id_ingredient_for_drug_grouping import ConceptClassIdIngredientForDrugGroupingRule
 from .concept_relationship_valid_date_range_check import ConceptRelationshipValidDateRangeCheckRule
 from .concept_synonym_language_concept_id import ConceptSynonymLanguageConceptIdRule
+from .maps_to_chain_follow_to_terminal import MapsToChainFollowToTerminalRule
 
 __all__ = [
     "StandardConceptEnforcementRule",
@@ -46,4 +47,5 @@ __all__ = [
     "ConceptClassIdIngredientForDrugGroupingRule",
     "ConceptRelationshipValidDateRangeCheckRule",
     "ConceptSynonymLanguageConceptIdRule",
+    "MapsToChainFollowToTerminalRule",
 ]
