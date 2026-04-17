@@ -198,17 +198,17 @@ def _joins_observation_period_on_person_id(
 ) -> Tuple[bool, List[str]]:
     """
     Verify that observation_period is properly joined to clinical tables on person_id.
-    
+
     Returns (is_valid, list_of_issues)
     """
     if not _uses_observation_period(tree):
         return False, ["Query does not use observation_period table"]
-    
+
     join_conditions = extract_join_conditions(tree, aliases)
-    
+
     # Check if any join involves observation_period and person_id
     op_joined_to_clinical = False
-    
+
     for lt, lc, rt, rc in join_conditions:
         # Check if observation_period is involved
         if lt == "observation_period" or rt == "observation_period":
@@ -219,27 +219,112 @@ def _joins_observation_period_on_person_id(
                 if other_table in clinical_tables or other_table in CLINICAL_TABLES_WITH_DATES:
                     op_joined_to_clinical = True
                     break
-    
+
     if not op_joined_to_clinical:
         return False, [
             "observation_period table is not properly joined to clinical tables on person_id"
         ]
-    
+
     return True, []
+
+
+def _is_cohort_or_patient_level_query(tree: exp.Expression) -> bool:
+    """Check if query is doing cohort selection or patient-level inference.
+
+    This distinguishes between:
+    - Cohort/patient-level queries: observation_period anchoring required
+    - Descriptive aggregations: observation_period NOT required
+
+    Cohort/patient-level indicators:
+    - Selecting DISTINCT person_id in outer query
+    - Patient-level filtering (WHERE on person-level attributes)
+
+    Descriptive aggregation indicators (observation_period NOT required):
+    - Aggregating over events (COUNT(*), AVG(duration))
+    - Era-level summaries
+    - Distribution statistics without patient selection
+    """
+    # Check if query selects DISTINCT person_id in outer SELECT
+    if isinstance(tree, exp.Select):
+        for select_col in tree.find_all(exp.Column):
+            # Only check columns directly in the SELECT expressions, not nested
+            parent = select_col.parent
+            is_in_select_expr = False
+            while parent and not isinstance(parent, exp.Select):
+                parent = parent.parent
+            if isinstance(parent, exp.Select) and parent == tree:
+                # This is a top-level SELECT column
+                if normalize_name(select_col.name) == "person_id":
+                    # Check if it's wrapped in DISTINCT
+                    if tree.find(exp.Distinct):
+                        return True
+
+    return False
+
+
+def _has_washout_or_followup_logic(tree: exp.Expression) -> bool:
+    """Check if query implements washout or follow-up period logic.
+
+    These patterns require observation_period anchoring:
+    - DATEDIFF between clinical event dates
+    - DATEADD for follow-up windows
+    - Explicit washout period filtering with date comparisons
+    """
+    # Check for DateDiff, DateAdd expressions
+    date_expr_types = []
+    for expr_name in ['DateDiff', 'DateAdd', 'DateSub', 'TsOrDsAdd']:
+        if hasattr(exp, expr_name):
+            date_expr_types.append(getattr(exp, expr_name))
+
+    if date_expr_types:
+        for node in tree.find_all(tuple(date_expr_types)):
+            # Check if this is in a WHERE or JOIN clause (temporal filtering)
+            parent = node.parent
+            while parent:
+                if isinstance(parent, (exp.Where, exp.Join)):
+                    return True
+                parent = parent.parent
+
+    # Also check for Anonymous functions with date arithmetic names
+    for func in tree.find_all(exp.Anonymous):
+        func_name = ""
+        if hasattr(func, 'name'):
+            func_name = normalize_name(func.name)
+        elif hasattr(func, 'this') and isinstance(func.this, str):
+            func_name = normalize_name(func.this)
+
+        # DATEDIFF, DATEADD in WHERE/JOIN clause indicates temporal logic
+        if func_name in {"datediff", "date_diff", "timestampdiff", "dateadd", "date_add"}:
+            parent = func.parent
+            while parent:
+                if isinstance(parent, (exp.Where, exp.Join)):
+                    return True
+                parent = parent.parent
+
+    # Check for date comparisons with INTERVAL in WHERE/JOIN
+    for comparison in tree.find_all((exp.GTE, exp.GT, exp.LTE, exp.LT, exp.Between)):
+        if not is_in_where_or_join_clause(comparison):
+            continue
+
+        # Check if involves INTERVAL
+        if comparison.find(exp.Interval):
+            return True
+
+    return False
 
 
 @register
 class ObservationPeriodAnchoringRule(Rule):
-    """Ensures queries with temporal constraints join to observation_period."""
-    
+    """Detects incomplete temporal anchoring when observation_period is used."""
+
     rule_id = "temporal.observation_period_anchoring"
     name = "Observation Period Anchoring"
     description = (
-        "Ensures queries with temporal constraints (washout, follow-up, event windows) "
-        "join to observation_period on person_id. Events outside the observation window "
-        "may be incomplete or missing."
+        "When observation_period is included in a query, ensures it is properly joined "
+        "on person_id to clinical tables. Does not flag queries that simply don't use "
+        "observation_period (valid design choice for descriptive queries)."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING
     suggested_fix = (
         "JOIN observation_period op ON clinical_table.person_id = op.person_id "
         "AND clinical_table.date BETWEEN op.observation_period_start_date "
@@ -260,96 +345,40 @@ class ObservationPeriodAnchoringRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            # Find temporal constraints in the query
-            temporal_constraints = _extract_temporal_constraints(tree, aliases)
-
-            # Also check for date functions
-            has_date_functions = _has_date_function(tree)
-
-            # Check if query is counting distinct patients from clinical tables
-            counts_patients = False
-            for func in tree.find_all(exp.Count):
-                # Check if it's COUNT(DISTINCT person_id) or similar
-                if func.find(exp.Distinct):
-                    for col in func.find_all(exp.Column):
-                        if normalize_name(col.name) == "person_id":
-                            counts_patients = True
-                            break
-
-            # Get the clinical tables involved
-            clinical_tables = {t for t, _, _ in temporal_constraints}
-            
-            # Also include any clinical tables referenced in the query
-            for table in aliases.values():
-                if table in CLINICAL_TABLES_WITH_DATES:
-                    clinical_tables.add(table)
-
-            # Determine if rule should apply
-            # Apply if: (1) explicit temporal constraints, OR (2) counting patients from clinical tables
-            rule_applies = (temporal_constraints or has_date_functions or
-                          (counts_patients and clinical_tables))
-
-            if not rule_applies:
-                # Rule doesn't apply to this query
-                continue
-
-            # Check if observation_period is used and properly joined
+            # Check if observation_period is used
             uses_op = _uses_observation_period(tree)
 
+            # Only flag if observation_period is referenced but NEVER joined on person_id
+            # This is very conservative - we're only catching obvious mistakes
             if not uses_op:
-                # Build informative message
-                constraint_details = []
-                for table, col, _ in temporal_constraints:
-                    constraint_details.append(f"{table}.{col}")
+                # No observation_period - skip
+                continue
 
-                # Deduplicate
-                constraint_details = sorted(set(constraint_details))
+            # observation_period is present - check if it's joined on person_id AT ALL
+            # (not checking completeness, just checking for obvious errors)
+            join_conditions = extract_join_conditions(tree, aliases)
 
-                if temporal_constraints or has_date_functions:
-                    message = (
-                        f"Query has temporal constraints but does not join to observation_period. "
-                        f"Temporal filters on: {', '.join(constraint_details) if constraint_details else 'date functions'}. "
-                        f"Events outside a patient's observation window may be incomplete."
-                    )
-                    severity = Severity.ERROR
-                elif counts_patients and clinical_tables:
-                    message = (
-                        f"Query counts distinct patients from clinical table(s) {sorted(clinical_tables)} "
-                        f"without joining to observation_period. "
-                        f"This may include records outside patients' observation windows, "
-                        f"leading to incomplete or misleading counts."
-                    )
-                    severity = Severity.WARNING
-                else:
-                    continue  # Shouldn't reach here, but safety check
+            has_any_person_id_join = False
+            for lt, lc, rt, rc in join_conditions:
+                if (lt == "observation_period" or rt == "observation_period"):
+                    if lc == "person_id" and rc == "person_id":
+                        has_any_person_id_join = True
+                        break
 
+            if not has_any_person_id_join:
+                # observation_period is in the query but never joined on person_id
+                # This is likely a mistake
                 violations.append(self.create_violation(
-                    message=message,
-                    severity=severity,
-                    details={
-                        "temporal_columns": constraint_details,
-                        "clinical_tables": sorted(clinical_tables),
-                        "has_date_functions": has_date_functions,
-                        "counts_patients": counts_patients,
-                    }
+                    message=(
+                        "observation_period table is referenced but not joined on person_id. "
+                        "If using observation_period, it should typically be joined via person_id."
+                    ),
+                    severity=Severity.WARNING,
+                    suggested_fix=(
+                        "JOIN observation_period op ON table.person_id = op.person_id"
+                    ),
                 ))
-            else:
-                # observation_period is used, verify the join
-                is_valid, issues = _joins_observation_period_on_person_id(
-                    tree, aliases, clinical_tables
-                )
-                
-                if not is_valid:
-                    for issue in issues:
-                        violations.append(self.create_violation(
-                            message=issue,
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                "Ensure observation_period is joined on person_id: "
-                                "JOIN observation_period op ON table.person_id = op.person_id"
-                            ),
-                        ))
-        
+
         return violations
 
 

@@ -127,24 +127,23 @@ def build_validation_result(
 
     is_valid = len(errors) == 0
 
+    # Clean the SQL query for display
     no_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
     no_comments = re.sub(r"--[^\n]*", "", no_comments)
     clean_query = " ".join(no_comments.strip().split())
 
-    result: Dict[str, Any] = {}
-    if query_index is not None:
-        result["query_index"] = query_index
-
-    result.update({
+    result: Dict[str, Any] = {
         "query": clean_query,
-        "dialect": dialect,
         "is_valid": is_valid,
         "error_count": len(errors),
         "warning_count": len(warnings),
-    })
+    }
 
-    if violations:
-        result["violations"] = [v.to_dict() for v in violations]
+    if errors:
+        result["errors"] = [v.to_dict() for v in errors]
+
+    if warnings:
+        result["warnings"] = [v.to_dict() for v in warnings]
 
     return result
 

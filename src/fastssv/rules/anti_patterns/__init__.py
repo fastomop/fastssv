@@ -25,6 +25,7 @@ from .vocabulary_table_join_uses_vocabulary_id_string import VocabularyTableJoin
 from .domain_table_join_uses_domain_id_string import DomainTableJoinUsesDomainIdRule
 from .concept_class_table_join_uses_concept_class_id_string import ConceptClassTableJoinUsesConceptClassIdRule
 from .having_without_group_by import HavingWithoutGroupByRule
+from .sql_server_functions_in_postgres import SQLServerFunctionsInPostgresRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -49,4 +50,5 @@ __all__ = [
     "DomainTableJoinUsesDomainIdRule",
     "ConceptClassTableJoinUsesConceptClassIdRule",
     "HavingWithoutGroupByRule",
+    "SQLServerFunctionsInPostgresRule",
 ]

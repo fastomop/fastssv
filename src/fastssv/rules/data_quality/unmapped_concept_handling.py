@@ -59,13 +59,57 @@ def _infer_table_for_column(
 
 def _extract_concept_id_filters(
     tree: exp.Expression,
-    aliases: Dict[str, str]
+    aliases: Dict[str, str],
+    outermost_only: bool = True
 ) -> List[Tuple[str, str, exp.Expression]]:
-    """Find all filters on *_concept_id columns with specific numeric values."""
+    """Find all filters on *_concept_id columns with specific numeric values.
+
+    Args:
+        tree: SQL expression tree to search
+        aliases: Table aliases mapping
+        outermost_only: If True, only check filters in the outermost SELECT (not subqueries)
+    """
     filters: List[Tuple[str, str, exp.Expression]] = []
 
+    # If outermost_only, only check WHERE clause of the top-level SELECT
+    if outermost_only and isinstance(tree, exp.Select):
+        # Only check the WHERE clause and JOIN conditions of this SELECT
+        # Don't recurse into subqueries
+        where_clause = tree.args.get("where")
+        search_nodes = []
+
+        if where_clause:
+            search_nodes.append(where_clause)
+
+        # Also check JOIN ON clauses
+        for join in tree.find_all(exp.Join):
+            on_clause = join.args.get("on")
+            if on_clause:
+                search_nodes.append(on_clause)
+
+        # Process nodes without recursing into subqueries
+        for node in search_nodes:
+            filters.extend(_extract_filters_from_node(node, aliases, recurse=False))
+    else:
+        # Original behavior: check everything
+        filters.extend(_extract_filters_from_node(tree, aliases, recurse=True))
+
+    return filters
+
+
+def _extract_filters_from_node(
+    node: exp.Expression,
+    aliases: Dict[str, str],
+    recurse: bool = True
+) -> List[Tuple[str, str, exp.Expression]]:
+    """Extract concept_id filters from a specific node."""
+    filters: List[Tuple[str, str, exp.Expression]] = []
+
+    # Choose whether to recurse into subqueries
+    find_fn = node.find_all if recurse else lambda type_: _find_shallow(node, type_)
+
     # Check equality comparisons: concept_id = 12345
-    for eq in tree.find_all(exp.EQ):
+    for eq in find_fn(exp.EQ):
         if not is_in_where_or_join_clause(eq):
             continue
 
@@ -91,7 +135,7 @@ def _extract_concept_id_filters(
                 filters.append((table, col_name, eq))
 
     # Check IN clauses: concept_id IN (12345, 67890)
-    for in_expr in tree.find_all(exp.In):
+    for in_expr in find_fn(exp.In):
         if not is_in_where_or_join_clause(in_expr):
             continue
 
@@ -117,6 +161,18 @@ def _extract_concept_id_filters(
                 filters.append((table, col_name, in_expr))
 
     return filters
+
+
+def _find_shallow(node: exp.Expression, node_type) -> List[exp.Expression]:
+    """Find nodes of given type without recursing into subqueries."""
+    results = []
+    for child in node.walk():
+        # Stop if we hit a subquery
+        if isinstance(child, exp.Subquery) and child is not node:
+            continue
+        if isinstance(child, node_type):
+            results.append(child)
+    return results
 
 
 def _handles_zero_concept_id(

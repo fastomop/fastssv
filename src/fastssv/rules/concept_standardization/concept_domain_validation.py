@@ -267,10 +267,11 @@ class ConceptDomainValidationRule(Rule):
                 if not values:
                     if col_type == "main":
                         violations.append(self.create_violation(
-                            severity=Severity.ERROR,
+                            severity=Severity.WARNING,
                             message=(
                                 f"{table}.{col} joined to concept '{concept_alias}' "
-                                f"without domain_id filter. Expected domain '{expected}'."
+                                f"without domain_id filter. Expected domain '{expected}'. "
+                                f"Domain filtering is recommended but not mandatory for analytic queries."
                             ),
                             suggested_fix=(
                                 f"Add: {concept_alias}.domain_id = '{expected}'"

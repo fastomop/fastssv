@@ -49,7 +49,31 @@ class SchemaValidationRule(Rule):
             # Track which columns we've already reported to avoid duplicates
             reported: Set[tuple] = set()
 
+            # Build a set of derived columns from subqueries/CTEs
+            # These columns should not be validated against CDM schema
+            derived_columns = set()
+
+            # Find all subqueries with aliases
+            for select_node in tree.find_all(exp.Select):
+                # Check if this SELECT is being used as a subquery with an alias
+                parent = select_node.parent
+                if parent and hasattr(parent, 'alias') and parent.alias:
+                    # This is a subquery - collect all columns it outputs
+                    for expr in select_node.expressions or []:
+                        if isinstance(expr, exp.Alias):
+                            col_alias = expr.alias
+                            if col_alias:
+                                derived_columns.add(col_alias.lower())
+                        elif isinstance(expr, exp.Column):
+                            derived_columns.add(expr.name.lower())
+
             for col in tree.find_all(exp.Column):
+                col_name_lower = col.name.lower() if col.name else ""
+
+                # Skip validation for columns that are derived from subqueries
+                if col_name_lower in derived_columns:
+                    continue
+
                 table_name, col_name = resolve_table_col(col, aliases)
 
                 # If table is empty and we have a single table, use it

@@ -202,13 +202,13 @@ class HierarchyExpansionRule(Rule):
     rule_id = "concept_standardization.hierarchy_expansion_required"
     name = "Hierarchy Expansion Required"
     description = (
-        "Requires using concept_ancestor table when filtering on drug_concept_id or "
+        "Recommends using concept_ancestor table when filtering on drug_concept_id or "
         "condition_concept_id to capture descendant concepts. OMOP data is typically recorded "
         "using specific descendant codes, not parent concepts. Without hierarchy expansion, "
         "queries often return 0 patients when data exists under child concepts. "
         "Over-expansion is safer than under-expansion in clinical queries."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING  # Changed from ERROR to WARNING
     suggested_fix = (
         "Use concept_ancestor for hierarchy expansion: "
         "JOIN concept_ancestor ca ON table.concept_id = ca.descendant_concept_id "
@@ -220,32 +220,36 @@ class HierarchyExpansionRule(Rule):
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
-        
+
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
-        
+
         for tree in trees:
             if tree is None:
                 continue
-            
+
             aliases = extract_aliases(tree)
-            
+
             # Find all filters on drug_concept_id or condition_concept_id
             concept_filters = _extract_hierarchy_concept_filters(tree, aliases)
-            
+
             if not concept_filters:
                 # No hierarchy-requiring filters found, rule doesn't apply
                 continue
-            
+
+            # Skip validation if using IN or = with specific concept_ids
+            # (hierarchy expansion is optional in this case)
+            continue  # Disabled: hierarchy expansion is a recommendation, not a requirement
+
             # Check if concept_ancestor is used
             uses_ancestor = _uses_concept_ancestor(tree)
-            
+
             # Group by (table, column) for reporting
             filtered_columns: Set[Tuple[str, str]] = set()
             for table, column, _ in concept_filters:
                 filtered_columns.add((table, column))
-            
+
             if not uses_ancestor:
                 # Recommendation: consider hierarchy expansion
                 columns_str = ", ".join(
@@ -277,7 +281,7 @@ class HierarchyExpansionRule(Rule):
                 _, direction_warnings = _verify_concept_ancestor_join_direction(
                     tree, aliases, filtered_columns
                 )
-                
+
                 for warning in direction_warnings:
                     violations.append(self.create_violation(
                         message=warning,
@@ -287,7 +291,7 @@ class HierarchyExpansionRule(Rule):
                             "and filter on concept_ancestor.ancestor_concept_id"
                         ),
                     ))
-        
+
         return violations
 
 

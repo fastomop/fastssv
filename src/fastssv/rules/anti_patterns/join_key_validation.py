@@ -70,6 +70,27 @@ VALID_JOIN_KEYS: Set[Tuple[str, str]] = {
     ("observation_concept_id", "concept_id"),
     ("device_concept_id", "concept_id"),
     ("concept_id", "concept_id"),
+    # Canonical OMOP concept_ancestor patterns for hierarchy expansion
+    ("descendant_concept_id", "condition_concept_id"),
+    ("descendant_concept_id", "drug_concept_id"),
+    ("descendant_concept_id", "procedure_concept_id"),
+    ("descendant_concept_id", "measurement_concept_id"),
+    ("descendant_concept_id", "observation_concept_id"),
+    ("ancestor_concept_id", "concept_id"),
+    ("descendant_concept_id", "concept_id"),
+    # Gender/race/ethnicity lookups
+    ("gender_concept_id", "concept_id"),
+    ("race_concept_id", "concept_id"),
+    ("ethnicity_concept_id", "concept_id"),
+    # Cost table joins (cost_event_id is a polymorphic key)
+    ("drug_exposure_id", "cost_event_id"),
+    ("procedure_occurrence_id", "cost_event_id"),
+    ("condition_occurrence_id", "cost_event_id"),
+    ("measurement_id", "cost_event_id"),
+    ("observation_id", "cost_event_id"),
+    ("device_exposure_id", "cost_event_id"),
+    ("visit_occurrence_id", "cost_event_id"),
+    ("specimen_id", "cost_event_id"),
 }
 
 # Columns that are definitely incompatible
@@ -108,13 +129,30 @@ def _is_incompatible(col1: str, col2: str) -> bool:
 
 def _is_suspicious(col1: str, col2: str) -> bool:
     """
-    Heuristic: same suffix (_id) but different semantic prefix
+    Heuristic: same suffix (_id) but different semantic prefix.
+
+    OMOP-aware: If one column ends with '_concept_id' and the other is
+    any other '*_id' column, this is likely a valid concept join pattern.
     """
     if not col1 or not col2:
         return False
 
-    if col1.endswith("_id") and col2.endswith("_id"):
-        return _norm(col1) != _norm(col2)
+    c1 = _norm(col1)
+    c2 = _norm(col2)
+
+    # Both end with _id but are different
+    if c1.endswith("_id") and c2.endswith("_id") and c1 != c2:
+        # OMOP pattern: any column with name ending in '_concept_id' can join to another
+        # This includes CTE aliases like 'snomed_diabetes_id' joining to 'condition_concept_id'
+        if c1.endswith("_concept_id") and c2.endswith("_concept_id"):
+            return False  # Both are concept_id columns, valid join
+
+        # Allow any *_id to join to *_concept_id (CTE pattern)
+        # This handles cases like snomed_diabetes_id = condition_concept_id
+        if c1.endswith("_concept_id") or c2.endswith("_concept_id"):
+            return False  # One is a concept_id, likely valid
+
+        return True
 
     return False
 

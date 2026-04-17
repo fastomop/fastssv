@@ -234,23 +234,18 @@ class MultipleMapsToTargetsRule(Rule):
                     )
 
             # --- JOIN without dedup ---
-            if not (_has_distinct(tree) or _has_group_by(tree)):
-                key = "join_no_dedup"
-                if key not in seen:
-                    seen.add(key)
-
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                "JOIN with 'Maps to' without DISTINCT or GROUP BY may duplicate rows."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                "Add DISTINCT or GROUP BY to handle multiple mappings."
-                            ),
-                            details={"context": tree.sql()},
-                        )
-                    )
+            # DISABLED: Too noisy - creates false positives when:
+            # - Outer query has GROUP BY/DISTINCT
+            # - Duplication is intentional (e.g., for counting)
+            # - Query properly handles multiplicity elsewhere
+            #
+            # Only keeping scalar subquery and LIMIT 1 checks which are more clear-cut errors
+            #
+            # if not (_has_distinct(tree) or _has_group_by(tree)):
+            #     key = "join_no_dedup"
+            #     if key not in seen:
+            #         seen.add(key)
+            #         violations.append(...)
 
             # --- LIMIT 1 misuse ---
             if _has_limit_one(tree):

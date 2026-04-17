@@ -21,7 +21,7 @@ def _find_concept_relationship_aliases(
     for table in tree.find_all(exp.Table):
         table_name = normalize_name(table.name)
         if table_name == "concept_relationship":
-            alias = table.alias_or_name
+            alias = normalize_name(table.alias_or_name)
             cr_aliases.add(alias)
 
     return cr_aliases
@@ -61,10 +61,24 @@ def _collect_relationship_filters(
                 continue
 
             # Ensure it's from concept_relationship
-            if col_node.table not in cr_aliases:
+            # Normalize the table reference for comparison
+            col_table_ref = normalize_name(col_node.table) if col_node.table else ""
+
+            # If unqualified, check if 'relationship_id' could be from a CR table in scope
+            if not col_table_ref:
+                # relationship_id is unique to concept_relationship table in OMOP CDM
+                # If we have CR tables in the query and an unqualified relationship_id,
+                # assume it belongs to one of them
+                if cr_aliases:
+                    # Mark all CR aliases as having a filter (conservative assumption)
+                    for cr_alias in cr_aliases:
+                        alias_filter_map[cr_alias] = True
                 continue
 
-            alias_filter_map[col_node.table] = True
+            if col_table_ref not in cr_aliases:
+                continue
+
+            alias_filter_map[col_table_ref] = True
 
     return alias_filter_map
 

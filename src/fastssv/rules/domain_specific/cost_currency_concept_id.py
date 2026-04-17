@@ -207,7 +207,10 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
         try:
             agg_col = _select_has_aggregation_on_amount(select, aliases)
             if agg_col is None:
-                continue
+                # Also check if aggregating a column from a subquery that uses cost columns
+                if not _select_aggregates_cost_derived_column(select, aliases):
+                    continue
+                agg_col = "derived cost column"
 
             if _select_has_currency_filter(select, aliases):
                 continue
@@ -220,18 +223,72 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                 continue
             seen.add(key)
 
-            issues.append(
-                f"Aggregation on cost.{agg_col} without currency_concept_id "
-                f"constraint or GROUP BY. In multi-currency datasets this mixes "
-                f"amounts across different currencies (e.g., USD + EUR). "
-                f"Add WHERE currency_concept_id = <value> or "
-                f"GROUP BY currency_concept_id."
-            )
+            if agg_col == "derived cost column":
+                issues.append(
+                    f"Aggregation on cost-derived column without currency_concept_id "
+                    f"constraint or GROUP BY. In multi-currency datasets this mixes "
+                    f"amounts across different currencies (e.g., USD + EUR). "
+                    f"Add WHERE currency_concept_id = <value> or "
+                    f"GROUP BY currency_concept_id."
+                )
+            else:
+                issues.append(
+                    f"Aggregation on cost.{agg_col} without currency_concept_id "
+                    f"constraint or GROUP BY. In multi-currency datasets this mixes "
+                    f"amounts across different currencies (e.g., USD + EUR). "
+                    f"Add WHERE currency_concept_id = <value> or "
+                    f"GROUP BY currency_concept_id."
+                )
 
         except Exception:
             logger.exception("Error while analyzing SELECT node for OMOP_112")
 
     return issues
+
+
+def _select_aggregates_cost_derived_column(
+    select: exp.Select,
+    aliases: Dict[str, str],
+) -> bool:
+    """
+    Check if this SELECT aggregates a column that comes from a subquery
+    which uses cost table amount columns.
+    """
+    # Check if there's aggregation in this SELECT
+    aggs = _direct_aggs_in_select(select)
+    if not aggs:
+        return False
+
+    # Check if FROM clause contains a subquery
+    from_clause = select.args.get("from") or select.args.get("from_")
+    if not from_clause:
+        return False
+
+    for subquery in from_clause.find_all(exp.Subquery):
+        # Check if the subquery uses cost table amount columns
+        if _subquery_uses_cost_columns(subquery, aliases):
+            return True
+
+    return False
+
+
+def _subquery_uses_cost_columns(subquery: exp.Subquery, aliases: Dict[str, str]) -> bool:
+    """Check if a subquery references cost table amount columns."""
+    # Extract aliases from within the subquery
+    from fastssv.core.helpers import extract_aliases
+    subquery_aliases = extract_aliases(subquery)
+
+    for col in subquery.find_all(exp.Column):
+        table, col_name = resolve_table_col(col, subquery_aliases)
+        if _norm(col_name) in AMOUNT_COLUMNS:
+            if table and _norm(table) == TABLE_NAME:
+                return True
+            # Unqualified: check if cost table is in subquery
+            if not table:
+                for node in subquery.find_all(exp.Table):
+                    if _norm(node.name) == TABLE_NAME:
+                        return True
+    return False
 
 
 # --- Rule --------------------------------------------------------------------

@@ -28,6 +28,7 @@ from .fact_relationship_no_self_reference import FactRelationshipNoSelfReference
 from .location_state_zip_not_joined_to_concept import LocationStateZipNotJoinedToConceptRule
 from .condition_occurrence_stop_reason_is_free_text import ConditionOccurrenceStopReasonIsFreeTextRule
 from .drug_exposure_lot_number_is_free_text import DrugExposureLotNumberIsFreeTextRule
+from .incorrect_percentile_calculation import IncorrectPercentileCalculationRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
@@ -54,5 +55,6 @@ __all__ = [
     "LocationStateZipNotJoinedToConceptRule",
     "ConditionOccurrenceStopReasonIsFreeTextRule",
     "DrugExposureLotNumberIsFreeTextRule",
+    "IncorrectPercentileCalculationRule",
 ]
 

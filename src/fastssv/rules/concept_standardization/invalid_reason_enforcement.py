@@ -98,6 +98,47 @@ def _has_invalid_reason_filter(tree: exp.Expression) -> bool:
     return False
 
 
+def _has_date_validity_check(tree: exp.Expression) -> bool:
+    """Check if the query validates concepts using valid_start_date and valid_end_date.
+
+    This is an alternative to checking invalid_reason IS NULL.
+    Looks for patterns like:
+    - current_date BETWEEN valid_start_date AND valid_end_date
+    - getdate() >= valid_start_date AND getdate() <= valid_end_date
+    - NOW() >= valid_start_date AND NOW() <= valid_end_date
+
+    Args:
+        tree: The SQL AST to search
+
+    Returns:
+        True if date validity check is found
+    """
+    has_start_check = False
+    has_end_check = False
+
+    # Look for comparisons involving valid_start_date and valid_end_date
+    for comparison in tree.find_all((exp.GTE, exp.GT, exp.LTE, exp.LT)):
+        if not is_in_where_or_join_clause(comparison):
+            continue
+
+        left = comparison.left
+        right = comparison.right
+
+        # Check for valid_start_date
+        if isinstance(left, exp.Column) and normalize_name(left.name) == "valid_start_date":
+            has_start_check = True
+        if isinstance(right, exp.Column) and normalize_name(right.name) == "valid_start_date":
+            has_start_check = True
+
+        # Check for valid_end_date
+        if isinstance(left, exp.Column) and normalize_name(left.name) == "valid_end_date":
+            has_end_check = True
+        if isinstance(right, exp.Column) and normalize_name(right.name) == "valid_end_date":
+            has_end_check = True
+
+    return has_start_check and has_end_check
+
+
 def _get_vocabulary_tables_used(tree: exp.Expression) -> Tuple[Set[str], Set[str]]:
     """Extract vocabulary tables used in the query.
 
@@ -177,21 +218,25 @@ class InvalidReasonEnforcementRule(Rule):
             if not tables_with_invalid_reason and not derived_tables:
                 continue
 
-            # Check if invalid_reason is filtered
+            # Check if invalid_reason is filtered OR date validity is checked
             has_invalid_reason_filter = _has_invalid_reason_filter(tree)
+            has_date_validity = _has_date_validity_check(tree)
 
             # Handle tables that have invalid_reason column
-            if tables_with_invalid_reason and not has_invalid_reason_filter:
+            if tables_with_invalid_reason and not has_invalid_reason_filter and not has_date_validity:
                 tables_str = ", ".join(sorted(tables_with_invalid_reason))
 
                 message = (
                     f"Query uses vocabulary table(s) [{tables_str}] without filtering by invalid_reason. "
                     f"Vocabulary tables may contain deprecated or superseded concepts. "
-                    f"Add 'invalid_reason IS NULL' to ensure only currently-valid concepts are used."
+                    f"For descriptive analytics, this may be acceptable. For cohort definitions, "
+                    f"add 'invalid_reason IS NULL' to ensure only currently-valid concepts."
                 )
 
                 violations.append(self.create_violation(
+                    severity=Severity.WARNING,
                     message=message,
+                    suggested_fix="Add WHERE condition: invalid_reason IS NULL",
                     details={
                         "vocabulary_tables": sorted(tables_with_invalid_reason),
                         "recommendation": "Add WHERE condition: invalid_reason IS NULL",
@@ -200,10 +245,11 @@ class InvalidReasonEnforcementRule(Rule):
 
             # Handle derived tables (concept_ancestor, etc.)
             if derived_tables:
-                # Check if they JOIN to concept with invalid_reason filter
+                # Check if they JOIN to concept with invalid_reason filter OR date validity
                 has_concept_join_with_invalid_reason_filter = _has_concept_join_with_invalid_reason_filter(tree)
 
-                if not has_concept_join_with_invalid_reason_filter:
+                # If the main concept table has date validity checks, derived tables are also considered valid
+                if not has_concept_join_with_invalid_reason_filter and not has_date_validity:
                     tables_str = ", ".join(sorted(derived_tables))
 
                     message = (

@@ -124,6 +124,10 @@ def _detect(
         if lt and rt and _norm(lt) == _norm(rt):
             continue
 
+        # Exclude cost_event_id joins (these are valid polymorphic joins)
+        if lc_norm == "cost_event_id" or rc_norm == "cost_event_id":
+            continue
+
         left_is_pk = _is_clinical_pk(lc_norm)
         right_is_pk = _is_clinical_pk(rc_norm)
 

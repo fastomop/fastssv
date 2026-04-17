@@ -7,6 +7,7 @@ query may silently match unintended concepts from other vocabularies.
 """
 
 from typing import Dict, List, Optional
+import re
 
 from sqlglot import exp
 
@@ -22,6 +23,36 @@ from fastssv.core.helpers import (
 from fastssv.core.registry import register
 
 STRING_MATCH_EXP_TYPES = (exp.Like, exp.ILike, exp.RegexpLike)
+
+
+# Vocabulary inference patterns
+VOCABULARY_PATTERNS = {
+    'SNOMED': r'^\d{6,}$',  # 6+ digits (e.g., '73211009', '161891005')
+    'CPT4': r'^\d{5}$',  # Exactly 5 digits (e.g., '22851', '97001')
+    'HCPCS': r'^[A-Z]\d{4}$',  # Letter + 4 digits (e.g., 'G0283')
+    'ICD10CM': r'^[A-Z]\d{2}',  # Letter + 2+ digits (e.g., 'E11.9')
+    'ICD9CM': r'^\d{3}',  # Starts with 3 digits (e.g., '493.0')
+    'LOINC': r'^\d{4,5}-\d$',  # 4-5 digits + dash + digit (e.g., '1234-5')
+}
+
+
+def _infer_vocabulary(concept_code: str) -> Optional[str]:
+    """Infer likely vocabulary from concept_code pattern.
+
+    Returns vocabulary name if confident, None if ambiguous.
+    """
+    concept_code = concept_code.strip("'\"")
+
+    matches = []
+    for vocab, pattern in VOCABULARY_PATTERNS.items():
+        if re.match(pattern, concept_code):
+            matches.append(vocab)
+
+    # Only return if unambiguous
+    if len(matches) == 1:
+        return matches[0]
+
+    return None
 
 
 def _alias_matches(col: exp.Column, target_alias: Optional[str]) -> bool:
@@ -95,7 +126,7 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         select = col.find_ancestor(exp.Select)
         return table, alias, select
 
-    def _maybe_add(col: exp.Column, message: str):
+    def _maybe_add(col: exp.Column, concept_code_value: Optional[str], message: str):
         table, alias, select = _resolve(col)
         if select is None:
             return
@@ -104,12 +135,24 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
             return
         seen.add(key)
         if not _has_vocabulary_id_filter(select, alias):
+            # Try to infer vocabulary from concept_code pattern
+            inferred_vocab = None
+            suggested_fix = "Add a vocabulary_id filter in the same scope, e.g.: AND <alias>.vocabulary_id = '<vocab>'"
+
+            if concept_code_value:
+                inferred_vocab = _infer_vocabulary(concept_code_value)
+                if inferred_vocab:
+                    suggested_fix = f"Add: AND {alias or 'c'}.vocabulary_id = '{inferred_vocab}' (inferred from code pattern)"
+
             violations.append(RuleViolation(
                 rule_id="anti_patterns.concept_code_requires_vocabulary_id",
-                severity=Severity.ERROR,
+                severity=Severity.WARNING,
                 message=message,
-                suggested_fix="Add a vocabulary_id filter in the same scope, e.g.: AND <alias>.vocabulary_id = '<vocab>'",
-                details={"column": f"{table}.concept_code" if table else "concept_code"},
+                suggested_fix=suggested_fix,
+                details={
+                    "column": f"{table}.concept_code" if table else "concept_code",
+                    "inferred_vocabulary": inferred_vocab,
+                },
             ))
 
     # --- concept_code = 'value' ---
@@ -124,7 +167,8 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
             continue
         if normalize_name(left.name) != "concept_code":
             continue
-        _maybe_add(left, f"concept_code filtered without vocabulary_id: {left.sql()} = {right.sql()}")
+        code_value = right.this if hasattr(right, 'this') else str(right)
+        _maybe_add(left, code_value, f"concept_code filtered without vocabulary_id: {left.sql()} = {right.sql()}")
 
     # --- concept_code IN ('value', ...) ---
     for in_expr in tree.find_all(exp.In):
@@ -140,7 +184,9 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         vals_str = ", ".join(v.sql() for v in string_vals[:3])
         if len(string_vals) > 3:
             vals_str += ", ..."
-        _maybe_add(col, f"concept_code IN clause without vocabulary_id: {col.sql()} IN ({vals_str})")
+        # Use first code for inference
+        first_code = string_vals[0].this if hasattr(string_vals[0], 'this') else str(string_vals[0])
+        _maybe_add(col, first_code, f"concept_code IN clause without vocabulary_id: {col.sql()} IN ({vals_str})")
 
     # --- concept_code LIKE 'pattern' (and ILIKE / NOT variants) ---
     for node in tree.walk():
@@ -168,7 +214,7 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         right = check_node.expression
         not_prefix = "NOT " if is_not else ""
         op_name = check_node.key.upper() if hasattr(check_node, "key") else "LIKE"
-        _maybe_add(left, f"concept_code {not_prefix}{op_name} without vocabulary_id: {left.sql()} {not_prefix}{op_name} {right.sql()}")
+        _maybe_add(left, None, f"concept_code {not_prefix}{op_name} without vocabulary_id: {left.sql()} {not_prefix}{op_name} {right.sql()}")
 
     return violations
 
@@ -181,11 +227,12 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
     name = "Concept Code Requires Vocabulary ID"
     description = (
         "concept_code is unique only within a vocabulary. "
-        "Any filter on concept_code must include a vocabulary_id filter "
-        "in the same scope to avoid ambiguous cross-vocabulary matches."
+        "Any filter on concept_code should include a vocabulary_id filter "
+        "in the same scope to avoid ambiguous cross-vocabulary matches. "
+        "In practice, this is often implicitly safe when code patterns are unambiguous."
     )
-    severity = Severity.ERROR
-    suggested_fix = "Add a vocabulary_id filter alongside concept_code"
+    severity = Severity.WARNING
+    suggested_fix = "Add a vocabulary_id filter alongside concept_code for robustness"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)

@@ -187,9 +187,9 @@ def _check_string_match_violations(
             if not _is_inside_concept_id_lookup(left, aliases):
                 violations.append(RuleViolation(
                     rule_id="anti_patterns.concept_lookup_context",
-                    severity=Severity.ERROR,
-                    message=f"String matching on concept table outside concept_id lookup: {left.sql()} {not_prefix}{op_name} {right.sql()}",
-                    suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
+                    severity=Severity.WARNING,
+                    message=f"String matching on concept table outside concept_id lookup: {left.sql()} {not_prefix}{op_name} {right.sql()}. This is valid when combined with vocabulary_id filtering or concept_relationship joins.",
+                    suggested_fix="For robustness, consider wrapping in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
                     details={"column": f"{table}.{col}", "operation": f"{not_prefix}{op_name}"},
                 ))
 
@@ -220,9 +220,9 @@ def _check_equality_violations(
             if not _is_inside_concept_id_lookup(left, aliases):
                 violations.append(RuleViolation(
                     rule_id="anti_patterns.concept_lookup_context",
-                    severity=Severity.ERROR,
-                    message=f"Concept table string filter outside concept_id lookup: {left.sql()} = {right.sql()}",
-                    suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
+                    severity=Severity.WARNING,
+                    message=f"Concept table string filter outside concept_id lookup: {left.sql()} = {right.sql()}. This is valid when combined with vocabulary_id filtering or concept_relationship joins.",
+                    suggested_fix="For robustness, consider wrapping in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
                     details={"column": f"{table}.{col}", "operation": "="},
                 ))
 
@@ -265,9 +265,9 @@ def _check_in_clause_violations(
             if not _is_inside_concept_id_lookup(col_expr, aliases):
                 violations.append(RuleViolation(
                     rule_id="anti_patterns.concept_lookup_context",
-                    severity=Severity.ERROR,
-                    message=f"Concept table string IN clause outside concept_id lookup: {col_expr.sql()} {not_prefix}IN ({values_str})",
-                    suggested_fix="Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
+                    severity=Severity.WARNING,
+                    message=f"Concept table string IN clause outside concept_id lookup: {col_expr.sql()} {not_prefix}IN ({values_str}). This is valid when combined with vocabulary_id filtering or concept_relationship joins.",
+                    suggested_fix="For robustness, consider wrapping in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)",
                     details={"column": f"{table}.{col}", "operation": f"{not_prefix}IN"},
                 ))
 
@@ -281,11 +281,12 @@ class ConceptLookupContextRule(Rule):
     rule_id = "anti_patterns.concept_lookup_context"
     name = "Concept Lookup Context"
     description = (
-        "Ensures string filtering on concept table columns is only done inside "
-        "a concept_id lookup context (subquery or CTE that outputs concept_id)"
+        "Recommends wrapping concept table string filters in concept_id lookup context "
+        "(subquery or CTE that outputs concept_id). Direct filtering with vocabulary_id + concept_code "
+        "is valid in OMOP, especially when combined with concept_relationship joins."
     )
-    severity = Severity.ERROR
-    suggested_fix = "Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)"
+    severity = Severity.WARNING
+    suggested_fix = "For robustness, consider wrapping in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

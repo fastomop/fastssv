@@ -250,7 +250,7 @@ class CostTableDomainValidationRule(Rule):
     description = (
         "Ensures cost joins use correct cost_domain_id to disambiguate polymorphic keys."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING  # Changed from ERROR to WARNING
     suggested_fix = (
         "Add cost.cost_domain_id = '<domain>' matching the joined clinical table."
     )
