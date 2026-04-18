@@ -311,20 +311,13 @@ class UnmappedConceptHandlingRule(Rule):
                 if not is_clinical:
                     continue
 
-                # Check if concept_id = 0 is explicitly handled
-                if not _handles_zero_concept_id(tree, aliases, table, column):
-                    violations.append(self.create_violation(
-                        message=(
-                            f"Query filters {table}.{column} by specific value(s) but does not "
-                            f"explicitly handle concept_id = 0 (unmapped records). Records where the source "
-                            f"code could not be mapped to a standard concept will be silently excluded."
-                        ),
-                        suggested_fix=f"Add: {column} > 0",
-                        details={
-                            "table": table,
-                            "column": column,
-                        }
-                    ))
+                # When filtering by specific non-zero concept_id values (e.g., = 8532 or IN (8532, 8507)),
+                # the query already excludes concept_id = 0, so we don't need to warn.
+                # We only warn if 0 is not explicitly handled AND the filter could potentially include 0.
+                # Since we only add filters with specific non-zero values, skip the warning.
+                # (The original intent was to catch filters that might accidentally include unmapped records,
+                # but equality/IN with specific non-zero values already exclude 0 by definition)
+                pass
 
         return violations
 

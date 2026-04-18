@@ -148,44 +148,23 @@ class StandardConceptEnforcementRule(Rule):
             aliases = extract_aliases(tree)
             refs = _extract_concept_references(tree, aliases)
 
-            used_standard = {(t, c) for (t, c) in refs if (t, c) in standard_fields}
-            used_source = {(t, c) for (t, c) in refs if (t, c) in source_fields}
+            # Check if the concept table is being used in the query
+            uses_concept_table = uses_table(tree, "concept")
 
-            # Filter out fields that are already guaranteed to be standard
-            used_standard_requiring_enforcement = used_standard - already_standard
+            # If concept table is joined but not filtered by standard_concept, warn
+            if uses_concept_table:
+                has_standard_enforcement = _enforces_standard_concept(tree)
+                has_maps_to = _uses_maps_to_relationship(tree)
 
-            # If no standard fields requiring enforcement, rule doesn't apply
-            if not used_standard_requiring_enforcement:
-                continue
+                # If neither standard_concept = 'S' nor Maps to is used, warn
+                if not has_standard_enforcement and not has_maps_to:
+                    message = "Query does not restrict to standard concepts."
 
-            # If query filters on specific concept_ids, standard enforcement is not required
-            if _has_specific_concept_id_filter(tree, aliases):
-                continue
-
-            has_standard_enforcement = _enforces_standard_concept(tree)
-            has_maps_to = _uses_maps_to_relationship(tree)
-
-            # Check the main rule: must have either standard enforcement OR maps_to
-            if not has_standard_enforcement and not has_maps_to:
-                used_standard_strs = sorted({f"{t}.{c}" for (t, c) in used_standard_requiring_enforcement})
-                used_source_strs = sorted({f"{t}.{c}" for (t, c) in used_source})
-
-                message = (
-                    f"Query uses STANDARD concept fields but does not ensure "
-                    f"standard concepts. For robust queries, either: (A) filter with concept.standard_concept = 'S', or "
-                    f"(B) use concept_relationship.relationship_id = 'Maps to'. "
-                    f"STANDARD fields referenced: {', '.join(used_standard_strs)}"
-                )
-                if used_source_strs:
-                    message += f", SOURCE fields referenced: {', '.join(used_source_strs)}"
-
-                violations.append(self.create_violation(
-                    message=message,
-                    details={
-                        "standard_fields": used_standard_strs,
-                        "source_fields": used_source_strs,
-                    }
-                ))
+                    violations.append(self.create_violation(
+                        message=message,
+                        suggested_fix="Add: standard_concept = 'S'",
+                        details={}
+                    ))
 
         return violations
 

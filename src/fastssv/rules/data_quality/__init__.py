@@ -5,6 +5,7 @@ Foundational data integrity checks.
 """
 
 from .unmapped_concept_handling import UnmappedConceptHandlingRule
+from .null_grouping_handling import NullGroupingHandlingRule
 from .schema_validation import SchemaValidationRule
 from .column_type_validation import ColumnTypeValidationRule
 from .concept_id_string_comparison import ConceptIdStringComparisonRule
@@ -32,6 +33,7 @@ from .incorrect_percentile_calculation import IncorrectPercentileCalculationRule
 
 __all__ = [
     "UnmappedConceptHandlingRule",
+    "NullGroupingHandlingRule",
     "SchemaValidationRule",
     "ColumnTypeValidationRule",
     "ConceptIdStringComparisonRule",
