@@ -93,9 +93,9 @@ class IntegerDivisionPrecisionLossRule(Rule):
             if tree is None:
                 continue
 
-            # Track reported divisions to avoid duplicates
-            # Key: (left_expr_normalized, divisor_value)
-            reported = set()
+            # Track reported divisor values to avoid duplicate warnings
+            # for the same divisor in the same query
+            reported_divisors = set()
 
             # Find all division operations
             for div in tree.find_all(exp.Div):
@@ -112,14 +112,11 @@ class IntegerDivisionPrecisionLossRule(Rule):
                     if not has_decimal_cast:
                         divisor_value = str(right.this) if isinstance(right, exp.Literal) else str(right)
 
-                        # Normalize left expression for deduplication
-                        # Remove whitespace and lowercase for comparison
-                        left_expr = str(div.left).replace(" ", "").lower()
-                        dedup_key = (left_expr, divisor_value)
-
-                        if dedup_key in reported:
+                        # Deduplicate by divisor value only
+                        # One warning per divisor per query is sufficient
+                        if divisor_value in reported_divisors:
                             continue
-                        reported.add(dedup_key)
+                        reported_divisors.add(divisor_value)
 
                         # Check if this is a date-related division (365 for years, 12 for months, etc.)
                         is_date_division = divisor_value in ['365', '366', '12', '7', '30']

@@ -123,6 +123,14 @@ def _analyze_select_columns(
     pk_columns: List[str] = []
     non_pk_columns: List[str] = []
 
+    # Get tables in THIS SELECT's FROM clause only
+    from_tables = set()
+    from_clause = select.args.get("from_")
+    if from_clause and isinstance(from_clause, exp.From):
+        for table_expr in from_clause.find_all(exp.Table):
+            table_name = _norm(table_expr.name)
+            from_tables.add(aliases.get(table_name, table_name))
+
     expressions = select.expressions or []
 
     for expr in expressions:
@@ -156,12 +164,9 @@ def _analyze_select_columns(
             else:
                 non_pk_columns.append(col_name)
         else:
-            # Unqualified column → only safe if exactly one matching table
-            matching_tables = [
-                t for t in aliases.values() if t == expected_table
-            ]
-
-            if len(matching_tables) == 1:
+            # Unqualified column → check if expected table is in THIS SELECT's FROM clause
+            # NOT just anywhere in the query
+            if expected_table in from_tables:
                 pk_columns.append(col_name)
             else:
                 non_pk_columns.append(col_name)

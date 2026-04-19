@@ -354,6 +354,14 @@ class ObservationPeriodAnchoringRule(Rule):
                 # No observation_period - skip
                 continue
 
+            # NEW: Check if observation_period is the PRIMARY table being analyzed
+            # If so, it doesn't need to be joined to anything - it IS the subject
+            is_primary_table = self._is_observation_period_primary_table(tree, aliases)
+            if is_primary_table:
+                # observation_period is the main subject of analysis, not a temporal anchor
+                # No violation - this is a valid descriptive query
+                continue
+
             # observation_period is present - check if it's joined on person_id AT ALL
             # (not checking completeness, just checking for obvious errors)
             join_conditions = extract_join_conditions(tree, aliases)
@@ -367,6 +375,7 @@ class ObservationPeriodAnchoringRule(Rule):
 
             if not has_any_person_id_join:
                 # observation_period is in the query but never joined on person_id
+                # AND it's not the primary table being analyzed
                 # This is likely a mistake
                 violations.append(self.create_violation(
                     message=(
@@ -380,6 +389,75 @@ class ObservationPeriodAnchoringRule(Rule):
                 ))
 
         return violations
+
+    def _is_observation_period_primary_table(self, tree: exp.Expression, aliases: Dict[str, str]) -> bool:
+        """Check if observation_period is the primary table being analyzed.
+
+        Returns True if:
+        - observation_period is in FROM clause (not just in a join)
+        - No clinical tables are being joined with temporal constraints
+        - Query is selecting/aggregating observation_period columns
+        - Query is grouping by person_id from observation_period (analyzing periods per person)
+        """
+        # Check if observation_period appears in FROM clause
+        has_op_in_from = False
+        has_clinical_table_in_from = False
+
+        for select in tree.find_all(exp.Select):
+            from_clause = select.args.get("from_")
+            if from_clause and isinstance(from_clause, exp.From):
+                for table_expr in from_clause.find_all(exp.Table):
+                    table_name = normalize_name(table_expr.name)
+                    if table_name == "observation_period":
+                        has_op_in_from = True
+                    elif table_name in CLINICAL_TABLES_WITH_DATES:
+                        has_clinical_table_in_from = True
+
+        # If observation_period is in FROM and no clinical tables, it's the primary subject
+        if has_op_in_from and not has_clinical_table_in_from:
+            return True
+
+        # Additional check: if observation_period columns are being selected/aggregated
+        # and there are no temporal constraints on other clinical tables
+        has_op_columns = False
+        for col in tree.find_all(exp.Column):
+            col_name = normalize_name(col.name)
+            # Check if this is an observation_period column
+            if col_name.startswith("observation_period_") or col.table and normalize_name(str(col.table)) == "observation_period":
+                has_op_columns = True
+                break
+
+        # If we're selecting observation_period columns and have no clinical tables, it's primary
+        if has_op_columns and not has_clinical_table_in_from:
+            return True
+
+        # NEW: Check if ANY SELECT in the tree has observation_period with GROUP BY person_id
+        # This indicates the query is analyzing observation periods per person, not using
+        # observation_period as a temporal anchor for clinical events
+        for select in tree.find_all(exp.Select):
+            # Check if this SELECT has observation_period in its FROM
+            select_has_op = False
+            from_clause = select.args.get("from_")
+            if from_clause and isinstance(from_clause, exp.From):
+                for table_expr in from_clause.find_all(exp.Table):
+                    if normalize_name(table_expr.name) == "observation_period":
+                        select_has_op = True
+                        break
+
+            # If this SELECT has observation_period, check if it groups by person_id
+            if select_has_op:
+                group_by = select.args.get("group")
+                if group_by and isinstance(group_by, exp.Group):
+                    for group_expr in group_by.expressions:
+                        if isinstance(group_expr, exp.Column):
+                            col_name = normalize_name(group_expr.name)
+                            if col_name == "person_id":
+                                # This SELECT groups observation_period by person_id
+                                # No clinical tables in the overall query
+                                if not has_clinical_table_in_from:
+                                    return True
+
+        return False
 
 
 __all__ = ["ObservationPeriodAnchoringRule", "CLINICAL_TABLES_WITH_DATES", "TEMPORAL_DATE_COLUMNS", "is_date_column"]

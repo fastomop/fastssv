@@ -26,6 +26,8 @@ from .domain_table_join_uses_domain_id_string import DomainTableJoinUsesDomainId
 from .concept_class_table_join_uses_concept_class_id_string import ConceptClassTableJoinUsesConceptClassIdRule
 from .having_without_group_by import HavingWithoutGroupByRule
 from .sql_server_functions_in_postgres import SQLServerFunctionsInPostgresRule
+from .duplicate_column_alias import DuplicateColumnAliasRule
+from .top_as_synthetic_data import TopAsSyntheticDataRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -51,4 +53,6 @@ __all__ = [
     "ConceptClassTableJoinUsesConceptClassIdRule",
     "HavingWithoutGroupByRule",
     "SQLServerFunctionsInPostgresRule",
+    "DuplicateColumnAliasRule",
+    "TopAsSyntheticDataRule",
 ]
