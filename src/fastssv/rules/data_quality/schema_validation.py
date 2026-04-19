@@ -74,6 +74,21 @@ class SchemaValidationRule(Rule):
                 if col_name_lower in derived_columns:
                     continue
 
+                # Skip function parameter literals
+                # In DATEDIFF(day, start, end), 'day' is parsed as a Column but is actually
+                # a datepart unit literal, not a column reference
+                parent = col.parent
+                if isinstance(parent, exp.DateDiff):
+                    # The first argument (this) is the datepart unit, not a column
+                    if parent.this is col:
+                        continue
+
+                # Similar issue with other time-unit functions (DATEADD, etc.)
+                # Skip any column that's a literal unit parameter
+                if isinstance(parent, (exp.DateAdd, exp.DateSub)):
+                    if parent.this is col:
+                        continue
+
                 table_name, col_name = resolve_table_col(col, aliases)
 
                 # If table is empty and we have a single table, use it
