@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-167-orange)
+![Rules](https://img.shields.io/badge/rules-168-orange)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
@@ -58,21 +58,25 @@ cat output/validation_report.json
 
 ## What FastSSV Catches
 
-FastSSV ships with 167 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
+FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5.4 semantic correctness.
 
 ### Core Categories
 
-**Anti-Pattern Rules (22 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
+**Anti-Pattern Rules (26 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
 
 **Concept Standardization Rules (21 rules)** - Enforce standard concept usage, hierarchy expansion, concept_ancestor semantics, invalid reason checks, domain and vocabulary validation, source concept handling, Maps to target correctness, Maps to chain resolution, concept relationship validity, and CDM version migration issues.
 
-**Domain-Specific Rules (40 rules)** - Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
+**Domain-Specific Rules (42 rules)** - Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
 
 **Join Rules (37 rules)** - Validate foreign key relationships, join path correctness, concept relationship direction, cross-table linkage requirements, left join logic, alias reuse, incomplete concept_relationship join patterns, and observation_period date overlap requirements.
 
 **Temporal Rules (10 rules)** - Validate date logic, observation period constraints, temporal consistency across clinical events, NULL handling for date columns, datetime comparisons, and required date column usage.
 
-**Data Quality Rules (26 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
+**Data Quality Rules (28 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
+
+**Analytics Rules (3 rules)** - Validate analytical operations including percentile calculations, integer division precision, and division by zero risks.
+
+**Performance Rules (1 rule)** - Detect performance anti-patterns such as cross joins on large tables.
 
 ### Key Anti-Pattern Rules (22 rules)
 
@@ -194,7 +198,7 @@ FastSSV ships with 167 validation rules across 6 categories covering OMOP CDM v5
 
 **Required date column validation** (`temporal.required_date_column_validation`, WARNING) - Temporal queries on clinical tables should use required (NOT NULL) date columns instead of nullable columns to avoid silently excluding records.
 
-### Key Data Quality Rules (24 rules)
+### Key Data Quality Rules (28 rules)
 
 **Schema validation** (`data_quality.schema_validation`, ERROR) - Validates that queries reference only valid OMOP CDM v5.4 tables and columns. Catches typos in table/column names, references to non-existent columns, and schema violations like using `concept_ancestor` columns on `concept_relationship` table.
 
@@ -216,7 +220,7 @@ FastSSV ships with 167 validation rules across 6 categories covering OMOP CDM v5
 
 **Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 167 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 168 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 
@@ -453,7 +457,7 @@ FastSSV implements intelligent error deduplication to prevent the same underlyin
 
 | Document | Contents |
 |----------|----------|
-| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 167 rules with intent, detection logic, examples, and suggested fixes |
+| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 168 rules with intent, detection logic, examples, and suggested fixes |
 | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) | Developer guide for extending semantic rules |
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |

@@ -528,7 +528,7 @@ from fastssv.core.helpers import (
     extract_aliases,        # Map aliases to table names
     resolve_table_col,      # Resolve column to (table, column)
     normalize_name,         # Case-insensitive name comparison
-    uses_table,             # Check if query uses a table
+    has_table_reference,    # Check if query uses a table
     extract_join_conditions # Extract JOIN conditions
 )
 ```
