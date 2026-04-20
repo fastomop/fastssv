@@ -122,7 +122,7 @@ def is_numeric_literal(e: exp.Expression, value: Optional[int] = None) -> bool:
         return False
 
 
-def uses_table(tree: exp.Expression, table_name: str) -> bool:
+def has_table_reference(tree: exp.Expression, table_name: str) -> bool:
     """Check if query references a table by name anywhere.
 
     Args:
@@ -155,7 +155,7 @@ def is_in_where_or_join_clause(node: exp.Expression) -> bool:
     return False
 
 
-def check_equality_condition(
+def has_equality_condition(
     tree: exp.Expression,
     column_name: str,
     expected_values: Set[str],
@@ -193,7 +193,7 @@ def check_equality_condition(
     return False
 
 
-def check_in_condition(
+def has_in_condition(
     tree: exp.Expression,
     column_name: str,
     expected_values: Set[str],
@@ -231,7 +231,7 @@ def check_in_condition(
     return False
 
 
-def check_condition(
+def has_condition(
     tree: exp.Expression,
     column_name: str,
     expected_values: Set[str],
@@ -249,8 +249,8 @@ def check_condition(
         True if a matching condition is found
     """
     return (
-        check_equality_condition(tree, column_name, expected_values, require_where_clause) or
-        check_in_condition(tree, column_name, expected_values, require_where_clause)
+        has_equality_condition(tree, column_name, expected_values, require_where_clause) or
+        has_in_condition(tree, column_name, expected_values, require_where_clause)
     )
 
 
@@ -297,10 +297,10 @@ __all__ = [
     "resolve_table_col",
     "is_string_literal",
     "is_numeric_literal",
-    "uses_table",
+    "has_table_reference",
     "is_in_where_or_join_clause",
-    "check_equality_condition",
-    "check_in_condition",
-    "check_condition",
+    "has_equality_condition",
+    "has_in_condition",
+    "has_condition",
     "extract_join_conditions",
 ]

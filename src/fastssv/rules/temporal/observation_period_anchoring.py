@@ -21,7 +21,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -188,7 +188,7 @@ def _extract_temporal_constraints(
 
 def _uses_observation_period(tree: exp.Expression) -> bool:
     """Check if query uses the observation_period table."""
-    return uses_table(tree, "observation_period")
+    return has_table_reference(tree, "observation_period")
 
 
 def _joins_observation_period_on_person_id(
@@ -269,6 +269,7 @@ def _has_washout_or_followup_logic(tree: exp.Expression) -> bool:
     - DATEDIFF between clinical event dates
     - DATEADD for follow-up windows
     - Explicit washout period filtering with date comparisons
+    - Comparing dates between different clinical tables
     """
     # Check for DateDiff, DateAdd expressions
     date_expr_types = []
@@ -310,6 +311,25 @@ def _has_washout_or_followup_logic(tree: exp.Expression) -> bool:
         if comparison.find(exp.Interval):
             return True
 
+        # Check if comparing date columns between different tables (washout pattern)
+        # Skip BETWEEN as it has different structure
+        if isinstance(comparison, exp.Between):
+            continue
+
+        left_cols = list(comparison.left.find_all(exp.Column))
+        right_cols = list(comparison.right.find_all(exp.Column))
+
+        for left_col in left_cols:
+            if not _is_date_column(left_col.name):
+                continue
+
+            for right_col in right_cols:
+                if not _is_date_column(right_col.name):
+                    continue
+
+                # Both sides are date columns - this is temporal comparison logic
+                return True
+
     return False
 
 
@@ -348,45 +368,59 @@ class ObservationPeriodAnchoringRule(Rule):
             # Check if observation_period is used
             uses_op = _uses_observation_period(tree)
 
-            # Only flag if observation_period is referenced but NEVER joined on person_id
-            # This is very conservative - we're only catching obvious mistakes
-            if not uses_op:
-                # No observation_period - skip
-                continue
+            # Extract temporal constraints
+            temporal_constraints = _extract_temporal_constraints(tree, aliases)
+            has_temporal_constraints = len(temporal_constraints) > 0
 
-            # NEW: Check if observation_period is the PRIMARY table being analyzed
-            # If so, it doesn't need to be joined to anything - it IS the subject
-            is_primary_table = self._is_observation_period_primary_table(tree, aliases)
-            if is_primary_table:
-                # observation_period is the main subject of analysis, not a temporal anchor
-                # No violation - this is a valid descriptive query
-                continue
+            # Check for date functions that indicate temporal logic
+            has_date_functions = _has_date_function(tree)
+            has_washout_logic = _has_washout_or_followup_logic(tree)
 
-            # observation_period is present - check if it's joined on person_id AT ALL
-            # (not checking completeness, just checking for obvious errors)
-            join_conditions = extract_join_conditions(tree, aliases)
-
-            has_any_person_id_join = False
-            for lt, lc, rt, rc in join_conditions:
-                if (lt == "observation_period" or rt == "observation_period"):
-                    if lc == "person_id" and rc == "person_id":
-                        has_any_person_id_join = True
-                        break
-
-            if not has_any_person_id_join:
-                # observation_period is in the query but never joined on person_id
-                # AND it's not the primary table being analyzed
-                # This is likely a mistake
+            # If query has temporal constraints or date logic but no observation_period, warn
+            if not uses_op and (has_temporal_constraints or has_washout_logic):
                 violations.append(self.create_violation(
                     message=(
-                        "observation_period table is referenced but not joined on person_id. "
-                        "If using observation_period, it should typically be joined via person_id."
+                        "Query filters clinical events by date but does not anchor to observation_period. "
+                        "Temporal constraints are only valid within a patient's observation window."
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        "JOIN observation_period op ON table.person_id = op.person_id"
+                        "JOIN observation_period op ON table.person_id = op.person_id "
+                        "AND date_column BETWEEN op.observation_period_start_date AND op.observation_period_end_date"
                     ),
                 ))
+
+            # If observation_period IS used, check if it's properly joined
+            if uses_op:
+                # Check if observation_period is the PRIMARY table being analyzed
+                is_primary_table = self._is_observation_period_primary_table(tree, aliases)
+                if is_primary_table:
+                    # observation_period is the main subject of analysis, not a temporal anchor
+                    # No violation - this is a valid descriptive query
+                    continue
+
+                # observation_period is present - check if it's joined on person_id
+                join_conditions = extract_join_conditions(tree, aliases)
+
+                has_any_person_id_join = False
+                for lt, lc, rt, rc in join_conditions:
+                    if (lt == "observation_period" or rt == "observation_period"):
+                        if lc == "person_id" and rc == "person_id":
+                            has_any_person_id_join = True
+                            break
+
+                if not has_any_person_id_join:
+                    # observation_period is in the query but never joined on person_id
+                    violations.append(self.create_violation(
+                        message=(
+                            "observation_period table is referenced but not joined on person_id. "
+                            "If using observation_period, it should typically be joined via person_id."
+                        ),
+                        severity=Severity.WARNING,
+                        suggested_fix=(
+                            "JOIN observation_period op ON table.person_id = op.person_id"
+                        ),
+                    ))
 
         return violations
 

@@ -56,7 +56,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -233,7 +233,7 @@ class ConceptDomainValidationRule(Rule):
             return []
 
         for tree in trees:
-            if not tree or not uses_table(tree, "concept"):
+            if not tree or not has_table_reference(tree, "concept"):
                 continue
 
             aliases = extract_aliases(tree)
@@ -267,11 +267,10 @@ class ConceptDomainValidationRule(Rule):
                 if not values:
                     if col_type == "main":
                         violations.append(self.create_violation(
-                            severity=Severity.WARNING,
+                            severity=Severity.ERROR,
                             message=(
                                 f"{table}.{col} joined to concept '{concept_alias}' "
-                                f"without domain_id filter. Expected domain '{expected}'. "
-                                f"Domain filtering is recommended but not mandatory for analytic queries."
+                                f"without domain_id filter. Expected domain '{expected}'."
                             ),
                             suggested_fix=(
                                 f"Add: {concept_alias}.domain_id = '{expected}'"

@@ -41,7 +41,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -143,7 +143,7 @@ class DeathCauseSourceConceptValidationRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, TABLE_NAME):
+            if not tree or not has_table_reference(tree, TABLE_NAME):
                 continue
 
             aliases = extract_aliases(tree)

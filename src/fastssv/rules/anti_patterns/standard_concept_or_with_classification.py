@@ -57,7 +57,7 @@ from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
     parse_sql,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -221,7 +221,7 @@ class StandardConceptOrWithClassificationRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, CONCEPT_TABLE):
+            if not tree or not has_table_reference(tree, CONCEPT_TABLE):
                 continue
 
             aliases = extract_aliases(tree)

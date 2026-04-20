@@ -52,7 +52,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -103,7 +103,7 @@ def _has_drug_specific_columns(
             continue
 
         # If unqualified, check if cost table is in query
-        if not table and not uses_table(tree, COST):
+        if not table and not has_table_reference(tree, COST):
             continue
 
         return True
@@ -229,7 +229,7 @@ class CostPaidIngredientCostDrugSpecificRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, COST):
+            if not has_table_reference(tree, COST):
                 continue
 
             aliases = extract_aliases(tree)

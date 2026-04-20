@@ -144,9 +144,13 @@ def _extract_aliases_from_select_only(select: exp.Select) -> Dict[str, str]:
         table = from_clause.this
         real = _norm(table.name)
         alias = table.alias_or_name
-        if alias:
-            aliases[_norm(alias)] = real
-        aliases[real] = real
+        alias_norm = _norm(alias) if alias else None
+        if alias_norm and alias_norm != real:
+            # Has a different alias, only add the alias mapping
+            aliases[alias_norm] = real
+        else:
+            # No alias or alias is same as table name, add self-mapping
+            aliases[real] = real
 
     # Get JOIN tables
     for join in select.args.get("joins", []):
@@ -154,9 +158,13 @@ def _extract_aliases_from_select_only(select: exp.Select) -> Dict[str, str]:
             table = join.this
             real = _norm(table.name)
             alias = table.alias_or_name
-            if alias:
-                aliases[_norm(alias)] = real
-            aliases[real] = real
+            alias_norm = _norm(alias) if alias else None
+            if alias_norm and alias_norm != real:
+                # Has a different alias, only add the alias mapping
+                aliases[alias_norm] = real
+            else:
+                # No alias or alias is same as table name, add self-mapping
+                aliases[real] = real
 
     return aliases
 

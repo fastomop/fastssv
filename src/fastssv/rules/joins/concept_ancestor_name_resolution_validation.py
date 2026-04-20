@@ -43,7 +43,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -253,7 +253,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
             if not tree:
                 continue
 
-            if not (uses_table(tree, CONCEPT_ANCESTOR) and uses_table(tree, CONCEPT)):
+            if not (has_table_reference(tree, CONCEPT_ANCESTOR) and has_table_reference(tree, CONCEPT)):
                 continue
 
             aliases = extract_aliases(tree)

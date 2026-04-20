@@ -47,7 +47,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -170,7 +170,7 @@ def _detect(
             seen.add(key)
 
     # --- 3. Missing join detection -----------------------------------------
-    if uses_table(tree, DEATH) and uses_table(tree, VISIT_OCCURRENCE):
+    if has_table_reference(tree, DEATH) and has_table_reference(tree, VISIT_OCCURRENCE):
         if found_any_relation and not found_valid_fk and not errors:
             # Generic error only when we detected a join but couldn't identify columns
             key = (DEATH, "INVALID", VISIT_OCCURRENCE, "INVALID")
@@ -220,7 +220,7 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
             if not tree:
                 continue
 
-            if not (uses_table(tree, DEATH) and uses_table(tree, VISIT_OCCURRENCE)):
+            if not (has_table_reference(tree, DEATH) and has_table_reference(tree, VISIT_OCCURRENCE)):
                 continue
 
             aliases = extract_aliases(tree)

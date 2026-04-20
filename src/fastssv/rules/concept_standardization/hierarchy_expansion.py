@@ -25,7 +25,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -138,7 +138,7 @@ def _extract_hierarchy_concept_filters(
 
 def _uses_concept_ancestor(tree: exp.Expression) -> bool:
     """Check if query uses the concept_ancestor table."""
-    return uses_table(tree, "concept_ancestor")
+    return has_table_reference(tree, "concept_ancestor")
 
 
 def _verify_concept_ancestor_join_direction(
@@ -237,10 +237,6 @@ class HierarchyExpansionRule(Rule):
             if not concept_filters:
                 # No hierarchy-requiring filters found, rule doesn't apply
                 continue
-
-            # Skip validation if using IN or = with specific concept_ids
-            # (hierarchy expansion is optional in this case)
-            continue  # Disabled: hierarchy expansion is a recommendation, not a requirement
 
             # Check if concept_ancestor is used
             uses_ancestor = _uses_concept_ancestor(tree)

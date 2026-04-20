@@ -52,7 +52,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -245,7 +245,7 @@ class LocationStateZipNotJoinedToConceptRule(Rule):
             if tree is None:
                 continue
 
-            if not (uses_table(tree, LOCATION) and uses_table(tree, CONCEPT)):
+            if not (has_table_reference(tree, LOCATION) and has_table_reference(tree, CONCEPT)):
                 continue
 
             raw_aliases = extract_aliases(tree)

@@ -72,7 +72,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -184,7 +184,7 @@ def _analyze_conditions(
 def _check_joins(tree: exp.Expression) -> List[str]:
     issues: List[str] = []
 
-    if not uses_table(tree, COST_TABLE) or not uses_table(tree, PAYER_PLAN_PERIOD_TABLE):
+    if not has_table_reference(tree, COST_TABLE) or not has_table_reference(tree, PAYER_PLAN_PERIOD_TABLE):
         return issues
 
     aliases = extract_aliases(tree)

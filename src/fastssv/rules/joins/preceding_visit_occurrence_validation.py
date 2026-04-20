@@ -62,7 +62,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -338,7 +338,7 @@ class PrecedingVisitOccurrenceValidationRule(Rule):
                 continue
 
             # Only relevant if visit_occurrence is used
-            if not uses_table(tree, VISIT_OCCURRENCE):
+            if not has_table_reference(tree, VISIT_OCCURRENCE):
                 continue
 
             aliases = extract_aliases(tree)

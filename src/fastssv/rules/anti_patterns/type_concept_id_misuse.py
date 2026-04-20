@@ -122,8 +122,8 @@ def _find_type_concept_id_misuse(
                             context = "JOIN ON clause"
                             # Check if this is a join to concept for labeling
                             if _is_join_to_concept_for_labeling(node, left, aliases):
-                                # Joining to concept for labeling is acceptable (just a warning)
-                                severity = "skip"  # Don't flag labeling joins
+                                # Joining to concept for labeling is problematic but not as severe
+                                severity = "error"  # Still flag JOIN ON usage
                             break
                         elif isinstance(parent, exp.Having):
                             context = "HAVING clause"

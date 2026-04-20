@@ -143,7 +143,7 @@ class ComprehensiveSchemaValidationRule(Rule):
     - Excludes SELECT clause aliases (derived expressions)
     """
 
-    rule_id = "schema.comprehensive_validation"
+    rule_id = "data_quality.schema_validation"
     name = "OMOP Schema Validation"
     description = (
         "Validates that all referenced tables and columns exist in OMOP CDM 5.4 schema. "
@@ -225,28 +225,41 @@ class ComprehensiveSchemaValidationRule(Rule):
                 if col_name in select_aliases:
                     continue
 
-                # Skip columns defined in SELECT output (being defined, not referenced)
-                if _is_in_select_clause(column):
-                    continue
-
-                # Only validate columns from physical CDM tables
-                if not _is_column_from_physical_table(column, table_aliases, cte_names, subquery_aliases):
-                    continue
-
                 # Get table reference
                 table_ref = _norm(column.table) if column.table else None
 
                 # Resolve table name through aliases
-                if table_ref and table_ref in table_aliases:
-                    resolved_table = _norm(table_aliases[table_ref])
-                    # Handle schema-qualified tables
-                    if "." in resolved_table:
-                        resolved_table = resolved_table.split(".")[-1]
-                else:
-                    resolved_table = table_ref
+                if table_ref:
+                    # Check if this is a CTE or subquery
+                    if table_ref in cte_names or table_ref in subquery_aliases:
+                        continue
 
-                if not resolved_table:
-                    continue
+                    if table_ref in table_aliases:
+                        resolved_table = _norm(table_aliases[table_ref])
+                        # Handle schema-qualified tables
+                        if "." in resolved_table:
+                            resolved_table = resolved_table.split(".")[-1]
+                    else:
+                        resolved_table = table_ref
+
+                    # Skip if resolved table is a CTE or subquery
+                    if resolved_table in cte_names or resolved_table in subquery_aliases:
+                        continue
+                else:
+                    # No table qualifier - try to infer from context (single table in FROM)
+                    physical_tables = []
+                    for t in tree.find_all(exp.Table):
+                        t_name = _norm(t.name)
+                        if t_name and t_name not in cte_names and t_name not in subquery_aliases:
+                            if is_valid_table(t_name):
+                                physical_tables.append(t_name)
+
+                    # If there's exactly one physical table, assume it's that one
+                    if len(physical_tables) == 1:
+                        resolved_table = physical_tables[0]
+                    else:
+                        # Can't determine table, skip validation
+                        continue
 
                 # Skip if table is invalid (already reported)
                 if not is_valid_table(resolved_table):

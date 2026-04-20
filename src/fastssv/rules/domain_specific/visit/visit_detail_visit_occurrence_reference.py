@@ -46,7 +46,7 @@ from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
     parse_sql,
-    uses_table,
+    has_table_reference,
     resolve_table_col,
 )
 from fastssv.core.registry import register
@@ -128,11 +128,11 @@ def _has_valid_join(tree: exp.Expression, aliases: dict) -> bool:
 def _find_violations(tree: exp.Expression, aliases: dict) -> List[str]:
     violations: List[str] = []
 
-    if not uses_table(tree, VISIT_DETAIL):
+    if not has_table_reference(tree, VISIT_DETAIL):
         return violations
 
     # Case 1: visit_occurrence not referenced at all
-    if not uses_table(tree, VISIT_OCCURRENCE):
+    if not has_table_reference(tree, VISIT_OCCURRENCE):
         violations.append(
             "Query uses visit_detail without referencing visit_occurrence. "
             "This may omit visit-level context (visit type, admission/discharge, overall dates). "
@@ -177,7 +177,7 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, VISIT_DETAIL):
+            if not has_table_reference(tree, VISIT_DETAIL):
                 continue
 
             aliases = extract_aliases(tree)

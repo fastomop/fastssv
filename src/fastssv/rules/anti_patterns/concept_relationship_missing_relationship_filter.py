@@ -105,7 +105,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -271,7 +271,7 @@ def _detect_unfiltered_joins(tree: exp.Expression) -> List[Dict[str, object]]:
         # Check for SELECT * (includes relationship_id if concept_relationship is in query)
         expressions = select.expressions or []
         has_star = any(isinstance(expr, exp.Star) for expr in expressions)
-        if has_star and uses_table(select, CONCEPT_RELATIONSHIP):
+        if has_star and has_table_reference(select, CONCEPT_RELATIONSHIP):
             continue
 
         # Detect JOINs
@@ -333,7 +333,7 @@ class ConceptRelationshipMissingRelationshipFilterRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, CONCEPT_RELATIONSHIP):
+            if not tree or not has_table_reference(tree, CONCEPT_RELATIONSHIP):
                 continue
 
             detected = _detect_unfiltered_joins(tree)

@@ -46,7 +46,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -145,7 +145,7 @@ def _detect(
             seen_e.add(key)
 
     # --- missing FK join ---
-    if uses_table(tree, DRUG_EXPOSURE) and uses_table(tree, DRUG_STRENGTH):
+    if has_table_reference(tree, DRUG_EXPOSURE) and has_table_reference(tree, DRUG_STRENGTH):
         if found_any_de_ds_relation and not found_valid_fk and not errors:
             key = (DRUG_EXPOSURE, "UNKNOWN", DRUG_STRENGTH, "UNKNOWN")
             if key not in seen_e:
@@ -196,7 +196,7 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
             if not tree:
                 continue
 
-            if not (uses_table(tree, DRUG_EXPOSURE) and uses_table(tree, DRUG_STRENGTH)):
+            if not (has_table_reference(tree, DRUG_EXPOSURE) and has_table_reference(tree, DRUG_STRENGTH)):
                 continue
 
             aliases = extract_aliases(tree)

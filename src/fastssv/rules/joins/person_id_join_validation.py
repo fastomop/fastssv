@@ -46,12 +46,14 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
-def _norm(x: Optional[str]) -> Optional[str]:
+def _normalize_optional(x: Optional[str]) -> Optional[str]:
+    """Normalize column/table name, returning None if input is None."""
     return normalize_name(x) if x else None
 
 
 def _is_person_id(col: Optional[str]) -> bool:
-    return _norm(col) == PERSON_ID
+    """Check if column name is person_id."""
+    return _normalize_optional(col) == PERSON_ID
 
 
 def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
@@ -90,20 +92,24 @@ def _extract_using_columns(tree: exp.Expression) -> Set[str]:
         if isinstance(using, exp.Tuple):
             for col in using.expressions:
                 if isinstance(col, exp.Column):
-                    cols.add(_norm(col.name))
+                    cols.add(_normalize_optional(col.name))
         elif isinstance(using, exp.Identifier):
-            cols.add(_norm(using.name))
+            cols.add(_normalize_optional(using.name))
 
     return cols
 
 
 # --- Detection -------------------------------------------------------------
 
-def _detect(
+def _detect_invalid_person_id_joins(
     tree: exp.Expression,
     aliases: Dict[str, str],
 ) -> List[Tuple[str, str, str, str]]:
+    """Detect invalid joins where person_id is joined to non-person_id columns.
 
+    Returns:
+        List of tuples: (left_table, left_col, right_table, right_col)
+    """
     violations: List[Tuple[str, str, str, str]] = []
     seen: Set[Tuple[str, str, str, str]] = set()
 
@@ -115,15 +121,15 @@ def _detect(
         lt, lc = resolve_table_col(left, aliases)
         rt, rc = resolve_table_col(right, aliases)
 
-        lc_norm = _norm(lc)
-        rc_norm = _norm(rc)
+        lc_norm = _normalize_optional(lc)
+        rc_norm = _normalize_optional(rc)
 
         # Skip unresolved or non-column comparisons
         if not lc_norm or not rc_norm:
             continue
 
         # Skip same-table comparisons (not joins)
-        if lt and rt and _norm(lt) == _norm(rt):
+        if lt and rt and _normalize_optional(lt) == _normalize_optional(rt):
             continue
 
         # Skip USING(person_id) - assumed valid
@@ -188,7 +194,7 @@ class PersonIdJoinValidationRule(Rule):
                 continue
 
             aliases = extract_aliases(tree)
-            detected = _detect(tree, aliases)
+            detected = _detect_invalid_person_id_joins(tree, aliases)
 
             for lt, lc, rt, rc in detected:
 

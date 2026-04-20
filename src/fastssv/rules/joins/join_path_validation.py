@@ -17,7 +17,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 from fastssv.schemas import STANDARD_CONCEPT_FIELDS
@@ -49,8 +49,8 @@ def _verify_concept_join_path(
     """Verify that vocabulary tables are properly joined to clinical tables."""
     warnings: List[str] = []
 
-    uses_concept = uses_table(tree, "concept")
-    uses_concept_rel = uses_table(tree, "concept_relationship")
+    uses_concept = has_table_reference(tree, "concept")
+    uses_concept_rel = has_table_reference(tree, "concept_relationship")
 
     if not uses_concept and not uses_concept_rel:
         return []  # No vocabulary tables used, nothing to verify

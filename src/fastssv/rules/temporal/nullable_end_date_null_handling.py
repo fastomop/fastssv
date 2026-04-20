@@ -59,7 +59,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -383,7 +383,7 @@ class NullableEndDateNullHandlingRule(Rule):
 
             # Skip if no relevant tables
             if not any(
-                uses_table(tree, config.table)
+                has_table_reference(tree, config.table)
                 for config in NULLABLE_END_DATE_CONFIGS.values()
             ):
                 continue

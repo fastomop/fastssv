@@ -57,7 +57,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -83,7 +83,7 @@ ERROR_MSG = (
 def _find_violations(tree: exp.Expression) -> List[str]:
     issues: List[str] = []
 
-    if not uses_table(tree, CONCEPT_TABLE) or not uses_table(tree, VOCABULARY_TABLE):
+    if not has_table_reference(tree, CONCEPT_TABLE) or not has_table_reference(tree, VOCABULARY_TABLE):
         return []
 
     aliases = extract_aliases(tree)

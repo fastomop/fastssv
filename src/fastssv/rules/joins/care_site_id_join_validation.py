@@ -29,7 +29,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -168,7 +168,7 @@ class CareSiteIdJoinValidationRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, CARE_SITE):
+            if not has_table_reference(tree, CARE_SITE):
                 continue
 
             aliases = extract_aliases(tree)

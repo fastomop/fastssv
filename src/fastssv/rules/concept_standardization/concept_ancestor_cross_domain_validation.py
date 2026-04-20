@@ -51,7 +51,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -314,7 +314,7 @@ class ConceptAncestorCrossDomainValidation(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, CONCEPT_ANCESTOR):
+            if not has_table_reference(tree, CONCEPT_ANCESTOR):
                 continue
 
             aliases = extract_aliases(tree)

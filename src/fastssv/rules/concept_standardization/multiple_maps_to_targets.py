@@ -67,7 +67,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -197,7 +197,7 @@ class MultipleMapsToTargetsRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, CONCEPT_RELATIONSHIP):
+            if not has_table_reference(tree, CONCEPT_RELATIONSHIP):
                 continue
 
             aliases = extract_aliases(tree)
@@ -213,7 +213,7 @@ class MultipleMapsToTargetsRule(Rule):
 
                 sub_aliases = extract_aliases(sub_tree)
 
-                if uses_table(sub_tree, CONCEPT_RELATIONSHIP) and _uses_maps_to(sub_tree, sub_aliases):
+                if has_table_reference(sub_tree, CONCEPT_RELATIONSHIP) and _uses_maps_to(sub_tree, sub_aliases):
                     key = f"scalar_{subquery.sql()}"
                     if key in seen:
                         continue
@@ -234,18 +234,24 @@ class MultipleMapsToTargetsRule(Rule):
                     )
 
             # --- JOIN without dedup ---
-            # DISABLED: Too noisy - creates false positives when:
-            # - Outer query has GROUP BY/DISTINCT
-            # - Duplication is intentional (e.g., for counting)
-            # - Query properly handles multiplicity elsewhere
-            #
-            # Only keeping scalar subquery and LIMIT 1 checks which are more clear-cut errors
-            #
-            # if not (_has_distinct(tree) or _has_group_by(tree)):
-            #     key = "join_no_dedup"
-            #     if key not in seen:
-            #         seen.add(key)
-            #         violations.append(...)
+            if not (_has_distinct(tree) or _has_group_by(tree)):
+                key = "join_no_dedup"
+                if key not in seen:
+                    seen.add(key)
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                "Query uses 'Maps to' relationships without DISTINCT or GROUP BY. "
+                                "A single source concept can map to multiple standard concepts, "
+                                "which may cause duplicate rows or incomplete results."
+                            ),
+                            severity=Severity.WARNING,
+                            suggested_fix=(
+                                "Add DISTINCT to SELECT or use GROUP BY with aggregation "
+                                "to explicitly handle multiple mappings."
+                            ),
+                        )
+                    )
 
             # --- LIMIT 1 misuse ---
             if _has_limit_one(tree):

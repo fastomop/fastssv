@@ -19,7 +19,7 @@ from fastssv.core.helpers import (
     is_in_where_or_join_clause,
     normalize_name,
     parse_sql,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -152,11 +152,11 @@ def _get_vocabulary_tables_used(tree: exp.Expression) -> Tuple[Set[str], Set[str
     derived_tables = set()
 
     for table_name in VOCABULARY_TABLES_WITH_INVALID_REASON:
-        if uses_table(tree, table_name):
+        if has_table_reference(tree, table_name):
             tables_with_invalid_reason.add(table_name)
 
     for table_name in DERIVED_VOCABULARY_TABLES:
-        if uses_table(tree, table_name):
+        if has_table_reference(tree, table_name):
             derived_tables.add(table_name)
 
     return tables_with_invalid_reason, derived_tables
@@ -175,7 +175,7 @@ def _has_concept_join_with_invalid_reason_filter(tree: exp.Expression) -> bool:
         True if both concept table is joined AND invalid_reason filter is present
     """
     # Check if concept table is used (joined)
-    if not uses_table(tree, "concept"):
+    if not has_table_reference(tree, "concept"):
         return False
 
     # Check if there's an invalid_reason filter
@@ -229,12 +229,11 @@ class InvalidReasonEnforcementRule(Rule):
                 message = (
                     f"Query uses vocabulary table(s) [{tables_str}] without filtering by invalid_reason. "
                     f"Vocabulary tables may contain deprecated or superseded concepts. "
-                    f"For descriptive analytics, this may be acceptable. For cohort definitions, "
-                    f"add 'invalid_reason IS NULL' to ensure only currently-valid concepts."
+                    f"Add 'invalid_reason IS NULL' to ensure only currently-valid concepts are used."
                 )
 
                 violations.append(self.create_violation(
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     message=message,
                     suggested_fix="Add WHERE condition: invalid_reason IS NULL",
                     details={

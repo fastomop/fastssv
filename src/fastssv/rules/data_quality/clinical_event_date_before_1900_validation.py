@@ -53,7 +53,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -308,7 +308,7 @@ class ClinicalEventDateBefore1900ValidationRule(Rule):
             if not tree:
                 continue
 
-            if not any(uses_table(tree, t) for t in CLINICAL_EVENT_TABLES_DATES):
+            if not any(has_table_reference(tree, t) for t in CLINICAL_EVENT_TABLES_DATES):
                 continue
 
             aliases = extract_aliases(tree)

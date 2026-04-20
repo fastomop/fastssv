@@ -37,7 +37,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -205,7 +205,7 @@ class ConceptDomainJoinValidationRule(Rule):
             if not tree:
                 continue
 
-            if not (uses_table(tree, CONCEPT) and uses_table(tree, DOMAIN)):
+            if not (has_table_reference(tree, CONCEPT) and has_table_reference(tree, DOMAIN)):
                 continue
 
             aliases = extract_aliases(tree)

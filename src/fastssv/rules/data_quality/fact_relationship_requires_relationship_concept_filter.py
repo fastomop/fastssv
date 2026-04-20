@@ -60,7 +60,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -209,7 +209,7 @@ def _has_subquery_filter(tree: exp.Expression) -> bool:
     for sub in tree.find_all(exp.Subquery):
         inner = sub.this
         if isinstance(inner, exp.Expression):
-            if not uses_table(inner, FACT_RELATIONSHIP):
+            if not has_table_reference(inner, FACT_RELATIONSHIP):
                 continue
 
             aliases = extract_aliases(inner)
@@ -269,7 +269,7 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            if not uses_table(tree, FACT_RELATIONSHIP):
+            if not has_table_reference(tree, FACT_RELATIONSHIP):
                 continue
 
             has_filter = _has_relationship_filter(tree, aliases)

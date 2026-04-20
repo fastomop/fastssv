@@ -49,7 +49,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -152,7 +152,7 @@ def _detect(
         if _is_person(t):
             person_aliases.add(t)
 
-    if not clinical_tables or not uses_table(tree, COHORT):
+    if not clinical_tables or not has_table_reference(tree, COHORT):
         return errors_by_table
 
     # --- Status tracking ---------------------------------------------------
@@ -292,7 +292,7 @@ class CohortClinicalJoinValidationRule(Rule):
             return []
 
         for tree in trees:
-            if not tree or not uses_table(tree, COHORT):
+            if not tree or not has_table_reference(tree, COHORT):
                 continue
 
             aliases = extract_aliases(tree)

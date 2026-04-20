@@ -48,7 +48,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
     is_in_where_or_join_clause,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -248,7 +248,7 @@ class StandardConceptNullHandlingRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, CONCEPT_TABLE):
+            if not has_table_reference(tree, CONCEPT_TABLE):
                 continue
 
             aliases = extract_aliases(tree)

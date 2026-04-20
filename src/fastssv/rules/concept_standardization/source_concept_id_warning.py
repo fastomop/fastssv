@@ -28,7 +28,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -125,7 +125,7 @@ def _find_source_filters(
 
 def _is_likely_analytical_query(tree: exp.Expression) -> bool:
     # Cohort queries typically involve PERSON or person_id
-    if uses_table(tree, "person"):
+    if has_table_reference(tree, "person"):
         return True
 
     for col in tree.find_all(exp.Column):

@@ -86,7 +86,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -377,7 +377,7 @@ class SourceConceptIdStandardFilterRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, CONCEPT_TABLE):
+            if not tree or not has_table_reference(tree, CONCEPT_TABLE):
                 continue
 
             detected = _detect_source_concept_joins(tree)

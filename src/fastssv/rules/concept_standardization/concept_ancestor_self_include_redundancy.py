@@ -77,7 +77,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
     is_in_where_or_join_clause,
 )
 from fastssv.core.registry import register
@@ -327,7 +327,7 @@ def _detect_in_subquery(tree: exp.Expression) -> List[Dict]:
 
         for sub in subqueries:
             sub_tree = sub.this
-            if not sub_tree or not uses_table(sub_tree, CONCEPT_ANCESTOR):
+            if not sub_tree or not has_table_reference(sub_tree, CONCEPT_ANCESTOR):
                 continue
 
             sub_aliases = extract_aliases(sub_tree)
@@ -388,7 +388,7 @@ class ConceptAncestorSelfIncludeRedundancyRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, CONCEPT_ANCESTOR):
+            if not tree or not has_table_reference(tree, CONCEPT_ANCESTOR):
                 continue
 
             detected = (

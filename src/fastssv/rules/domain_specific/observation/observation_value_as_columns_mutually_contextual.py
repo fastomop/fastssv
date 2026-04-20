@@ -91,7 +91,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -225,7 +225,7 @@ def _find_violations(
 ) -> List[str]:
     issues: List[str] = []
 
-    if not uses_table(tree, OBSERVATION_TABLE):
+    if not has_table_reference(tree, OBSERVATION_TABLE):
         return issues
 
     if OBSERVATION_TABLE in cte_names:
@@ -314,7 +314,7 @@ class ObservationValueAsColumnsMutuallyContextualRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, OBSERVATION_TABLE):
+            if not has_table_reference(tree, OBSERVATION_TABLE):
                 continue
 
             aliases = extract_aliases(tree)

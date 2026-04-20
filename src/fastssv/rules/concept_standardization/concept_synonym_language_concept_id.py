@@ -60,7 +60,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -82,7 +82,7 @@ def _is_target_column(table: str, column: str, tree: exp.Expression) -> bool:
     if table:
         return normalize_name(table) == TABLE_NAME
 
-    return uses_table(tree, TABLE_NAME)
+    return has_table_reference(tree, TABLE_NAME)
 
 
 def _has_like_on_synonym_name(tree: exp.Expression, aliases: dict) -> bool:
@@ -169,7 +169,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
 
     aliases = extract_aliases(tree)
 
-    if not uses_table(tree, TABLE_NAME):
+    if not has_table_reference(tree, TABLE_NAME):
         return []
 
     if not _has_like_on_synonym_name(tree, aliases):

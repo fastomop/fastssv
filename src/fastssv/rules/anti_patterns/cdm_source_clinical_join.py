@@ -43,7 +43,7 @@ from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -158,7 +158,7 @@ class CdmSourceClinicalJoinRule(Rule):
         violations: List[RuleViolation] = []
 
         for tree in trees:
-            if not tree or not uses_table(tree, TABLE_NAME):
+            if not tree or not has_table_reference(tree, TABLE_NAME):
                 continue
 
             issues = _find_invalid_joins(tree)

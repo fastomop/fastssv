@@ -13,12 +13,12 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
-    check_condition,
+    has_condition,
     extract_aliases,
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 from fastssv.schemas import SOURCE_CONCEPT_FIELDS, STANDARD_CONCEPT_FIELDS
@@ -74,18 +74,18 @@ def _has_specific_concept_id_filter(tree: exp.Expression, aliases: Dict[str, str
 
 def _enforces_standard_concept(tree: exp.Expression) -> bool:
     """Detect if query enforces standard concepts via standard_concept = 'S'."""
-    if not uses_table(tree, "concept"):
+    if not has_table_reference(tree, "concept"):
         return False
 
-    return check_condition(tree, "standard_concept", {"s"}, require_where_clause=True)
+    return has_condition(tree, "standard_concept", {"s"}, require_where_clause=True)
 
 
 def _uses_maps_to_relationship(tree: exp.Expression) -> bool:
     """Detect if query uses concept_relationship relationship_id = 'Maps to'."""
-    if not uses_table(tree, "concept_relationship"):
+    if not has_table_reference(tree, "concept_relationship"):
         return False
 
-    return check_condition(
+    return has_condition(
         tree,
         "relationship_id",
         {normalize_name(MAPS_TO_RELATIONSHIP)},
@@ -148,31 +148,39 @@ class StandardConceptEnforcementRule(Rule):
             aliases = extract_aliases(tree)
             refs = _extract_concept_references(tree, aliases)
 
-            # Check if the concept table is being used in the query
-            uses_concept_table = uses_table(tree, "concept")
+            # Check if any STANDARD concept fields are used
+            uses_standard_fields = False
+            for table, col in refs:
+                key = (normalize_name(table), normalize_name(col))
+                if key in standard_fields and key not in already_standard:
+                    uses_standard_fields = True
+                    break
 
-            # If concept table is joined but not filtered by standard_concept, warn
-            if uses_concept_table:
-                has_standard_enforcement = _enforces_standard_concept(tree)
-                has_maps_to = _uses_maps_to_relationship(tree)
+            if not uses_standard_fields:
+                continue
 
-                # If neither standard_concept = 'S' nor Maps to is used, warn
-                if not has_standard_enforcement and not has_maps_to:
-                    # Check strict mode for severity escalation
-                    from fastssv.core.validation_context import get_validation_context
-                    ctx = get_validation_context()
-                    severity = Severity.ERROR if ctx.should_escalate_rule(self.rule_id) else Severity.WARNING
+            # Check if there's proper enforcement
+            has_standard_enforcement = _enforces_standard_concept(tree)
+            has_maps_to = _uses_maps_to_relationship(tree)
+            has_specific_filter = _has_specific_concept_id_filter(tree, aliases)
 
-                    message = "Query does not restrict to standard concepts."
-                    if severity == Severity.ERROR:
-                        message += " (Strict mode: cohort definitions must use standard concepts)"
+            # If no enforcement mechanism is present, warn
+            if not has_standard_enforcement and not has_maps_to and not has_specific_filter:
+                # Check strict mode for severity escalation
+                from fastssv.core.validation_context import get_validation_context
+                ctx = get_validation_context()
+                severity = Severity.ERROR if ctx.should_escalate_rule(self.rule_id) else Severity.WARNING
 
-                    violations.append(self.create_violation(
-                        message=message,
-                        severity=severity,
-                        suggested_fix="Add: standard_concept = 'S'",
-                        details={"strict_mode_escalated": severity == Severity.ERROR}
-                    ))
+                message = "Query uses STANDARD concept fields without ensuring concepts are standard."
+                if severity == Severity.ERROR:
+                    message += " (Strict mode: cohort definitions must use standard concepts)"
+
+                violations.append(self.create_violation(
+                    message=message,
+                    severity=severity,
+                    suggested_fix="JOIN concept table and add: WHERE concept.standard_concept = 'S'",
+                    details={"strict_mode_escalated": severity == Severity.ERROR}
+                ))
 
         return violations
 

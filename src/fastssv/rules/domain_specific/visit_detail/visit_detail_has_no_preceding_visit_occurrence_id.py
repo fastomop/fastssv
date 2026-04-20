@@ -82,7 +82,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -153,7 +153,7 @@ def _find_violations(
     issues: List[str] = []
 
     # Fast guard
-    if not uses_table(tree, VISIT_DETAIL_TABLE):
+    if not has_table_reference(tree, VISIT_DETAIL_TABLE):
         return issues
 
     # Avoid CTE shadowing

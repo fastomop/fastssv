@@ -29,7 +29,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -167,7 +167,7 @@ class CareSiteLocationJoinValidationRule(Rule):
                 continue
 
             # Ensure both tables exist in query
-            if not (uses_table(tree, CARE_SITE) and uses_table(tree, LOCATION)):
+            if not (has_table_reference(tree, CARE_SITE) and has_table_reference(tree, LOCATION)):
                 continue
 
             aliases = extract_aliases(tree)

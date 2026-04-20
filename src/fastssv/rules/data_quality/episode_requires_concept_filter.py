@@ -76,7 +76,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -236,7 +236,7 @@ def _episode_event_has_valid_path(tree: exp.Expression) -> bool:
         if isinstance(sub, exp.Expression):
             aliases = extract_aliases(sub)
 
-            if uses_table(sub, EPISODE) and _has_episode_filter(sub, aliases):
+            if has_table_reference(sub, EPISODE) and _has_episode_filter(sub, aliases):
                 return True
 
     return False
@@ -279,8 +279,8 @@ class EpisodeRequiresConceptFilterRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            uses_episode = uses_table(tree, EPISODE)
-            uses_episode_event = uses_table(tree, EPISODE_EVENT)
+            uses_episode = has_table_reference(tree, EPISODE)
+            uses_episode_event = has_table_reference(tree, EPISODE_EVENT)
 
             if not uses_episode and not uses_episode_event:
                 continue

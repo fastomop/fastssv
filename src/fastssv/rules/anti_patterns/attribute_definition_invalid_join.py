@@ -57,7 +57,7 @@ from typing import List, Set
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import normalize_name, parse_sql, uses_table
+from fastssv.core.helpers import normalize_name, parse_sql, has_table_reference
 from fastssv.core.registry import register
 
 
@@ -133,7 +133,7 @@ class AttributeDefinitionInvalidJoinRule(Rule):
                 continue
 
             # Early skip if attribute_definition not used anywhere in query
-            if not uses_table(tree, ATTRIBUTE_DEFINITION):
+            if not has_table_reference(tree, ATTRIBUTE_DEFINITION):
                 continue
 
             # Check each SELECT scope independently

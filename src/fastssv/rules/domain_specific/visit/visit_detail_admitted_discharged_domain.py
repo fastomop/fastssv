@@ -72,7 +72,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -269,7 +269,7 @@ class VisitDetailAdmittedDischargedDomainRule(Rule):
             if not tree:
                 continue
 
-            if not uses_table(tree, VISIT_DETAIL):
+            if not has_table_reference(tree, VISIT_DETAIL):
                 continue
 
             aliases = extract_aliases(tree)

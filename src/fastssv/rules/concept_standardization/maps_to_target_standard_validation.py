@@ -43,7 +43,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -223,7 +223,7 @@ class MapsToTargetStandardValidationRule(Rule):
                 continue
 
             # Must use concept_relationship table
-            if not uses_table(tree, CONCEPT_RELATIONSHIP):
+            if not has_table_reference(tree, CONCEPT_RELATIONSHIP):
                 continue
 
             # Must use 'Maps to' relationship

@@ -29,7 +29,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -167,7 +167,7 @@ class PersonLocationJoinValidationRule(Rule):
                 continue
 
             # Must have both tables
-            if not (uses_table(tree, PERSON) and uses_table(tree, LOCATION)):
+            if not (has_table_reference(tree, PERSON) and has_table_reference(tree, LOCATION)):
                 continue
 
             aliases = extract_aliases(tree)

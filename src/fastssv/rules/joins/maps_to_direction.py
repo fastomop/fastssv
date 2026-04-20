@@ -27,12 +27,12 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
-    check_condition,
+    has_condition,
     extract_aliases,
     extract_join_conditions,
     normalize_name,
     parse_sql,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 from fastssv.schemas import STANDARD_CONCEPT_FIELDS
@@ -42,10 +42,10 @@ MAPS_TO_RELATIONSHIP = "Maps to"
 
 def _uses_maps_to_relationship(tree: exp.Expression) -> bool:
     """Detect if query uses concept_relationship relationship_id = 'Maps to'."""
-    if not uses_table(tree, "concept_relationship"):
+    if not has_table_reference(tree, "concept_relationship"):
         return False
 
-    return check_condition(
+    return has_condition(
         tree,
         "relationship_id",
         {normalize_name(MAPS_TO_RELATIONSHIP)},
@@ -57,7 +57,7 @@ def _verify_maps_to_direction(tree: exp.Expression, aliases: Dict[str, str]) -> 
     """Verify that 'Maps to' relationship is used in the correct direction."""
     warnings: List[str] = []
 
-    if not uses_table(tree, "concept_relationship"):
+    if not has_table_reference(tree, "concept_relationship"):
         return []
 
     if not _uses_maps_to_relationship(tree):

@@ -46,7 +46,7 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -152,7 +152,7 @@ def _detect(
             seen.add(key)
 
     # --- 3. Missing join detection -----------------------------------------
-    if uses_table(tree, NOTE_NLP) and uses_table(tree, NOTE):
+    if has_table_reference(tree, NOTE_NLP) and has_table_reference(tree, NOTE):
         if found_any_relation and not found_valid_fk and not errors:
             # Generic error only when we detected a join but couldn't identify columns
             key = (NOTE_NLP, "INVALID", NOTE, "INVALID")
@@ -202,7 +202,7 @@ class NoteNlpNoteJoinValidationRule(Rule):
             if not tree:
                 continue
 
-            if not (uses_table(tree, NOTE_NLP) and uses_table(tree, NOTE)):
+            if not (has_table_reference(tree, NOTE_NLP) and has_table_reference(tree, NOTE)):
                 continue
 
             aliases = extract_aliases(tree)

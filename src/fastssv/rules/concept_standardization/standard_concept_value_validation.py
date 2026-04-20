@@ -31,7 +31,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
     is_in_where_or_join_clause,
-    uses_table,
+    has_table_reference,
 )
 from fastssv.core.registry import register
 
@@ -181,7 +181,7 @@ class StandardConceptValueValidationRule(Rule):
                 continue
 
             aliases = extract_aliases(tree)
-            concept_present = uses_table(tree, CONCEPT_TABLE)
+            concept_present = has_table_reference(tree, CONCEPT_TABLE)
 
             issues = _find_invalid_values(tree, aliases, concept_present)
 
