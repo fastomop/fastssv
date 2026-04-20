@@ -204,15 +204,21 @@ def _find_literal_type_mismatches(
 
 @register
 class ColumnTypeValidationRule(Rule):
-    """Robust validation for column type compatibility."""
+    """Robust validation for column type compatibility.
+
+    Layer: SCHEMA
+    Type mismatches are fundamental data model errors that will cause runtime failures
+    or produce incorrect results. Always ERROR severity.
+    """
 
     rule_id = "data_quality.column_type_validation"
-    name = "Column Type Validation"
+    name = "Column Type Validation (SCHEMA Layer)"
     description = (
         "Ensures compatible data types in JOIN conditions and WHERE filters. "
-        "Detects mismatches such as integer-to-varchar joins or invalid literal comparisons."
+        "Detects mismatches such as integer-to-varchar joins or invalid literal comparisons. "
+        "Type mismatches are schema-level errors that cause query failures or wrong results."
     )
-    severity = Severity.ERROR
+    severity = Severity.ERROR  # SCHEMA layer - always ERROR
     suggested_fix = (
         "Ensure column types are compatible. Use proper literals or CAST explicitly if needed."
     )
@@ -237,10 +243,13 @@ class ColumnTypeValidationRule(Rule):
                         f"Type mismatch in JOIN: {lt}.{lc} ({ltype}) "
                         f"vs {rt}.{rc} ({rtype})"
                     ),
+                    severity=Severity.ERROR,
                     suggested_fix=(
                         f"Use compatible columns or apply explicit CAST."
                     ),
                     details={
+                        "layer": "schema",
+                        "type": "type_mismatch",
                         "left_table": lt,
                         "left_column": lc,
                         "left_type": ltype,
@@ -254,7 +263,9 @@ class ColumnTypeValidationRule(Rule):
             for table, col, col_type, lit_type in _find_literal_type_mismatches(tree, aliases):
                 if lit_type == "mixed":
                     message = (
-                        f"{table}.{col} compared to mixed literal types in IN clause."
+                        f"Conflicting filter types: {table}.{col} ({col_type}) compared to mixed literal types "
+                        f"(both numeric and string) in same query. This indicates a logic error where the same "
+                        f"column is filtered by incompatible value types."
                     )
                 else:
                     message = (
@@ -263,10 +274,13 @@ class ColumnTypeValidationRule(Rule):
 
                 violations.append(self.create_violation(
                     message=message,
+                    severity=Severity.ERROR,
                     suggested_fix=(
-                        f"Use correct literal type or CAST explicitly."
+                        f"Use consistent literal types or CAST explicitly. Check for logic errors if mixing types."
                     ),
                     details={
+                        "layer": "schema",
+                        "type": "type_mismatch" if lit_type != "mixed" else "conflicting_filters",
                         "table": table,
                         "column": col,
                         "column_type": col_type,

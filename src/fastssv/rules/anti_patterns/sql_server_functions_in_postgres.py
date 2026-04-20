@@ -58,22 +58,29 @@ SQL_SERVER_FUNCTIONS = {
 
 @register
 class SQLServerFunctionsInPostgresRule(Rule):
-    """Detects SQL Server-specific functions in PostgreSQL queries."""
+    """Detects SQL Server-specific functions for portability warnings.
+
+    Layer: BEST_PRACTICE
+    This rule provides portability warnings, not correctness errors.
+    SQL Server functions are valid in TSQL dialect but may limit portability.
+    """
 
     rule_id = "anti_patterns.sql_server_functions_in_postgres"
-    name = "SQL Server Functions in Postgres"
+    name = "SQL Server Functions - Portability Warning"
     description = (
-        "Detects SQL Server-specific functions that are not compatible with PostgreSQL dialect. "
-        "These queries will fail to execute in a Postgres-based OMOP environment."
+        "Detects SQL Server-specific functions that may limit portability to PostgreSQL. "
+        "If you plan to run queries across multiple database platforms, consider using "
+        "standard SQL functions or dialect-agnostic alternatives."
     )
-    severity = Severity.ERROR
-    suggested_fix = "Replace SQL Server functions with PostgreSQL equivalents"
+    severity = Severity.WARNING  # Changed from ERROR - this is portability, not correctness
+    suggested_fix = "For maximum portability, replace SQL Server functions with standard SQL equivalents"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
 
-        # Only check when dialect is postgres
+        # Only warn when dialect is postgres (portability issue)
+        # When dialect is tsql, these functions are valid
         if dialect != "postgres":
             return []
 
@@ -103,11 +110,14 @@ class SQLServerFunctionsInPostgresRule(Rule):
                         if dict_key in SQL_SERVER_FUNCTIONS and dict_key not in reported_functions:
                             info = SQL_SERVER_FUNCTIONS[dict_key]
                             violations.append(self.create_violation(
-                                message=info["description"],
+                                message=f"Portability: {info['description']}. For cross-platform compatibility, consider PostgreSQL alternatives.",
                                 suggested_fix=info["fix"],
+                                severity=Severity.WARNING,
                                 details={
                                     "function": dict_key,
                                     "postgres_alternatives": info["postgres_alternatives"],
+                                    "layer": "best_practice",
+                                    "type": "portability_warning"
                                 }
                             ))
                             reported_functions.add(dict_key)
@@ -121,11 +131,14 @@ class SQLServerFunctionsInPostgresRule(Rule):
                     alternatives = " or ".join(info["postgres_alternatives"])
 
                     violations.append(self.create_violation(
-                        message=info["description"],
+                        message=f"Portability: {info['description']}. For cross-platform compatibility, consider PostgreSQL alternatives.",
                         suggested_fix=info["fix"],
+                        severity=Severity.WARNING,
                         details={
                             "function": func_name,
                             "postgres_alternatives": info["postgres_alternatives"],
+                            "layer": "best_practice",
+                            "type": "portability_warning"
                         }
                     ))
 

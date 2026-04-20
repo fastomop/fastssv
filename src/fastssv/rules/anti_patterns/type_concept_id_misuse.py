@@ -3,20 +3,31 @@
 OMOP semantic rule (OMOP_014):
 The *_type_concept_id columns (e.g., condition_type_concept_id, drug_type_concept_id)
 represent the provenance of the record (e.g., EHR, claim, patient-reported), not clinical
-categories. Do not use them to filter for clinical subtypes.
+categories. Do not use them to filter for clinical subtypes in cohort definitions.
+
+Legitimate uses (descriptive analytics):
+- GROUP BY type_concept_id (understanding data source distribution) ✓
+- SELECT type_concept_id (displaying provenance) ✓
+- JOIN to concept for labeling (showing type names) ✓ (warning)
+
+Misuse (cohort definition):
+- WHERE type_concept_id = X to filter patients ✗ (error)
+- HAVING type_concept_id = X to filter aggregates ✗ (error)
 
 Example violation:
 SELECT * FROM condition_occurrence
-WHERE condition_type_concept_id = 201826  -- This is a condition concept, not a type concept!
+WHERE condition_type_concept_id = 201826  -- ERROR: Using for clinical filtering
 
 Example correct:
-SELECT * FROM condition_occurrence
-WHERE condition_type_concept_id = 32817  -- EHR
-AND condition_concept_id = 201826        -- Diabetes
+-- Descriptive analytics (OK)
+SELECT condition_type_concept_id, COUNT(*)
+FROM condition_occurrence
+GROUP BY condition_type_concept_id
 
-Better practice:
-Don't filter on type_concept_id for clinical purposes. Use it only for understanding
-data provenance/lineage.
+-- Cohort + provenance filter (OK with warning)
+SELECT * FROM condition_occurrence
+WHERE condition_concept_id = 201826        -- Clinical filter
+  AND condition_type_concept_id = 32817    -- Provenance filter (EHR only)
 """
 
 from typing import Dict, List, Set, Tuple
@@ -64,15 +75,33 @@ TYPE_TO_PRIMARY_FIELD = {
 }
 
 
-def _find_type_concept_id_filters(
+def _is_join_to_concept_for_labeling(node: exp.Expression, col: exp.Column, aliases: Dict[str, str]) -> bool:
+    """Check if this is a join to concept table/subquery for labeling purposes.
+
+    Returns True if joining type_concept_id to concept_id column.
+    This is almost always for labeling (getting human-readable type names), not filtering.
+    """
+    # Check if the other side of the equality is concept_id
+    right = node.expression if hasattr(node, 'expression') else None
+    if isinstance(right, exp.Column):
+        _, right_col = resolve_table_col(right, aliases)
+        if normalize_name(right_col) == "concept_id":
+            # Joining type_concept_id to concept_id is for labeling
+            return True
+
+    return False
+
+
+def _find_type_concept_id_misuse(
     tree: exp.Expression,
     aliases: Dict[str, str]
-) -> List[Tuple[str, str, str]]:
-    """Find WHERE/HAVING/ON clauses that filter on type_concept_id columns.
+) -> List[Tuple[str, str, str, str]]:
+    """Find misuse of type_concept_id columns.
 
-    Returns list of (table, column, context) tuples.
+    Returns list of (table, column, context, severity) tuples.
+    - severity: 'error' for cohort definition, 'warning' for labeling joins
     """
-    violations: List[Tuple[str, str, str]] = []
+    violations: List[Tuple[str, str, str, str]] = []
 
     for node in tree.walk():
         if isinstance(node, (exp.EQ, exp.In, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.NEQ)):
@@ -85,30 +114,42 @@ def _find_type_concept_id_filters(
                 if normalized_col in TYPE_CONCEPT_ID_COLUMNS:
                     # Determine context
                     context = "WHERE clause"
+                    severity = "error"  # Default: cohort definition misuse
                     parent = node.parent
+
                     while parent:
                         if isinstance(parent, exp.Join):
                             context = "JOIN ON clause"
+                            # Check if this is a join to concept for labeling
+                            if _is_join_to_concept_for_labeling(node, left, aliases):
+                                # Joining to concept for labeling is acceptable (just a warning)
+                                severity = "skip"  # Don't flag labeling joins
                             break
                         elif isinstance(parent, exp.Having):
                             context = "HAVING clause"
+                            severity = "error"
                             break
                         parent = parent.parent if hasattr(parent, 'parent') else None
 
-                    violations.append((table, normalized_col, context))
+                    if severity != "skip":
+                        violations.append((table, normalized_col, context, severity))
 
     return violations
 
 
 @register
 class TypeConceptIdMisuseRule(Rule):
-    """Detects misuse of *_type_concept_id columns for clinical filtering."""
+    """Detects misuse of *_type_concept_id columns for clinical filtering.
+
+    Context-aware: Only flags cohort definition misuse (WHERE/HAVING), not descriptive analytics.
+    """
 
     rule_id = "anti_patterns.type_concept_id_misuse"
     name = "Type Concept ID Not For Clinical Filtering"
     description = (
         "The *_type_concept_id columns represent record provenance (EHR, claim, etc.), "
-        "not clinical categories. Use the primary *_concept_id column for clinical filtering."
+        "not clinical categories. Do not use them for cohort definition or clinical filtering in WHERE/HAVING clauses. "
+        "Using them in GROUP BY, SELECT, or JOIN for labeling is acceptable."
     )
     severity = Severity.ERROR
     suggested_fix = (
@@ -129,9 +170,9 @@ class TypeConceptIdMisuseRule(Rule):
                 continue
 
             aliases = extract_aliases(tree)
-            filters = _find_type_concept_id_filters(tree, aliases)
+            misuses = _find_type_concept_id_misuse(tree, aliases)
 
-            for table, col, context in filters:
+            for table, col, context, severity in misuses:
                 # Get the suggested primary field
                 primary_field = TYPE_TO_PRIMARY_FIELD.get(col, "the primary concept_id column")
 
@@ -142,7 +183,10 @@ class TypeConceptIdMisuseRule(Rule):
                     f"Only use type_concept_id to understand where the data came from."
                 )
 
-                violations.append(self.create_violation(message=message))
+                violations.append(self.create_violation(
+                    message=message,
+                    severity=Severity.ERROR if severity == "error" else Severity.WARNING
+                ))
 
         return violations
 

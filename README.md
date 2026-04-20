@@ -2,11 +2,11 @@
   <img src="docs/logo.png" alt="FastSSV" width="300">
 </p>
 
-# FastSSV — Fast Semantic Static Validator
+# FastSSV - Fast Semantic Static Validator
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-156-orange)
+![Rules](https://img.shields.io/badge/rules-167-orange)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
@@ -58,165 +58,165 @@ cat output/validation_report.json
 
 ## What FastSSV Catches
 
-FastSSV ships with 156 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
+FastSSV ships with 167 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
 
 ### Core Categories
 
-**Anti-Pattern Rules (22 rules)** — Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
+**Anti-Pattern Rules (22 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
 
-**Concept Standardization Rules (21 rules)** — Enforce standard concept usage, hierarchy expansion, concept_ancestor semantics, invalid reason checks, domain and vocabulary validation, source concept handling, Maps to target correctness, Maps to chain resolution, concept relationship validity, and CDM version migration issues.
+**Concept Standardization Rules (21 rules)** - Enforce standard concept usage, hierarchy expansion, concept_ancestor semantics, invalid reason checks, domain and vocabulary validation, source concept handling, Maps to target correctness, Maps to chain resolution, concept relationship validity, and CDM version migration issues.
 
-**Domain-Specific Rules (40 rules)** — Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
+**Domain-Specific Rules (40 rules)** - Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
 
-**Join Rules (37 rules)** — Validate foreign key relationships, join path correctness, concept relationship direction, cross-table linkage requirements, left join logic, alias reuse, incomplete concept_relationship join patterns, and observation_period date overlap requirements.
+**Join Rules (37 rules)** - Validate foreign key relationships, join path correctness, concept relationship direction, cross-table linkage requirements, left join logic, alias reuse, incomplete concept_relationship join patterns, and observation_period date overlap requirements.
 
-**Temporal Rules (10 rules)** — Validate date logic, observation period constraints, temporal consistency across clinical events, NULL handling for date columns, datetime comparisons, and required date column usage.
+**Temporal Rules (10 rules)** - Validate date logic, observation period constraints, temporal consistency across clinical events, NULL handling for date columns, datetime comparisons, and required date column usage.
 
-**Data Quality Rules (26 rules)** — Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
+**Data Quality Rules (26 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
 
 ### Key Anti-Pattern Rules (22 rules)
 
-**Type concept ID misuse** (`anti_patterns.type_concept_id_misuse`, WARNING) — Type concept fields (*_type_concept_id) encode provenance metadata (EHR, claims, registry) and should not be used for clinical filtering. Type concepts indicate data source, not clinical meaning.
+**Type concept ID misuse** (`anti_patterns.type_concept_id_misuse`, WARNING) - Type concept fields (*_type_concept_id) encode provenance metadata (EHR, claims, registry) and should not be used for clinical filtering. Type concepts indicate data source, not clinical meaning.
 
-**No string identification** (`anti_patterns.no_string_identification`, ERROR) — `*_source_value` columns contain raw, site-specific text from the source system. Filtering on them with `LIKE`, `=`, or `IN` makes queries non-portable and analytically incorrect across CDM instances.
+**No string identification** (`anti_patterns.no_string_identification`, ERROR) - `*_source_value` columns contain raw, site-specific text from the source system. Filtering on them with `LIKE`, `=`, or `IN` makes queries non-portable and analytically incorrect across CDM instances.
 
-**Concept lookup context** (`anti_patterns.concept_lookup_context`, ERROR) — Filtering the `concept` table by `concept_name`, `concept_code`, or similar text columns is valid only inside a subquery or CTE that outputs `concept_id`. String-based concept selection in the main query body is tied to a specific vocabulary version and breaks silently on upgrade.
+**Concept lookup context** (`anti_patterns.concept_lookup_context`, ERROR) - Filtering the `concept` table by `concept_name`, `concept_code`, or similar text columns is valid only inside a subquery or CTE that outputs `concept_id`. String-based concept selection in the main query body is tied to a specific vocabulary version and breaks silently on upgrade.
 
-**Concept code requires vocabulary ID** (`anti_patterns.concept_code_requires_vocabulary_id`, ERROR) — `concept_code` is not unique across vocabularies. The code `'E11.9'` exists in ICD-10-CM, ICD-10, and other vocabularies simultaneously. Every `concept_code` filter must be paired with a `vocabulary_id` filter in the same scope.
+**Concept code requires vocabulary ID** (`anti_patterns.concept_code_requires_vocabulary_id`, ERROR) - `concept_code` is not unique across vocabularies. The code `'E11.9'` exists in ICD-10-CM, ICD-10, and other vocabularies simultaneously. Every `concept_code` filter must be paired with a `vocabulary_id` filter in the same scope.
 
-**Concept name lookup anti-pattern** (`anti_patterns.concept_name_lookup`, WARNING) — Filtering by `concept_name` using string matching is fragile and vocabulary-version-dependent. Use concept IDs or concept_code + vocabulary_id instead.
+**Concept name lookup anti-pattern** (`anti_patterns.concept_name_lookup`, WARNING) - Filtering by `concept_name` using string matching is fragile and vocabulary-version-dependent. Use concept IDs or concept_code + vocabulary_id instead.
 
-**Concept relationship transitive misuse** (`anti_patterns.concept_relationship_transitive_misuse`, WARNING) — Treating `concept_relationship` as a transitive hierarchy mechanism produces incomplete or semantically wrong expansions. Use `concept_ancestor` for descendant rollups.
+**Concept relationship transitive misuse** (`anti_patterns.concept_relationship_transitive_misuse`, WARNING) - Treating `concept_relationship` as a transitive hierarchy mechanism produces incomplete or semantically wrong expansions. Use `concept_ancestor` for descendant rollups.
 
-**Missing relationship filter in concept_relationship** (`anti_patterns.concept_relationship_missing_relationship_filter`, ERROR) — Querying `concept_relationship` without constraining `relationship_id` mixes unrelated relationship types and produces ambiguous mappings.
+**Missing relationship filter in concept_relationship** (`anti_patterns.concept_relationship_missing_relationship_filter`, ERROR) - Querying `concept_relationship` without constraining `relationship_id` mixes unrelated relationship types and produces ambiguous mappings.
 
 ### Key Concept Standardization Rules (21 rules)
 
-**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, ERROR) — Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) must be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. Without this, queries silently include non-standard, source-vocabulary, or metadata concepts.
+**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, ERROR) - Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) must be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. Without this, queries silently include non-standard, source-vocabulary, or metadata concepts.
 
-**Hierarchy expansion required** (`concept_standardization.hierarchy_expansion_required`, ERROR) — Filtering `drug_concept_id` or `condition_concept_id` on specific concept IDs without using `concept_ancestor` misses descendant concepts. Filtering for "Metformin" (a single ingredient concept) without expansion excludes every specific formulation.
+**Hierarchy expansion required** (`concept_standardization.hierarchy_expansion_required`, ERROR) - Filtering `drug_concept_id` or `condition_concept_id` on specific concept IDs without using `concept_ancestor` misses descendant concepts. Filtering for "Metformin" (a single ingredient concept) without expansion excludes every specific formulation.
 
-**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, ERROR) — Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` can return retired concept IDs.
+**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, ERROR) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` can return retired concept IDs.
 
-**Concept domain validation** (`concept_standardization.concept_domain_validation`, ERROR) — Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Joining a clinical table to `concept` with wrong `domain_id` filter returns zero rows.
+**Concept domain validation** (`concept_standardization.concept_domain_validation`, ERROR) - Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Joining a clinical table to `concept` with wrong `domain_id` filter returns zero rows.
 
-**Era table validation** (`concept_standardization.era_table_standard_concepts`, ERROR) — Era tables (condition_era, drug_era) must use standard concepts only. Source concepts in era tables indicate ETL errors.
+**Era table validation** (`concept_standardization.era_table_standard_concepts`, ERROR) - Era tables (condition_era, drug_era) must use standard concepts only. Source concepts in era tables indicate ETL errors.
 
-**Source concept ID warning** (`concept_standardization.source_concept_id_warning`, WARNING) — Source concept fields (*_source_concept_id) should not be used for primary filtering. Use standard concept fields instead.
+**Source concept ID warning** (`concept_standardization.source_concept_id_warning`, WARNING) - Source concept fields (*_source_concept_id) should not be used for primary filtering. Use standard concept fields instead.
 
-**Source to concept map validation** (`concept_standardization.source_to_concept_map_validation`, WARNING) — When using source_to_concept_map table, ensure proper vocabulary_id and target concept validation.
+**Source to concept map validation** (`concept_standardization.source_to_concept_map_validation`, WARNING) - When using source_to_concept_map table, ensure proper vocabulary_id and target concept validation.
 
-**Standard concept value validation** (`concept_standardization.standard_concept_value_validation`, ERROR) — Validates that standard_concept column values are valid ('S', 'C', or NULL).
+**Standard concept value validation** (`concept_standardization.standard_concept_value_validation`, ERROR) - Validates that standard_concept column values are valid ('S', 'C', or NULL).
 
-**Concept ancestor cross-domain validation** (`concept_standardization.concept_ancestor_cross_domain`, WARNING) — Expanding a concept hierarchy across mismatched domains can over-broaden cohorts or mix incompatible semantics.
+**Concept ancestor cross-domain validation** (`concept_standardization.concept_ancestor_cross_domain`, WARNING) - Expanding a concept hierarchy across mismatched domains can over-broaden cohorts or mix incompatible semantics.
 
-**Maps to target standard validation** (`concept_standardization.maps_to_target_standard_validation`, ERROR) — `'Maps to'` targets should resolve to valid standard concepts. Mapping chains that land on non-standard targets indicate incorrect vocabulary logic.
+**Maps to target standard validation** (`concept_standardization.maps_to_target_standard_validation`, ERROR) - `'Maps to'` targets should resolve to valid standard concepts. Mapping chains that land on non-standard targets indicate incorrect vocabulary logic.
 
-**Maps to chain follow to terminal** (`concept_standardization.maps_to_chain_follow_to_terminal`, WARNING) — When using 'Maps to' relationships, ensure the target concept is a valid standard concept (standard_concept = 'S' AND invalid_reason IS NULL). Prevents landing on deprecated or intermediate concepts in mapping chains.
+**Maps to chain follow to terminal** (`concept_standardization.maps_to_chain_follow_to_terminal`, WARNING) - When using 'Maps to' relationships, ensure the target concept is a valid standard concept (standard_concept = 'S' AND invalid_reason IS NULL). Prevents landing on deprecated or intermediate concepts in mapping chains.
 
 ### Key Domain-Specific Rules (39 rules)
 
-**Person birth field validation** (`domain_specific.person_birth_field_validation`, ERROR) — Validates plausible ranges for birth date components: year_of_birth (1900–current), month_of_birth (1–12), day_of_birth (1–31).
+**Person birth field validation** (`domain_specific.person_birth_field_validation`, ERROR) - Validates plausible ranges for birth date components: year_of_birth (1900 to current), month_of_birth (1 to 12), day_of_birth (1 to 31).
 
-**Condition/Drug cardinality awareness** (`domain_specific.condition_occurrence_cardinality_validation`, `domain_specific.drug_exposure_cardinality_validation`, WARNING) — Patients can have multiple records per condition or drug (recurrences, refills). Counting rows without `DISTINCT person_id` or aggregation produces misleading statistics.
+**Condition/Drug cardinality awareness** (`domain_specific.condition_occurrence_cardinality_validation`, `domain_specific.drug_exposure_cardinality_validation`, WARNING) - Patients can have multiple records per condition or drug (recurrences, refills). Counting rows without `DISTINCT person_id` or aggregation produces misleading statistics.
 
-**Condition visit hierarchy** (`domain_specific.condition_visit_hierarchy_validation`, ERROR) — Condition occurrence must reference valid visit_occurrence via visit_occurrence_id. Ensures proper linkage between conditions and visits.
+**Condition visit hierarchy** (`domain_specific.condition_visit_hierarchy_validation`, ERROR) - Condition occurrence must reference valid visit_occurrence via visit_occurrence_id. Ensures proper linkage between conditions and visits.
 
-**Measurement validation** (`domain_specific.measurement_operator_concept_validation`, `domain_specific.measurement_range_low_high_validation`, `domain_specific.measurement_value_as_number_and_concept_validation`, ERROR/WARNING) — Ensures measurement operators, ranges, and value representations are used correctly and consistently.
+**Measurement validation** (`domain_specific.measurement_operator_concept_validation`, `domain_specific.measurement_range_low_high_validation`, `domain_specific.measurement_value_as_number_and_concept_validation`, ERROR/WARNING) - Ensures measurement operators, ranges, and value representations are used correctly and consistently.
 
-**Measurement unit validation** (`domain_specific.measurement_unit_validation`, WARNING) — When filtering on `value_as_number`, must also filter or join on `unit_concept_id` to ensure comparable measurements.
+**Measurement unit validation** (`domain_specific.measurement_unit_validation`, WARNING) - When filtering on `value_as_number`, must also filter or join on `unit_concept_id` to ensure comparable measurements.
 
-**Visit validation** (`domain_specific.visit_outpatient_same_day_validation`, `domain_specific.visit_event_temporal_validation`, `domain_specific.visit_detail_dates_within_parent_visit`, WARNING) — Validates visit temporal logic, outpatient same-day rules, and visit_detail dates within parent visit_occurrence.
+**Visit validation** (`domain_specific.visit_outpatient_same_day_validation`, `domain_specific.visit_event_temporal_validation`, `domain_specific.visit_detail_dates_within_parent_visit`, WARNING) - Validates visit temporal logic, outpatient same-day rules, and visit_detail dates within parent visit_occurrence.
 
-**Drug validation** (`domain_specific.drug_days_supply_validation`, `domain_specific.drug_quantity_validation`, WARNING) — Validates drug_exposure.days_supply (typically ≤365) and quantity (>0) for plausibility.
+**Drug validation** (`domain_specific.drug_days_supply_validation`, `domain_specific.drug_quantity_validation`, WARNING) - Validates drug_exposure.days_supply (typically <= 365) and quantity (> 0) for plausibility.
 
-**Drug era validation** (`domain_specific.drug_era_concept_class_validation`, ERROR) — Drug era records must use Drug ingredient concept class. Drug clinical drug or branded drug concepts in drug_era indicate ETL errors.
+**Drug era validation** (`domain_specific.drug_era_concept_class_validation`, ERROR) - Drug era records must use Drug ingredient concept class. Drug clinical drug or branded drug concepts in drug_era indicate ETL errors.
 
-**Death cause validation** (`domain_specific.death_cause_source_concept_validation`, ERROR) — Death cause source concept fields should not be used for analytical filtering. Use standard cause_concept_id instead.
+**Death cause validation** (`domain_specific.death_cause_source_concept_validation`, ERROR) - Death cause source concept fields should not be used for analytical filtering. Use standard cause_concept_id instead.
 
-**Procedure quantity** (`domain_specific.procedure_occurrence_quantity_semantics`, WARNING) — Validates that procedure_occurrence.quantity represents count of procedures performed, not other quantities.
+**Procedure quantity** (`domain_specific.procedure_occurrence_quantity_semantics`, WARNING) - Validates that procedure_occurrence.quantity represents count of procedures performed, not other quantities.
 
-**Observation value confusion** (`domain_specific.observation_value_as_concept_confusion`, ERROR) — Observation table uses value_as_concept_id for categorical values, not value_as_number. Mixing these fields causes logical errors.
+**Observation value confusion** (`domain_specific.observation_value_as_concept_confusion`, ERROR) - Observation table uses value_as_concept_id for categorical values, not value_as_number. Mixing these fields causes logical errors.
 
-**CDM v5.3 to v5.4 column renames** (`domain_specific.cdm_v53_to_v54_column_renames`, ERROR) — Detects use of deprecated column names from OMOP CDM v5.3 that were renamed in v5.4 on visit_occurrence and visit_detail tables (e.g., admitting_source_concept_id → admitted_from_concept_id, discharge_to_concept_id → discharged_to_concept_id).
+**CDM v5.3 to v5.4 column renames** (`domain_specific.cdm_v53_to_v54_column_renames`, ERROR) - Detects use of deprecated column names from OMOP CDM v5.3 that were renamed in v5.4 on visit_occurrence and visit_detail tables (e.g., admitting_source_concept_id to admitted_from_concept_id, discharge_to_concept_id to discharged_to_concept_id).
 
 ### Key Join Rules (37 rules)
 
-**Person ID join validation** (`joins.person_id_join_validation`, ERROR) — All joins from clinical tables to `person` table must use `person_id` as the join key. Using wrong columns (e.g., `person.person_source_value`) produces incorrect results.
+**Person ID join validation** (`joins.person_id_join_validation`, ERROR) - All joins from clinical tables to `person` table must use `person_id` as the join key. Using wrong columns (e.g., `person.person_source_value`) produces incorrect results.
 
-**Visit occurrence ID join validation** (`joins.visit_occurrence_id_join_validation`, ERROR) — All joins from clinical tables to `visit_occurrence` must use `visit_occurrence_id` as the join key.
+**Visit occurrence ID join validation** (`joins.visit_occurrence_id_join_validation`, ERROR) - All joins from clinical tables to `visit_occurrence` must use `visit_occurrence_id` as the join key.
 
-**Clinical person ID linkage** (`joins.clinical_person_id_linkage_validation`, ERROR) — All clinical tables must be connected via `person_id` joins. Queries joining clinical tables without linking through `person_id` risk cross-patient data leakage.
+**Clinical person ID linkage** (`joins.clinical_person_id_linkage_validation`, ERROR) - All clinical tables must be connected via `person_id` joins. Queries joining clinical tables without linking through `person_id` risk cross-patient data leakage.
 
-**Visit detail join validation** (`joins.visit_detail_join_validation`, WARNING) — `visit_detail` must reference `visit_occurrence` via `visit_occurrence_id`. Visit details without parent visits are orphaned records.
+**Visit detail join validation** (`joins.visit_detail_join_validation`, WARNING) - `visit_detail` must reference `visit_occurrence` via `visit_occurrence_id`. Visit details without parent visits are orphaned records.
 
-**Concept join validation** (`joins.concept_join_validation`, ERROR) — Joins from `*_concept_id` columns to `concept` table must use the correct foreign key (`concept_id`). Common errors include joining to `concept_code` or `concept_name`.
+**Concept join validation** (`joins.concept_join_validation`, ERROR) - Joins from `*_concept_id` columns to `concept` table must use the correct foreign key (`concept_id`). Common errors include joining to `concept_code` or `concept_name`.
 
-**Concept relationship validation** (`joins.concept_relationship_relationship_join_validation`, ERROR) — When querying `concept_relationship`, must join to `relationship` table via `relationship_id` to get relationship names/descriptions.
+**Concept relationship validation** (`joins.concept_relationship_relationship_join_validation`, ERROR) - When querying `concept_relationship`, must join to `relationship` table via `relationship_id` to get relationship names/descriptions.
 
-**Care site join validation** (`joins.care_site_id_join_validation`, `joins.care_site_location_join_validation`, ERROR) — Care site joins must use `care_site_id`. Location joins must properly chain through `location_id`.
+**Care site join validation** (`joins.care_site_id_join_validation`, `joins.care_site_location_join_validation`, ERROR) - Care site joins must use `care_site_id`. Location joins must properly chain through `location_id`.
 
-**Provider join validation** (`joins.provider_join_validation`, `joins.provider_care_site_join_validation`, ERROR) — Provider joins must use `provider_id`. Provider-to-care_site joins must use `care_site_id`.
+**Provider join validation** (`joins.provider_join_validation`, `joins.provider_care_site_join_validation`, ERROR) - Provider joins must use `provider_id`. Provider-to-care_site joins must use `care_site_id`.
 
-**Era table forbidden joins** (`joins.era_forbidden_join_validation`, ERROR) — Era tables (condition_era, drug_era) cannot be joined to raw clinical tables (condition_occurrence, drug_exposure) without causing logical errors. Era tables are pre-aggregated derivations.
+**Era table forbidden joins** (`joins.era_forbidden_join_validation`, ERROR) - Era tables (condition_era, drug_era) cannot be joined to raw clinical tables (condition_occurrence, drug_exposure) without causing logical errors. Era tables are pre-aggregated derivations.
 
-**Drug strength join validation** (`joins.drug_exposure_drug_strength_join_validation`, ERROR) — To get dosage information, must join `drug_exposure` to `drug_strength` via `drug_concept_id` (not `drug_source_concept_id`).
+**Drug strength join validation** (`joins.drug_exposure_drug_strength_join_validation`, ERROR) - To get dosage information, must join `drug_exposure` to `drug_strength` via `drug_concept_id` (not `drug_source_concept_id`).
 
-**Clinical primary key validation** (`joins.clinical_pk_cross_join_validation`, ERROR) — Warns about potential cross-joins when clinical tables are joined without proper foreign key relationships.
+**Clinical primary key validation** (`joins.clinical_pk_cross_join_validation`, ERROR) - Warns about potential cross-joins when clinical tables are joined without proper foreign key relationships.
 
-**Maps-to direction** (`joins.maps_to_direction`, WARNING) — The `'Maps to'` relationship in `concept_relationship` is directional: `concept_id_1` holds the source concept, `concept_id_2` holds the standard concept. Joining a standard concept field to `concept_id_1` retrieves nothing useful.
+**Maps-to direction** (`joins.maps_to_direction`, WARNING) - The `'Maps to'` relationship in `concept_relationship` is directional: `concept_id_1` holds the source concept, `concept_id_2` holds the standard concept. Joining a standard concept field to `concept_id_1` retrieves nothing useful.
 
-**Join path validation** (`joins.join_path_validation`, WARNING) — Joins between CDM tables must use valid foreign-key pairs as defined by the OMOP CDM v5.4 schema graph. A join on the wrong column pair produces an implicit cross-join or empty results with no database error.
+**Join path validation** (`joins.join_path_validation`, WARNING) - Joins between CDM tables must use valid foreign-key pairs as defined by the OMOP CDM v5.4 schema graph. A join on the wrong column pair produces an implicit cross-join or empty results with no database error.
 
-**Concept relationship requires relationship ID** (`joins.concept_relationship_requires_relationship_id`, ERROR) — When querying `concept_relationship`, must filter on `relationship_id` to specify the relationship type (e.g., 'Maps to', 'Is a'). Without this filter, queries mix unrelated concept relationships.
+**Concept relationship requires relationship ID** (`joins.concept_relationship_requires_relationship_id`, ERROR) - When querying `concept_relationship`, must filter on `relationship_id` to specify the relationship type (e.g., 'Maps to', 'Is a'). Without this filter, queries mix unrelated concept relationships.
 
-**Concept relationship incomplete join** (`joins.concept_relationship_incomplete_join`, WARNING) — Joining `concept_relationship` to only one concept side is often incomplete when both source and target semantics are required for validation or filtering.
+**Concept relationship incomplete join** (`joins.concept_relationship_incomplete_join`, WARNING) - Joining `concept_relationship` to only one concept side is often incomplete when both source and target semantics are required for validation or filtering.
 
-**Observation period join validation** (`joins.observation_period_join_validation`, WARNING) — Patients can have multiple observation periods. Joining clinical tables to observation_period on person_id alone creates a Cartesian product. Must include date overlap constraint: clinical_date BETWEEN observation_period_start_date AND observation_period_end_date.
+**Observation period join validation** (`joins.observation_period_join_validation`, WARNING) - Patients can have multiple observation periods. Joining clinical tables to observation_period on person_id alone creates a Cartesian product. Must include date overlap constraint: clinical_date BETWEEN observation_period_start_date AND observation_period_end_date.
 
 ### Key Temporal Rules (10 rules)
 
-**Observation period anchoring** (`temporal.observation_period_anchoring`, ERROR) — Queries with temporal constraints (washout, follow-up, event windows) must join to `observation_period` on `person_id`. Events outside a patient's observation window may be incomplete or missing.
+**Observation period anchoring** (`temporal.observation_period_anchoring`, ERROR) - Queries with temporal constraints (washout, follow-up, event windows) must join to `observation_period` on `person_id`. Events outside a patient's observation window may be incomplete or missing.
 
-**Observation period date range logic** (`temporal.observation_period_date_range_logic`, ERROR) — Ensures clinical event dates are tested within observation_period bounds. Detects reversed logic where observation_period dates are incorrectly used as values.
+**Observation period date range logic** (`temporal.observation_period_date_range_logic`, ERROR) - Ensures clinical event dates are tested within observation_period bounds. Detects reversed logic where observation_period dates are incorrectly used as values.
 
-**End before start validation** (`temporal.end_before_start_validation`, ERROR) — Detects impossible temporal constraints where start_date > end_date in filters (e.g., condition_start_date > '2020-06-01' AND condition_end_date < '2020-05-01').
+**End before start validation** (`temporal.end_before_start_validation`, ERROR) - Detects impossible temporal constraints where start_date > end_date in filters (e.g., condition_start_date > '2020-06-01' AND condition_end_date < '2020-05-01').
 
-**Death date before birth** (`temporal.death_date_before_birth_validation`, ERROR) — Catches impossible temporal relationships where `death.death_date` precedes `person.birth_datetime` or inferred birth date from `year_of_birth`.
+**Death date before birth** (`temporal.death_date_before_birth_validation`, ERROR) - Catches impossible temporal relationships where `death.death_date` precedes `person.birth_datetime` or inferred birth date from `year_of_birth`.
 
-**Death date in future** (`temporal.death_date_in_future_validation`, WARNING) — Warns about death dates in the future, which may indicate data quality issues or scheduled end-of-life care records.
+**Death date in future** (`temporal.death_date_in_future_validation`, WARNING) - Warns about death dates in the future, which may indicate data quality issues or scheduled end-of-life care records.
 
-**Clinical event date in future** (`temporal.clinical_event_date_in_future_validation`, WARNING) — Warns about clinical event dates (condition_start_date, drug_exposure_start_date, etc.) dated in the future, indicating possible data entry errors or scheduled procedures.
+**Clinical event date in future** (`temporal.clinical_event_date_in_future_validation`, WARNING) - Warns about clinical event dates (condition_start_date, drug_exposure_start_date, etc.) dated in the future, indicating possible data entry errors or scheduled procedures.
 
-**Future information leakage** (`temporal.future_information_leakage`, WARNING) — Detects cross-table date comparisons (e.g., condition_start_date > drug_exposure_start_date) without bounding the future event against observation_period_end_date, which introduces temporal bias.
+**Future information leakage** (`temporal.future_information_leakage`, WARNING) - Detects cross-table date comparisons (e.g., condition_start_date > drug_exposure_start_date) without bounding the future event against observation_period_end_date, which introduces temporal bias.
 
-**Nullable end date NULL handling** (`temporal.nullable_end_date_null_handling`, WARNING) — Ensures nullable end_date columns are properly handled when used in functions, arithmetic, or comparisons to avoid NULL propagation issues.
+**Nullable end date NULL handling** (`temporal.nullable_end_date_null_handling`, WARNING) - Ensures nullable end_date columns are properly handled when used in functions, arithmetic, or comparisons to avoid NULL propagation issues.
 
-**Required date column validation** (`temporal.required_date_column_validation`, WARNING) — Temporal queries on clinical tables should use required (NOT NULL) date columns instead of nullable columns to avoid silently excluding records.
+**Required date column validation** (`temporal.required_date_column_validation`, WARNING) - Temporal queries on clinical tables should use required (NOT NULL) date columns instead of nullable columns to avoid silently excluding records.
 
 ### Key Data Quality Rules (24 rules)
 
-**Schema validation** (`data_quality.schema_validation`, ERROR) — Validates that queries reference only valid OMOP CDM v5.4 tables and columns. Catches typos in table/column names, references to non-existent columns, and schema violations like using `concept_ancestor` columns on `concept_relationship` table.
+**Schema validation** (`data_quality.schema_validation`, ERROR) - Validates that queries reference only valid OMOP CDM v5.4 tables and columns. Catches typos in table/column names, references to non-existent columns, and schema violations like using `concept_ancestor` columns on `concept_relationship` table.
 
-**Unmapped concept handling** (`data_quality.unmapped_concept_handling`, WARNING) — Records that could not be mapped during ETL receive `concept_id = 0`. Queries filtering on specific concept IDs without acknowledging `concept_id = 0` silently exclude those records (10–30% of events in some datasets).
+**Unmapped concept handling** (`data_quality.unmapped_concept_handling`, WARNING) - Records that could not be mapped during ETL receive `concept_id = 0`. Queries filtering on specific concept IDs without acknowledging `concept_id = 0` silently exclude those records (10-30% of events in some datasets).
 
-**Negative concept ID validation** (`data_quality.negative_concept_id_validation`, ERROR) — Validates that concept_id values are non-negative integers (>= 0). Negative values are never valid in OMOP and indicate data quality issues or ETL errors.
+**Negative concept ID validation** (`data_quality.negative_concept_id_validation`, ERROR) - Validates that concept_id values are non-negative integers (>= 0). Negative values are never valid in OMOP and indicate data quality issues or ETL errors.
 
-**Union concept ID domain indicator** (`data_quality.union_concept_id_domain_indicator`, WARNING) — UNION queries combining concept_id columns from multiple domains (condition, drug, procedure, etc.) must include a domain indicator column to disambiguate which domain each concept_id belongs to.
+**Union concept ID domain indicator** (`data_quality.union_concept_id_domain_indicator`, WARNING) - UNION queries combining concept_id columns from multiple domains (condition, drug, procedure, etc.) must include a domain indicator column to disambiguate which domain each concept_id belongs to.
 
-**Column type validation** (`data_quality.column_type_validation`, ERROR) — Validates that columns are used with appropriate data types. Catches common errors like treating integer `person_id` as string, or using string operations on date columns.
+**Column type validation** (`data_quality.column_type_validation`, ERROR) - Validates that columns are used with appropriate data types. Catches common errors like treating integer `person_id` as string, or using string operations on date columns.
 
-**Vocabulary table protection** (`data_quality.vocabulary_table_protection`, ERROR) — Prevents UPDATE, DELETE, or DROP operations on vocabulary tables (concept, concept_relationship, vocabulary, domain, concept_class, relationship). Vocabulary tables should be read-only in analytical queries.
+**Vocabulary table protection** (`data_quality.vocabulary_table_protection`, ERROR) - Prevents UPDATE, DELETE, or DROP operations on vocabulary tables (concept, concept_relationship, vocabulary, domain, concept_class, relationship). Vocabulary tables should be read-only in analytical queries.
 
-**Clinical event date before 1900** (`data_quality.clinical_event_date_before_1900_validation`, WARNING) — Warns about suspiciously old dates (before year 1900) in clinical tables, which often indicate missing data coded as `1900-01-01` or data quality issues.
+**Clinical event date before 1900** (`data_quality.clinical_event_date_before_1900_validation`, WARNING) - Warns about suspiciously old dates (before year 1900) in clinical tables, which often indicate missing data coded as `1900-01-01` or data quality issues.
 
-**Case-sensitivity validations** (`data_quality.concept_class_id_case_sensitivity`, `data_quality.domain_id_case_sensitivity`, `data_quality.vocabulary_id_validation`, WARNING/ERROR) — Detects case mismatches in canonical vocabulary literals such as `domain_id`, `concept_class_id`, and `vocabulary_id` that silently produce empty results.
+**Case-sensitivity validations** (`data_quality.concept_class_id_case_sensitivity`, `data_quality.domain_id_case_sensitivity`, `data_quality.vocabulary_id_validation`, WARNING/ERROR) - Detects case mismatches in canonical vocabulary literals such as `domain_id`, `concept_class_id`, and `vocabulary_id` that silently produce empty results.
 
-**Concept name whitespace** (`data_quality.concept_name_whitespace`, WARNING) — Flags leading or trailing whitespace in `concept_name` equality comparisons, which often indicates accidental copy/paste errors.
+**Concept name whitespace** (`data_quality.concept_name_whitespace`, WARNING) - Flags leading or trailing whitespace in `concept_name` equality comparisons, which often indicates accidental copy/paste errors.
 
-**Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) — Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
+**Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 156 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 167 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 
@@ -352,16 +352,164 @@ FastSSV uses [sqlglot](https://github.com/tobymao/sqlglot) for parsing. Any dial
 
 ---
 
+## Validation Architecture
+
+FastSSV implements a three-layer validation architecture that separates structural issues, data model compliance, and best practice suggestions:
+
+### Layer 1: STRUCTURAL (Always ERROR)
+**Purpose**: SQL syntax and parseability validation
+**Severity**: Always ERROR (non-negotiable)
+**Rationale**: These queries cannot execute - fundamental correctness issues
+
+- SQL must be parseable
+- Valid operators and expressions
+- Proper quoting and escaping
+
+### Layer 2: SCHEMA (ERROR or context-aware WARNING)
+**Purpose**: OMOP CDM data model compliance
+**Severity**: ERROR (default), WARNING (context-aware)
+**Rationale**: Violations indicate incorrect data model usage or likely produce wrong results
+
+Implementation:
+- Complete OMOP CDM 5.4 schema (30+ tables, all columns, types, foreign keys)
+- Comprehensive schema validator catches ALL invalid columns/tables
+- Context-aware vocabulary rules (exploratory vs production)
+- Foreign key relationship validation
+- Type compatibility checking
+
+Rules in this layer:
+- Valid table and column names
+- Correct join keys between tables
+- Type compatibility in comparisons
+- Domain-specific constraints
+- Required filters for correctness
+
+### Layer 3: BEST_PRACTICE (Always WARNING)
+**Purpose**: Portability, optimization, and maintainability
+**Severity**: Always WARNING
+**Rationale**: Suggestions for improvement, not correctness issues
+
+Rules in this layer:
+- Dialect-specific function usage (portability)
+- Performance anti-patterns
+- Code maintainability
+- Semantic best practices
+
+### Strict Mode
+
+Cohort definition validation with elevated standards:
+
+```bash
+fastssv cohort_definition.sql --strict
+```
+
+In strict mode, certain best practice warnings are escalated to errors:
+- `standard_concept_enforcement`: WARNING to ERROR
+- `invalid_reason_enforcement`: WARNING to ERROR
+- `concept_relationship_requires_relationship_id`: WARNING to ERROR
+
+**Validation Results** (drug.sql example):
+| Mode | Valid | Invalid |
+|------|-------|---------|
+| Normal | 17/20 (85%) | 3/20 (15%) |
+| **Strict** | **9/20 (45%)** | **11/20 (55%)** |
+
+### Dialect-Agnostic Validation
+
+FastSSV automatically detects SQL dialect and adjusts validation accordingly:
+
+**Auto-Detection**:
+- Automatic SQL Server vs Postgres detection
+- Patterns: `@vocab.`, `getdate()`, `TOP N`, etc.
+- Override with `--dialect postgres` or `--dialect tsql`
+
+**Portability vs Correctness**:
+- SQL Server functions produce WARNING (portability), not ERROR (correctness)
+- Consistent behavior: same pattern = same severity within dialect
+- Context includes dialect in violation details
+
+```bash
+# Auto-detect (default)
+fastssv query.sql
+
+# Explicit dialect
+fastssv query.sql --dialect postgres
+```
+
+### Error Deduplication
+
+FastSSV implements intelligent error deduplication to prevent the same underlying issue from being reported multiple times by different rules:
+
+- Normalizes issues by underlying problem (table+column, type mismatch, etc.)
+- Keeps highest severity (ERROR > WARNING)
+- Keeps most specific rule (longer rule_id = more specific)
+- Preserves original order
+
+**Impact**: Reduces redundant error reporting by ~29% while preserving all unique issues.
+
+---
+
 ## Documentation
 
 | Document | Contents |
 |----------|----------|
-| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 156 rules with intent, detection logic, examples, and suggested fixes |
+| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 167 rules with intent, detection logic, examples, and suggested fixes |
 | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) | Developer guide for extending semantic rules |
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |
 | [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) | Validation report JSON format |
 | [tasks/IMPLEMENTATION_STATUS.md](tasks/IMPLEMENTATION_STATUS.md) | CLIN_001-057 implementation tracking and status |
+
+---
+
+## Comprehensive OMOP Schema Validation
+
+FastSSV includes complete OMOP CDM 5.4 schema definition for comprehensive validation:
+
+### Schema Coverage
+**30+ Tables Fully Defined**:
+- **Clinical**: `person`, `observation_period`, `visit_occurrence`, `condition_occurrence`, `drug_exposure`, `procedure_occurrence`, `measurement`, `observation`, `death`, `note`, `specimen`, `fact_relationship`, `episode`, `episode_event`
+- **Vocabulary**: `concept`, `vocabulary`, `domain`, `concept_class`, `concept_relationship`, `relationship`, `concept_synonym`, `concept_ancestor`, `source_to_concept_map`, `drug_strength`
+- **Health System**: `location`, `care_site`, `provider`, `payer_plan_period`, `cost`
+- **Derived**: `condition_era`, `drug_era`, `dose_era`
+- **Metadata**: `cdm_source`, `metadata`
+
+**Column Details**:
+- Name, data type, nullable, primary key, foreign key
+- Foreign table/column references
+- 200+ column definitions total
+
+### Validation Capabilities
+- All table references validated against OMOP CDM 5.4
+- All column references validated
+- Suggestions for similar names (typo detection)
+- Schema-qualified tables handled (`@vocab.concept` becomes `concept`)
+- Alias resolution
+- Duplicate detection (one error per unique issue)
+
+**Example**:
+```json
+{
+  "rule_id": "schema.comprehensive_validation",
+  "severity": "error",
+  "issue": "Column 'concept_level' does not exist in table 'concept'.",
+  "details": {
+    "layer": "schema",
+    "type": "invalid_column",
+    "table": "concept",
+    "column": "concept_level",
+    "similar_columns": ["concept_class_id", "concept_name"]
+  }
+}
+```
+
+### Rule Consistency Principles
+
+1. **Deterministic Behavior**: Same pattern always produces same severity (unless context-aware)
+2. **Layer Separation**: Clear distinction between correctness (STRUCTURAL/SCHEMA) and suggestions (BEST_PRACTICE)
+3. **Context Awareness**: Formally defined conditions for severity changes
+4. **Dialect Agnostic**: Portability issues are warnings, not errors
+5. **Uniform Application**: All rules applied to all queries without early exits
 
 ---
 
@@ -373,13 +521,13 @@ The implementation lives under `src/fastssv/rules/`. Categories now align direct
 
 ```text
 src/fastssv/rules/
-├── anti_patterns/             # String lookup and concept lookup anti-patterns
-├── concept_standardization/   # Standard/valid/domain concept logic
-├── domain_specific/           # Table-family rules: condition, drug, visit, etc.
-├── joins/                     # Join-path and foreign-key validation
-├── temporal/                  # Temporal reasoning and date constraints
-├── data_quality/              # Structural and type-level checks
-├── __init__.py                # Imports submodules to trigger @register
+  - anti_patterns/             # String lookup and concept lookup anti-patterns
+  - concept_standardization/   # Standard/valid/domain concept logic
+  - domain_specific/           # Table-family rules: condition, drug, visit, etc.
+  - joins/                     # Join-path and foreign-key validation
+  - temporal/                  # Temporal reasoning and date constraints
+  - data_quality/              # Structural and type-level checks
+  - __init__.py                # Imports submodules to trigger @register
 ```
 
 ### Registration Model
@@ -416,21 +564,26 @@ class MyRule(Rule):
 
 ```text
 src/fastssv/
-├── core/
-│   ├── base.py            # Rule base class, RuleViolation, Severity
-│   ├── registry.py        # Plugin registry (@register decorator)
-│   └── helpers.py         # SQL parsing utilities
-├── schemas/
-│   ├── cdm_schema.py      # OMOP CDM v5.4 — 43 tables, all FK relationships
-│   └── semantic_schema.py # Standard vs source concept field classifications
-└── rules/
-    ├── anti_patterns/
-    ├── concept_standardization/
-    ├── domain_specific/
-    ├── joins/
-    ├── temporal/
-    ├── data_quality/
-    └── __init__.py
+  - core/
+      - base.py                 # Rule base class, RuleViolation, Severity
+      - registry.py             # Plugin registry (@register decorator)
+      - helpers.py              # SQL parsing utilities
+      - rule_layer.py           # Three-layer architecture definition
+      - omop_schema.py          # Complete OMOP CDM 5.4 schema (1000+ lines)
+      - validation_context.py   # Strict mode and context management
+      - deduplication.py        # Error deduplication system
+  - schemas/
+      - cdm_schema.py           # OMOP CDM v5.4 - 43 tables, all FK relationships
+      - semantic_schema.py      # Standard vs source concept field classifications
+  - rules/
+      - anti_patterns/          # SQL anti-patterns and common mistakes
+      - concept_standardization/ # Concept hierarchy and standardization
+      - domain_specific/        # Table-specific validation rules
+      - joins/                  # Join path and foreign key validation
+      - temporal/               # Temporal logic and date constraints
+      - data_quality/           # Type checking and data quality
+      - schema/                 # OMOP schema validation
+      - __init__.py
 ```
 
 ---

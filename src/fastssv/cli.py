@@ -21,6 +21,33 @@ def _read_sql(sql_file: str | None) -> str:
     raise SystemExit("Provide a SQL file path or pipe SQL via stdin.")
 
 
+def _auto_detect_dialect(sql: str) -> str:
+    """Auto-detect SQL dialect from syntax patterns.
+
+    Returns 'tsql' for SQL Server syntax, 'postgres' otherwise.
+    """
+    sql_lower = sql.lower()
+
+    # SQL Server indicators
+    tsql_indicators = [
+        r'@\w+\.',  # @vocab., @cdm. (table variables)
+        r'\bgetdate\s*\(',  # getdate()
+        r'\bgetutcdate\s*\(',  # getutcdate()
+        r'\bdatediff\s*\(',  # datediff()
+        r'\bdateadd\s*\(',  # dateadd()
+        r'\bisnull\s*\(',  # isnull()
+        r'\blen\s*\(',  # len()
+        r'\bcharindex\s*\(',  # charindex()
+        r'\btop\s+\d+\s+',  # TOP N syntax
+    ]
+
+    for pattern in tsql_indicators:
+        if re.search(pattern, sql_lower):
+            return 'tsql'
+
+    return 'postgres'
+
+
 def _clean_llm_output(sql: str) -> str:
     """Clean SQL from LLM output by removing markdown and explanatory text."""
     fence_pattern = r'```(?:sql|postgresql)?\s*\n(.*?)\n```'
@@ -159,8 +186,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--dialect",
-        default="postgres",
-        help="SQL dialect for parsing (default: postgres).",
+        default="auto",
+        choices=["auto", "postgres", "tsql"],
+        help="SQL dialect for parsing (default: auto-detect).",
     )
     parser.add_argument(
         "--combined",
@@ -176,14 +204,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--categories",
         nargs="*",
         choices=[
+            "analytics",
             "anti_patterns",
             "concept_standardization",
             "data_quality",
             "domain_specific",
             "joins",
+            "performance",
+            "schema",
             "temporal",
         ],
         help="Rule categories to run (default: all).",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Strict mode for cohort definitions: escalates best practice warnings to errors.",
     )
     parser.add_argument(
         "--output",
@@ -196,14 +232,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     sql = _clean_llm_output(_read_sql(args.sql_file))
     queries = _split_queries(sql)
 
+    # Auto-detect dialect if set to 'auto'
+    dialect = args.dialect
+    if dialect == "auto":
+        dialect = _auto_detect_dialect(sql)
+        print(f"Auto-detected dialect: {dialect}")
+
+    # Set validation context for strict mode
+    if args.strict:
+        from fastssv.core.validation_context import ValidationContext, set_validation_context
+        set_validation_context(ValidationContext(strict_mode=True, dialect=dialect))
+        print("Strict mode enabled: best practice warnings escalated to errors")
+
     if len(queries) <= 1 or args.combined:
         violations = validate_sql_structured(
             sql,
-            dialect=args.dialect,
+            dialect=dialect,
             rule_ids=args.rules,
             categories=args.categories,
         )
-        validation_result = build_validation_result(sql, violations, args.dialect)
+        validation_result = build_validation_result(sql, violations, dialect)
 
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -222,12 +270,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     for idx, query in enumerate(queries, start=1):
         violations = validate_sql_structured(
             query,
-            dialect=args.dialect,
+            dialect=dialect,
             rule_ids=args.rules,
             categories=args.categories,
         )
         validation_result = build_validation_result(
-            query, violations, args.dialect, query_index=idx
+            query, violations, dialect, query_index=idx
         )
         all_results.append(validation_result)
         if not validation_result["is_valid"]:

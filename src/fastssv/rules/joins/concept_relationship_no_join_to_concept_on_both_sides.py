@@ -122,14 +122,18 @@ def _extract_joined_sides_per_alias(
             if lc_norm in {CONCEPT_ID_1, CONCEPT_ID_2} and rc_norm == CONCEPT_ID:
                 # Use original alias from Column node, not resolved table name
                 cr_alias = eq.this.table if eq.this.table else lt
-                results[cr_alias].add(lc_norm)
+                cr_alias_norm = _norm(cr_alias)
+                if cr_alias_norm in results:
+                    results[cr_alias_norm].add(lc_norm)
 
         # RIGHT: concept → concept_relationship
         elif rt_norm == CONCEPT_RELATIONSHIP and lt_norm == CONCEPT:
             if rc_norm in {CONCEPT_ID_1, CONCEPT_ID_2} and lc_norm == CONCEPT_ID:
                 # Use original alias from Column node, not resolved table name
                 cr_alias = eq.expression.table if eq.expression.table else rt
-                results[cr_alias].add(rc_norm)
+                cr_alias_norm = _norm(cr_alias)
+                if cr_alias_norm in results:
+                    results[cr_alias_norm].add(rc_norm)
 
     return results
 

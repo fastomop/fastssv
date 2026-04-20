@@ -268,6 +268,46 @@ def _has_standard_filter(
 
 # --- Detection -------------------------------------------------------------
 
+def _is_exploratory_vocabulary_analysis(
+    select: exp.Select,
+    concept_alias: str,
+) -> bool:
+    """Check if query is exploring vocabulary distribution vs filtering by it.
+
+    Exploratory patterns:
+    - SELECT c.vocabulary_id (displaying vocabularies)
+    - GROUP BY c.vocabulary_id (analyzing distribution)
+    - COUNT/aggregation with vocabulary_id
+
+    Returns True if exploratory, False if production filtering.
+    """
+    concept_alias_norm = _norm(concept_alias)
+
+    # Check if vocabulary_id is in SELECT list
+    for expr in select.expressions or []:
+        for col in expr.find_all(exp.Column):
+            col_name = _norm(col.name)
+            col_table = _norm(col.table) if col.table else None
+
+            if col_name == VOCABULARY_ID:
+                if not col_table or col_table == concept_alias_norm:
+                    return True
+
+    # Check if vocabulary_id is in GROUP BY
+    group_by = select.args.get("group")
+    if group_by and isinstance(group_by, exp.Group):
+        for group_expr in group_by.expressions:
+            if isinstance(group_expr, exp.Column):
+                col_name = _norm(group_expr.name)
+                col_table = _norm(group_expr.table) if group_expr.table else None
+
+                if col_name == VOCABULARY_ID:
+                    if not col_table or col_table == concept_alias_norm:
+                        return True
+
+    return False
+
+
 def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
     violations = []
     seen: Set[str] = set()
@@ -375,6 +415,9 @@ def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
                 continue
             seen.add(key)
 
+            # Check if this is exploratory analysis
+            is_exploratory = _is_exploratory_vocabulary_analysis(select, table_alias)
+
             violations.append({
                 "domain": found_domain,
                 "domain_name": config["domain_name"],
@@ -384,6 +427,7 @@ def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
                 "alias": table_alias,
                 "rule_id": config["rule_id"],
                 "context": join.sql(),
+                "is_exploratory": is_exploratory,
             })
 
     return violations
@@ -433,17 +477,33 @@ class DomainVocabularyValidationRule(Rule):
                 invalid = ", ".join(f"'{x}'" for x in v["invalid_vocabularies"])
                 expected = ", ".join(f"'{x}'" for x in v["expected_vocabularies"])
 
-                message = (
-                    f"{v['column']} joined to concept (alias: {v['alias']}) "
-                    f"with vocabulary_id {invalid}. "
-                    f"{v['domain_name']} standard concepts typically use {expected}. "
-                    f"This likely indicates incorrect vocabulary usage."
-                )
+                is_exploratory = v.get("is_exploratory", False)
+
+                if is_exploratory:
+                    # Exploratory analysis - WARNING severity
+                    message = (
+                        f"{v['column']} joined to concept (alias: {v['alias']}) "
+                        f"with vocabulary_id {invalid}, but the query appears to be exploring "
+                        f"vocabulary distribution. {v['domain_name']} standard concepts typically use {expected}. "
+                        f"This is valid for exploratory analysis but may indicate incorrect vocabulary usage "
+                        f"if used in production queries."
+                    )
+                    severity = Severity.WARNING
+                else:
+                    # Production filtering - ERROR severity
+                    message = (
+                        f"{v['column']} joined to concept (alias: {v['alias']}) "
+                        f"with vocabulary_id {invalid}. "
+                        f"{v['domain_name']} standard concepts use {expected}, not {invalid}. "
+                        f"This filter will return zero or incorrect results because standard concept IDs "
+                        f"don't belong to source vocabularies."
+                    )
+                    severity = Severity.ERROR
 
                 violations.append(
                     self.create_violation(
                         message=message,
-                        severity=self.severity,
+                        severity=severity,
                         suggested_fix=self.suggested_fix,
                         details=v,
                     )

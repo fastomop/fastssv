@@ -147,6 +147,10 @@ def validate_sql_structured(
         rule = rule_cls()
         violations.extend(rule.validate(sql, dialect))
 
+    # Deduplicate violations (remove redundant errors for same issue)
+    from fastssv.core.deduplication import deduplicate_violations
+    violations = deduplicate_violations(violations)
+
     return violations
 
 

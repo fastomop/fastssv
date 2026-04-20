@@ -194,12 +194,13 @@ class MapsToTargetStandardValidationRule(Rule):
 
     description = (
         "When using concept_relationship with relationship_id = 'Maps to', "
-        "the target (concept_id_2) must be validated as a standard concept "
+        "the target (concept_id_2) should be validated as a standard concept "
         "via a join to concept table with standard_concept = 'S'. Without this, "
-        "queries may return deprecated or intermediate non-standard concepts."
+        "queries may return deprecated or intermediate non-standard concepts. "
+        "This is a best practice recommendation - the query will execute correctly but may include non-standard targets."
     )
 
-    severity = Severity.ERROR
+    severity = Severity.WARNING
 
     suggested_fix = (
         "Join concept_relationship.concept_id_2 to concept.concept_id "
@@ -242,12 +243,15 @@ class MapsToTargetStandardValidationRule(Rule):
                         message=(
                             "Query uses 'Maps to' relationship and references concept_id_2, "
                             "but does not validate that the target is a standard concept. "
-                            "Join to concept table and add: concept.standard_concept = 'S'"
+                            "Best practice: Join to concept table and add: concept.standard_concept = 'S' "
+                            "to ensure only standard concepts are returned."
                         ),
+                        severity=self.severity,
                         suggested_fix=self.suggested_fix,
                         details={
                             "relationship": "Maps to",
-                            "missing_validation": "standard_concept = 'S' on concept_id_2"
+                            "missing_validation": "standard_concept = 'S' on concept_id_2",
+                            "note": "best_practice_recommendation"
                         },
                     )
                 )

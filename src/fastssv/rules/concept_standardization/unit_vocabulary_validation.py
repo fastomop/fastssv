@@ -140,6 +140,47 @@ def _is_vocabulary_id_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
 
 # --- Core detection --------------------------------------------------------
 
+def _is_exploratory_vocabulary_analysis(
+    tree: exp.Expression,
+    concept_alias: str,
+) -> bool:
+    """Check if query is exploring vocabulary distribution vs filtering by it.
+
+    Exploratory patterns:
+    - SELECT c.vocabulary_id (displaying vocabularies)
+    - GROUP BY c.vocabulary_id (analyzing distribution)
+    - COUNT/aggregation with vocabulary_id
+
+    Returns True if exploratory, False if production filtering.
+    """
+    concept_alias_norm = _norm(concept_alias)
+
+    for select in tree.find_all(exp.Select):
+        # Check if vocabulary_id is in SELECT list
+        for expr in select.expressions or []:
+            for col in expr.find_all(exp.Column):
+                col_name = _norm(col.name)
+                col_table = _norm(col.table) if col.table else None
+
+                if col_name == "vocabulary_id":
+                    if not col_table or col_table == concept_alias_norm:
+                        return True
+
+        # Check if vocabulary_id is in GROUP BY
+        group_by = select.args.get("group")
+        if group_by and isinstance(group_by, exp.Group):
+            for group_expr in group_by.expressions:
+                if isinstance(group_expr, exp.Column):
+                    col_name = _norm(group_expr.name)
+                    col_table = _norm(group_expr.table) if group_expr.table else None
+
+                    if col_name == "vocabulary_id":
+                        if not col_table or col_table == concept_alias_norm:
+                            return True
+
+    return False
+
+
 def _find_unit_concept_joins(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -307,6 +348,9 @@ class UnitVocabularyValidationRule(Rule):
             for unit_col, concept_alias, _ in unit_joins:
                 vocab_filters = _find_vocabulary_filters(tree, aliases, concept_alias)
 
+                # Check if this is exploratory analysis
+                is_exploratory = _is_exploratory_vocabulary_analysis(tree, concept_alias)
+
                 for vocab_value, context in vocab_filters:
                     vocab_norm = _norm(vocab_value)
 
@@ -318,21 +362,43 @@ class UnitVocabularyValidationRule(Rule):
                         continue
                     seen.add(key)
 
+                    if is_exploratory:
+                        # Exploratory analysis - WARNING severity
+                        message = (
+                            f"Unit column '{unit_col}' uses vocabulary_id = '{vocab_value}', "
+                            f"but the query appears to be exploring vocabulary distribution. "
+                            f"Standard unit concepts use '{VALID_UNIT_VOCABULARY}'. "
+                            f"This is valid for exploratory analysis but may indicate incorrect vocabulary usage "
+                            f"if used in production queries."
+                        )
+                        severity = Severity.WARNING
+                        suggested_fix = (
+                            f"For production queries, use vocabulary_id = '{VALID_UNIT_VOCABULARY}'"
+                        )
+                    else:
+                        # Production filtering - ERROR severity
+                        message = (
+                            f"Unit column '{unit_col}' filtered by vocabulary_id = '{vocab_value}'. "
+                            f"Standard unit concepts use '{VALID_UNIT_VOCABULARY}', not '{vocab_value}'. "
+                            f"This filter will return zero or incorrect results because unit concept IDs "
+                            f"don't belong to {vocab_value} vocabulary."
+                        )
+                        severity = Severity.ERROR
+                        suggested_fix = (
+                            f"Replace with vocabulary_id = '{VALID_UNIT_VOCABULARY}' or remove the filter"
+                        )
+
                     violations.append(
                         self.create_violation(
-                            message=(
-                                f"Unit column '{unit_col}' uses vocabulary_id = '{vocab_value}'. "
-                                f"Expected '{VALID_UNIT_VOCABULARY}'."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                f"Replace with vocabulary_id = '{VALID_UNIT_VOCABULARY}'"
-                            ),
+                            message=message,
+                            severity=severity,
+                            suggested_fix=suggested_fix,
                             details={
                                 "unit_column": unit_col,
                                 "incorrect_vocabulary": vocab_value,
                                 "expected_vocabulary": VALID_UNIT_VOCABULARY,
                                 "context": context,
+                                "is_exploratory": is_exploratory,
                             },
                         )
                     )

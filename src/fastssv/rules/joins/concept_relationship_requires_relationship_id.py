@@ -83,16 +83,61 @@ def _collect_relationship_filters(
     return alias_filter_map
 
 
-def _check_missing_filters(alias_filter_map: Dict[str, bool]) -> List[str]:
-    """Generate issues for aliases missing filters."""
+def _is_grouping_by_relationship_id(tree: exp.Expression, cr_aliases: Set[str]) -> bool:
+    """Check if query groups by relationship_id from concept_relationship.
+
+    This indicates exploratory analysis, which is valid even without filtering.
+    """
+    for select in tree.find_all(exp.Select):
+        group_by = select.args.get("group")
+        if not group_by or not isinstance(group_by, exp.Group):
+            continue
+
+        for group_expr in group_by.expressions:
+            if isinstance(group_expr, exp.Column):
+                col_name = normalize_name(group_expr.name)
+                if col_name == "relationship_id":
+                    # Check if it's from concept_relationship
+                    table_ref = normalize_name(str(group_expr.table)) if group_expr.table else ""
+                    if not table_ref or table_ref in cr_aliases:
+                        return True
+
+    return False
+
+
+def _check_missing_filters(
+    alias_filter_map: Dict[str, bool],
+    is_exploratory: bool
+) -> List[tuple]:
+    """Generate issues for aliases missing filters.
+
+    Returns list of (message, severity) tuples.
+
+    Note: All violations are WARNING by default to support analytical/exploratory queries.
+    Use --strict mode (future) for ERROR-level enforcement in cohort definitions.
+    """
     issues = []
 
     for alias, has_filter in alias_filter_map.items():
         if not has_filter:
-            issues.append(
-                f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
-                "This will produce a cross-product of all relationship types and likely incorrect results."
-            )
+            if is_exploratory:
+                # Grouping by relationship_id = exploratory analysis (WARNING)
+                issues.append((
+                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id, "
+                    f"but groups by relationship_id for exploratory analysis. "
+                    f"This is valid for exploration but may produce large result sets.",
+                    Severity.WARNING
+                ))
+            else:
+                # No filter, no grouping = likely unintended (WARNING, not ERROR)
+                # Changed from ERROR to WARNING to support analytical queries
+                issues.append((
+                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
+                    f"This may produce a cross-product of all relationship types. "
+                    f"For analytical queries exploring all relationships, this may be intentional. "
+                    f"For cohort definitions, add a filter on relationship_id.",
+                    Severity.WARNING
+                ))
 
     return issues
 
@@ -104,13 +149,15 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
     rule_id = "joins.concept_relationship_requires_relationship_id"
     name = "Concept Relationship Requires Relationship ID Filter"
     description = (
-        "Each use of concept_relationship must filter on relationship_id "
-        "to avoid cross-product joins across multiple relationship types."
+        "Queries using concept_relationship should typically filter on relationship_id "
+        "to avoid cross-product joins. Exploratory/analytical queries may intentionally "
+        "omit this filter to analyze all relationships."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING  # Changed from ERROR to support analytical queries
     suggested_fix = (
-        "Add a filter on relationship_id for each concept_relationship alias. "
-        "Example: cr.relationship_id = 'Maps to'"
+        "For cohort definitions, add a filter on relationship_id. "
+        "Example: cr.relationship_id = 'Maps to'. "
+        "For exploratory analysis, consider adding GROUP BY relationship_id."
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -133,10 +180,16 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
 
             alias_filter_map = _collect_relationship_filters(tree, aliases, cr_aliases)
 
-            issues = _check_missing_filters(alias_filter_map)
+            # Check if this is exploratory analysis (GROUP BY relationship_id)
+            is_exploratory = _is_grouping_by_relationship_id(tree, cr_aliases)
 
-            for issue in issues:
-                violations.append(self.create_violation(message=issue))
+            issues = _check_missing_filters(alias_filter_map, is_exploratory)
+
+            for issue, severity in issues:
+                violations.append(self.create_violation(
+                    message=issue,
+                    severity=severity
+                ))
 
         return violations
 

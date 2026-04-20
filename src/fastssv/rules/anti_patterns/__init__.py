@@ -28,6 +28,7 @@ from .having_without_group_by import HavingWithoutGroupByRule
 from .sql_server_functions_in_postgres import SQLServerFunctionsInPostgresRule
 from .duplicate_column_alias import DuplicateColumnAliasRule
 from .top_as_synthetic_data import TopAsSyntheticDataRule
+from .null_comparison_operator import NullComparisonOperatorRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -55,4 +56,5 @@ __all__ = [
     "SQLServerFunctionsInPostgresRule",
     "DuplicateColumnAliasRule",
     "TopAsSyntheticDataRule",
+    "NullComparisonOperatorRule",
 ]

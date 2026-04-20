@@ -158,12 +158,20 @@ class StandardConceptEnforcementRule(Rule):
 
                 # If neither standard_concept = 'S' nor Maps to is used, warn
                 if not has_standard_enforcement and not has_maps_to:
+                    # Check strict mode for severity escalation
+                    from fastssv.core.validation_context import get_validation_context
+                    ctx = get_validation_context()
+                    severity = Severity.ERROR if ctx.should_escalate_rule(self.rule_id) else Severity.WARNING
+
                     message = "Query does not restrict to standard concepts."
+                    if severity == Severity.ERROR:
+                        message += " (Strict mode: cohort definitions must use standard concepts)"
 
                     violations.append(self.create_violation(
                         message=message,
+                        severity=severity,
                         suggested_fix="Add: standard_concept = 'S'",
-                        details={}
+                        details={"strict_mode_escalated": severity == Severity.ERROR}
                     ))
 
         return violations

@@ -30,7 +30,7 @@ from typing import List
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import parse_sql
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
 
 
@@ -65,20 +65,51 @@ def _is_non_standard_date_literal(literal_str: str) -> tuple:
     return False, None
 
 
+def _is_date_column(col_name: str) -> bool:
+    """Check if a column name suggests it's a date/datetime column."""
+    col_lower = normalize_name(col_name)
+    # Common date column patterns in OMOP and general SQL
+    date_indicators = [
+        '_date', '_datetime', '_time',
+        'date_', 'datetime_', 'time_',
+        'start_date', 'end_date', 'birth_date', 'death_date'
+    ]
+    return any(indicator in col_lower for indicator in date_indicators)
+
+
 def _find_non_standard_date_literals(tree: exp.Expression) -> List[tuple]:
     """Find all non-standard date literals in the query.
+
+    Only flags literals that are being compared to date/datetime columns.
+    This avoids false positives on concept codes, IDs, etc.
 
     Returns list of (literal_value, format_description) tuples.
     """
     issues = []
 
-    for literal in tree.find_all(exp.Literal):
-        if literal.is_string:
-            literal_str = str(literal.this)
-            is_non_standard, format_desc = _is_non_standard_date_literal(literal_str)
+    # Find comparisons (=, <, >, <=, >=, BETWEEN, etc.)
+    comparison_types = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)
 
-            if is_non_standard:
-                issues.append((literal_str, format_desc))
+    for comparison in tree.find_all(comparison_types):
+        # Find columns and literals in the comparison
+        columns_in_comparison = []
+        literals_in_comparison = []
+
+        for col in comparison.find_all(exp.Column):
+            columns_in_comparison.append(normalize_name(col.name))
+
+        for lit in comparison.find_all(exp.Literal):
+            if lit.is_string:
+                literals_in_comparison.append(str(lit.this))
+
+        # Only check literals if they're being compared to a date column
+        has_date_column = any(_is_date_column(col) for col in columns_in_comparison)
+
+        if has_date_column:
+            for literal_str in literals_in_comparison:
+                is_non_standard, format_desc = _is_non_standard_date_literal(literal_str)
+                if is_non_standard:
+                    issues.append((literal_str, format_desc))
 
     return issues
 

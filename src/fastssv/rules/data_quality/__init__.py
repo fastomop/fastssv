@@ -7,7 +7,6 @@ Foundational data integrity checks.
 from .unmapped_concept_handling import UnmappedConceptHandlingRule
 from .null_grouping_handling import NullGroupingHandlingRule
 from .source_value_field_usage import SourceValueFieldUsageRule
-from .schema_validation import SchemaValidationRule
 from .column_type_validation import ColumnTypeValidationRule
 from .concept_id_string_comparison import ConceptIdStringComparisonRule
 from .negative_concept_id_validation import NegativeConceptIdValidationRule
@@ -37,7 +36,6 @@ __all__ = [
     "UnmappedConceptHandlingRule",
     "NullGroupingHandlingRule",
     "SourceValueFieldUsageRule",
-    "SchemaValidationRule",
     "ColumnTypeValidationRule",
     "ConceptIdStringComparisonRule",
     "NegativeConceptIdValidationRule",

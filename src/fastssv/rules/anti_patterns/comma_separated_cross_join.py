@@ -104,13 +104,13 @@ def _is_large_clinical_table(table: Optional[str]) -> bool:
     return _norm(table) in LARGE_CLINICAL_TABLES if table else False
 
 
-def _get_comma_separated_tables(tree: exp.Expression) -> List[List[str]]:
+def _get_comma_separated_tables(tree: exp.Expression) -> List[tuple]:
     """Find FROM clauses with comma-separated tables.
 
     Sqlglot represents comma-separated tables as Join nodes with kind=None.
-    Returns list of table groups, where each group has 2+ comma-separated tables.
+    Returns list of (select_node, table_list) tuples for proper scope handling.
     """
-    comma_groups: List[List[str]] = []
+    comma_groups: List[tuple] = []
 
     # Look for Join nodes with kind=None (these are comma joins)
     for select in tree.find_all(exp.Select):
@@ -124,8 +124,9 @@ def _get_comma_separated_tables(tree: exp.Expression) -> List[List[str]]:
             if isinstance(from_table, exp.Table):
                 tables.append(from_table.name)
 
-        # Find comma joins (Join with kind=None and no ON clause)
-        for join in select.find_all(exp.Join):
+        # Find comma joins in THIS SELECT only (not nested subqueries)
+        # Use args.get("joins") instead of find_all() to avoid recursion
+        for join in select.args.get("joins", []):
             kind = join.args.get("kind")
             on_clause = join.args.get("on")
 
@@ -137,23 +138,29 @@ def _get_comma_separated_tables(tree: exp.Expression) -> List[List[str]]:
 
         # If we have 2+ tables, this is a comma-separated FROM
         if len(tables) >= 2:
-            comma_groups.append(tables)
+            comma_groups.append((select, tables))
 
     return comma_groups
 
 
 def _has_join_condition_in_where(
-    tree: exp.Expression,
+    select: exp.Select,
     tables: List[str],
     aliases: Dict[str, str],
 ) -> bool:
-    """Check if WHERE clause has column-to-column equality joining the tables."""
+    """Check if WHERE clause has column-to-column equality joining the tables.
+
+    Args:
+        select: The specific SELECT node (not the whole tree) to check
+        tables: List of comma-separated table names
+        aliases: Table alias mapping
+    """
 
     # Normalize table names for comparison
     table_set = {_norm(t) for t in tables}
 
-    # Find WHERE clause
-    where = tree.find(exp.Where)
+    # Find WHERE clause in this specific SELECT (not nested subqueries)
+    where = select.args.get("where")
     if not where:
         return False
 
@@ -222,10 +229,10 @@ class CommaSeparatedCrossJoinRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            # Find comma-separated table groups
+            # Find comma-separated table groups (returns list of (select_node, tables) tuples)
             comma_groups = _get_comma_separated_tables(tree)
 
-            for tables in comma_groups:
+            for select, tables in comma_groups:
                 # Check if any are large clinical tables
                 has_large_table = any(_is_large_clinical_table(t) for t in tables)
 
@@ -233,8 +240,8 @@ class CommaSeparatedCrossJoinRule(Rule):
                     # Skip if no large clinical tables (e.g., vocabulary table cross joins)
                     continue
 
-                # Check if there's a join condition in WHERE
-                has_join = _has_join_condition_in_where(tree, tables, aliases)
+                # Check if there's a join condition in WHERE (scope-aware)
+                has_join = _has_join_condition_in_where(select, tables, aliases)
 
                 if not has_join:
                     # Violation: comma-separated tables with no join condition

@@ -48,6 +48,7 @@ class Rule(ABC):
         description: What this rule checks
         severity: Default severity level
         suggested_fix: Default fix suggestion
+        metadata: Optional RuleMetadata for governance (recommended)
 
     Subclasses must implement:
         validate(sql, dialect) -> List[RuleViolation]
@@ -59,6 +60,7 @@ class Rule(ABC):
     description: str
     severity: Severity
     suggested_fix: str
+    metadata: Optional[object] = None  # RuleMetadata from rule_layer module
 
     @abstractmethod
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

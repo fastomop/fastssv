@@ -94,10 +94,13 @@ VALID_JOIN_KEYS: Set[Tuple[str, str]] = {
 }
 
 # Columns that are definitely incompatible
+# These are entity IDs that should never be joined to concept_id
 INCOMPATIBLE_COLUMN_GROUPS: List[Set[str]] = [
     {"person_id", "concept_id"},
     {"visit_occurrence_id", "concept_id"},
     {"provider_id", "concept_id"},
+    {"care_site_id", "concept_id"},  # care_site is a physical entity, not a concept
+    {"location_id", "concept_id"},    # location is a physical entity, not a concept
 ]
 
 

@@ -22,6 +22,7 @@ from . import (
     domain_specific,
     joins,
     performance,
+    schema,
     temporal,
 )
 
@@ -275,6 +276,7 @@ __all__ = [
     "domain_specific",
     "joins",
     "performance",
+    "schema",
     "temporal",
     # Validation functions
     "validate_analytics",
