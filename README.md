@@ -54,6 +54,20 @@ from fastssv import validate_anti_patterns, validate_sql_structured
 cat output/validation_report.json
 ```
 
+**5. Enable logging (optional)**
+```bash
+# Debug logging
+fastssv query.sql --log-level DEBUG
+
+# Log to file
+fastssv query.sql --log-file logs/validation.log
+
+# JSON structured logs for production
+fastssv query.sql --log-format json --log-file logs/validation.json
+```
+
+See [docs/LOGGING.md](docs/LOGGING.md) for comprehensive logging documentation.
+
 ---
 
 ## What FastSSV Catches
@@ -86,7 +100,7 @@ FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5
 
 **Concept lookup context** (`anti_patterns.concept_lookup_context`, ERROR) - Filtering the `concept` table by `concept_name`, `concept_code`, or similar text columns is valid only inside a subquery or CTE that outputs `concept_id`. String-based concept selection in the main query body is tied to a specific vocabulary version and breaks silently on upgrade.
 
-**Concept code requires vocabulary ID** (`anti_patterns.concept_code_requires_vocabulary_id`, ERROR) - `concept_code` is not unique across vocabularies. The code `'E11.9'` exists in ICD-10-CM, ICD-10, and other vocabularies simultaneously. Every `concept_code` filter must be paired with a `vocabulary_id` filter in the same scope.
+**Concept code requires vocabulary ID** (`anti_patterns.concept_code_requires_vocabulary_id`, WARNING) - `concept_code` is not unique across vocabularies. The code `'E11.9'` exists in ICD-10-CM, ICD-10, and other vocabularies simultaneously. Every `concept_code` filter should be paired with a `vocabulary_id` filter in the same scope for unambiguous concept resolution.
 
 **Concept name lookup anti-pattern** (`anti_patterns.concept_name_lookup`, WARNING) - Filtering by `concept_name` using string matching is fragile and vocabulary-version-dependent. Use concept IDs or concept_code + vocabulary_id instead.
 
@@ -96,13 +110,13 @@ FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5
 
 ### Key Concept Standardization Rules (21 rules)
 
-**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, ERROR) - Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) must be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. Without this, queries silently include non-standard, source-vocabulary, or metadata concepts.
+**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, WARNING) - Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) should be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. This is a best practice to ensure vocabulary hygiene, though queries may execute without it depending on data quality.
 
 **Hierarchy expansion required** (`concept_standardization.hierarchy_expansion_required`, ERROR) - Filtering `drug_concept_id` or `condition_concept_id` on specific concept IDs without using `concept_ancestor` misses descendant concepts. Filtering for "Metformin" (a single ingredient concept) without expansion excludes every specific formulation.
 
-**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, ERROR) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` can return retired concept IDs.
+**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, WARNING) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` may return retired concept IDs. This is a best practice for vocabulary hygiene.
 
-**Concept domain validation** (`concept_standardization.concept_domain_validation`, ERROR) - Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Joining a clinical table to `concept` with wrong `domain_id` filter returns zero rows.
+**Concept domain validation** (`concept_standardization.concept_domain_validation`, WARNING for missing filter, ERROR for wrong filter) - Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Missing a `domain_id` filter is a best practice warning. Using the **wrong** `domain_id` is always an ERROR as it will return zero rows.
 
 **Era table validation** (`concept_standardization.era_table_standard_concepts`, ERROR) - Era tables (condition_era, drug_era) must use standard concepts only. Source concepts in era tables indicate ETL errors.
 
@@ -172,7 +186,7 @@ FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5
 
 **Join path validation** (`joins.join_path_validation`, WARNING) - Joins between CDM tables must use valid foreign-key pairs as defined by the OMOP CDM v5.4 schema graph. A join on the wrong column pair produces an implicit cross-join or empty results with no database error.
 
-**Concept relationship requires relationship ID** (`joins.concept_relationship_requires_relationship_id`, ERROR) - When querying `concept_relationship`, must filter on `relationship_id` to specify the relationship type (e.g., 'Maps to', 'Is a'). Without this filter, queries mix unrelated concept relationships.
+**Concept relationship requires relationship ID** (`joins.concept_relationship_requires_relationship_id`, WARNING) - When querying `concept_relationship`, should filter on `relationship_id` to specify the relationship type (e.g., 'Maps to', 'Is a'). Without this filter, queries may mix unrelated concept relationships, though the query will execute.
 
 **Concept relationship incomplete join** (`joins.concept_relationship_incomplete_join`, WARNING) - Joining `concept_relationship` to only one concept side is often incomplete when both source and target semantics are required for validation or filtering.
 
@@ -180,7 +194,7 @@ FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5
 
 ### Key Temporal Rules (10 rules)
 
-**Observation period anchoring** (`temporal.observation_period_anchoring`, ERROR) - Queries with temporal constraints (washout, follow-up, event windows) must join to `observation_period` on `person_id`. Events outside a patient's observation window may be incomplete or missing.
+**Observation period anchoring** (`temporal.observation_period_anchoring`, WARNING) - Queries with temporal constraints (washout, follow-up, event windows) should join to `observation_period` on `person_id` to ensure events are within a patient's observation window. Events outside observation windows may be incomplete or missing.
 
 **Observation period date range logic** (`temporal.observation_period_date_range_logic`, ERROR) - Ensures clinical event dates are tested within observation_period bounds. Detects reversed logic where observation_period dates are incorrectly used as values.
 
@@ -408,15 +422,31 @@ fastssv cohort_definition.sql --strict
 ```
 
 In strict mode, certain best practice warnings are escalated to errors:
-- `standard_concept_enforcement`: WARNING to ERROR
-- `invalid_reason_enforcement`: WARNING to ERROR
-- `concept_relationship_requires_relationship_id`: WARNING to ERROR
+- `standard_concept_enforcement`: WARNING → ERROR
+- `invalid_reason_enforcement`: WARNING → ERROR
+- `concept_domain_validation`: WARNING → ERROR (for missing domain filters, wrong domain always ERROR)
+- `concept_code_requires_vocabulary_id`: WARNING → ERROR
+- `concept_relationship_requires_relationship_id`: WARNING → ERROR
 
-**Validation Results** (drug.sql example):
-| Mode | Valid | Invalid |
-|------|-------|---------|
-| Normal | 17/20 (85%) | 3/20 (15%) |
-| **Strict** | **9/20 (45%)** | **11/20 (55%)** |
+**When to use strict mode**:
+- Cohort definitions for research studies
+- Queries building patient populations for analysis
+- Any query where concept validity and vocabulary hygiene are critical
+- Research publications and regulatory submissions
+
+**When NOT to use strict mode**:
+- Descriptive analytics and exploratory queries
+- Aggregate statistical analysis
+- Reports with heavy GROUP BY/aggregation
+- Development/debugging
+
+**Validation Results** (condition_era.sql example):
+| Mode | Valid | Invalid | Description |
+|------|-------|---------|-------------|
+| **Normal** | **10/15 (67%)** | **5/15 (33%)** | Only statistical errors block (percentile calculations) |
+| **Strict** | **1/15 (7%)** | **14/15 (93%)** | Statistical errors + best-practice violations (vocabulary hygiene) |
+
+**Impact**: Strict mode enforces vocabulary hygiene critical for cohort definitions while normal mode allows flexibility for analytical queries that produce correct results despite missing best-practice filters.
 
 ### Dialect-Agnostic Validation
 
@@ -462,6 +492,7 @@ FastSSV implements intelligent error deduplication to prevent the same underlyin
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |
 | [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) | Validation report JSON format |
+| [docs/LOGGING.md](docs/LOGGING.md) | Logging system configuration, formats, and production best practices |
 | [tasks/IMPLEMENTATION_STATUS.md](tasks/IMPLEMENTATION_STATUS.md) | CLIN_001-057 implementation tracking and status |
 
 ---

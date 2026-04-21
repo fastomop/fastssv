@@ -114,7 +114,7 @@ def _has_incorrect_percentile_pattern(tree: exp.Expression) -> List[tuple]:
             "This is statistically incorrect (should use <= with population_size, not max_value). "
             "Use NTILE(4) for quartiles or PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY column) "
             "for accurate percentiles.",
-            Severity.WARNING
+            Severity.ERROR  # Changed from WARNING to ERROR - produces incorrect results
         ))
 
     return issues
@@ -129,10 +129,10 @@ class IncorrectPercentileCalculationRule(Rule):
     description = (
         "Detects manual percentile calculations using ROW_NUMBER() with incorrect threshold logic "
         "(e.g., < instead of <=, max_value instead of population_size). "
-        "While syntactically valid SQL, this produces statistically incorrect results. "
+        "This produces statistically incorrect results and should be treated as an error. "
         "Use NTILE() or PERCENTILE_CONT() for accurate percentiles."
     )
-    severity = Severity.WARNING
+    severity = Severity.ERROR  # Changed from WARNING - produces incorrect results
     suggested_fix = (
         "Use NTILE(4) for quartiles, or PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY column) for medians. "
         "Avoid manual calculations like: CASE WHEN order_nr < .25 * max_value"

@@ -3,14 +3,19 @@
 A plugin-based semantic validation framework for OMOP CDM SQL queries.
 """
 
+import time
 from typing import Dict, List, Literal, Optional
 
 from .core.base import Rule, RuleViolation, Severity
+from .core.logging import get_logger, log_rule_execution
 from .core.registry import get_all_rules, get_rule, get_rules_by_category
 from .schemas import CDM_SCHEMA, SOURCE_CONCEPT_FIELDS, SOURCE_VOCABS, STANDARD_CONCEPT_FIELDS
 
 # Import rules to trigger registration
 from . import rules
+
+# Initialize module logger
+_logger = get_logger(__name__)
 
 
 ValidatorType = Literal[
@@ -134,22 +139,38 @@ def validate_sql_structured(
     # Determine which rules to run
     if rule_ids:
         rule_classes = [get_rule(r) for r in rule_ids]
+        _logger.debug(f"Running specific rules: {rule_ids}")
     elif categories:
         rule_classes = []
         for cat in categories:
             rule_classes.extend(get_rules_by_category(cat))
+        _logger.debug(f"Running categories: {categories}")
     else:
         rule_classes = get_all_rules()
+        _logger.debug(f"Running all {len(rule_classes)} rules")
 
     # Run rules and collect violations
     violations = []
     for rule_cls in rule_classes:
         rule = rule_cls()
-        violations.extend(rule.validate(sql, dialect))
+
+        # Time rule execution if performance logging enabled
+        start_time = time.perf_counter()
+        rule_violations = rule.validate(sql, dialect)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        violations.extend(rule_violations)
+
+        # Log rule execution
+        log_rule_execution(_logger, rule.rule_id, len(rule_violations), duration_ms)
+
+    _logger.info(f"Executed {len(rule_classes)} rules, found {len(violations)} violations before deduplication")
 
     # Deduplicate violations (remove redundant errors for same issue)
     from fastssv.core.deduplication import deduplicate_violations
     violations = deduplicate_violations(violations)
+
+    _logger.info(f"After deduplication: {len(violations)} unique violations")
 
     return violations
 

@@ -192,7 +192,7 @@ class InvalidReasonEnforcementRule(Rule):
         "Ensures queries on vocabulary/concept tables filter by invalid_reason "
         "to ensure only valid concepts are used (invalid_reason IS NULL)"
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING  # Best practice, not correctness issue
     suggested_fix = (
         "Add 'WHERE invalid_reason IS NULL' to ensure only valid concepts are used, "
         "or explicitly handle invalid concepts if needed"
@@ -206,6 +206,16 @@ class InvalidReasonEnforcementRule(Rule):
         if error:
             # Parse errors handled elsewhere
             return []
+
+        # Check validation context for severity adjustment
+        from fastssv.core.validation_context import get_validation_context
+        ctx = get_validation_context()
+
+        # Default: WARNING (best practice)
+        # Strict mode: escalate to ERROR
+        severity = Severity.WARNING
+        if ctx.should_escalate_rule(self.rule_id):
+            severity = Severity.ERROR
 
         for tree in trees:
             if tree is None:
@@ -233,12 +243,13 @@ class InvalidReasonEnforcementRule(Rule):
                 )
 
                 violations.append(self.create_violation(
-                    severity=Severity.ERROR,
+                    severity=severity,  # Context-aware severity
                     message=message,
                     suggested_fix="Add WHERE condition: invalid_reason IS NULL",
                     details={
                         "vocabulary_tables": sorted(tables_with_invalid_reason),
                         "recommendation": "Add WHERE condition: invalid_reason IS NULL",
+                        "strict_mode_escalated": severity == Severity.ERROR
                     }
                 ))
 

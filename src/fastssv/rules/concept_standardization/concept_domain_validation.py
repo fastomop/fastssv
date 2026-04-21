@@ -220,7 +220,7 @@ class ConceptDomainValidationRule(Rule):
         "Validates that concept.domain_id matches the expected domain for each "
         "*_concept_id column."
     )
-    severity = Severity.ERROR
+    severity = Severity.WARNING  # Best practice, not correctness issue
     suggested_fix = (
         "Add or correct concept.domain_id filter to match expected domain."
     )
@@ -231,6 +231,17 @@ class ConceptDomainValidationRule(Rule):
         trees, error = parse_sql(sql, dialect)
         if error:
             return []
+
+        # Check validation context for severity adjustment
+        from fastssv.core.validation_context import get_validation_context
+        ctx = get_validation_context()
+
+        # Default: WARNING (best practice) for missing filters
+        # Strict mode: escalate to ERROR
+        # Wrong domain is always ERROR (semantic error)
+        missing_filter_severity = Severity.WARNING
+        if ctx.should_escalate_rule(self.rule_id):
+            missing_filter_severity = Severity.ERROR
 
         for tree in trees:
             if not tree or not has_table_reference(tree, "concept"):
@@ -267,7 +278,7 @@ class ConceptDomainValidationRule(Rule):
                 if not values:
                     if col_type == "main":
                         violations.append(self.create_violation(
-                            severity=Severity.ERROR,
+                            severity=missing_filter_severity,  # Context-aware severity
                             message=(
                                 f"{table}.{col} joined to concept '{concept_alias}' "
                                 f"without domain_id filter. Expected domain '{expected}'."
@@ -293,7 +304,7 @@ class ConceptDomainValidationRule(Rule):
                         suggested_fix = f"Use: {concept_alias}.domain_id = '{expected}'"
 
                     violations.append(self.create_violation(
-                        severity=Severity.ERROR,
+                        severity=Severity.ERROR,  # Wrong domain is always ERROR
                         message=(
                             f"Domain mismatch for {table}.{col}: expected {expected_msg}, "
                             f"found ({actual})."

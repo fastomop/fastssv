@@ -501,7 +501,7 @@ class TestInvalidReasonEnforcement:
     # Tests for tables WITH invalid_reason column (ERROR if missing)
 
     def test_concept_table_without_invalid_reason_filter(self) -> None:
-        """Query on concept table without invalid_reason should ERROR."""
+        """Query on concept table without invalid_reason should WARN (best practice)."""
         sql = """
         SELECT concept_id, concept_name
         FROM concept
@@ -510,8 +510,8 @@ class TestInvalidReasonEnforcement:
         errors = self._run_invalid_reason_rule(sql)
         assert len(errors) > 0
         assert any("concept" in e and "invalid_reason" in e for e in errors)
-        # Should be ERROR, not warning
-        assert all(not e.startswith("Warning:") for e in errors)
+        # Should be WARNING (best practice), not error
+        assert all(e.startswith("Warning:") for e in errors)
 
     def test_concept_table_with_invalid_reason_is_null(self) -> None:
         """Query with invalid_reason IS NULL should pass."""
@@ -867,8 +867,8 @@ class TestDomainSegregation:
         WHERE c.standard_concept = 'S'
         """
         errors = self._run_rule(sql)
-        errors_only = [e for e in errors if e.startswith("Error:")]
-        assert len(errors_only) > 0
+        warnings_only = [e for e in errors if e.startswith("Warning:")]
+        assert len(warnings_only) > 0  # Best practice, not error
 
     def test_no_domain_filter_drug_warns(self) -> None:
         """drug_exposure join to concept without domain_id should produce an ERROR."""
@@ -879,8 +879,8 @@ class TestDomainSegregation:
         WHERE c.invalid_reason IS NULL
         """
         errors = self._run_rule(sql)
-        errors_only = [e for e in errors if e.startswith("Error:")]
-        assert len(errors_only) > 0
+        warnings_only = [e for e in errors if e.startswith("Warning:")]
+        assert len(warnings_only) > 0  # Best practice, not error
 
     # --- No concept table -> no violation ---
 
@@ -2094,7 +2094,7 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
-        assert violations[0].severity.name == "ERROR"
+        assert violations[0].severity.name == "WARNING"
         assert "visit_detail_concept_id" in violations[0].message.lower()
 
     def test_disease_status_with_correct_domain_passes(self) -> None:
@@ -2252,7 +2252,7 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
+        assert violations[0].severity.name == "WARNING"
         assert "cause_concept_id" in violations[0].message.lower()
 
     # --- OMOP_246: episode domain validation tests ---
@@ -2291,7 +2291,7 @@ class TestConceptDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
+        assert violations[0].severity.name == "WARNING"
         assert "episode_concept_id" in violations[0].message.lower()
 
     def test_omop_103_admitted_from_with_visit_domain_passes(self) -> None:

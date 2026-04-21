@@ -6,11 +6,18 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from fastssv import validate_sql_structured
 from fastssv.core.base import RuleViolation, Severity
+from fastssv.core.logging import (
+    setup_logging,
+    get_logger,
+    log_validation_start,
+    log_validation_complete,
+)
 
 
 def _read_sql(sql_file: str | None) -> str:
@@ -219,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Strict mode for cohort definitions: escalates best practice warnings to errors.",
+        help="Strict mode: escalates best-practice warnings to errors.",
     )
     parser.add_argument(
         "--output",
@@ -227,35 +234,92 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="output/validation_report.json",
         help="Output JSON report file path (default: output/validation_report.json).",
     )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level (default: INFO, or FASTSSV_LOG_LEVEL env var).",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="Log to file (optional, or use FASTSSV_LOG_FILE env var).",
+    )
+    parser.add_argument(
+        "--log-format",
+        default=None,
+        choices=["simple", "detailed", "json"],
+        help="Log format (default: detailed, or FASTSSV_LOG_FORMAT env var).",
+    )
     args = parser.parse_args(argv)
 
-    sql = _clean_llm_output(_read_sql(args.sql_file))
+    # Setup logging
+    logger = setup_logging(
+        level=args.log_level,
+        log_file=args.log_file,
+        log_format=args.log_format,
+    )
+    logger.debug(f"FastSSV CLI started with args: {vars(args)}")
+
+    # Read SQL input
+    try:
+        sql = _clean_llm_output(_read_sql(args.sql_file))
+        logger.info(f"Read SQL input: {len(sql)} characters from {args.sql_file or 'stdin'}")
+    except Exception as e:
+        logger.error(f"Failed to read SQL input: {e}")
+        raise
+
+    # Split into queries
     queries = _split_queries(sql)
+    logger.info(f"Split into {len(queries)} query/queries")
 
     # Auto-detect dialect if set to 'auto'
     dialect = args.dialect
     if dialect == "auto":
         dialect = _auto_detect_dialect(sql)
+        logger.info(f"Auto-detected dialect: {dialect}")
         print(f"Auto-detected dialect: {dialect}")
 
     # Set validation context for strict mode
+    from fastssv.core.validation_context import ValidationContext, set_validation_context
+
     if args.strict:
-        from fastssv.core.validation_context import ValidationContext, set_validation_context
         set_validation_context(ValidationContext(strict_mode=True, dialect=dialect))
-        print("Strict mode enabled: best practice warnings escalated to errors")
+        logger.info("Strict mode enabled")
+        print("Strict mode enabled: best-practice warnings escalated to errors")
+    else:
+        # Default mode: best practices are warnings, only correctness issues are errors
+        set_validation_context(ValidationContext(strict_mode=False, dialect=dialect))
+        logger.info("Default validation mode (best practices = WARNING, correctness = ERROR)")
+
 
     if len(queries) <= 1 or args.combined:
+        # Single query or combined mode
+        log_validation_start(logger, len(sql), dialect)
+        start_time = time.perf_counter()
+
         violations = validate_sql_structured(
             sql,
             dialect=dialect,
             rule_ids=args.rules,
             categories=args.categories,
         )
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
         validation_result = build_validation_result(sql, violations, dialect)
+
+        log_validation_complete(
+            logger,
+            total_rules=len(violations),
+            error_count=validation_result["error_count"],
+            warning_count=validation_result["warning_count"],
+            duration_ms=duration_ms,
+        )
 
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(validation_result, indent=2), encoding="utf-8")
+        logger.info(f"Validation report saved to: {output_path.absolute()}")
 
         status = "VALID" if validation_result["is_valid"] else "INVALID"
         print(f"Validation {status}")
@@ -264,22 +328,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  Report saved to: {output_path.absolute()}")
         return 0 if validation_result["is_valid"] else 1
 
+    # Multiple queries mode
+    logger.info(f"Processing {len(queries)} queries individually")
     all_results = []
     any_invalid = False
+    start_time = time.perf_counter()
 
     for idx, query in enumerate(queries, start=1):
+        logger.debug(f"Validating query {idx}/{len(queries)}")
+        log_validation_start(logger, len(query), dialect)
+
+        query_start = time.perf_counter()
         violations = validate_sql_structured(
             query,
             dialect=dialect,
             rule_ids=args.rules,
             categories=args.categories,
         )
+        query_duration = (time.perf_counter() - query_start) * 1000
+
         validation_result = build_validation_result(
             query, violations, dialect, query_index=idx
         )
         all_results.append(validation_result)
+
+        logger.info(
+            f"Query {idx}: {'VALID' if validation_result['is_valid'] else 'INVALID'} "
+            f"({validation_result['error_count']} errors, "
+            f"{validation_result['warning_count']} warnings, "
+            f"{query_duration:.2f}ms)"
+        )
+
         if not validation_result["is_valid"]:
             any_invalid = True
+
+    total_duration = (time.perf_counter() - start_time) * 1000
 
     output = {
         "total_queries": len(queries),
@@ -291,6 +374,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    logger.info(
+        f"Batch validation complete: {output['total_queries']} queries, "
+        f"{output['valid_queries']} valid, {output['invalid_queries']} invalid, "
+        f"{total_duration:.2f}ms total"
+    )
 
     status = "VALID" if not any_invalid else "INVALID"
     print(f"Validation {status}")

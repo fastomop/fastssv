@@ -228,13 +228,22 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
     description = (
         "concept_code is unique only within a vocabulary. "
         "Any filter on concept_code should include a vocabulary_id filter "
-        "in the same scope to avoid ambiguous cross-vocabulary matches. "
-        "In practice, this is often implicitly safe when code patterns are unambiguous."
+        "in the same scope to avoid ambiguous cross-vocabulary matches."
     )
-    severity = Severity.WARNING
-    suggested_fix = "Add a vocabulary_id filter alongside concept_code for robustness"
+    severity = Severity.WARNING  # Best practice, not correctness issue
+    suggested_fix = "Add a vocabulary_id filter alongside concept_code"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
+        # Check validation context for severity adjustment
+        from fastssv.core.validation_context import get_validation_context
+        ctx = get_validation_context()
+
+        # Default: WARNING (best practice)
+        # Strict mode: escalate to ERROR
+        severity = Severity.WARNING
+        if ctx.should_escalate_rule(self.rule_id):
+            severity = Severity.ERROR
+
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
@@ -244,7 +253,13 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
             if tree is None:
                 continue
             aliases = extract_aliases(tree)
-            all_violations.extend(_check_violations(tree, aliases))
+            violations = _check_violations(tree, aliases)
+
+            # Update severity for all violations
+            for violation in violations:
+                violation.severity = severity
+
+            all_violations.extend(violations)
 
         return all_violations
 

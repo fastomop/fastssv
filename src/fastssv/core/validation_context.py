@@ -11,20 +11,23 @@ class ValidationContext:
     """Context for rule validation execution."""
 
     strict_mode: bool = False
-    """Strict mode for cohort definitions: escalates certain warnings to errors."""
+    """Strict mode: escalates best-practice warnings to errors."""
 
     dialect: str = "postgres"
     """SQL dialect being validated."""
 
     def should_escalate_rule(self, rule_id: str) -> bool:
-        """Determine if a rule should be escalated from WARNING to ERROR in strict mode."""
+        """Determine if a rule should be escalated to ERROR in strict mode."""
         if not self.strict_mode:
             return False
 
-        # Rules that escalate in strict mode (cohort definition context)
+        # Rules that escalate in strict mode
+        # These are best-practice rules that default to WARNING
         strict_escalation_rules = {
             "concept_standardization.standard_concept_enforcement",
             "concept_standardization.invalid_reason_enforcement",
+            "concept_standardization.concept_domain_validation",
+            "anti_patterns.concept_code_requires_vocabulary_id",
             "joins.concept_relationship_requires_relationship_id",
         }
 
