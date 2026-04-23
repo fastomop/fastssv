@@ -42,9 +42,29 @@ between minor versions.
 - `httpx` added to the `dev` extra for `TestClient`-based API tests.
 - `[tool.setuptools.package-data]` entry so templates and static assets
   are packaged in the wheel.
+- **Coverage measurement.** `pytest-cov` added to the `dev` extra; branch
+  coverage configured in `pyproject.toml` with sensible exclusions
+  (`__main__`, `TYPE_CHECKING`, `abstractmethod`, etc.). Default
+  `pytest tests/` stays fast — pass `--cov` explicitly (or run the new
+  CI `coverage` job) to measure. CI fails below 79% combined line+branch
+  coverage. Current baseline: ~81.5%.
+- **~40 new tests** surfaced by the first coverage run, targeting the
+  coldest modules: unit tests for `core.deduplication` (54% → 98%),
+  test classes for four previously-untested anti-pattern rules
+  (`concept_lookup_context`, `top_as_synthetic_data`,
+  `null_comparison_operator`, `concept_name_lookup`), and CLI
+  integration tests covering the multi-query batch path, stdin
+  reading, comment/quote-aware `_split_queries`, and the
+  `_clean_llm_output` helper (`cli.py` 65% → 95%).
 
 ### Removed (dead-code cleanup)
 
+- **`fastssv.fixer`** — orphaned 185-line module (`QueryFixer` and
+  `fix_sql_file`). Not imported, invoked, or referenced from CLI, API,
+  docs, or tests. Same shape as the `rule_layer` removal.
+- Three unused helpers in `fastssv.core.omop_schema`: `get_column_type`,
+  `get_primary_keys`, `get_foreign_keys` (the active `get_column_type`
+  lives in `fastssv.schemas.cdm_column_types`).
 - Orphaned `fastssv.core.rule_layer` module (`RuleLayer` enum and
   `RuleMetadata` dataclass were planned scaffolding that nothing
   consumed).

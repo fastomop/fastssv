@@ -4,7 +4,7 @@ Complete schema for OMOP Common Data Model version 5.4.
 Used for SCHEMA layer validation of table/column references and join keys.
 """
 
-from typing import Dict, Set, List, Tuple
+from typing import Dict, List, Set
 from dataclasses import dataclass
 
 
@@ -542,37 +542,6 @@ def get_table_columns(table_name: str) -> Set[str]:
     return set()
 
 
-def get_column_type(table_name: str, column_name: str) -> str:
-    """Get data type for a column (case-insensitive)."""
-    table_lower = table_name.lower()
-    column_lower = column_name.lower()
-    if table_lower in OMOP_SCHEMA:
-        for col in OMOP_SCHEMA[table_lower]:
-            if col.name.lower() == column_lower:
-                return col.data_type
-    return None
-
-
-def get_primary_keys(table_name: str) -> Set[str]:
-    """Get primary key columns for a table."""
-    table_lower = table_name.lower()
-    if table_lower in OMOP_SCHEMA:
-        return {col.name.lower() for col in OMOP_SCHEMA[table_lower] if col.primary_key}
-    return set()
-
-
-def get_foreign_keys(table_name: str) -> Dict[str, Tuple[str, str]]:
-    """Get foreign key mappings: {column_name: (foreign_table, foreign_column)}."""
-    table_lower = table_name.lower()
-    if table_lower in OMOP_SCHEMA:
-        return {
-            col.name.lower(): (col.foreign_table, col.foreign_column)
-            for col in OMOP_SCHEMA[table_lower]
-            if col.foreign_key
-        }
-    return {}
-
-
 def is_valid_table(table_name: str) -> bool:
     """Check if table exists in OMOP CDM."""
     return table_name.lower() in OMOP_SCHEMA
@@ -593,9 +562,6 @@ __all__ = [
     "OMOP_SCHEMA",
     "ColumnDef",
     "get_table_columns",
-    "get_column_type",
-    "get_primary_keys",
-    "get_foreign_keys",
     "is_valid_table",
     "is_valid_column",
     "get_all_tables",

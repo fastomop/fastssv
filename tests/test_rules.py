@@ -26910,3 +26910,104 @@ class TestIncorrectPercentileCalculation:
         """
         viols = self._run_rule(sql)
         assert viols == []
+
+
+class TestConceptLookupContext:
+    """Tests for anti_patterns.concept_lookup_context."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.concept_lookup_context import ConceptLookupContextRule
+        return ConceptLookupContextRule().validate(sql, dialect)
+
+    def test_bare_string_filter_on_concept_outside_lookup_flags(self) -> None:
+        sql = "SELECT c.concept_name FROM concept c WHERE c.concept_name = 'Diabetes'"
+        assert len(self._run_rule(sql)) == 1
+
+    def test_string_filter_in_lookup_subquery_passes(self) -> None:
+        sql = """
+        SELECT person_id FROM condition_occurrence
+        WHERE condition_concept_id IN (
+            SELECT concept_id FROM concept
+            WHERE concept_name = 'Diabetes' AND standard_concept = 'S'
+        )
+        """
+        assert self._run_rule(sql) == []
+
+    def test_no_concept_filter_passes(self) -> None:
+        sql = "SELECT person_id FROM condition_occurrence WHERE condition_concept_id = 201826"
+        assert self._run_rule(sql) == []
+
+
+class TestTopAsSyntheticData:
+    """Tests for anti_patterns.top_as_synthetic_data."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.top_as_synthetic_data import TopAsSyntheticDataRule
+        return TopAsSyntheticDataRule().validate(sql, dialect)
+
+    def test_tsql_top_with_row_number_flags(self) -> None:
+        sql = """
+        SELECT TOP 12 ROW_NUMBER() OVER (ORDER BY person_id) AS month
+        FROM observation_period
+        """
+        assert len(self._run_rule(sql, dialect="tsql")) == 1
+
+    def test_postgres_limit_with_row_number_flags(self) -> None:
+        sql = """
+        SELECT ROW_NUMBER() OVER (ORDER BY person_id) AS month
+        FROM observation_period
+        LIMIT 12
+        """
+        assert len(self._run_rule(sql)) == 1
+
+    def test_plain_limit_passes(self) -> None:
+        sql = "SELECT * FROM person LIMIT 10"
+        assert self._run_rule(sql) == []
+
+
+class TestNullComparisonOperator:
+    """Tests for anti_patterns.null_comparison_operator."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.null_comparison_operator import NullComparisonOperatorRule
+        return NullComparisonOperatorRule().validate(sql, dialect)
+
+    def test_equals_null_flags(self) -> None:
+        sql = "SELECT * FROM person WHERE year_of_birth = NULL"
+        assert len(self._run_rule(sql)) == 1
+
+    def test_not_equal_null_flags(self) -> None:
+        sql = "SELECT * FROM person WHERE year_of_birth <> NULL"
+        assert len(self._run_rule(sql)) == 1
+
+    def test_is_null_passes(self) -> None:
+        sql = "SELECT * FROM person WHERE year_of_birth IS NULL"
+        assert self._run_rule(sql) == []
+
+    def test_is_not_null_passes(self) -> None:
+        sql = "SELECT * FROM person WHERE year_of_birth IS NOT NULL"
+        assert self._run_rule(sql) == []
+
+
+class TestConceptNameLookup:
+    """Tests for anti_patterns.concept_name_lookup."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.rules.anti_patterns.concept_name_lookup import ConceptNameLookupRule
+        return ConceptNameLookupRule().validate(sql, dialect)
+
+    def test_concept_name_equality_in_join_flags(self) -> None:
+        sql = """
+        SELECT * FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.concept_name = 'Diabetes'
+        """
+        assert len(self._run_rule(sql)) == 1
+
+    def test_concept_name_like_flags(self) -> None:
+        sql = "SELECT c.concept_id FROM concept c WHERE c.concept_name LIKE '%diabetes%'"
+        assert len(self._run_rule(sql)) == 1
+
+    def test_filter_on_concept_id_passes(self) -> None:
+        sql = "SELECT * FROM concept WHERE concept_id = 201826"
+        assert self._run_rule(sql) == []
