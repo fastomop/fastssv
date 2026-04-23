@@ -20391,8 +20391,7 @@ class TestDatetimeBetweenDateLiteral:
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
 
-        rule = get_rule("temporal.datetime_between_date_literal")()
-        return rule.validate(sql, dialect)
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 

@@ -245,7 +245,6 @@ def _collect_invalid_reason_filters(
             continue
 
         col_alias = _norm(col.table) if col.table else None
-        table_norm = _norm(table)
 
         # --- Strict matching ---
         if col_alias:

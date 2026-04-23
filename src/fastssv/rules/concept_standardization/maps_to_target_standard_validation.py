@@ -135,7 +135,6 @@ def _validates_concept_id_2_as_standard(
     """
     # Step 1: Find if there's a join between concept_relationship.concept_id_2 and concept.concept_id
     has_join = False
-    concept_alias = None
 
     # Check all equality conditions (in JOINs and WHERE)
     for eq in tree.find_all(exp.EQ):
@@ -152,11 +151,9 @@ def _validates_concept_id_2_as_standard(
         if (lt_resolved == CONCEPT_RELATIONSHIP and _norm(lc) == CONCEPT_ID_2 and
             rt_resolved == CONCEPT and _norm(rc) == "concept_id"):
             has_join = True
-            concept_alias = rt
         elif (rt_resolved == CONCEPT_RELATIONSHIP and _norm(rc) == CONCEPT_ID_2 and
               lt_resolved == CONCEPT and _norm(lc) == "concept_id"):
             has_join = True
-            concept_alias = lt
 
     if not has_join:
         return False
