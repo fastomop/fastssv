@@ -18,11 +18,20 @@ between minor versions.
   limit, parse timeout, rate limiting, strict CORS, security headers,
   structured JSON logging (SQL body never logged — only hash),
   consistent error schema, versioned routes. See [docs/API.md](docs/API.md).
+- **HTMX web UI** served from the same app: `GET /` for an interactive
+  SQL validator, `GET /rules` for a browsable rule list with filter.
+  Server-rendered via Jinja2, vendored HTMX (`fastssv/api/static/`), no
+  build step. The UI sends `POST /ui/validate` which returns HTML
+  fragments; shares all middleware (body-size, timeout, rate limit,
+  security headers) with the JSON API.
 - **Dockerfile** at `deploy/Dockerfile` — multi-stage, non-root user,
   `HEALTHCHECK`, gunicorn + uvicorn worker.
 - `api` optional extra in `pyproject.toml` (`fastapi`,
-  `uvicorn[standard]`, `gunicorn`, `slowapi`, `pydantic-settings`).
+  `uvicorn[standard]`, `gunicorn`, `slowapi`, `pydantic-settings`,
+  `jinja2`, `python-multipart`).
 - `httpx` added to the `dev` extra for `TestClient`-based API tests.
+- `[tool.setuptools.package-data]` entry so templates and static assets
+  are packaged in the wheel.
 
 ### Removed (dead-code cleanup)
 

@@ -81,13 +81,15 @@ uvicorn fastssv.api.app:app --host 0.0.0.0 --port 8000
 gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000 fastssv.api.app:app
 ```
 
-Endpoints (all under `/v1`):
+Endpoints:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/v1/validate` | Validate one SQL query; returns structured violations |
-| `GET`  | `/v1/rules`    | List all registered rules (id, name, severity, category) |
-| `GET`  | `/v1/health`   | Liveness probe — returns version and rules loaded |
+| `GET`  | `/`            | HTMX web UI — paste SQL, see violations inline |
+| `GET`  | `/rules`       | HTMX rules browser with category filter |
+| `POST` | `/v1/validate` | JSON API: validate one SQL query, returns structured violations |
+| `GET`  | `/v1/rules`    | JSON API: list all registered rules (id, name, severity, category) |
+| `GET`  | `/v1/health`   | JSON API: liveness probe — returns version and rules loaded |
 | `GET`  | `/docs`        | Interactive Swagger UI |
 
 Example:

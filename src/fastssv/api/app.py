@@ -20,6 +20,7 @@ from starlette.types import ASGIApp
 from fastssv.api.config import Settings, get_settings
 from fastssv.api.models import ErrorResponse
 from fastssv.api.routes import router
+from fastssv.api.ui import mount_static, router as ui_router
 from fastssv.core.logging import JSONFormatter
 
 logger = logging.getLogger("fastssv.api")
@@ -176,11 +177,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     _install_exception_handlers(app)
+    mount_static(app)
     app.include_router(router)
-
-    @app.get("/", include_in_schema=False)
-    async def root():
-        return {"service": "fastssv", "docs": "/docs", "version": "v1"}
+    app.include_router(ui_router)
 
     return app
 

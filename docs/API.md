@@ -69,10 +69,27 @@ A `.env` file in the working directory is loaded automatically.
 
 ---
 
+## Web UI
+
+In addition to the JSON API, the service ships with a minimal HTMX-based web
+interface for ad-hoc validation:
+
+- `GET /` — paste SQL, pick a dialect, submit; violations render inline via
+  HTMX fragment swap. No JS framework, no build step.
+- `GET /rules` — browsable list of every registered rule with a client-side
+  filter by id/name/description and category.
+- `GET /static/*` — vendored HTMX (`htmx.min.js`) and `style.css`.
+
+UI form submissions go through `POST /ui/validate`, which returns an HTML
+fragment (not JSON). It shares the same middleware stack as the JSON API —
+body-size limit, parse timeout, rate limiting, security headers.
+
+---
+
 ## Endpoints
 
-All endpoints are versioned under `/v1`. Error responses use a uniform schema
-(`error`, `message`, `request_id`).
+All JSON endpoints are versioned under `/v1`. Error responses use a uniform
+schema (`error`, `message`, `request_id`).
 
 ### `POST /v1/validate`
 
