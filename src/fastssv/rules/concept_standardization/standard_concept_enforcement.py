@@ -45,16 +45,33 @@ def _extract_concept_references(
     return refs
 
 
-def _has_specific_concept_id_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Check if query filters on specific concept_id values using IN or = operators."""
+def _has_specific_concept_id_filter(
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+    standard_fields: Set[Tuple[str, str]],
+) -> bool:
+    """Check if query filters specific STANDARD concept fields with literal IDs.
+
+    Only literal filters on columns that are actually in ``standard_fields``
+    (e.g. ``condition_occurrence.condition_concept_id``) count as "user already
+    chose specific standard concepts" intent. Literal filters on vocabulary
+    table columns such as ``concept_ancestor.ancestor_concept_id`` don't —
+    those are hierarchy-rollup inputs, not standard-concept enforcement.
+    """
     from fastssv.core.helpers import is_numeric_literal
 
     for node in tree.find_all((exp.EQ, exp.In)):
         if not isinstance(node.this, exp.Column):
             continue
 
-        _, col_name = resolve_table_col(node.this, aliases)
-        if not col_name or not (col_name == "concept_id" or col_name.endswith("_concept_id")):
+        table_resolved, col_name = resolve_table_col(node.this, aliases)
+        if not col_name:
+            continue
+
+        # Only literals on actual standard-concept fields count as intent.
+        table_norm = normalize_name(table_resolved) if table_resolved else ""
+        col_norm = normalize_name(col_name)
+        if (table_norm, col_norm) not in standard_fields:
             continue
 
         # Check for EQ with numeric literal
@@ -165,7 +182,7 @@ class StandardConceptEnforcementRule(Rule):
             # Check if there's proper enforcement
             has_standard_enforcement = _enforces_standard_concept(tree)
             has_maps_to = _uses_maps_to_relationship(tree)
-            has_specific_filter = _has_specific_concept_id_filter(tree, aliases)
+            has_specific_filter = _has_specific_concept_id_filter(tree, aliases, standard_fields)
 
             # If no enforcement mechanism is present, warn
             if not has_standard_enforcement and not has_maps_to and not has_specific_filter:

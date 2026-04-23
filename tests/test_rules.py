@@ -115,6 +115,34 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert errors == []
 
+    def test_literal_filter_on_vocab_column_does_not_satisfy_enforcement(self) -> None:
+        """Regression: `WHERE ancestor_concept_id IN (...)` inside a CTE feeds a
+        cohort subquery but does NOT enforce standardness on the clinical fact
+        field. The rule must still fire on the outer condition_concept_id use.
+        """
+        sql = """
+        WITH risk_cond_concepts AS (
+            SELECT descendant_concept_id AS concept_id
+            FROM concept_ancestor
+            WHERE ancestor_concept_id IN (320128, 40481919)
+        )
+        SELECT DISTINCT person_id FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (SELECT concept_id FROM risk_cond_concepts)
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
+    def test_literal_filter_on_standard_field_still_suppresses(self) -> None:
+        """A literal filter on the actual standard concept field is intent signal —
+        the user has chosen specific concept IDs. Still suppress the warning.
+        """
+        sql = """
+        SELECT * FROM condition_occurrence
+        WHERE condition_concept_id IN (201826, 201820)
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert errors == []
+
 
 class TestUnmappedConceptHandling:
     """Tests for concept_id = 0 handling rule."""
@@ -21258,6 +21286,47 @@ class TestUnionVsUnionAllClinicalEvents:
         """
         violations = self._run_rule(sql)
         # Should detect the second UNION (without ALL)
+        assert len(violations) == 1
+
+    def test_gap_036_person_id_only_cohort_union_suppressed(self) -> None:
+        """GAP_036: UNION over person_id-only arms is cohort set-union, not event combination."""
+        sql = """
+        SELECT DISTINCT person_id FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (320128)
+        UNION
+        SELECT DISTINCT person_id FROM drug_exposure de
+        WHERE de.drug_concept_id IN (1338512)
+        UNION
+        SELECT DISTINCT person_id FROM condition_occurrence co2
+        WHERE co2.condition_concept_id IN (4326962)
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_gap_036_person_id_only_qualified_and_aliased(self) -> None:
+        """GAP_036: Qualified (co.person_id) and aliased (AS person_id) arms still treated as cohort."""
+        sql = """
+        SELECT co.person_id FROM condition_occurrence co
+        WHERE co.condition_concept_id = 201826
+        UNION
+        SELECT de.person_id AS person_id FROM drug_exposure de
+        WHERE de.drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_gap_036_person_id_plus_date_still_flagged(self) -> None:
+        """GAP_036: Adding an event column (date) reintroduces event-loss risk — must still flag."""
+        sql = """
+        SELECT person_id, condition_start_date
+        FROM condition_occurrence
+        WHERE condition_concept_id = 201826
+        UNION
+        SELECT person_id, drug_exposure_start_date
+        FROM drug_exposure
+        WHERE drug_concept_id = 1125315
+        """
+        violations = self._run_rule(sql)
         assert len(violations) == 1
 
     def test_gap_036_union_without_all_measurement(self) -> None:

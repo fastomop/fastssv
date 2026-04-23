@@ -69,7 +69,7 @@ Note: UNION without ALL is acceptable for:
     - Non-event data where duplicates are truly errors
 """
 
-from typing import List, Optional, Set
+from typing import Iterator, List, Optional, Set
 
 from sqlglot import exp
 
@@ -141,6 +141,50 @@ def _is_safely_deduplicated(union: exp.Union) -> bool:
     return False
 
 
+def _iter_union_arms(union: exp.Union) -> Iterator[exp.Expression]:
+    """Yield every SELECT arm in a (possibly chained) UNION tree."""
+    for side in (union.this, union.expression):
+        if side is None:
+            continue
+        if isinstance(side, exp.Union):
+            yield from _iter_union_arms(side)
+        else:
+            yield side
+
+
+def _is_person_id_only_select(node: exp.Expression) -> bool:
+    """
+    True if `node` is a SELECT whose output is a single `person_id` column.
+
+    Matches `SELECT person_id FROM ...`, `SELECT DISTINCT person_id FROM ...`,
+    `SELECT co.person_id FROM ...`, and `SELECT foo AS person_id FROM ...`
+    — anything whose sole output column is named ``person_id``.
+    """
+    if isinstance(node, exp.Subquery):
+        node = node.this
+    if not isinstance(node, exp.Select):
+        return False
+    exprs = node.expressions or []
+    if len(exprs) != 1:
+        return False
+    return _norm(exprs[0].alias_or_name) == "person_id"
+
+
+def _is_cohort_id_only_union(union: exp.Union) -> bool:
+    """
+    Suppress when every arm of the UNION selects only ``person_id``.
+
+    In that case the UNION is doing a cohort set-union over patient IDs,
+    not combining clinical events. There are no event-level columns that
+    UNION (vs UNION ALL) could silently collapse, so the warning does not
+    apply — UNION is the semantically correct choice.
+    """
+    arms = list(_iter_union_arms(union))
+    if not arms:
+        return False
+    return all(_is_person_id_only_select(arm) for arm in arms)
+
+
 # --- Rule ------------------------------------------------------------------
 
 @register
@@ -186,6 +230,10 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
 
                 # Skip safe intentional deduplication
                 if _is_safely_deduplicated(union):
+                    continue
+
+                # Skip cohort-ID-only unions (every arm selects only person_id)
+                if _is_cohort_id_only_union(union):
                     continue
 
                 # Check both branches (robust to nesting)
