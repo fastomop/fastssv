@@ -1,0 +1,37 @@
+# FastSSV — single-command container deploy.
+#
+# From the repo root:
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# App is then reachable at http://localhost:8000/.
+
+services:
+  fastssv:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: fastssv:local
+    container_name: fastssv
+    ports:
+      - "${FASTSSV_PORT:-8000}:8000"
+    environment:
+      FASTSSV_API_LOG_LEVEL: "${FASTSSV_API_LOG_LEVEL:-INFO}"
+      FASTSSV_API_RATE_LIMIT: "${FASTSSV_API_RATE_LIMIT:-60/minute}"
+      FASTSSV_API_MAX_SQL_BYTES: "${FASTSSV_API_MAX_SQL_BYTES:-100000}"
+      FASTSSV_API_PARSE_TIMEOUT_SECONDS: "${FASTSSV_API_PARSE_TIMEOUT_SECONDS:-5}"
+      FASTSSV_API_CORS_ORIGINS: "${FASTSSV_API_CORS_ORIGINS:-}"
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://127.0.0.1:8000/v1/health\", timeout=3).status == 200 else 1)'"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true

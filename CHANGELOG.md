@@ -26,6 +26,16 @@ between minor versions.
   security headers) with the JSON API.
 - **Dockerfile** at `deploy/Dockerfile` — multi-stage, non-root user,
   `HEALTHCHECK`, gunicorn + uvicorn worker.
+- **`deploy/docker-compose.yml`** — one-command container deploy:
+  `docker compose -f deploy/docker-compose.yml up --build`. Wraps the
+  existing Dockerfile, read-only root FS, `no-new-privileges`, health
+  check, and env-override defaults for log level / rate limit /
+  body-size / timeout / CORS / worker count.
+- **`fastssv serve` subcommand** — one command launches the HTTP API +
+  web UI on host Python without Docker. Dev default is `uvicorn.run()`
+  in-process; `--reload` for auto-reload; `--prod` switches to
+  gunicorn + uvicorn workers. Existing `fastssv <sqlfile>` behavior is
+  unchanged.
 - `api` optional extra in `pyproject.toml` (`fastapi`,
   `uvicorn[standard]`, `gunicorn`, `slowapi`, `pydantic-settings`,
   `jinja2`, `python-multipart`).

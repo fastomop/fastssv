@@ -154,9 +154,84 @@ def build_validation_result(
     return result
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _serve_command(argv: Sequence[str]) -> int:
+    """Run the HTTP API (FastAPI) with one command."""
     parser = argparse.ArgumentParser(
-        description="Validate OMOP CDM SQL queries and output JSON for LLM refinement."
+        prog="fastssv serve",
+        description="Run the FastSSV HTTP API + web UI.",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
+    parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000).")
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Dev mode: auto-reload on code changes (uvicorn, single process).",
+    )
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Production mode: gunicorn with uvicorn workers.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=2,
+        help="Number of worker processes in --prod mode (default: 2).",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        import uvicorn  # type: ignore
+    except ImportError:
+        print(
+            "fastssv serve requires the api extras. "
+            "Install with: pip install 'fastssv[api]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.prod:
+        import shutil
+        import subprocess
+
+        gunicorn = shutil.which("gunicorn")
+        if not gunicorn:
+            print(
+                "gunicorn not found. Reinstall with: pip install 'fastssv[api]'",
+                file=sys.stderr,
+            )
+            return 1
+        return subprocess.call(
+            [
+                gunicorn,
+                "-k", "uvicorn.workers.UvicornWorker",
+                "-w", str(args.workers),
+                "-b", f"{args.host}:{args.port}",
+                "--timeout", "30",
+                "--graceful-timeout", "30",
+                "--access-logfile", "-",
+                "--error-logfile", "-",
+                "fastssv.api.app:app",
+            ]
+        )
+
+    uvicorn.run(
+        "fastssv.api.app:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args_list = list(argv) if argv is not None else sys.argv[1:]
+    if args_list and args_list[0] == "serve":
+        return _serve_command(args_list[1:])
+
+    parser = argparse.ArgumentParser(
+        description="Validate OMOP CDM SQL queries and output JSON for LLM refinement.",
+        epilog="Run 'fastssv serve --help' to launch the HTTP API + web UI.",
     )
     parser.add_argument(
         "sql_file",
@@ -223,7 +298,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=["simple", "detailed", "json"],
         help="Log format (default: detailed, or FASTSSV_LOG_FORMAT env var).",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_list)
 
     # Setup logging
     logger = setup_logging(

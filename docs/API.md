@@ -15,40 +15,42 @@ This pulls in `fastapi`, `uvicorn[standard]`, `gunicorn`, `slowapi`, and
 
 ## Running
 
-### Development
+There are two supported "one command" paths. Both launch the JSON API **and**
+the HTMX web UI from the same process (they're mounted on the same app).
+
+### `fastssv serve` — host Python
+
+Works for local dev, demos, and single-VM production. No Docker required.
 
 ```bash
-uvicorn fastssv.api.app:app --reload --host 127.0.0.1 --port 8000
+fastssv serve                       # dev: uvicorn, host 127.0.0.1, port 8000
+fastssv serve --reload              # + auto-reload on code changes
+fastssv serve --host 0.0.0.0 --port 9000
+fastssv serve --prod                # gunicorn + 2 uvicorn workers
+fastssv serve --prod --workers 4    # tune worker count
 ```
 
-Interactive docs are available at `http://localhost:8000/docs` once running.
+Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
+`gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
+rule registry once at startup (~157 rules, sub-second).
 
-### Production
+### `docker compose up` — containerized
 
-Use gunicorn with the uvicorn worker class:
+Use this for servers, CI, or when you want container isolation to match
+production. The compose file wraps the existing `deploy/Dockerfile`.
 
 ```bash
-gunicorn -k uvicorn.workers.UvicornWorker \
-  -w 2 \
-  -b 0.0.0.0:8000 \
-  --timeout 30 --graceful-timeout 30 \
-  --access-logfile - --error-logfile - \
-  fastssv.api.app:app
+docker compose -f deploy/docker-compose.yml up --build
+docker compose -f deploy/docker-compose.yml down
 ```
 
-Set `-w` to the number of CPU cores you want to use. Each worker loads the
-full rule registry once at startup (~157 rules, sub-second).
+Environment variables set in `deploy/docker-compose.yml` override the defaults
+(log level, rate limit, body-size cap, parse timeout, CORS origins, worker
+count). See the comments in that file or the Configuration section below.
 
-### Docker
-
-A production-grade `deploy/Dockerfile` is included. It uses a multi-stage
-build on `python:3.12-slim`, runs as a non-root user, and exposes a
-`HEALTHCHECK`:
-
-```bash
-docker build -f deploy/Dockerfile -t fastssv-api .
-docker run -p 8000:8000 -e WEB_CONCURRENCY=2 fastssv-api
-```
+The container runs the same gunicorn command as `fastssv serve --prod`,
+uses a non-root user, mounts a read-only root filesystem, and ships a
+healthcheck against `/v1/health`.
 
 ---
 

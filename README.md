@@ -72,13 +72,19 @@ See [docs/LOGGING.md](docs/LOGGING.md) for comprehensive logging documentation.
 
 ## HTTP API
 
-FastSSV also ships an optional FastAPI service that exposes the validator over HTTP. Install with the `api` extra and run with any ASGI server:
+FastSSV ships an optional FastAPI service + HTMX web UI. One command launches everything — the UI and the JSON API share the same app and port.
 
+**Local (host Python):**
 ```bash
 pip install "fastssv[api]"
-uvicorn fastssv.api.app:app --host 0.0.0.0 --port 8000
-# or, for production:
-gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000 fastssv.api.app:app
+fastssv serve                       # dev: http://localhost:8000
+fastssv serve --reload              # + auto-reload on code changes
+fastssv serve --prod --workers 4    # prod: gunicorn + uvicorn workers
+```
+
+**Containerized:**
+```bash
+docker compose -f deploy/docker-compose.yml up --build
 ```
 
 Endpoints:
@@ -99,7 +105,7 @@ curl -X POST http://localhost:8000/v1/validate \
   -d '{"sql":"SELECT * FROM no_such_table;","dialect":"postgres"}'
 ```
 
-A production-grade Dockerfile is included at `deploy/Dockerfile`. The service is stateless, enforces body-size / parse-timeout / rate limits, sets strict security headers, and never logs raw SQL bodies.
+The service is stateless, enforces body-size / parse-timeout / rate limits, sets strict security headers, and never logs raw SQL bodies. Deploy assets (Dockerfile + docker-compose.yml) live under `deploy/`.
 
 See [docs/API.md](docs/API.md) for the full API reference, configuration, and deployment guide.
 
