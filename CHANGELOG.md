@@ -24,6 +24,35 @@ between minor versions.
   build step. The UI sends `POST /ui/validate` which returns HTML
   fragments; shares all middleware (body-size, timeout, rate limit,
   security headers) with the JSON API.
+- **Strict mode exposed on both HTTP surfaces.** `POST /v1/validate`
+  accepts an optional `strict: bool` (default `false`) and echoes it
+  back in the response. The UI gains a "Strict mode" toggle button next
+  to the dialect dropdown (styled distinctly from the Validate action).
+  Behavior matches the CLI `--strict` flag — best-practice warnings
+  escalate to errors.
+- **SQL syntax highlighting in the web UI.** Vendored Prism.js core +
+  SQL grammar (~22 KB) and a tiny `sql-editor.js` (~30 lines) overlay a
+  highlighted `<pre><code>` behind a transparent textarea. Zero build
+  step, no CDN dependency. Theme colors match the light/dark palette.
+- **Per-query attribution on the JSON API and UI.** Submissions
+  containing multiple `;`-separated statements are now split at the
+  HTTP layer and validated independently, matching the CLI's
+  behavior. `ValidationResponse` gains `query_count` and a
+  `results: [QueryResult]` list where each entry carries its
+  `query_index`, `sql`, `is_valid`, and its own `errors`/`warnings`.
+  Top-level aggregate fields (`is_valid`, `error_count`,
+  `warning_count`, `errors`, `warnings`) are preserved as
+  cross-statement summaries — no breaking change. The UI renders one
+  collapsible panel per query with the SQL and its violations
+  attributed correctly.
+- Shared helper `fastssv.core.helpers.split_sql_statements` — the
+  CLI's comment- and quote-aware splitter promoted from a private CLI
+  function so the API and UI can reuse it.
+- `fastssv.core.validation_context.with_strict_mode()` /
+  `with_validation_context()` context managers. Backing state moved to
+  `contextvars.ContextVar` so concurrent API requests don't race on
+  strict-mode state; `asyncio.to_thread` copies the context to the
+  worker thread automatically.
 - **Dockerfile** at `deploy/Dockerfile` — multi-stage, non-root user,
   `HEALTHCHECK`, gunicorn + uvicorn worker.
 - **`deploy/docker-compose.yml`** — one-command container deploy:

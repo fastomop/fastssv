@@ -124,3 +124,91 @@ def test_v1_json_api_still_reachable_alongside_ui(client: TestClient):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
+
+
+_UI_STRICT_ESCALATION_SQL = (
+    "WITH cc AS ( "
+    "SELECT descendant_concept_id AS concept_id FROM concept_ancestor "
+    "WHERE ancestor_concept_id IN (320128) "
+    ") "
+    "SELECT person_id FROM condition_occurrence co "
+    "WHERE co.condition_concept_id IN (SELECT concept_id FROM cc)"
+)
+
+
+def test_index_page_exposes_strict_checkbox(client: TestClient):
+    resp = client.get("/")
+    body = resp.text
+    assert 'name="strict"' in body
+    assert "Strict mode" in body
+
+
+def test_ui_validate_default_is_non_strict(client: TestClient):
+    resp = client.post(
+        "/ui/validate",
+        data={"sql": _UI_STRICT_ESCALATION_SQL, "dialect": "postgres"},
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    # Default: violations render as warnings (banner-ok for "valid, but warnings").
+    assert "banner-ok" in body
+    assert "sev-warning" in body
+
+
+def test_ui_validate_result_includes_json_view_toggle(client: TestClient):
+    """Each per-query panel ships both a formatted and a JSON view, with a
+    toggle button and a Copy JSON button. No more 'Copy fix' per violation."""
+    resp = client.post(
+        "/ui/validate",
+        data={"sql": "SELECT * FROM no_such_table;", "dialect": "postgres"},
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    # Default view is formatted.
+    assert 'data-view="formatted"' in body
+    # Both views are rendered (CSS toggles visibility).
+    assert "query-view-formatted" in body
+    assert "query-view-json" in body
+    # Toggle + floating copy-JSON icon button present; Copy fix removed.
+    assert 'data-action="toggle-view"' in body
+    assert 'aria-label="Copy JSON' in body
+    assert "editor-copy-btn" in body
+    assert "Copy fix" not in body
+    # JSON content embedded (HTML-escaped quotes become &#34; — the browser
+    # decodes them back for both <pre> display and data-text reads).
+    assert "&#34;query_index&#34;" in body
+    assert "&#34;errors&#34;" in body
+
+
+def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient):
+    sql = (
+        "SELECT person_id FROM person; "
+        "SELECT * FROM bogus_table_alpha; "
+        "SELECT * FROM bogus_table_beta;"
+    )
+    resp = client.post("/ui/validate", data={"sql": sql, "dialect": "postgres"})
+    assert resp.status_code == 200
+    body = resp.text
+    # Three per-query panels.
+    assert body.count("Query 1") == 1
+    assert body.count("Query 2") == 1
+    assert body.count("Query 3") == 1
+    # Each bad-table error appears in a panel — per-query attribution.
+    assert "bogus_table_alpha" in body
+    assert "bogus_table_beta" in body
+    # First panel is valid, others are flagged.
+    assert body.count('class="query-result query-ok"') == 1
+    assert body.count('class="query-result query-bad"') == 2
+
+
+def test_ui_validate_strict_on_escalates_to_error(client: TestClient):
+    resp = client.post(
+        "/ui/validate",
+        data={"sql": _UI_STRICT_ESCALATION_SQL, "dialect": "postgres", "strict": "on"},
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    # Strict: standard_concept_enforcement renders as an error card.
+    assert "banner-error" in body
+    assert "sev-error" in body
+    assert "concept_standardization.standard_concept_enforcement" in body

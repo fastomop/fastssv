@@ -6,6 +6,8 @@
   --muted: #6b7076;
   --accent: #3b5bdb;
   --accent-hover: #2f48b0;
+  --strict: #b5451a;
+  --strict-hover: #993a15;
   --err-bg: #fdecec;
   --err-fg: #8a1f1f;
   --warn-bg: #fff4d6;
@@ -25,6 +27,8 @@
     --muted: #9aa0a8;
     --accent: #6d8cff;
     --accent-hover: #8aa1ff;
+    --strict: #f09066;
+    --strict-hover: #ffa37c;
     --err-bg: #3a1919;
     --err-fg: #ff9090;
     --warn-bg: #3a2f12;
@@ -97,6 +101,40 @@ main.wrap {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.site-footer .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: color 120ms ease;
+}
+.footer-link:hover,
+.footer-link:focus-visible {
+  color: var(--text);
+}
+.footer-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .panel {
   background: var(--panel);
@@ -144,6 +182,194 @@ textarea {
   resize: vertical;
   min-height: 220px;
 }
+
+/* --- SQL editor: Prism overlay under a transparent textarea ---------- */
+
+/* Editor header: label on the left, action buttons on the right */
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.editor-header label {
+  margin: 0;
+}
+.editor-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.kbd-hint {
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 0 0.35rem;
+}
+
+/* Small secondary action buttons used on the editor header and in
+   suggested-fix rows. Neutral-palette by default; accent border on hover;
+   brief flash on data-flashed after a copy succeeds. */
+.icon-btn {
+  appearance: none;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+.icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.icon-btn[data-flashed="1"] {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  border-color: var(--ok-fg);
+}
+.icon-btn-sm {
+  padding: 0.18rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.sql-editor {
+  position: relative;
+}
+
+/* Floating copy icon in the top-right corner of a code-like container —
+   used on the SQL editor and on each per-query JSON view. Borderless by
+   default; a subtle translucent background appears on hover so the icon
+   stays readable over highlighted SQL or JSON text. */
+.editor-copy-btn {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.55rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.4rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.sql-editor:hover .editor-copy-btn,
+.query-view-json:hover .editor-copy-btn,
+.editor-copy-btn:focus-visible {
+  opacity: 1;
+}
+.editor-copy-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--code-bg);
+}
+.editor-copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.editor-copy-btn[data-flashed="1"] {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  opacity: 1;
+  padding: 0.25rem 0.5rem;
+}
+.editor-copy-btn svg {
+  display: block;
+}
+/* Both layers must share every text-layout property so the highlighted
+   overlay tracks the textarea character-for-character. */
+.sql-editor > textarea,
+.sql-editor > .sql-highlight {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  letter-spacing: 0;
+}
+.sql-editor > .sql-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--panel);
+  pointer-events: none;
+  color: var(--text);
+}
+.sql-editor > .sql-highlight > code {
+  font: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  display: block;
+  white-space: pre-wrap;
+}
+.sql-editor > textarea {
+  position: relative;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  resize: vertical;
+  min-height: 220px;
+  z-index: 1;
+}
+.sql-editor > textarea::placeholder {
+  color: var(--muted);
+}
+.sql-editor > textarea::selection {
+  background: rgba(59, 91, 219, 0.25);
+  color: transparent;
+}
+
+/* --- Prism token palette, light + dark aware ------------------------- */
+
+.sql-editor .token.comment { color: var(--muted); font-style: italic; }
+.sql-editor .token.keyword { color: #6b2fb3; font-weight: 600; }
+.sql-editor .token.function { color: #0b5fae; }
+.sql-editor .token.string { color: #1a6b3a; }
+.sql-editor .token.number,
+.sql-editor .token.boolean { color: #b5451a; }
+.sql-editor .token.operator,
+.sql-editor .token.punctuation { color: var(--muted); }
+.sql-editor .token.variable { color: #a14a1f; }
+
+@media (prefers-color-scheme: dark) {
+  .sql-editor .token.keyword { color: #c792ea; }
+  .sql-editor .token.function { color: #82aaff; }
+  .sql-editor .token.string { color: #9de07f; }
+  .sql-editor .token.number,
+  .sql-editor .token.boolean { color: #f6a878; }
+  .sql-editor .token.variable { color: #ffcc80; }
+}
 input[type="search"], select {
   font-family: inherit;
   font-size: 14px;
@@ -159,17 +385,71 @@ input[type="search"], select {
 .row label { margin: 0; }
 .row select { width: auto; min-width: 180px; }
 
-button[type="submit"] {
-  background: var(--accent);
-  color: white;
-  border: none;
+/* Toggle button — visually a pill button, semantically a checkbox so the
+   form still works without JS and screen readers get the checked state. */
+.toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.48rem 0.9rem;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.92rem;
   font-weight: 500;
   cursor: pointer;
+  user-select: none;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
-button[type="submit"]:hover { background: var(--accent-hover); }
+.toggle-btn input[type="checkbox"] {
+  /* Visually hidden but still focusable / reachable for a11y. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.toggle-btn:hover {
+  border-color: var(--strict);
+  color: var(--text);
+}
+.toggle-btn:has(input:checked) {
+  background: var(--strict);
+  color: #fff;
+  border-color: var(--strict);
+}
+.toggle-btn:has(input:checked):hover {
+  background: var(--strict-hover);
+  border-color: var(--strict-hover);
+}
+.toggle-btn:has(input:focus-visible) {
+  outline: 2px solid var(--strict);
+  outline-offset: 2px;
+}
+
+button[type="submit"] {
+  /* Match .toggle-btn's geometry so heights align in the row. */
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.48rem 1.1rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: pointer;
+  margin-left: auto;
+}
+button[type="submit"]:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
 button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 
 .htmx-indicator {
@@ -197,6 +477,76 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 .banner-warn { background: var(--warn-bg); color: var(--warn-fg); }
 .banner p { margin-top: 0.25rem; }
 
+.query-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.query-result {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  background: var(--bg);
+}
+.query-result.query-ok { border-left: 3px solid var(--ok-fg); }
+.query-result.query-bad { border-left: 3px solid var(--err-fg); }
+.query-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.query-idx {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.query-sql,
+.query-json {
+  margin: 0 0 0.6rem 0;
+  padding: 0.55rem 0.75rem;
+  background: var(--code-bg);
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  overflow-x: auto;
+  max-height: 10rem;
+}
+.query-json {
+  max-height: 20rem;
+  color: var(--text);
+}
+.query-sql code,
+.query-json code {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+/* Formatted / JSON view toggle inside each query-result */
+.query-result[data-view="formatted"] .query-view-json,
+.query-result[data-view="json"] .query-view-formatted {
+  display: none;
+}
+.query-view-json {
+  position: relative;
+}
+.view-toggle {
+  margin-left: auto;
+}
+.view-toggle .view-label-formatted,
+.view-toggle .view-label-json { display: none; }
+.query-result[data-view="formatted"] .view-toggle .view-label-formatted { display: inline; }
+.query-result[data-view="json"] .view-toggle .view-label-json { display: inline; }
+
 .violations {
   list-style: none;
   padding: 0;
@@ -221,7 +571,16 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   margin-bottom: 0.35rem;
 }
 .violation .issue { margin: 0.2rem 0; }
-.violation .fix { margin: 0.35rem 0 0 0; color: var(--muted); font-size: 0.92rem; }
+.violation .fix {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0.35rem 0 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.violation .fix p { margin: 0; flex: 1; }
 
 .sev {
   display: inline-block;

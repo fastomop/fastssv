@@ -101,7 +101,8 @@ Validate a single SQL query.
 ```json
 {
   "sql": "SELECT * FROM person;",
-  "dialect": "auto"
+  "dialect": "auto",
+  "strict": false
 }
 ```
 
@@ -109,6 +110,7 @@ Validate a single SQL query.
 |-------|------|----------|-------|
 | `sql` | string | yes | Non-empty. Subject to `MAX_SQL_BYTES`. |
 | `dialect` | `"auto" \| "postgres" \| "tsql"` | no | Default `"auto"`. |
+| `strict` | boolean | no | Default `false`. When `true`, best-practice warnings escalate to errors. Same semantics as the CLI `--strict` flag. |
 
 **Response (200):**
 ```json
@@ -127,10 +129,30 @@ Validate a single SQL query.
     }
   ],
   "warnings": [],
+  "query_count": 1,
+  "results": [
+    {
+      "query_index": 1,
+      "sql": "SELECT * FROM no_such_table;",
+      "is_valid": false,
+      "error_count": 1,
+      "warning_count": 0,
+      "errors": [{"rule_id": "data_quality.schema_validation", "issue": "…", "..." : "..."}],
+      "warnings": []
+    }
+  ],
   "dialect": "postgres",
-  "duration_ms": 8.7
+  "duration_ms": 8.7,
+  "strict": false
 }
 ```
+
+**Multi-statement input.** If `sql` contains multiple `;`-separated
+statements, the service splits them (comment- and quote-aware) and
+validates each independently. Top-level fields are cross-statement
+aggregates; `results[i]` attributes each error/warning to its source
+query via `query_index` (1-based). Single-statement submissions still
+return a one-element `results` list.
 
 **Error status codes:**
 - `400` — malformed body

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from pathlib import Path
@@ -22,7 +23,9 @@ from slowapi.util import get_remote_address
 from fastssv import validate_sql_structured
 from fastssv.api.config import Settings
 from fastssv.core.base import Severity
+from fastssv.core.helpers import split_sql_statements
 from fastssv.core.registry import get_all_rules
+from fastssv.core.validation_context import with_strict_mode
 
 logger = logging.getLogger("fastssv.api.ui")
 
@@ -98,8 +101,12 @@ async def ui_validate(
     request: Request,
     sql: str = Form(...),
     dialect: str = Form("auto"),
+    strict: str | None = Form(None),
 ) -> HTMLResponse:
     settings: Settings = request.app.state.settings
+    # Any non-empty checkbox value means "on" — HTML checkboxes POST nothing
+    # when unchecked, so a `None` sentinel maps cleanly to False.
+    strict_enabled = bool(strict)
 
     if dialect not in ("auto", "postgres", "tsql"):
         return _render_results(
@@ -126,16 +133,25 @@ async def ui_validate(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
         )
 
+    statements = split_sql_statements(sql) or [sql]
+
     started = time.perf_counter()
     try:
-        violations = await asyncio.wait_for(
-            asyncio.to_thread(validate_sql_structured, sql, dialect),
-            timeout=settings.parse_timeout_seconds,
-        )
+        with with_strict_mode(strict_enabled):
+            per_query = await asyncio.wait_for(
+                asyncio.to_thread(_validate_each, statements, dialect),
+                timeout=settings.parse_timeout_seconds,
+            )
     except asyncio.TimeoutError:
         logger.warning(
             "ui_validation_timeout",
-            extra={"sql_hash": _sql_hash(sql), "dialect": dialect, "client": get_remote_address(request)},
+            extra={
+                "sql_hash": _sql_hash(sql),
+                "dialect": dialect,
+                "strict": strict_enabled,
+                "query_count": len(statements),
+                "client": get_remote_address(request),
+            },
         )
         return _render_results(
             request,
@@ -153,40 +169,80 @@ async def ui_validate(
         )
 
     duration_ms = (time.perf_counter() - started) * 1000.0
-    errors = [v for v in violations if v.severity == Severity.ERROR]
-    warnings = [v for v in violations if v.severity == Severity.WARNING]
+
+    query_results: List[Dict[str, Any]] = []
+    total_errors = 0
+    total_warnings = 0
+    for idx, stmt, violations in per_query:
+        errs = [v for v in violations if v.severity == Severity.ERROR]
+        warns = [v for v in violations if v.severity == Severity.WARNING]
+        total_errors += len(errs)
+        total_warnings += len(warns)
+        result_payload = {
+            "query_index": idx,
+            "sql": stmt,
+            "is_valid": len(errs) == 0,
+            "error_count": len(errs),
+            "warning_count": len(warns),
+            "errors": [
+                {
+                    "rule_id": v.rule_id,
+                    "severity": v.severity.value,
+                    "issue": v.message,
+                    "suggested_fix": v.suggested_fix,
+                    "details": v.details or {},
+                }
+                for v in errs
+            ],
+            "warnings": [
+                {
+                    "rule_id": v.rule_id,
+                    "severity": v.severity.value,
+                    "issue": v.message,
+                    "suggested_fix": v.suggested_fix,
+                    "details": v.details or {},
+                }
+                for v in warns
+            ],
+        }
+        query_results.append(
+            {
+                **result_payload,
+                "violations": result_payload["errors"] + result_payload["warnings"],
+                "json_str": json.dumps(result_payload, indent=2, ensure_ascii=False),
+            }
+        )
 
     logger.info(
         "ui_validation_complete",
         extra={
             "sql_hash": _sql_hash(sql),
             "dialect": dialect,
-            "errors": len(errors),
-            "warnings": len(warnings),
+            "strict": strict_enabled,
+            "query_count": len(statements),
+            "errors": total_errors,
+            "warnings": total_warnings,
             "duration_ms": round(duration_ms, 2),
             "client": get_remote_address(request),
         },
     )
 
-    all_violations: List[Dict[str, Any]] = [
-        {
-            "rule_id": v.rule_id,
-            "severity": v.severity.value,
-            "issue": v.message,
-            "suggested_fix": v.suggested_fix,
-        }
-        for v in list(errors) + list(warnings)
-    ]
-
     return _render_results(
         request,
-        is_valid=len(errors) == 0,
-        error_count=len(errors),
-        warning_count=len(warnings),
-        violations=all_violations,
+        is_valid=total_errors == 0,
+        error_count=total_errors,
+        warning_count=total_warnings,
+        query_results=query_results,
         duration_ms=round(duration_ms, 2),
         dialect=dialect,
     )
+
+
+def _validate_each(statements, dialect):
+    out = []
+    for idx, stmt in enumerate(statements, start=1):
+        out.append((idx, stmt, validate_sql_structured(stmt, dialect=dialect)))
+    return out
 
 
 def _render_results(
@@ -197,7 +253,7 @@ def _render_results(
     is_valid: bool = False,
     error_count: int = 0,
     warning_count: int = 0,
-    violations: List[Dict[str, Any]] | None = None,
+    query_results: List[Dict[str, Any]] | None = None,
     duration_ms: float = 0.0,
     dialect: str = "",
     status_code: int = 200,
@@ -211,7 +267,7 @@ def _render_results(
             "is_valid": is_valid,
             "error_count": error_count,
             "warning_count": warning_count,
-            "violations": violations or [],
+            "query_results": query_results or [],
             "duration_ms": duration_ms,
             "dialect": dialect,
             "rules_loaded": _rules_loaded(),

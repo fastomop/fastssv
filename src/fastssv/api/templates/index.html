@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Validate SQL · FastSSV{% endblock %}
 
+{% block extra_scripts %}
+<script src="{{ url_for('static', path='prism.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='prism-sql.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='sql-editor.js') }}" defer></script>
+{% endblock %}
+
 {% block content %}
 <section class="panel">
   <h1>Validate an OMOP SQL query</h1>
@@ -11,14 +17,40 @@
         hx-swap="innerHTML"
         hx-indicator="#loading"
         hx-disabled-elt="find button[type=submit]">
-    <label for="sql">SQL</label>
-    <textarea id="sql"
-              name="sql"
-              rows="14"
-              spellcheck="false"
-              placeholder="SELECT person_id FROM person;"
-              required
-              maxlength="{{ max_sql_bytes }}"></textarea>
+    <div class="editor-header">
+      <label for="sql">SQL</label>
+      <div class="editor-actions">
+        <kbd class="kbd-hint" aria-hidden="true">⌘/Ctrl + ↵ to validate</kbd>
+        <button type="button" class="icon-btn" data-action="clear" data-target="#sql"
+                title="Clear the editor" aria-label="Clear SQL">Clear</button>
+      </div>
+    </div>
+    <div class="sql-editor">
+      <pre class="sql-highlight" aria-hidden="true"><code class="language-sql" id="sql-hl"></code></pre>
+      <textarea id="sql"
+                name="sql"
+                rows="14"
+                spellcheck="false"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                placeholder="SELECT person_id FROM person;"
+                required
+                maxlength="{{ max_sql_bytes }}"></textarea>
+      <button type="button"
+              class="editor-copy-btn"
+              data-action="copy"
+              data-target="#sql"
+              title="Copy SQL to clipboard"
+              aria-label="Copy SQL">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+    </div>
     <div class="row">
       <label for="dialect">Dialect</label>
       <select id="dialect" name="dialect">
@@ -26,6 +58,10 @@
         <option value="postgres">PostgreSQL</option>
         <option value="tsql">T-SQL / SQL Server</option>
       </select>
+      <label class="toggle-btn" title="Escalates best-practice warnings to errors">
+        <input type="checkbox" id="strict" name="strict" value="on">
+        <span>Strict mode</span>
+      </label>
       <button type="submit">Validate</button>
       <span id="loading" class="htmx-indicator muted">Validating…</span>
     </div>

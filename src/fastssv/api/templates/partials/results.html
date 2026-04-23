@@ -6,31 +6,82 @@
 {% else %}
   <header class="results-header">
     {% if is_valid %}
-      <span class="banner banner-ok"><strong>Valid</strong> — no errors</span>
+      <span class="banner banner-ok"><strong>Valid</strong></span>
     {% else %}
       <span class="banner banner-error"><strong>{{ error_count }} error{{ error_count|pluralize }}</strong></span>
     {% endif %}
     {% if warning_count %}
       <span class="banner banner-warn">{{ warning_count }} warning{{ warning_count|pluralize }}</span>
     {% endif %}
-    <span class="muted">{{ duration_ms }} ms · dialect: {{ dialect }}</span>
+    {% if query_results|length > 1 %}
+      <span class="muted">{{ query_results|length }} queries · {{ duration_ms }} ms · dialect: {{ dialect }}</span>
+    {% else %}
+      <span class="muted">{{ duration_ms }} ms · dialect: {{ dialect }}</span>
+    {% endif %}
   </header>
 
-  {% if violations %}
-    <ul class="violations">
-      {% for v in violations %}
-        <li class="violation sev-{{ v.severity }}">
-          <header>
-            <span class="sev sev-{{ v.severity }}">{{ v.severity }}</span>
-            <code class="rule-id">{{ v.rule_id }}</code>
+  {% if query_results %}
+    <ol class="query-results">
+      {% for q in query_results %}
+        <li class="query-result {% if q.is_valid %}query-ok{% else %}query-bad{% endif %}" data-view="formatted">
+          <header class="query-header">
+            <span class="query-idx">Query {{ q.query_index }}</span>
+            {% if q.is_valid %}
+              <span class="banner banner-ok">Valid</span>
+            {% else %}
+              <span class="banner banner-error">{{ q.error_count }} error{{ q.error_count|pluralize }}</span>
+            {% endif %}
+            {% if q.warning_count %}
+              <span class="banner banner-warn">{{ q.warning_count }} warning{{ q.warning_count|pluralize }}</span>
+            {% endif %}
+            <button type="button"
+                    class="icon-btn icon-btn-sm view-toggle"
+                    data-action="toggle-view"
+                    aria-label="Toggle JSON view for query {{ q.query_index }}">
+              <span class="view-label-formatted">JSON</span>
+              <span class="view-label-json">Formatted</span>
+            </button>
           </header>
-          <p class="issue">{{ v.issue }}</p>
-          {% if v.suggested_fix %}
-            <p class="fix"><strong>Fix:</strong> {{ v.suggested_fix }}</p>
-          {% endif %}
+
+          <div class="query-view query-view-formatted">
+            <pre class="query-sql"><code>{{ q.sql }}</code></pre>
+            {% if q.violations %}
+              <ul class="violations">
+                {% for v in q.violations %}
+                  <li class="violation sev-{{ v.severity }}">
+                    <header>
+                      <span class="sev sev-{{ v.severity }}">{{ v.severity }}</span>
+                      <code class="rule-id">{{ v.rule_id }}</code>
+                    </header>
+                    <p class="issue">{{ v.issue }}</p>
+                    {% if v.suggested_fix %}
+                      <p class="fix"><strong>Fix:</strong> {{ v.suggested_fix }}</p>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </div>
+
+          <div class="query-view query-view-json">
+            <pre class="query-json"><code>{{ q.json_str }}</code></pre>
+            <button type="button"
+                    class="editor-copy-btn"
+                    data-action="copy"
+                    data-text="{{ q.json_str }}"
+                    title="Copy JSON to clipboard"
+                    aria-label="Copy JSON for query {{ q.query_index }}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+                   stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
         </li>
       {% endfor %}
-    </ul>
+    </ol>
   {% elif is_valid %}
     <p class="muted">This query passes all {{ rules_loaded }} registered rules.</p>
   {% endif %}

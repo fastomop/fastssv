@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Sequence
 from fastssv import validate_sql_structured
 from fastssv.core.base import RuleViolation, Severity
 from fastssv.core.helpers import detect_dialect as _auto_detect_dialect
+from fastssv.core.helpers import split_sql_statements
 from fastssv.core.logging import (
     setup_logging,
     log_validation_start,
@@ -47,79 +48,8 @@ def _clean_llm_output(sql: str) -> str:
     return sql.strip()
 
 
-def _split_queries(sql: str) -> List[str]:
-    """Split SQL content into individual queries by semicolon."""
-
-    def has_sql_content(text: str) -> bool:
-        no_block_comments = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-        no_comments = re.sub(r"--[^\n]*", "", no_block_comments)
-        return bool(no_comments.strip())
-
-    queries = []
-    current = []
-    in_single_quote = False
-    in_double_quote = False
-    in_line_comment = False
-    in_block_comment = False
-    i = 0
-
-    while i < len(sql):
-        char = sql[i]
-        next_char = sql[i + 1] if i + 1 < len(sql) else ''
-
-        if not in_single_quote and not in_double_quote and not in_block_comment:
-            if char == '-' and next_char == '-':
-                in_line_comment = True
-                current.append(char)
-                i += 1
-                continue
-
-        if in_line_comment:
-            current.append(char)
-            if char == '\n':
-                in_line_comment = False
-            i += 1
-            continue
-
-        if not in_single_quote and not in_double_quote and not in_line_comment:
-            if char == '/' and next_char == '*':
-                in_block_comment = True
-                current.append(char)
-                i += 1
-                continue
-
-        if in_block_comment:
-            current.append(char)
-            if char == '*' and next_char == '/':
-                current.append(next_char)
-                in_block_comment = False
-                i += 2
-                continue
-            i += 1
-            continue
-
-        if char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-        elif char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-
-        if char == ';' and not in_single_quote and not in_double_quote:
-            current.append(char)
-            query = ''.join(current).strip()
-            if query and query != ';' and has_sql_content(query):
-                queries.append(query)
-            current = []
-            i += 1
-            continue
-
-        current.append(char)
-        i += 1
-
-    remaining = ''.join(current).strip()
-    if remaining and has_sql_content(remaining):
-        queries.append(remaining)
-
-    return queries
+_split_queries = split_sql_statements
+"""Backward-compat alias: callers in tests import ``_split_queries`` directly."""
 
 
 def build_validation_result(

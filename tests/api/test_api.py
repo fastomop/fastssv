@@ -66,6 +66,92 @@ def test_validate_empty_sql_rejected(client: TestClient):
     assert resp.status_code == 422
 
 
+_STRICT_ESCALATION_SQL = """
+WITH cc AS (
+    SELECT descendant_concept_id AS concept_id FROM concept_ancestor
+    WHERE ancestor_concept_id IN (320128)
+)
+SELECT person_id FROM condition_occurrence co
+WHERE co.condition_concept_id IN (SELECT concept_id FROM cc)
+"""
+
+
+def test_validate_default_is_non_strict(client: TestClient):
+    resp = client.post(
+        "/v1/validate",
+        json={"sql": _STRICT_ESCALATION_SQL, "dialect": "postgres"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["strict"] is False
+    # Best-practice rule stays a WARNING; query is still is_valid=true.
+    assert body["is_valid"] is True
+    assert any(
+        w["rule_id"] == "concept_standardization.standard_concept_enforcement"
+        for w in body["warnings"]
+    )
+
+
+def test_validate_single_statement_has_one_result(client: TestClient):
+    resp = client.post(
+        "/v1/validate",
+        json={"sql": "SELECT person_id FROM person", "dialect": "postgres"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query_count"] == 1
+    assert len(body["results"]) == 1
+    first = body["results"][0]
+    assert first["query_index"] == 1
+    assert first["is_valid"] is True
+
+
+def test_validate_multi_statement_attributes_per_query(client: TestClient):
+    resp = client.post(
+        "/v1/validate",
+        json={
+            "sql": (
+                "SELECT person_id FROM person; "
+                "SELECT * FROM bogus_table_alpha; "
+                "SELECT * FROM bogus_table_beta;"
+            ),
+            "dialect": "postgres",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query_count"] == 3
+    assert body["error_count"] == 2
+    assert len(body["results"]) == 3
+    assert body["results"][0]["is_valid"] is True
+    assert body["results"][0]["query_index"] == 1
+    assert body["results"][1]["is_valid"] is False
+    assert body["results"][1]["query_index"] == 2
+    assert any(
+        "bogus_table_alpha" in e["issue"] for e in body["results"][1]["errors"]
+    )
+    assert body["results"][2]["query_index"] == 3
+    assert any(
+        "bogus_table_beta" in e["issue"] for e in body["results"][2]["errors"]
+    )
+
+
+def test_validate_strict_escalates_warning_to_error(client: TestClient):
+    resp = client.post(
+        "/v1/validate",
+        json={"sql": _STRICT_ESCALATION_SQL, "dialect": "postgres", "strict": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["strict"] is True
+    assert body["is_valid"] is False
+    # Standard-concept rule now reports as an ERROR.
+    assert any(
+        e["rule_id"] == "concept_standardization.standard_concept_enforcement"
+        for e in body["errors"]
+    )
+
+
 def test_validate_bad_dialect_rejected(client: TestClient):
     resp = client.post(
         "/v1/validate",
