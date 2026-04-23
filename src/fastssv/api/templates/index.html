@@ -2,9 +2,9 @@
 {% block title %}Free OMOP SQL Validator · FastSSV{% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', path='prism.min.js') }}" defer></script>
-<script src="{{ url_for('static', path='prism-sql.min.js') }}" defer></script>
-<script src="{{ url_for('static', path='sql-editor.js') }}" defer></script>
+<script src="{{ url_for('static', path='prism.min.js') }}?v={{ static_version }}" defer></script>
+<script src="{{ url_for('static', path='prism-sql.min.js') }}?v={{ static_version }}" defer></script>
+<script src="{{ url_for('static', path='sql-editor.js') }}?v={{ static_version }}" defer></script>
 {% endblock %}
 
 {% block content %}

@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import time
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -33,6 +34,17 @@ TEMPLATES_DIR = _BASE / "templates"
 STATIC_DIR = _BASE / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+# Cache-bust token for static assets. Combines the package version (stable
+# for a given installed release) with the app-process start time (changes on
+# every uvicorn --reload cycle), so CSS/JS edits are picked up without forcing
+# users to hard-refresh manually.
+try:
+    _PKG_VERSION = pkg_version("fastssv")
+except PackageNotFoundError:
+    _PKG_VERSION = "dev"
+_STATIC_VERSION = f"{_PKG_VERSION}.{int(time.time())}"
+templates.env.globals["static_version"] = _STATIC_VERSION
 
 
 def _sql_hash(sql: str) -> str:

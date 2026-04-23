@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>{% block title %}FastSSV{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
-  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v={{ static_version }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}?v={{ static_version }}" defer></script>
   {% block extra_scripts %}{% endblock %}
 </head>
 <body>

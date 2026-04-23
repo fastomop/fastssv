@@ -197,7 +197,7 @@
         el.focus();
       }
     } else if (action === "toggle-view") {
-      var panel = btn.closest(".query-result");
+      var panel = btn.closest(".query-block, .query-result");
       if (!panel) return;
       var current = panel.getAttribute("data-view") || "formatted";
       panel.setAttribute("data-view", current === "json" ? "formatted" : "json");

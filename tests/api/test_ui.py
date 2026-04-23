@@ -65,8 +65,11 @@ def test_ui_validate_valid_query_renders_ok_banner(client: TestClient):
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     body = resp.text
-    assert "banner-ok" in body
+    # Valid query: pastel mint block + "passed" in the stat strip
+    assert "block-ok" in body
+    assert "status-ok" in body
     assert "Valid" in body
+    assert "passed" in body
 
 
 def test_ui_validate_invalid_table_renders_error_card(client: TestClient):
@@ -176,9 +179,9 @@ def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient)
     # Each bad-table error appears in a panel — per-query attribution.
     assert "bogus_table_alpha" in body
     assert "bogus_table_beta" in body
-    # First panel is valid, others are flagged.
-    assert body.count('class="query-result query-ok"') == 1
-    assert body.count('class="query-result query-bad"') == 2
+    # First block is valid (mint pastel), others are flagged (red pastel).
+    assert body.count("block-ok") == 1
+    assert body.count("block-bad") == 2
 
 
 def test_ui_ignores_strict_form_param(client: TestClient):
@@ -199,5 +202,6 @@ def test_ui_ignores_strict_form_param(client: TestClient):
     assert resp.status_code == 200
     body = resp.text
     # Non-strict: the rule still fires as a warning, not an error.
-    assert "banner-ok" in body
+    # Whole block is valid-styled (block-ok) and warnings appear in the violation list.
+    assert "block-ok" in body
     assert "sev-warning" in body

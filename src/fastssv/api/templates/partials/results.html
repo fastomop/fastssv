@@ -4,38 +4,49 @@
     {% if detail %}<p>{{ detail }}</p>{% endif %}
   </div>
 {% else %}
-  <header class="results-header">
-    {% if is_valid %}
-      <span class="banner banner-ok"><strong>Valid</strong></span>
-    {% else %}
-      <span class="banner banner-error"><strong>{{ error_count }} error{{ error_count|pluralize }}</strong></span>
-    {% endif %}
+  <div class="stat-strip">
+    <span class="stat stat-neutral">
+      <span class="stat-num">{{ query_results|length }}</span>
+      <span class="stat-label">quer{% if query_results|length == 1 %}y{% else %}ies{% endif %}</span>
+    </span>
+    {% set passed = query_results | selectattr('is_valid') | list | length %}
+    {% set failed = query_results | rejectattr('is_valid') | list | length %}
+    <span class="stat stat-ok">
+      <span class="stat-num">{{ passed }}</span>
+      <span class="stat-label">passed</span>
+    </span>
+    <span class="stat stat-bad">
+      <span class="stat-num">{{ failed }}</span>
+      <span class="stat-label">failed</span>
+    </span>
     {% if warning_count %}
-      <span class="banner banner-warn">{{ warning_count }} warning{{ warning_count|pluralize }}</span>
+      <span class="stat stat-warn">
+        <span class="stat-num">{{ warning_count }}</span>
+        <span class="stat-label">warning{{ warning_count|pluralize }}</span>
+      </span>
     {% endif %}
-    {% if query_results|length > 1 %}
-      <span class="muted">{{ query_results|length }} queries · {{ duration_ms }} ms · dialect: {{ dialect }}</span>
-    {% else %}
-      <span class="muted">{{ duration_ms }} ms · dialect: {{ dialect }}</span>
-    {% endif %}
-  </header>
+    <span class="stat stat-neutral stat-time">
+      <span class="stat-num">{{ duration_ms }}</span>
+      <span class="stat-label">ms · {{ dialect }}</span>
+    </span>
+  </div>
 
   {% if query_results %}
     <ol class="query-results">
       {% for q in query_results %}
-        <li class="query-result {% if q.is_valid %}query-ok{% else %}query-bad{% endif %}" data-view="formatted">
-          <header class="query-header">
-            <span class="query-idx">Query {{ q.query_index }}</span>
+        <li class="query-block {% if q.is_valid %}block-ok{% else %}block-bad{% endif %}" data-view="formatted">
+          <header class="query-block-head">
+            <span class="query-tag">Query {{ q.query_index }}</span>
             {% if q.is_valid %}
-              <span class="banner banner-ok">Valid</span>
+              <span class="status-pill status-ok">Valid</span>
             {% else %}
-              <span class="banner banner-error">{{ q.error_count }} error{{ q.error_count|pluralize }}</span>
+              <span class="status-pill status-bad">{{ q.error_count }} error{{ q.error_count|pluralize }}</span>
             {% endif %}
             {% if q.warning_count %}
-              <span class="banner banner-warn">{{ q.warning_count }} warning{{ q.warning_count|pluralize }}</span>
+              <span class="status-pill status-warn">{{ q.warning_count }} warning{{ q.warning_count|pluralize }}</span>
             {% endif %}
             <button type="button"
-                    class="icon-btn icon-btn-sm view-toggle"
+                    class="view-toggle"
                     data-action="toggle-view"
                     aria-label="Toggle JSON view for query {{ q.query_index }}">
               <span class="view-label-formatted">JSON</span>
@@ -82,7 +93,5 @@
         </li>
       {% endfor %}
     </ol>
-  {% elif is_valid %}
-    <p class="muted">This query passes all {{ rules_loaded }} registered rules.</p>
   {% endif %}
 {% endif %}
