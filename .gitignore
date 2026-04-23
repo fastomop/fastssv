@@ -56,3 +56,6 @@ temp/
 
 # Local working notes / implementation planning (not distributed)
 tasks/
+
+# Local utility scripts (not distributed)
+scripts/
