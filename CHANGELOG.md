@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 starting from 1.0.0. Pre-1.0 releases may contain breaking rule-set changes
 between minor versions.
 
+## [Unreleased]
+
+### Added
+
+- **HTTP API** (`fastssv.api`). Optional FastAPI service exposing the
+  validator over HTTP. Installed via `pip install "fastssv[api]"`.
+  Endpoints: `POST /v1/validate`, `GET /v1/rules`, `GET /v1/health`,
+  plus Swagger UI at `/docs`. Production guardrails baked in: body-size
+  limit, parse timeout, rate limiting, strict CORS, security headers,
+  structured JSON logging (SQL body never logged — only hash),
+  consistent error schema, versioned routes. See [docs/API.md](docs/API.md).
+- **Dockerfile** at `deploy/Dockerfile` — multi-stage, non-root user,
+  `HEALTHCHECK`, gunicorn + uvicorn worker.
+- `api` optional extra in `pyproject.toml` (`fastapi`,
+  `uvicorn[standard]`, `gunicorn`, `slowapi`, `pydantic-settings`).
+- `httpx` added to the `dev` extra for `TestClient`-based API tests.
+
+### Removed (dead-code cleanup)
+
+- Orphaned `fastssv.core.rule_layer` module (`RuleLayer` enum and
+  `RuleMetadata` dataclass were planned scaffolding that nothing
+  consumed).
+- `Rule.metadata` class attribute (tied to the removed module).
+- `ColumnDef.nullable` field in `fastssv.core.omop_schema` — set on
+  every column but never read.
+- Unused `query_index` parameter on `cli.build_validation_result`.
+- Several unused locals (`concept_alias` in
+  `maps_to_target_standard_validation`, `table_norm` in
+  `fact_relationship_valid_concepts`, leftover regex variables in
+  `fixer.py`).
+
 ## [0.2.0]
 
 This release is the result of a calibration pass against real OHDSI/Achilles

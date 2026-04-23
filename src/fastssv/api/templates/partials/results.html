@@ -1,0 +1,37 @@
+{% if error %}
+  <div class="banner banner-error">
+    <strong>{{ error }}</strong>
+    {% if detail %}<p>{{ detail }}</p>{% endif %}
+  </div>
+{% else %}
+  <header class="results-header">
+    {% if is_valid %}
+      <span class="banner banner-ok"><strong>Valid</strong> — no errors</span>
+    {% else %}
+      <span class="banner banner-error"><strong>{{ error_count }} error{{ error_count|pluralize }}</strong></span>
+    {% endif %}
+    {% if warning_count %}
+      <span class="banner banner-warn">{{ warning_count }} warning{{ warning_count|pluralize }}</span>
+    {% endif %}
+    <span class="muted">{{ duration_ms }} ms · dialect: {{ dialect }}</span>
+  </header>
+
+  {% if violations %}
+    <ul class="violations">
+      {% for v in violations %}
+        <li class="violation sev-{{ v.severity }}">
+          <header>
+            <span class="sev sev-{{ v.severity }}">{{ v.severity }}</span>
+            <code class="rule-id">{{ v.rule_id }}</code>
+          </header>
+          <p class="issue">{{ v.issue }}</p>
+          {% if v.suggested_fix %}
+            <p class="fix"><strong>Fix:</strong> {{ v.suggested_fix }}</p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% elif is_valid %}
+    <p class="muted">This query passes all {{ rules_loaded }} registered rules.</p>
+  {% endif %}
+{% endif %}

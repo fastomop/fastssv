@@ -46,7 +46,7 @@ fastssv query.sql --categories anti_patterns
 fastssv query.sql --categories concept_standardization anti_patterns
 
 # Run specific rules
-fastssv query.sql --rules concept_standardization.standard_concept_enforcement concept_standardization.hierarchy_expansion_required
+fastssv query.sql --rules concept_standardization.standard_concept_enforcement concept_standardization.concept_ancestor_rollup_direction
 
 # Custom output path
 fastssv query.sql --output my_report.json
@@ -95,22 +95,34 @@ SELECT * FROM condition_occurrence co
 JOIN concept c ON co.condition_concept_id = c.concept_id;
 ```
 
-#### 3. Hierarchy Expansion Required (`concept_standardization.hierarchy_expansion_required`)
+#### 3. Concept Ancestor Rollup Direction (`concept_standardization.concept_ancestor_rollup_direction`)
 **Severity:** ERROR
 
-Ensures `drug_concept_id` and `condition_concept_id` filters use `concept_ancestor` to capture all descendant concepts.
+When rolling up to ancestor concepts via `concept_ancestor`, the join direction
+must match the intent. Filtering on `ancestor_concept_id` retrieves descendants
+of that ancestor; filtering on `descendant_concept_id` retrieves ancestors of
+that descendant. Reversing the two silently returns the wrong set.
 
 **Example violation:**
 ```sql
--- BAD: Missing hierarchy expansion
-SELECT * FROM drug_exposure
-WHERE drug_concept_id = 1234;  -- Only matches exact concept
+-- BAD: Intent is "all descendants of concept 1234" but join direction is reversed
+SELECT ca.ancestor_concept_id
+FROM drug_exposure de
+JOIN concept_ancestor ca ON de.drug_concept_id = ca.ancestor_concept_id
+WHERE ca.descendant_concept_id = 1234;
 
--- GOOD: Uses concept_ancestor for hierarchy
-SELECT * FROM drug_exposure de
+-- GOOD: Descendants of 1234
+SELECT de.*
+FROM drug_exposure de
 JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 1234;  -- Matches all descendants
+WHERE ca.ancestor_concept_id = 1234;
 ```
+
+> **Historical note:** A stricter rule, `concept_standardization.hierarchy_expansion_required`,
+> previously fired on any specific-concept filter (e.g. `drug_concept_id = 1234`)
+> that did not go through `concept_ancestor`. It was removed in 0.2.0 because
+> specific-concept filters are legitimate in many contexts (e.g. single-drug
+> exposure checks, denominator definitions). See [CHANGELOG.md](../CHANGELOG.md).
 
 #### 4. Observation Period Anchoring (`temporal.observation_period_anchoring`)
 **Severity:** ERROR

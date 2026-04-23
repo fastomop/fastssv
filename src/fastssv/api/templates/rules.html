@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Rules · FastSSV{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h1>Validation rules</h1>
+  <p class="muted">{{ rules|length }} rules registered across {{ categories|length }} categories.</p>
+
+  <div class="row">
+    <input type="search"
+           id="rule-filter"
+           placeholder="Filter by id, name, description…"
+           autocomplete="off"
+           oninput="filterRules(this.value)">
+    <select id="cat-filter" onchange="filterRules()">
+      <option value="">All categories</option>
+      {% for cat in categories %}
+        <option value="{{ cat }}">{{ cat }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</section>
+
+<section class="rules-list">
+  {% for r in rules %}
+    <article class="rule-card"
+             data-rule-id="{{ r.rule_id|lower }}"
+             data-name="{{ r.name|lower }}"
+             data-desc="{{ r.description|lower }}"
+             data-category="{{ r.category }}">
+      <header>
+        <span class="sev sev-{{ r.severity }}">{{ r.severity }}</span>
+        <span class="cat">{{ r.category }}</span>
+      </header>
+      <h2>{{ r.name }}</h2>
+      <code class="rule-id">{{ r.rule_id }}</code>
+      <p>{{ r.description }}</p>
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+  function filterRules() {
+    const q = (document.getElementById('rule-filter').value || '').toLowerCase().trim();
+    const cat = document.getElementById('cat-filter').value;
+    document.querySelectorAll('.rule-card').forEach(card => {
+      const matchesText = !q
+        || card.dataset.ruleId.includes(q)
+        || card.dataset.name.includes(q)
+        || card.dataset.desc.includes(q);
+      const matchesCat = !cat || card.dataset.category === cat;
+      card.hidden = !(matchesText && matchesCat);
+    });
+  }
+</script>
+{% endblock %}

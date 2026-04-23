@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}FastSSV{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a href="/" class="brand">FastSSV</a>
+      <nav>
+        <a href="/" {% if active == 'validate' %}aria-current="page"{% endif %}>Validate</a>
+        <a href="/rules" {% if active == 'rules' %}aria-current="page"{% endif %}>Rules</a>
+        <a href="/docs" target="_blank" rel="noopener">API</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>Static validation of OMOP CDM SQL · {{ rules_loaded }} rules loaded</span>
+    </div>
+  </footer>
+</body>
+</html>

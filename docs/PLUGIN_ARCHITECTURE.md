@@ -268,25 +268,27 @@ for v in violations:
 
 ### Core Categories
 
-Current registered category counts:
+Current registered category counts (see [RULES_REFERENCE.md](RULES_REFERENCE.md)
+for the full list):
 
-- `anti_patterns`: 10
-- `concept_standardization`: 19
-- `data_quality`: 12
-- `domain_specific`: 21
-- `joins`: 35
-- `temporal`: 9
+- `anti_patterns`: 24
+- `concept_standardization`: 18
+- `data_quality`: 27
+- `domain_specific`: 42
+- `joins`: 36
+- `temporal`: 10
+
+**Total: 157**
 
 Representative examples from the current public categories:
 
 - `joins.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
 - `concept_standardization.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
-- `concept_standardization.hierarchy_expansion_required` - Concept hierarchy expansion via concept_ancestor
+- `concept_standardization.concept_ancestor_rollup_direction` - Validates ancestor/descendant direction of concept_ancestor rollups
 - `temporal.observation_period_anchoring` - Temporal constraints anchored to observation_period
 - `joins.maps_to_direction` - Maps-to relationship direction validation (source → standard)
 - `data_quality.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
 - `concept_standardization.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
-
 - `anti_patterns.no_string_identification` - String-based concept ID lookup detection
 - `anti_patterns.concept_lookup_context` - Concept table string filter validation
 - `anti_patterns.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)

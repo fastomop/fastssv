@@ -161,14 +161,18 @@ To add a new validation rule:
 
 ### Category Summary
 
-- `anti_patterns`: 22 rules
-- `concept_standardization`: 20 rules
-- `data_quality`: 24 rules
-- `domain_specific`: 39 rules
+- `anti_patterns`: 24 rules
+- `concept_standardization`: 18 rules
+- `data_quality`: 27 rules
+- `domain_specific`: 42 rules
 - `joins`: 36 rules
 - `temporal`: 10 rules
 
-**Total: 151 rules**
+**Total: 157 rules**
+
+> The category `schema` also exists as a Python package but contains the
+> single fundamental-correctness rule `data_quality.schema_validation`;
+> it is counted under `data_quality` above.
 
 ### Representative Rules
 
@@ -180,9 +184,9 @@ To add a new validation rule:
    - **Severity:** ERROR
    - Ensures STANDARD concept fields enforce `concept.standard_concept = 'S'`
 
-3. **hierarchy_expansion** (`concept_standardization.hierarchy_expansion_required`)
+3. **concept_ancestor_rollup_direction** (`concept_standardization.concept_ancestor_rollup_direction`)
    - **Severity:** ERROR
-   - Ensures drug and condition filters use `concept_ancestor`
+   - Validates the ancestor/descendant direction of `concept_ancestor` rollups
 
 4. **observation_period_anchoring** (`temporal.observation_period_anchoring`)
    - **Severity:** ERROR

@@ -142,7 +142,7 @@ FASTSSV_LOG_FORMAT=simple fastssv query.sql
 Output:
 ```
 INFO: Starting validation: 245 characters, dialect=postgres
-INFO: Validation complete: 168 rules, 2 errors, 3 warnings
+INFO: Validation complete: 157 rules, 2 errors, 3 warnings
 ```
 
 ### Detailed Format (Default)
@@ -156,8 +156,8 @@ FASTSSV_LOG_FORMAT=detailed fastssv query.sql
 Output:
 ```
 2026-04-20 19:30:15 - fastssv.cli - INFO - Starting validation: 245 characters, dialect=postgres
-2026-04-20 19:30:15 - fastssv - INFO - Running all 168 rules
-2026-04-20 19:30:15 - fastssv - INFO - Validation complete: 168 rules, 2 errors, 3 warnings
+2026-04-20 19:30:15 - fastssv - INFO - Running all 157 rules
+2026-04-20 19:30:15 - fastssv - INFO - Validation complete: 157 rules, 2 errors, 3 warnings
 ```
 
 ### JSON Format
@@ -171,8 +171,8 @@ FASTSSV_LOG_FORMAT=json fastssv query.sql
 Output:
 ```json
 {"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv.cli", "message": "Starting validation: 245 characters, dialect=postgres"}
-{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Running all 168 rules"}
-{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Validation complete: 168 rules, 2 errors, 3 warnings", "violation_count": 5}
+{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Running all 157 rules"}
+{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Validation complete: 157 rules, 2 errors, 3 warnings", "violation_count": 5}
 ```
 
 **Benefits:**
@@ -330,8 +330,8 @@ When performance logging is enabled:
 ### Example Output
 
 ```
-2026-04-20 19:30:15 - fastssv.cli - INFO - Validation complete: 168 rules, 2 errors, 3 warnings {"duration_ms": 125.45}
-2026-04-20 19:30:15 - fastssv - DEBUG - Rule concept_standardization.hierarchy_expansion_required: 0 violation(s) {"rule_id": "concept_standardization.hierarchy_expansion_required", "violation_count": 0, "duration_ms": 2.34}
+2026-04-20 19:30:15 - fastssv.cli - INFO - Validation complete: 157 rules, 2 errors, 3 warnings {"duration_ms": 125.45}
+2026-04-20 19:30:15 - fastssv - DEBUG - Rule concept_standardization.concept_ancestor_rollup_direction: 0 violation(s) {"rule_id": "concept_standardization.concept_ancestor_rollup_direction", "violation_count": 0, "duration_ms": 2.34}
 ```
 
 ### JSON Format with Performance
@@ -343,7 +343,7 @@ JSON logs include structured timing data:
   "timestamp": "2026-04-20 19:30:15",
   "level": "INFO",
   "logger": "fastssv.cli",
-  "message": "Validation complete: 168 rules, 2 errors, 3 warnings",
+  "message": "Validation complete: 157 rules, 2 errors, 3 warnings",
   "duration_ms": 125.45,
   "violation_count": 5
 }

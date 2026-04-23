@@ -61,11 +61,9 @@ For each rule you will find:
 | `concept_standardization.concept_ancestor_self_include_redundancy` | [Concept Ancestor Self-Include Redundancy](#concept-standardization-concept-ancestor-self-include-redundancy) | WARNING | concept_standardization |
 | `concept_standardization.concept_class_id_ingredient_for_drug_grouping` | [Concept Class ID Ingredient for Drug Grouping](#concept-standardization-concept-class-id-ingredient-for-drug-grouping) | WARNING | concept_standardization |
 | `concept_standardization.concept_domain_validation` | [Concept Domain ID Matches Target Table](#concept-standardization-concept-domain-validation) | ERROR | concept_standardization |
-| `concept_standardization.concept_relationship_valid_date_range_check` | [Concept Relationship Valid Date Range Check](#concept-standardization-concept-relationship-valid-date-range-check) | WARNING | concept_standardization |
 | `concept_standardization.concept_synonym_language_concept_id` | [Concept Synonym Language Concept ID](#concept-standardization-concept-synonym-language-concept-id) | WARNING | concept_standardization |
 | `concept_standardization.domain_vocabulary_validation` | [Domain Vocabulary Validation (VOCAB_022-025)](#concept-standardization-domain-vocabulary-validation) | WARNING | concept_standardization |
 | `concept_standardization.era_table_standard_concepts` | [Era Tables Use Standard Concepts Only](#concept-standardization-era-table-standard-concepts) | ERROR | concept_standardization |
-| `concept_standardization.hierarchy_expansion_required` | [Hierarchy Expansion Required](#concept-standardization-hierarchy-expansion-required) | ERROR | concept_standardization |
 | `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement](#concept-standardization-invalid-reason-enforcement) | ERROR | concept_standardization |
 | `concept_standardization.maps_to_target_standard_validation` | [Maps To Target Standard Validation](#concept-standardization-maps-to-target-standard-validation) | ERROR | concept_standardization |
 | `concept_standardization.multiple_maps_to_targets` | [Multiple Maps To Targets Not Handled](#concept-standardization-multiple-maps-to-targets) | WARNING | concept_standardization |
@@ -75,7 +73,6 @@ For each rule you will find:
 | `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | ERROR | concept_standardization |
 | `concept_standardization.standard_concept_value_validation` | [Standard Concept Value Validation](#concept-standardization-standard-concept-value-validation) | ERROR | concept_standardization |
 | `concept_standardization.unit_vocabulary_validation` | [Unit Vocabulary Validation](#concept-standardization-unit-vocabulary-validation) | WARNING | concept_standardization |
-| `concept_standardization.maps_to_chain_follow_to_terminal` | [Maps To Chain Follow To Terminal](#concept-standardization-maps-to-chain-follow-to-terminal) | WARNING | concept_standardization |
 | `joins.care_site_id_join_validation` | [Care Site ID Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
 | `joins.care_site_join_validation` | [Care Site Join Path Validation](#joins-care-site-join-validation) | WARNING | joins |
 | `joins.care_site_location_join_validation` | [Care Site to Location Join Validation](#joins-care-site-location-join-validation) | ERROR | joins |
@@ -86,7 +83,6 @@ For each rule you will find:
 | `joins.concept_alias_reuse_validation` | [Concept Alias Reuse Validation](#joins-concept-alias-reuse-validation) | ERROR | joins |
 | `joins.concept_ancestor_name_resolution` | [Concept Ancestor Name Resolution Validation](#joins-concept-ancestor-name-resolution) | ERROR | joins |
 | `joins.concept_join_validation` | [Concept Join Validation](#joins-concept-join-validation) | ERROR | joins |
-| `joins.concept_relationship_incomplete_join` | [Concept Relationship Incomplete Join](#joins-concept-relationship-incomplete-join) | WARNING | joins |
 | `joins.concept_relationship_requires_relationship_id` | [Concept Relationship Requires Relationship ID Filter](#joins-concept-relationship-requires-relationship-id) | ERROR | joins |
 | `joins.concept_relationship_concept_join_validation` | [Concept Relationship to Concept Join Validation](#joins-concept-relationship-concept-join-validation) | ERROR | joins |
 | `joins.concept_relationship_relationship_join_validation` | [Concept Relationship to Relationship Join Validation](#joins-concept-relationship-relationship-join-validation) | ERROR | joins |
@@ -156,7 +152,6 @@ For each rule you will find:
 | `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | ERROR | anti_patterns |
 | `anti_patterns.concept_lookup_context` | [Concept Lookup Context](#anti-patterns-concept-lookup-context) | ERROR | anti_patterns |
 | `anti_patterns.concept_name_lookup` | [Concept Name Lookup Anti-pattern](#anti-patterns-concept-name-lookup) | WARNING | anti_patterns |
-| `anti_patterns.concept_relationship_missing_relationship_filter` | [Concept Relationship Missing Relationship Filter](#anti-patterns-concept-relationship-missing-relationship-filter) | WARNING | anti_patterns |
 | `anti_patterns.concept_relationship_transitive_misuse` | [Concept Relationship Transitive Misuse](#anti-patterns-concept-relationship-transitive-misuse) | WARNING | anti_patterns |
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
 | `anti_patterns.domain_table_join_uses_domain_id` | [Domain Table Join Uses Domain ID](#anti-patterns-domain-table-join-uses-domain-id) | ERROR | anti_patterns |
@@ -585,81 +580,6 @@ Add or correct concept.domain_id filter to match expected domain.
 
 ---
 
-### 7. Concept Relationship Valid Date Range Check
-
-**Rule ID:** `concept_standardization.concept_relationship_valid_date_range_check`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_relationship table has three temporal validity fields:
-    1. valid_start_date: When the relationship became active
-    2. valid_end_date: When the relationship becomes/became invalid (default: '2099-12-31')
-    3. invalid_reason: NULL (valid), 'D' (deleted), or 'U' (updated)
-
-    Common misconception: Checking invalid_reason IS NULL is sufficient for finding
-    current/valid mappings.
-
-    Reality: A relationship can have:
-    - invalid_reason = NULL (technically "valid")
-    - valid_end_date = '2024-06-30' (expired in the past!)
-
-    This happens when:
-    - Relationships are marked for deprecation but haven't been formally invalidated
-    - Temporal validity is set proactively for future transitions
-    - Vocabulary updates are staged but not yet marked as invalid
-
-    Issues with incomplete temporal checks:
-    1. May include expired relationships in current mappings
-    2. Historical queries may use relationships that didn't exist at the time
-    3. Subtle data quality issues that are hard to detect
-    4. Incorrect prevalence estimates and mapping statistics
-
-#### How it works
-
-Concept Relationship Valid Date Range Check Rule
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT concept_id_2
-    FROM concept_relationship
-    WHERE concept_id_1 = 44836914
-      AND relationship_id = 'Maps to'
-      AND invalid_reason IS NULL
-```
-
-```sql
-with valid_end_date in the past!
-```
-
-**Correct patterns:**
-
-```sql
-SELECT concept_id_2
-    FROM concept_relationship
-    WHERE concept_id_1 = 44836914
-      AND relationship_id = 'Maps to'
-      AND invalid_reason IS NULL
-      AND valid_end_date >= CURRENT_DATE
-```
-
-```sql
-SELECT concept_id_2
-    FROM concept_relationship
-    WHERE concept_id_1 = 1234
-      AND relationship_id = 'Maps to'
-      AND invalid_reason IS NULL
-      AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date
-```
-
-#### Suggested fix
-
-Add temporal validity check: valid_end_date >= CURRENT_DATE or CURRENT_DATE BETWEEN valid_start_date AND valid_end_date
-
----
 
 ### 8. Concept Synonym Language Concept ID
 
@@ -808,26 +728,6 @@ Remove filters for non-standard concepts. Era tables only contain standard conce
 
 ---
 
-### 11. Hierarchy Expansion Required
-
-**Rule ID:** `concept_standardization.hierarchy_expansion_required`
-**Severity:** ERROR
-
-#### Intent
-
-OMOP semantic rule: When filtering on drug_concept_id or condition_concept_id, consider using concept_ancestor table to capture all descendants (child concepts).
-
-#### How it works
-
-This rule analyzes the SQL query to identify hierarchy expansion required patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Use concept_ancestor for hierarchy expansion: JOIN concept_ancestor ca ON table.concept_id = ca.descendant_concept_id WHERE ca.ancestor_concept_id = <your_target_concept>. This ensures all descendant concepts are captured. Remove the direct concept_id filter and use only the ancestor_concept_id filter in the concept_ancestor join.
-
----
 
 ### 12. Invalid Reason Enforcement
 
@@ -1703,63 +1603,6 @@ None
 
 ---
 
-### 11. Concept Relationship Incomplete Join
-
-**Rule ID:** `joins.concept_relationship_incomplete_join`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_relationship table stores only concept IDs:
-    - concept_id_1: The source/origin concept ID
-    - concept_id_2: The target/destination concept ID
-
-    To get actual concept information (names, vocabularies, domains), you need
-    to join to the concept table. When working with relationships, you typically
-    want details about BOTH concepts, not just one.
-
-    Joining only one side leaves the other as just a number, which is rarely
-    what users intend when exploring concept relationships.
-
-Common mistake scenarios:
-    1. Joining concept only on concept_id_1 to get source names
-       (but concept_id_2 remains just an ID)
-
-    2. Joining concept only on concept_id_2 to get target names
-       (but concept_id_1 remains just an ID)
-
-    3. Forgetting that relationships need two-sided resolution
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept relationship incomplete join patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT c1.concept_name, cr.concept_id_2
-    FROM concept c1
-    JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
-```
-
-**Correct patterns:**
-
-```sql
-SELECT c1.concept_name AS source_name, c2.concept_name AS target_name
-    FROM concept c1
-    JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-    JOIN concept c2 ON c2.concept_id = cr.concept_id_2
-    WHERE cr.relationship_id = 'Maps to'
-```
-
-#### Suggested fix
-
-Join the concept table twice using different aliases to resolve both concept_id_1 and concept_id_2.
-
----
 
 ### 12. Concept Relationship Requires Relationship ID Filter
 
@@ -4925,92 +4768,6 @@ Use concept_code + vocabulary_id instead: WHERE c.concept_code = '...' AND c.voc
 
 ---
 
-### 10. Concept Relationship Missing Relationship Filter
-
-**Rule ID:** `anti_patterns.concept_relationship_missing_relationship_filter`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_relationship table stores multiple types of relationships between
-    concepts. A single (concept_id_1, concept_id_2) pair can have multiple rows
-    with different relationship_id values:
-    - 'Maps to'
-    - 'Is a'
-    - 'Subsumes'
-    - 'Has finding site'
-    - 'RxNorm has dose form'
-    - etc.
-
-    When you JOIN concept_relationship WITHOUT filtering relationship_id, you get
-    one row per relationship type. This causes:
-    1. Row multiplication: Each concept pair appears multiple times
-    2. Incorrect aggregations: Counts and sums are inflated
-    3. Duplicate results: Same data with different relationship types
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept relationship missing relationship filter patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-without relationship_id filter (row multiplication)
-    SELECT c2.concept_name
-    FROM concept c1
-    JOIN concept_relationship cr
-      ON c1.concept_id = cr.concept_id_1
-    JOIN concept c2
-      ON cr.concept_id_2 = c2.concept_id
-    WHERE c1.concept_id = 201826
-```
-
-```sql
-SELECT c1.concept_name, COUNT(*) as related_count
-    FROM concept c1
-    JOIN concept_relationship cr
-      ON c1.concept_id = cr.concept_id_1
-    WHERE c1.vocabulary_id = 'SNOMED'
-    GROUP BY c1.concept_name
-```
-
-**Correct patterns:**
-
-```sql
-SELECT c2.concept_name
-    FROM concept c1
-    JOIN concept_relationship cr
-      ON c1.concept_id = cr.concept_id_1
-      AND cr.relationship_id = 'Maps to'
-    JOIN concept c2
-      ON cr.concept_id_2 = c2.concept_id
-    WHERE c1.concept_id = 201826
-```
-
-```sql
-SELECT c2.concept_name
-    FROM concept c1
-    JOIN concept_relationship cr
-      ON c1.concept_id = cr.concept_id_1
-    JOIN concept c2
-      ON cr.concept_id_2 = c2.concept_id
-    WHERE c1.concept_id = 201826
-      AND cr.relationship_id = 'Is a'
-```
-
-#### Common scenarios
-
-- JOIN without relationship_id filter in ON or WHERE clause
-- Assuming only one relationship exists per concept pair
-- Not using DISTINCT when multiple relationships are intended
-
-#### Suggested fix
-
-Add a relationship_id filter (e.g., WHERE relationship_id = 'Maps to'), or explicitly handle multiple relationships via GROUP BY or aggregation.
-
----
 
 ### 11. Concept Relationship Transitive Misuse
 

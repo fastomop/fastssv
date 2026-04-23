@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Validate SQL · FastSSV{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h1>Validate an OMOP SQL query</h1>
+  <p class="muted">Paste a query below. FastSSV parses it locally and runs {{ rules_loaded }} OMOP CDM v5.4 rules. Nothing is stored.</p>
+
+  <form hx-post="/ui/validate"
+        hx-target="#results"
+        hx-swap="innerHTML"
+        hx-indicator="#loading"
+        hx-disabled-elt="find button[type=submit]">
+    <label for="sql">SQL</label>
+    <textarea id="sql"
+              name="sql"
+              rows="14"
+              spellcheck="false"
+              placeholder="SELECT person_id FROM person;"
+              required
+              maxlength="{{ max_sql_bytes }}"></textarea>
+    <div class="row">
+      <label for="dialect">Dialect</label>
+      <select id="dialect" name="dialect">
+        <option value="auto">Auto-detect</option>
+        <option value="postgres">PostgreSQL</option>
+        <option value="tsql">T-SQL / SQL Server</option>
+      </select>
+      <button type="submit">Validate</button>
+      <span id="loading" class="htmx-indicator muted">Validating…</span>
+    </div>
+  </form>
+</section>
+
+<section id="results" class="panel results" aria-live="polite"></section>
+{% endblock %}

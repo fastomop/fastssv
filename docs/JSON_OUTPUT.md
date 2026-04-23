@@ -170,10 +170,10 @@ Each violation has the following fields:
 
 ```json
 {
-  "rule_id": "concept_standardization.hierarchy_expansion_required",
+  "rule_id": "concept_standardization.concept_ancestor_rollup_direction",
   "severity": "error",
-  "issue": "Query filters on drug_concept_id without using concept_ancestor for hierarchy expansion",
-  "suggested_fix": "JOIN to concept_ancestor to capture all descendant concepts",
+  "issue": "Join to concept_ancestor uses ancestor_concept_id but the query intent (based on alias) suggests descendants.",
+  "suggested_fix": "Use concept_ancestor.descendant_concept_id when rolling up to descendants of a given ancestor.",
   "location": "drug_exposure.drug_concept_id",
   "details": {
     "field": "drug_concept_id",
@@ -352,16 +352,16 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
-          pip install -e .
+          pip install fastssv
 
       - name: Validate SQL queries
         run: |
@@ -588,10 +588,10 @@ WHERE condition_concept_id IN (201826, 443238);
 ```json
 [
   {
-    "rule_id": "concept_standardization.hierarchy_expansion_required",
+    "rule_id": "concept_standardization.standard_concept_enforcement",
     "severity": "error",
-    "issue": "Query filters on condition_occurrence.condition_concept_id without hierarchy expansion using concept_ancestor. In OMOP CDM, data is recorded using specific descendant codes (e.g., 'Iron deficiency anemia'), not parent concepts (e.g., 'Anemia'). Filtering directly on concept_id will likely return 0 or incomplete results. Use concept_ancestor to capture all descendant concepts.",
-    "suggested_fix": "Use concept_ancestor for hierarchy expansion: JOIN concept_ancestor ca ON table.concept_id = ca.descendant_concept_id WHERE ca.ancestor_concept_id = <your_target_concept>. This ensures all descendant concepts are captured. Remove the direct concept_id filter and use only the ancestor_concept_id filter in the concept_ancestor join.",
+    "issue": "Query filters on condition_occurrence.condition_concept_id without constraining concept.standard_concept = 'S'. Non-standard concepts may be returned, producing an inconsistent cohort.",
+    "suggested_fix": "Join to the concept table and add WHERE concept.standard_concept = 'S', or resolve the source concept through a 'Maps to' relationship in concept_relationship.",
     "details": {
       "filtered_columns": [
         "condition_occurrence.condition_concept_id"

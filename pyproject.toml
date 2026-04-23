@@ -36,6 +36,7 @@ fastssv = "fastssv.cli:main"
 [project.optional-dependencies]
 dev = [
 	"pytest>=9.0.3",
+	"httpx>=0.27",
 ]
 build = [
 	"build>=1.4.2",
@@ -48,6 +49,14 @@ viz = [
 langfuse = [
 	"dotenv>=0.9.9",
 	"langfuse>=3.12.1",
+]
+api = [
+	"fastapi>=0.115",
+	"uvicorn[standard]>=0.30",
+	"gunicorn>=22.0",
+	"slowapi>=0.1.9",
+	"pydantic-settings>=2.5",
+	"jinja2>=3.1",
 ]
 
 [build-system]
