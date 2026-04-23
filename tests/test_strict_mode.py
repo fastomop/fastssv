@@ -182,8 +182,11 @@ class TestStrictMode:
         assert len(violations_normal) == 0
         assert len(violations_strict) == 0
 
-    def test_derived_tables_remain_warning_both_modes(self):
-        """Derived tables (concept_ancestor) should always be WARNING."""
+    def test_derived_tables_escalate_in_strict_mode(self):
+        """Derived-vocabulary-table usage (e.g. concept_ancestor without a
+        JOIN back to concept for invalid_reason) escalates from WARNING
+        to ERROR in strict mode — matching the other escalatable rules.
+        """
         sql = """
         SELECT descendant_concept_id
         FROM concept_ancestor
@@ -192,19 +195,17 @@ class TestStrictMode:
 
         rule = get_rule("concept_standardization.invalid_reason_enforcement")()
 
-        # Test normal mode
-        ctx = ValidationContext(strict_mode=False)
-        set_validation_context(ctx)
+        # Default mode: WARNING
+        set_validation_context(ValidationContext(strict_mode=False))
         violations_normal = rule.validate(sql)
-
-        # Test strict mode
-        ctx = ValidationContext(strict_mode=True)
-        set_validation_context(ctx)
-        violations_strict = rule.validate(sql)
-
-        # Derived tables should remain WARNING in both modes
-        # (since they don't have invalid_reason column)
         assert len(violations_normal) > 0
         assert all(v.severity == Severity.WARNING for v in violations_normal)
+
+        # Strict mode: escalates to ERROR
+        set_validation_context(ValidationContext(strict_mode=True))
+        violations_strict = rule.validate(sql)
         assert len(violations_strict) > 0
-        assert all(v.severity == Severity.WARNING for v in violations_strict)
+        assert all(v.severity == Severity.ERROR for v in violations_strict)
+        assert all(
+            v.details.get("strict_mode_escalated") is True for v in violations_strict
+        )

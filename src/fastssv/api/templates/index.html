@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Validate SQL · FastSSV{% endblock %}
+{% block title %}Free OMOP SQL Validator · FastSSV{% endblock %}
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', path='prism.min.js') }}" defer></script>
@@ -8,24 +8,97 @@
 {% endblock %}
 
 {% block content %}
-<section class="panel">
-  <h1>Validate an OMOP SQL query</h1>
-  <p class="muted">Paste a query below. FastSSV parses it locally and runs {{ rules_loaded }} OMOP CDM v5.4 rules. Nothing is stored.</p>
 
-  <form hx-post="/ui/validate"
-        hx-target="#results"
-        hx-swap="innerHTML"
-        hx-indicator="#loading"
-        hx-disabled-elt="find button[type=submit]">
-    <div class="editor-header">
-      <label for="sql">SQL</label>
-      <div class="editor-actions">
-        <kbd class="kbd-hint" aria-hidden="true">⌘/Ctrl + ↵ to validate</kbd>
-        <button type="button" class="icon-btn" data-action="clear" data-target="#sql"
-                title="Clear the editor" aria-label="Clear SQL">Clear</button>
+<section class="hero">
+  <span class="eyebrow">Free · Open source</span>
+  <h1>OMOP SQL Validator</h1>
+  <p class="hero-lead">
+    Catch silent OMOP CDM v5.4 bugs before they run. Static analysis against
+    <strong>{{ rules_loaded }} rules</strong> covering standard-concept
+    enforcement, hierarchy expansion, join paths, and temporal logic.
+  </p>
+  <div class="hero-trust">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>
+    <span>Your SQL stays in this session — nothing is logged or stored.</span>
+  </div>
+</section>
+
+<div class="panel-toolbar">
+  <div class="panel-toolbar-field" title="SQL dialect">
+    <svg class="panel-toolbar-icon" viewBox="0 0 24 24" width="15" height="15"
+         fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+      <path d="M3 5v6a9 3 0 0 0 18 0V5"></path>
+      <path d="M3 12v7a9 3 0 0 0 18 0v-7"></path>
+    </svg>
+    <select form="validate-form" id="dialect" name="dialect" aria-label="SQL dialect">
+      <option value="auto">Auto-detect</option>
+      <option value="postgres">PostgreSQL</option>
+      <option value="tsql">T-SQL / SQL Server</option>
+    </select>
+  </div>
+
+  <div class="examples" role="group" aria-label="Example queries">
+    <span class="examples-label">Try:</span>
+    <button type="button" class="chip" data-action="example" data-example="valid">Valid cohort query</button>
+    <button type="button" class="chip" data-action="example" data-example="missing_standard">Missing standard_concept</button>
+    <button type="button" class="chip" data-action="example" data-example="unknown_table">Unknown table</button>
+    <button type="button" class="chip" data-action="example" data-example="multi_statement">Multi-statement batch</button>
+  </div>
+</div>
+
+<form id="validate-form" class="editor-form"
+      hx-post="/ui/validate"
+      hx-target="#results"
+      hx-swap="innerHTML"
+      hx-indicator="#loading"
+      hx-disabled-elt="find button[type=submit]">
+  <div class="editor-shell">
+    <div class="editor-bar">
+      <h2 class="editor-title">
+        SQL query to check
+        <span class="editor-title-hint">— Press <kbd>⌘/Ctrl</kbd> + <kbd>↵</kbd> to validate</span>
+      </h2>
+      <div class="editor-bar-actions">
+        <button type="button"
+                class="editor-copy-btn"
+                data-action="copy"
+                data-target="#sql"
+                title="Copy SQL to clipboard"
+                aria-label="Copy SQL">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        <button type="button"
+                class="editor-clear-btn"
+                data-action="clear"
+                data-target="#sql"
+                title="Clear the editor"
+                aria-label="Clear SQL">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+          </svg>
+        </button>
       </div>
     </div>
+
     <div class="sql-editor">
+      <div class="editor-gutter" id="sql-gutter" aria-hidden="true"><div>1</div></div>
       <pre class="sql-highlight" aria-hidden="true"><code class="language-sql" id="sql-hl"></code></pre>
       <textarea id="sql"
                 name="sql"
@@ -37,36 +110,106 @@
                 placeholder="SELECT person_id FROM person;"
                 required
                 maxlength="{{ max_sql_bytes }}"></textarea>
-      <button type="button"
-              class="editor-copy-btn"
-              data-action="copy"
-              data-target="#sql"
-              title="Copy SQL to clipboard"
-              aria-label="Copy SQL">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
-             stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
-      </button>
     </div>
-    <div class="row">
-      <label for="dialect">Dialect</label>
-      <select id="dialect" name="dialect">
-        <option value="auto">Auto-detect</option>
-        <option value="postgres">PostgreSQL</option>
-        <option value="tsql">T-SQL / SQL Server</option>
-      </select>
-      <label class="toggle-btn" title="Escalates best-practice warnings to errors">
-        <input type="checkbox" id="strict" name="strict" value="on">
-        <span>Strict mode</span>
-      </label>
-      <button type="submit">Validate</button>
-      <span id="loading" class="htmx-indicator muted">Validating…</span>
-    </div>
-  </form>
+  </div>
+
+</form>
+
+<div class="panel-footer-actions">
+  <span id="loading" class="htmx-indicator muted">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Validating</span>
+  </span>
+  <button type="submit" form="validate-form" class="btn-validate">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+         stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polygon points="6 3 20 12 6 21 6 3"></polygon>
+    </svg>
+    <span>Validate SQL</span>
+  </button>
+</div>
+
+<section id="results" class="panel results" aria-live="polite">
+  <div class="results-empty">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <span>Paste a query or pick an example above, then click <strong>Validate SQL</strong>.</span>
+  </div>
 </section>
 
-<section id="results" class="panel results" aria-live="polite"></section>
+<section class="faq">
+  <h2>Frequently asked</h2>
+
+  <details>
+    <summary>What does FastSSV check?</summary>
+    <div class="faq-body">
+      <p>
+        FastSSV runs {{ rules_loaded }} static rules against your SQL, targeting
+        the silent failures you can't catch with a linter: missing
+        <code>standard_concept = 'S'</code> enforcement, wrong
+        <code>concept_ancestor</code> rollup direction, temporal logic outside
+        observation periods, joins that don't align with OMOP CDM v5.4 foreign
+        keys, type mismatches, and more.
+      </p>
+      <p class="muted">See <a href="/rules">/rules</a> for the full live list.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Is my SQL sent anywhere?</summary>
+    <div class="faq-body">
+      <p>
+        The query is POSTed to this service's validator process and parsed in
+        memory. Only a SHA-256 hash of the SQL plus counts (rule IDs fired,
+        duration) are logged — never the SQL body itself. No database is
+        contacted, no data is persisted between requests.
+      </p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Which SQL dialects are supported?</summary>
+    <div class="faq-body">
+      <p>
+        PostgreSQL and T-SQL / SQL Server are both supported. Use the dialect
+        dropdown to force one, or leave it on <em>Auto-detect</em> — FastSSV
+        looks for T-SQL indicators (<code>@vars</code>, <code>GETDATE()</code>,
+        <code>DATEDIFF(day, …)</code>, <code>TOP N</code>, etc.) and picks the
+        right parser.
+      </p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Can I use this programmatically?</summary>
+    <div class="faq-body">
+      <p>
+        Yes. The same validator backs a CLI (<code>pip install fastssv</code>)
+        and a JSON API — <code>POST /v1/validate</code> with
+        <code>{sql, dialect, strict}</code> returns per-query results with
+        <code>query_index</code> attribution. Swagger UI lives at
+        <a href="/docs" target="_blank" rel="noopener">/docs</a>.
+      </p>
+    </div>
+  </details>
+
+  <details>
+    <summary>What's strict mode?</summary>
+    <div class="faq-body">
+      <p>
+        Off by default, best-practice findings render as warnings. Turn strict
+        mode on and five of those rules escalate to errors — useful for CI
+        gating cohort-definition queries where
+        <code>standard_concept = 'S'</code> and
+        <code>invalid_reason IS NULL</code> enforcement must be present.
+      </p>
+    </div>
+  </details>
+</section>
+
 {% endblock %}

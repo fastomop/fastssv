@@ -126,33 +126,13 @@ def test_v1_json_api_still_reachable_alongside_ui(client: TestClient):
     assert body["status"] == "ok"
 
 
-_UI_STRICT_ESCALATION_SQL = (
-    "WITH cc AS ( "
-    "SELECT descendant_concept_id AS concept_id FROM concept_ancestor "
-    "WHERE ancestor_concept_id IN (320128) "
-    ") "
-    "SELECT person_id FROM condition_occurrence co "
-    "WHERE co.condition_concept_id IN (SELECT concept_id FROM cc)"
-)
-
-
-def test_index_page_exposes_strict_checkbox(client: TestClient):
+def test_ui_has_no_strict_toggle(client: TestClient):
+    """Strict mode is intentionally API/CLI-only; the UI no longer exposes
+    the toggle since the primary use case (CI gating) is automation."""
     resp = client.get("/")
     body = resp.text
-    assert 'name="strict"' in body
-    assert "Strict mode" in body
-
-
-def test_ui_validate_default_is_non_strict(client: TestClient):
-    resp = client.post(
-        "/ui/validate",
-        data={"sql": _UI_STRICT_ESCALATION_SQL, "dialect": "postgres"},
-    )
-    assert resp.status_code == 200
-    body = resp.text
-    # Default: violations render as warnings (banner-ok for "valid, but warnings").
-    assert "banner-ok" in body
-    assert "sev-warning" in body
+    assert 'name="strict"' not in body
+    assert "Strict mode" not in body
 
 
 def test_ui_validate_result_includes_json_view_toggle(client: TestClient):
@@ -201,14 +181,23 @@ def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient)
     assert body.count('class="query-result query-bad"') == 2
 
 
-def test_ui_validate_strict_on_escalates_to_error(client: TestClient):
+def test_ui_ignores_strict_form_param(client: TestClient):
+    """If a client still sends `strict=on`, the UI route ignores it (the
+    toggle was removed). Escalation stays API/CLI-only."""
+    sql = (
+        "WITH cc AS ( "
+        "SELECT descendant_concept_id AS concept_id FROM concept_ancestor "
+        "WHERE ancestor_concept_id IN (320128) "
+        ") "
+        "SELECT person_id FROM condition_occurrence co "
+        "WHERE co.condition_concept_id IN (SELECT concept_id FROM cc)"
+    )
     resp = client.post(
         "/ui/validate",
-        data={"sql": _UI_STRICT_ESCALATION_SQL, "dialect": "postgres", "strict": "on"},
+        data={"sql": sql, "dialect": "postgres", "strict": "on"},
     )
     assert resp.status_code == 200
     body = resp.text
-    # Strict: standard_concept_enforcement renders as an error card.
-    assert "banner-error" in body
-    assert "sev-error" in body
-    assert "concept_standardization.standard_concept_enforcement" in body
+    # Non-strict: the rule still fires as a warning, not an error.
+    assert "banner-ok" in body
+    assert "sev-warning" in body

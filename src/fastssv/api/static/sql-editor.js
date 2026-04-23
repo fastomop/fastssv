@@ -14,24 +14,58 @@
   if (!ta) return;
   var hl = document.getElementById("sql-hl");
   var pre = hl ? hl.parentElement : null;
+  var gutter = document.getElementById("sql-gutter");
+
+  function renderGutter() {
+    if (!gutter) return;
+    var text = ta.value || "";
+    var newlines = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 10) newlines++;
+    }
+    var count = newlines + 1;
+    // One <div> per line — each is block-level so it naturally stacks
+    // at line-height intervals, matching the textarea row-for-row.
+    var buf = [];
+    for (var n = 1; n <= count; n++) {
+      buf.push("<div>" + n + "</div>");
+    }
+    gutter.innerHTML = buf.join("");
+  }
 
   function update() {
-    if (!hl) return;
-    var v = ta.value;
-    // Trailing-newline guard: without a trailing space the highlight layer
-    // collapses the final empty line and the caret sits a row below the text.
-    if (v.length === 0 || v.charAt(v.length - 1) === "\n") {
-      v += " ";
+    if (hl) {
+      var v = ta.value;
+      // Trailing-newline guard: without a trailing space the highlight layer
+      // collapses the final empty line and the caret sits a row below the text.
+      if (v.length === 0 || v.charAt(v.length - 1) === "\n") {
+        v += " ";
+      }
+      hl.textContent = v;
+      if (window.Prism && Prism.highlightElement) {
+        Prism.highlightElement(hl);
+      }
     }
-    hl.textContent = v;
-    if (window.Prism && Prism.highlightElement) {
-      Prism.highlightElement(hl);
-    }
+    renderGutter();
   }
+
+  // Paste doesn't always fire `input` synchronously on older browsers, and
+  // programmatic .value assignments never do — dispatch an `input` after the
+  // paste to make sure the gutter updates no matter how the text arrived.
+  ta.addEventListener("paste", function () {
+    setTimeout(update, 0);
+  });
+  ta.addEventListener("cut", function () {
+    setTimeout(update, 0);
+  });
   function sync() {
-    if (!pre) return;
-    pre.scrollTop = ta.scrollTop;
-    pre.scrollLeft = ta.scrollLeft;
+    if (pre) {
+      pre.scrollTop = ta.scrollTop;
+      pre.scrollLeft = ta.scrollLeft;
+    }
+    if (gutter) {
+      gutter.scrollTop = ta.scrollTop;
+    }
   }
 
   ta.addEventListener("input", update);
@@ -104,6 +138,50 @@
     return el.textContent || "";
   }
 
+  // ---- Example query library (populated via the chip row) --------------
+
+  var EXAMPLES = {
+    valid:
+      "-- Valid: specific standard concept, explicit non-zero filter\n" +
+      "SELECT person_id, year_of_birth\n" +
+      "FROM person\n" +
+      "WHERE gender_concept_id = 8532\n" +
+      "  AND year_of_birth > 1980;",
+
+    missing_standard:
+      "-- Warning: uses concept_ancestor for descendant expansion but\n" +
+      "-- never enforces standard_concept = 'S' on the clinical fact field.\n" +
+      "WITH risk_concepts AS (\n" +
+      "    SELECT descendant_concept_id AS concept_id\n" +
+      "    FROM concept_ancestor\n" +
+      "    WHERE ancestor_concept_id = 201820\n" +
+      ")\n" +
+      "SELECT DISTINCT person_id\n" +
+      "FROM condition_occurrence\n" +
+      "WHERE condition_concept_id IN (SELECT concept_id FROM risk_concepts);",
+
+    unknown_table:
+      "-- Error: 'cohort_result' is not an OMOP CDM v5.4 table.\n" +
+      "SELECT person_id, cohort_start_date\n" +
+      "FROM cohort_result\n" +
+      "WHERE cohort_definition_id = 1;",
+
+    multi_statement:
+      "-- Two statements — each gets its own result panel\n" +
+      "SELECT person_id FROM person WHERE year_of_birth < 1970;\n\n" +
+      "SELECT COUNT(*) AS patient_count\n" +
+      "FROM condition_occurrence\n" +
+      "WHERE condition_concept_id = 201826;",
+  };
+
+  function applyExample(key) {
+    var sql = EXAMPLES[key];
+    if (!sql || !ta) return;
+    ta.value = sql;
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.focus();
+  }
+
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("[data-action]");
     if (!btn) return;
@@ -123,6 +201,8 @@
       if (!panel) return;
       var current = panel.getAttribute("data-view") || "formatted";
       panel.setAttribute("data-view", current === "json" ? "formatted" : "json");
+    } else if (action === "example") {
+      applyExample(btn.getAttribute("data-example"));
     }
   });
 })();

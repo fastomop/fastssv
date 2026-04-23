@@ -25,7 +25,6 @@ from fastssv.api.config import Settings
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
 from fastssv.core.registry import get_all_rules
-from fastssv.core.validation_context import with_strict_mode
 
 logger = logging.getLogger("fastssv.api.ui")
 
@@ -101,12 +100,8 @@ async def ui_validate(
     request: Request,
     sql: str = Form(...),
     dialect: str = Form("auto"),
-    strict: str | None = Form(None),
 ) -> HTMLResponse:
     settings: Settings = request.app.state.settings
-    # Any non-empty checkbox value means "on" — HTML checkboxes POST nothing
-    # when unchecked, so a `None` sentinel maps cleanly to False.
-    strict_enabled = bool(strict)
 
     if dialect not in ("auto", "postgres", "tsql"):
         return _render_results(
@@ -137,18 +132,16 @@ async def ui_validate(
 
     started = time.perf_counter()
     try:
-        with with_strict_mode(strict_enabled):
-            per_query = await asyncio.wait_for(
-                asyncio.to_thread(_validate_each, statements, dialect),
-                timeout=settings.parse_timeout_seconds,
-            )
+        per_query = await asyncio.wait_for(
+            asyncio.to_thread(_validate_each, statements, dialect),
+            timeout=settings.parse_timeout_seconds,
+        )
     except asyncio.TimeoutError:
         logger.warning(
             "ui_validation_timeout",
             extra={
                 "sql_hash": _sql_hash(sql),
                 "dialect": dialect,
-                "strict": strict_enabled,
                 "query_count": len(statements),
                 "client": get_remote_address(request),
             },
@@ -218,7 +211,6 @@ async def ui_validate(
         extra={
             "sql_hash": _sql_hash(sql),
             "dialect": dialect,
-            "strict": strict_enabled,
             "query_count": len(statements),
             "errors": total_errors,
             "warnings": total_warnings,

@@ -176,10 +176,22 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
 
             issues = _check_missing_filters(alias_filter_map, is_exploratory)
 
+            # Strict-mode escalation: promote the base WARNING to ERROR when
+            # strict mode is on. Listed in validation_context.strict_escalation_rules.
+            from fastssv.core.validation_context import get_validation_context
+            ctx = get_validation_context()
+            escalate = ctx.should_escalate_rule(self.rule_id)
+
             for issue, severity in issues:
+                final_severity = (
+                    Severity.ERROR
+                    if escalate and severity == Severity.WARNING
+                    else severity
+                )
                 violations.append(self.create_violation(
                     message=issue,
-                    severity=severity
+                    severity=final_severity,
+                    details={"strict_mode_escalated": final_severity != severity},
                 ))
 
         return violations

@@ -398,13 +398,14 @@ class InvalidReasonEnforcementRule(Rule):
 
                     violations.append(self.create_violation(
                         message=message,
-                        severity=Severity.WARNING,  # Warning, not error, since the column does not exist
+                        severity=severity,  # Context-aware: WARNING by default, ERROR in strict mode
                         suggested_fix=(
                             "JOIN to concept table and add: WHERE concept.invalid_reason IS NULL"
                         ),
                         details={
                             "derived_tables": sorted(derived_tables_as_source),
                             "recommendation": "JOIN concept c ON c.concept_id = <table>.concept_id WHERE c.invalid_reason IS NULL",
+                            "strict_mode_escalated": severity == Severity.ERROR,
                         }
                     ))
 

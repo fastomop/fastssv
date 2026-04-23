@@ -14,7 +14,10 @@
   --warn-fg: #7a5300;
   --ok-bg: #e6f4ea;
   --ok-fg: #1a6b3a;
+  --info-bg: #e6eefa;
+  --info-fg: #1e3a8a;
   --code-bg: #f1f1f3;
+  --gutter-bg: #F4F5F7;
   --radius: 8px;
 }
 
@@ -35,7 +38,10 @@
     --warn-fg: #ffc66b;
     --ok-bg: #1a3322;
     --ok-fg: #8de1a8;
+    --info-bg: #162240;
+    --info-fg: #a9c0ff;
     --code-bg: #1f232c;
+    --gutter-bg: #12141a;
   }
 }
 
@@ -179,7 +185,7 @@ textarea, input[type="search"], select {
   font-size: 13px;
 }
 textarea {
-  resize: vertical;
+  resize: none;
   min-height: 220px;
 }
 
@@ -249,10 +255,11 @@ textarea {
   position: relative;
 }
 
-/* Floating copy icon in the top-right corner of a code-like container —
-   used on the SQL editor and on each per-query JSON view. Borderless by
-   default; a subtle translucent background appears on hover so the icon
-   stays readable over highlighted SQL or JSON text. */
+/* Floating icon buttons in the top-right corner of a code-like container.
+   The Copy button lives both on the SQL editor (inside an .editor-float-actions
+   wrapper alongside the Clear button) and on each per-query JSON view (standalone).
+   Borderless by default; a subtle translucent background appears on hover so the
+   icon stays readable over highlighted SQL or JSON text. */
 .editor-copy-btn {
   position: absolute;
   top: 0.45rem;
@@ -299,23 +306,124 @@ textarea {
 .editor-copy-btn svg {
   display: block;
 }
+
+/* When Copy sits inside the floating actions group (SQL editor), drop the
+   absolute positioning — the wrapper handles placement. The standalone
+   copy button on the JSON view continues to use the absolute rule above. */
+.editor-float-actions {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.55rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.editor-float-actions .editor-copy-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+}
+
+/* Copy + Clear now live in the editor-bar above the textarea, not floating
+   on top of it. Use normal flow, full opacity, and simple neutral/danger
+   hover treatments. */
+.editor-bar-actions .editor-copy-btn,
+.editor-bar-actions .editor-clear-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  opacity: 1;
+}
+
+/* Clear (trash) button — mirrors .editor-copy-btn geometry but uses the
+   danger colour so it reads as destructive. Borderless, icon-only, same
+   size as the copy icon. */
+.editor-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.4rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  background: transparent;
+  color: var(--err-fg);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.sql-editor:hover .editor-clear-btn,
+.editor-clear-btn:focus-visible { opacity: 1; }
+.editor-clear-btn:hover {
+  opacity: 1;
+  background: var(--err-bg);
+}
+.editor-clear-btn:focus-visible {
+  outline: 2px solid var(--err-fg);
+  outline-offset: 2px;
+}
+.editor-clear-btn svg { display: block; }
 /* Both layers must share every text-layout property so the highlighted
-   overlay tracks the textarea character-for-character. */
+   overlay tracks the textarea character-for-character. Switched to
+   white-space: pre so line numbers in the gutter line up 1:1 with text. */
 .sql-editor > textarea,
 .sql-editor > .sql-highlight {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.5;
-  padding: 0.6rem 0.75rem;
+  padding: 0.6rem 0.75rem 0.6rem 3.25rem; /* left padding = gutter width + gap */
   border: 1px solid var(--border);
   border-radius: 6px;
   tab-size: 4;
   -moz-tab-size: 4;
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: break-word;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
   letter-spacing: 0;
+  overflow: auto;
+}
+
+/* Left gutter rendering line numbers. Sits between the highlighted overlay
+   and the transparent textarea so numbers show through the textarea's
+   transparent pixels without intercepting clicks. Each line number is its
+   own <div> — block-level, so they stack at exactly one line-height each
+   and match the textarea row-for-row regardless of CSS white-space quirks. */
+.editor-gutter {
+  position: absolute;
+  top: 1px;   /* fit inside the 1px border of the textarea/highlight */
+  left: 1px;
+  bottom: 1px;
+  width: 2.85rem;
+  padding: 0.6rem 0.55rem 0.6rem 0.4rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--gutter-bg);
+  border-right: 1px solid var(--border);
+  border-radius: 5px 0 0 5px;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+.editor-gutter > div {
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+  height: 1.5em;
+}
+.editor-gutter > div:last-child {
+  color: var(--text);
+  font-weight: 500;
 }
 .sql-editor > .sql-highlight {
   position: absolute;
@@ -338,8 +446,8 @@ textarea {
   background: transparent;
   color: transparent;
   caret-color: var(--text);
-  resize: vertical;
-  min-height: 220px;
+  resize: none;
+  min-height: 320px;
   z-index: 1;
 }
 .sql-editor > textarea::placeholder {
@@ -444,7 +552,35 @@ button[type="submit"] {
   font-weight: 500;
   line-height: 1.5;
   cursor: pointer;
+}
+
+/* Icon-only Clear button — outlined red, sits just left of Validate.
+   Same vertical geometry as .toggle-btn and Validate so all three align. */
+.btn-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-left: auto;
+  padding: 0.48rem 0.7rem;
+  background: transparent;
+  color: var(--err-fg);
+  border: 1px solid var(--err-fg);
+  border-radius: 6px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.btn-clear:hover {
+  background: var(--err-bg);
+  border-color: var(--err-fg);
+}
+.btn-clear:focus-visible {
+  outline: 2px solid var(--err-fg);
+  outline-offset: 2px;
+}
+.btn-clear svg {
+  display: block;
 }
 button[type="submit"]:hover {
   background: var(--accent-hover);
@@ -635,3 +771,462 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   color: var(--muted);
   margin-top: 0.4rem;
 }
+
+/* ============================================================
+   Hero, examples, FAQ — ChartDB-inspired validator layout
+   ============================================================ */
+
+.hero {
+  text-align: center;
+  padding: 2.5rem 1rem 2rem;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  margin-bottom: 1rem;
+  background: var(--panel);
+}
+.hero h1 {
+  margin: 0 0 0.75rem 0;
+  font-size: 2.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.hero-lead {
+  margin: 0 auto 1.25rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 640px;
+}
+.hero-lead strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.hero-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.8rem;
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.hero-trust svg {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .hero { padding: 1.5rem 0.5rem 1rem; }
+  .hero h1 { font-size: 1.6rem; }
+  .hero-lead { font-size: 0.95rem; }
+}
+
+/* --- Editor shell: a single rounded container that wraps the header bar
+   and the SQL editor so they read as one unified card. No internal dividers;
+   inner textarea/highlight/gutter lose their own borders since the shell
+   handles the outline. */
+
+.editor-form {
+  margin-bottom: 0.75rem;
+}
+.editor-shell {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.75rem 0.55rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: #F4F5F7;
+}
+.editor-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex: none;
+}
+.editor-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: -0.003em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.editor-title-hint {
+  margin-left: 0.25rem;
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.editor-title-hint kbd {
+  display: inline-block;
+  padding: 0.02rem 0.35rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* When the editor lives inside .editor-shell, strip its own borders/radii
+   — the shell provides the outer frame. */
+.editor-shell .sql-editor > textarea,
+.editor-shell .sql-editor > .sql-highlight {
+  border: 0;
+  border-radius: 0;
+}
+.editor-shell .editor-gutter {
+  border-radius: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-right: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .editor-bar { flex-wrap: wrap; }
+  .editor-bar-actions { align-self: flex-start; }
+}
+
+/* Floating toolbar above the editor panel (top-left).
+   Holds the dialect selector and the "Try: …" example chips so the
+   panel below stays focused on the SQL editor + results. The dialect
+   <select> lives outside the form and is associated via the HTML5
+   form="validate-form" attribute so it still posts. */
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.85rem;
+  margin-bottom: 0.6rem;
+}
+.panel-toolbar-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.55rem 0.1rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.panel-toolbar-field:hover {
+  border-color: var(--border);
+}
+.panel-toolbar-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.15);
+}
+.panel-toolbar-icon {
+  color: var(--muted);
+  flex: none;
+}
+.panel-toolbar-field select {
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.15rem;
+  padding-right: 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  min-width: 0;
+  width: auto;
+  cursor: pointer;
+  /* Inline chevron (muted, 10px) */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7076' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0 center;
+  background-size: 10px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.panel-toolbar-field select:focus {
+  outline: none;
+}
+@media (prefers-color-scheme: dark) {
+  .panel-toolbar-field select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  }
+}
+@media (max-width: 640px) {
+  .panel-toolbar-field { width: 100%; justify-content: flex-start; }
+  .panel-toolbar-field select { flex: 1; }
+}
+.editor-sub kbd {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* --- Example query chips --- */
+
+.examples {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.examples-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-right: 0.25rem;
+  letter-spacing: 0.02em;
+}
+.chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+.chip:hover { filter: brightness(0.97); }
+.chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Same soft pastel treatment as the .hero-trust privacy badge — uses
+   semantic tokens so light+dark modes stay consistent. One color per
+   example, hinting at the outcome you'll see when clicked. */
+.chip[data-example="valid"]            { background: var(--ok-bg);   color: var(--ok-fg);   border-color: var(--ok-fg); }
+.chip[data-example="missing_standard"] { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-fg); }
+.chip[data-example="unknown_table"]    { background: var(--err-bg);  color: var(--err-fg);  border-color: var(--err-fg); }
+.chip[data-example="multi_statement"]  { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-fg); }
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Refined primary CTA (used on the Validate SQL button) --- */
+
+.btn-validate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1.25rem;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn-validate:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn-validate:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn-validate:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Treat .btn-validate as the new primary so it overrides the older
+   button[type="submit"] rule when this class is present. */
+button[type="submit"].btn-validate { margin-left: auto; }
+.btn-validate svg { flex: none; }
+
+/* Primary-action bar that sits outside/below the editor panel, right-aligned.
+   The submit button uses the HTML5 form="validate-form" attribute so it still
+   submits the form even though it's outside the <form> element. */
+.panel-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+.panel-footer-actions .htmx-indicator {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+@media (max-width: 640px) {
+  .panel-footer-actions {
+    justify-content: stretch;
+  }
+  .panel-footer-actions .btn-validate {
+    flex: 1;
+  }
+}
+
+/* --- Field group inside the toolbar row --- */
+
+.row .field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.row .field > label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.row .field select {
+  width: auto;
+  min-width: 180px;
+}
+
+/* --- Loading spinner --- */
+
+.htmx-indicator {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+.htmx-request .htmx-indicator { display: inline-flex; }
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fastssv-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes fastssv-spin { to { transform: rotate(360deg); } }
+
+/* --- Empty state for results panel --- */
+
+.results-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.75rem 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+.results-empty svg {
+  flex: none;
+  color: var(--muted);
+}
+
+/* --- FAQ section --- */
+
+.faq {
+  max-width: 760px;
+  margin: 2rem auto 0;
+  padding: 0 0.5rem;
+}
+.faq h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.75rem;
+}
+.faq details {
+  border-bottom: 1px solid var(--border);
+  padding: 0.1rem 0;
+}
+.faq details:first-of-type {
+  border-top: 1px solid var(--border);
+}
+.faq summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.95rem 2rem 0.95rem 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  position: relative;
+  transition: color 120ms ease;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "";
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-75%) rotate(45deg);
+  transition: transform 150ms ease, border-color 120ms ease;
+}
+.faq details[open] summary::after {
+  transform: translateY(-25%) rotate(-135deg);
+}
+.faq summary:hover {
+  color: var(--accent);
+}
+.faq summary:hover::after {
+  border-color: var(--accent);
+}
+.faq summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.faq-body {
+  padding: 0 0 1rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.faq-body p { margin: 0 0 0.5rem 0; }
+.faq-body p:last-child { margin-bottom: 0; }
+.faq-body code {
+  font-size: 0.82rem;
+}
+.faq-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.faq-body a:hover { text-decoration: underline; }
+
+/* Remove large default section margin from the first .panel after the hero
+   so the hero + editor feel visually connected. */
+.hero + .panel {
+  margin-top: 0;
+}
+
