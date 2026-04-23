@@ -119,57 +119,15 @@ def _detect_violations(
     """
     Detect concept alias reuse issues.
 
+    Scope analysis per-SELECT so nested subqueries and UNION arms don't
+    bleed into each other. Each SELECT is a separate alias scope in SQL,
+    so what looks like "alias c reused" across nested SELECTs is actually
+    distinct variables.
+
     Returns:
         errors: critical violations (alias, source_table, columns, error_type)
         warnings: non-critical but suspicious patterns (alias, source_table, columns)
     """
-
-    # concept_alias -> [(source_table_alias, source_column)]
-    alias_usage: Dict[str, List[Tuple[str, str]]] = {}
-
-    for eq in _extract_all_equalities(tree):
-        left, right = eq.this, eq.expression
-
-        if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-            continue
-
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-
-        if not (lt and lc and rt and rc):
-            continue
-
-        lt_norm = _normalize_table(lt)
-        rt_norm = _normalize_table(rt)
-
-        concept_alias = None
-        source_alias = None
-        source_col = None
-        concept_col = None
-
-        # Identify concept side and ensure it joins on concept_id
-        if _is_concept(rt_norm) and _is_concept_id(rc):
-            concept_alias = right.table or rt
-            source_alias = left.table or lt
-            source_col = lc
-            concept_col = rc
-
-        elif _is_concept(lt_norm) and _is_concept_id(lc):
-            concept_alias = left.table or lt
-            source_alias = right.table or rt
-            source_col = rc
-            concept_col = lc
-
-        if not (concept_alias and source_alias and source_col):
-            continue
-
-        concept_alias = str(concept_alias)
-        source_alias = str(source_alias)
-
-        if concept_alias not in alias_usage:
-            alias_usage[concept_alias] = []
-
-        alias_usage[concept_alias].append((source_alias, source_col))
 
     errors: List[Tuple[str, str, List[str], str]] = []
     warnings: List[Tuple[str, str, List[str]]] = []
@@ -177,53 +135,114 @@ def _detect_violations(
     seen_errors: Set[Tuple[str, str, Tuple[str, ...]]] = set()
     seen_warnings: Set[Tuple[str, str, Tuple[str, ...]]] = set()
 
-    for concept_alias, usages in alias_usage.items():
-        if len(usages) <= 1:
-            continue
+    for select in tree.find_all(exp.Select):
+        # concept_alias -> [(source_table_alias, source_column)]
+        alias_usage: Dict[str, List[Tuple[str, str]]] = {}
 
-        # Group by source table alias
-        by_source: Dict[str, List[str]] = {}
-        for source_alias, col in usages:
-            by_source.setdefault(source_alias, []).append(col)
-
-        # --- Per-source-table analysis ---
-        for source_alias, cols in by_source.items():
-            unique_cols = sorted(set(cols))
-
-            if len(unique_cols) <= 1:
+        for eq in select.find_all(exp.EQ):
+            # Skip equalities that actually belong to a nested SELECT.
+            parent_select = eq.find_ancestor(exp.Select)
+            if parent_select is not select:
                 continue
 
-            has_primary = any(_is_primary_concept_id(c) for c in unique_cols)
-            has_source = any(_is_source_concept_id(c) for c in unique_cols)
-            has_type = any(_is_type_concept_id(c) for c in unique_cols)
+            left, right = eq.this, eq.expression
 
-            key = (concept_alias, source_alias, tuple(unique_cols))
+            if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
+                continue
 
-            # ERROR: mixing primary + source concept_id (JOIN_009)
-            if has_primary and has_source:
-                if key not in seen_errors:
-                    errors.append((concept_alias, source_alias, unique_cols, "primary_source"))
-                    seen_errors.add(key)
+            lt, lc = resolve_table_col(left, aliases)
+            rt, rc = resolve_table_col(right, aliases)
 
-            # ERROR: mixing primary + type concept_id (JOIN_010)
-            elif has_primary and has_type:
-                if key not in seen_errors:
-                    errors.append((concept_alias, source_alias, unique_cols, "primary_type"))
-                    seen_errors.add(key)
+            if not (lt and lc and rt and rc):
+                continue
 
-            # WARNING: multiple concept_id columns (other combinations)
-            elif any(_is_concept_id_like(c) for c in unique_cols):
+            lt_norm = _normalize_table(lt)
+            rt_norm = _normalize_table(rt)
+
+            concept_alias = None
+            source_alias = None
+            source_col = None
+
+            # Identify concept side and ensure it joins on concept_id
+            if _is_concept(rt_norm) and _is_concept_id(rc):
+                concept_alias = right.table or rt
+                source_alias = left.table or lt
+                source_col = lc
+
+            elif _is_concept(lt_norm) and _is_concept_id(lc):
+                concept_alias = left.table or lt
+                source_alias = right.table or rt
+                source_col = rc
+
+            if not (concept_alias and source_alias and source_col):
+                continue
+
+            concept_alias = str(concept_alias)
+            source_alias = str(source_alias)
+
+            if concept_alias not in alias_usage:
+                alias_usage[concept_alias] = []
+
+            alias_usage[concept_alias].append((source_alias, source_col))
+
+        for concept_alias, usages in alias_usage.items():
+            if len(usages) <= 1:
+                continue
+
+            by_source: Dict[str, List[str]] = {}
+            for source_alias, col in usages:
+                by_source.setdefault(source_alias, []).append(col)
+
+            # --- Same-source-table reuse ---
+            for source_alias, cols in by_source.items():
+                unique_cols = sorted(set(cols))
+                if len(unique_cols) <= 1:
+                    continue
+
+                has_primary = any(_is_primary_concept_id(c) for c in unique_cols)
+                has_source = any(_is_source_concept_id(c) for c in unique_cols)
+                has_type = any(_is_type_concept_id(c) for c in unique_cols)
+
+                key = (concept_alias, source_alias, tuple(unique_cols))
+
+                if has_primary and has_source:
+                    if key not in seen_errors:
+                        errors.append((concept_alias, source_alias, unique_cols, "primary_source"))
+                        seen_errors.add(key)
+
+                elif has_primary and has_type:
+                    if key not in seen_errors:
+                        errors.append((concept_alias, source_alias, unique_cols, "primary_type"))
+                        seen_errors.add(key)
+
+                elif any(_is_concept_id_like(c) for c in unique_cols):
+                    if key not in seen_warnings:
+                        warnings.append((concept_alias, source_alias, unique_cols))
+                        seen_warnings.add(key)
+
+            # --- Cross-source-table reuse ---
+            # Only fire when the same concept alias is simultaneously being
+            # used with semantically-distinct concept_id columns (primary vs
+            # source vs type) across different source tables. That's an
+            # ambiguity worth flagging. Plain cross-table reuse with the same
+            # role (e.g. concept joined via CR003.concept_id_1 and
+            # CR007.concept_id_2 in a relationship chain) is legitimate and
+            # is not flagged.
+            all_cols = sorted({col for _, col in usages})
+            has_primary = any(_is_primary_concept_id(c) for c in all_cols)
+            has_source = any(_is_source_concept_id(c) for c in all_cols)
+            has_type = any(_is_type_concept_id(c) for c in all_cols)
+            source_tables = sorted({s for s, _ in usages})
+
+            if len(source_tables) > 1 and (
+                (has_primary and has_source)
+                or (has_primary and has_type)
+                or (has_source and has_type)
+            ):
+                key = (concept_alias, "MULTI_TABLE", tuple(source_tables))
                 if key not in seen_warnings:
-                    warnings.append((concept_alias, source_alias, unique_cols))
+                    warnings.append((concept_alias, "multiple_tables", source_tables))
                     seen_warnings.add(key)
-
-        # --- Cross-table reuse detection (WARNING) ---
-        source_tables = sorted(set(s for s, _ in usages))
-        if len(source_tables) > 1:
-            key = (concept_alias, "MULTI_TABLE", tuple(source_tables))
-            if key not in seen_warnings:
-                warnings.append((concept_alias, "multiple_tables", source_tables))
-                seen_warnings.add(key)
 
     return errors, warnings
 

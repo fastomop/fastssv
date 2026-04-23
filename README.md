@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-168-orange)
+![Rules](https://img.shields.io/badge/rules-157-orange)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
@@ -72,7 +72,7 @@ See [docs/LOGGING.md](docs/LOGGING.md) for comprehensive logging documentation.
 
 ## What FastSSV Catches
 
-FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5.4 semantic correctness.
+FastSSV ships with 157 validation rules across 8 categories covering OMOP CDM v5.4 semantic correctness.
 
 ### Core Categories
 
@@ -234,7 +234,7 @@ FastSSV ships with 168 validation rules across 8 categories covering OMOP CDM v5
 
 **Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 168 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 157 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 
@@ -487,7 +487,7 @@ FastSSV implements intelligent error deduplication to prevent the same underlyin
 
 | Document | Contents |
 |----------|----------|
-| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 168 rules with intent, detection logic, examples, and suggested fixes |
+| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 157 rules with intent, detection logic, examples, and suggested fixes |
 | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) | Developer guide for extending semantic rules |
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |

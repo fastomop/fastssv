@@ -184,6 +184,8 @@ def _handles_zero_concept_id(
     """Check if the query explicitly handles concept_id = 0 for the given column.
 
     Patterns that indicate handling:
+    - column = <non-zero literal>      # pinning filter implicitly excludes 0
+    - column IN (<all non-zero>)        # pinning filter implicitly excludes 0
     - column = 0
     - column != 0 / column <> 0
     - column > 0
@@ -191,18 +193,39 @@ def _handles_zero_concept_id(
     - COALESCE(column, 0)
     - CASE WHEN column = 0 THEN ...
     """
-    # Check for equality with 0: column = 0
+    # Check for equality with any specific literal: column = N
+    # If N is non-zero, 0 is implicitly excluded. If N is 0, 0 is being selected.
+    # Either way, zero is explicitly handled.
     for eq in tree.find_all(exp.EQ):
+        if not is_in_where_or_join_clause(eq):
+            continue
         left, right = eq.left, eq.right
 
-        if isinstance(right, exp.Column) and is_numeric_literal(left, 0):
+        if isinstance(right, exp.Column) and is_numeric_literal(left):
             left, right = right, left
 
-        if isinstance(left, exp.Column) and is_numeric_literal(right, 0):
+        if isinstance(left, exp.Column) and is_numeric_literal(right):
             resolved_table, resolved_col = resolve_table_col(left, aliases)
             if resolved_col == column:
                 if not resolved_table or resolved_table == table:
                     return True
+
+    # Check for IN clause: column IN (<literals>)
+    # Either all values are non-zero (0 implicitly excluded) or 0 is in the list
+    # (explicitly included). Either way, zero is handled.
+    for in_expr in tree.find_all(exp.In):
+        if not is_in_where_or_join_clause(in_expr):
+            continue
+        if not isinstance(in_expr.this, exp.Column):
+            continue
+        resolved_table, resolved_col = resolve_table_col(in_expr.this, aliases)
+        if resolved_col != column:
+            continue
+        if resolved_table and resolved_table != table:
+            continue
+        values = in_expr.expressions or []
+        if values and all(is_numeric_literal(v) for v in values):
+            return True
 
     # Check for inequality with 0: column != 0 or column <> 0
     for neq in tree.find_all(exp.NEQ):

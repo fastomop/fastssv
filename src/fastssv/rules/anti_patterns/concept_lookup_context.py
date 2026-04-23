@@ -88,6 +88,15 @@ def _is_inside_concept_id_lookup(col_node: exp.Column, aliases: Dict[str, str]) 
     if not is_from_vocab_table:
         return False
 
+    # Valid lookup context: concept_relationship is in the SELECT's FROM/JOINs.
+    # In that case concept.* filters are disambiguating the mapping target, which
+    # is the idiomatic OMOP pattern. The rule's own message acknowledges this.
+    for table in select.find_all(exp.Table):
+        table_name = normalize_name(table.name)
+        real_table = aliases.get(table_name, table_name)
+        if real_table == "concept_relationship":
+            return True
+
     # Check if this is an EXISTS subquery that correlates to a concept_id column
     exists_ancestor = col_node.find_ancestor(exp.Exists)
     if exists_ancestor:

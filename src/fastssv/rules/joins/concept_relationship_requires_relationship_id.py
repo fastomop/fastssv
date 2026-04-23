@@ -113,31 +113,22 @@ def _check_missing_filters(
 
     Returns list of (message, severity) tuples.
 
-    Note: All violations are WARNING by default to support analytical/exploratory queries.
-    Use --strict mode (future) for ERROR-level enforcement in cohort definitions.
+    If the query groups by relationship_id (exploratory analysis), the
+    user has explicitly opted in to seeing all relationships — no warning.
     """
-    issues = []
+    if is_exploratory:
+        return []
 
+    issues = []
     for alias, has_filter in alias_filter_map.items():
         if not has_filter:
-            if is_exploratory:
-                # Grouping by relationship_id = exploratory analysis (WARNING)
-                issues.append((
-                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id, "
-                    f"but groups by relationship_id for exploratory analysis. "
-                    f"This is valid for exploration but may produce large result sets.",
-                    Severity.WARNING
-                ))
-            else:
-                # No filter, no grouping = likely unintended (WARNING, not ERROR)
-                # Changed from ERROR to WARNING to support analytical queries
-                issues.append((
-                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
-                    f"This may produce a cross-product of all relationship types. "
-                    f"For analytical queries exploring all relationships, this may be intentional. "
-                    f"For cohort definitions, add a filter on relationship_id.",
-                    Severity.WARNING
-                ))
+            issues.append((
+                f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
+                f"This may produce a cross-product of all relationship types. "
+                f"For analytical queries exploring all relationships, this may be intentional. "
+                f"For cohort definitions, add a filter on relationship_id.",
+                Severity.WARNING
+            ))
 
     return issues
 

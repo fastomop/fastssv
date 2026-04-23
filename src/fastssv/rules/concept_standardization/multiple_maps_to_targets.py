@@ -213,25 +213,46 @@ class MultipleMapsToTargetsRule(Rule):
 
                 sub_aliases = extract_aliases(sub_tree)
 
-                if has_table_reference(sub_tree, CONCEPT_RELATIONSHIP) and _uses_maps_to(sub_tree, sub_aliases):
-                    key = f"scalar_{subquery.sql()}"
-                    if key in seen:
-                        continue
-                    seen.add(key)
+                if not (has_table_reference(sub_tree, CONCEPT_RELATIONSHIP) and _uses_maps_to(sub_tree, sub_aliases)):
+                    continue
 
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                "Scalar subquery with 'Maps to' assumes a single mapping. "
-                                "Multiple mappings may exist, causing incomplete results."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                "Replace scalar subquery with JOIN + DISTINCT or aggregation."
-                            ),
-                            details={"context": subquery.sql()},
-                        )
+                # Skip derived tables in FROM/JOIN — they're not scalar misuse.
+                parent = subquery.parent
+                in_from_or_join = False
+                while parent is not None:
+                    if isinstance(parent, (exp.From, exp.Join)):
+                        in_from_or_join = True
+                        break
+                    if isinstance(parent, exp.Select):
+                        break
+                    parent = parent.parent
+                if in_from_or_join:
+                    continue
+
+                # Skip if the subquery already handles one-to-many explicitly
+                # via DISTINCT or GROUP BY at its top level.
+                if isinstance(sub_tree, exp.Select):
+                    if sub_tree.args.get("distinct") or sub_tree.args.get("group"):
+                        continue
+
+                key = f"scalar_{subquery.sql()}"
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            "Scalar subquery with 'Maps to' assumes a single mapping. "
+                            "Multiple mappings may exist, causing incomplete results."
+                        ),
+                        severity=Severity.WARNING,
+                        suggested_fix=(
+                            "Replace scalar subquery with JOIN + DISTINCT or aggregation."
+                        ),
+                        details={"context": subquery.sql()},
                     )
+                )
 
             # --- JOIN without dedup ---
             if not (_has_distinct(tree) or _has_group_by(tree)):

@@ -119,15 +119,14 @@ class TestStandardConceptMapping:
 class TestUnmappedConceptHandling:
     """Tests for concept_id = 0 handling rule."""
 
-    def test_specific_concept_id_without_zero_handling(self) -> None:
-        """Query with specific concept_id but no 0 handling should warn."""
+    def test_specific_concept_id_equality_implicitly_excludes_zero(self) -> None:
+        """Query with `col = <non-zero>` implicitly excludes 0 and should not warn."""
         sql = """
         SELECT * FROM condition_occurrence
         WHERE condition_concept_id = 201826
         """
         warnings = validate_unmapped_concept_handling(sql)
-        assert len(warnings) > 0
-        assert any("concept_id = 0" in w for w in warnings)
+        assert warnings == []
 
     def test_concept_id_with_greater_than_zero(self) -> None:
         """Query with > 0 should not warn."""
@@ -147,14 +146,23 @@ class TestUnmappedConceptHandling:
         warnings = validate_unmapped_concept_handling(sql)
         assert warnings == []
 
-    def test_in_clause_without_zero_handling(self) -> None:
-        """Query with IN clause but no 0 handling should warn."""
+    def test_in_clause_with_non_zero_literals_implicitly_excludes_zero(self) -> None:
+        """Query with `col IN (non-zero, non-zero)` implicitly excludes 0 and should not warn."""
         sql = """
         SELECT * FROM condition_occurrence
         WHERE condition_concept_id IN (201826, 201820)
         """
         warnings = validate_unmapped_concept_handling(sql)
-        assert len(warnings) > 0
+        assert warnings == []
+
+    def test_person_gender_concept_id_equality_no_warn(self) -> None:
+        """Regression: `person.gender_concept_id = 8532` should not warn (ATLAS-style query)."""
+        sql = """
+        SELECT COUNT(person_id) FROM person
+        WHERE gender_concept_id = 8532
+        """
+        warnings = validate_unmapped_concept_handling(sql)
+        assert warnings == []
 
     def test_no_specific_filter(self) -> None:
         """Query without specific concept_id filter should not warn."""
@@ -304,127 +312,24 @@ class TestObservationPeriodAnchoring:
         errors = self._validate_temporal(sql)
         assert len(errors) > 0
 
-
-class TestHierarchyExpansion:
-    """Tests for hierarchy expansion rule (concept_ancestor requirement)."""
-
-    def _validate_hierarchy(self, sql: str, dialect: str = "postgres") -> list[str]:
-        """Run only the hierarchy expansion rule."""
-        from fastssv.core.base import Severity
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("concept_standardization.hierarchy_expansion_required")()
-        violations = rule.validate(sql, dialect)
-
-        results = []
-        for v in violations:
-            prefix = "Warning: " if v.severity == Severity.WARNING else ""
-            results.append(f"{prefix}{v.message}")
-        return results
-
-    def test_drug_filter_without_ancestor_should_error(self) -> None:
-        """Filtering drug_concept_id without concept_ancestor should error."""
+    def test_vocabulary_only_query_should_not_require_observation_period(self) -> None:
+        """Regression: concept-discovery queries over vocabulary tables have no
+        clinical fact table and no person dimension, so observation_period
+        anchoring is structurally impossible and should not be flagged — even
+        if the query compares date columns like concept.valid_start_date /
+        valid_end_date that happen to look temporal."""
         sql = """
-        SELECT * FROM drug_exposure
-        WHERE drug_concept_id = 1234567
+        SELECT DISTINCT C.concept_id, C.concept_name
+        FROM concept C
+        LEFT JOIN concept_synonym S ON C.concept_id = S.concept_id
+        WHERE C.vocabulary_id IN ('LOINC', 'UCUM')
+          AND C.standard_concept = 'S'
+          AND getdate() >= C.valid_start_date
+          AND my_date <= C.valid_end_date
         """
-        errors = self._validate_hierarchy(sql)
-        assert len(errors) > 0
-        assert any("concept_ancestor" in e for e in errors)
-        assert any("drug_exposure.drug_concept_id" in e for e in errors)
-
-    def test_condition_filter_without_ancestor_should_error(self) -> None:
-        """Filtering condition_concept_id without concept_ancestor should error."""
-        sql = """
-        SELECT * FROM condition_occurrence
-        WHERE condition_concept_id = 201826
-        """
-        errors = self._validate_hierarchy(sql)
-        assert len(errors) > 0
-        assert any("concept_ancestor" in e for e in errors)
-        assert any("condition_occurrence.condition_concept_id" in e for e in errors)
-
-    def test_in_clause_without_ancestor_should_error(self) -> None:
-        """IN clause on drug_concept_id without concept_ancestor should error."""
-        sql = """
-        SELECT * FROM drug_exposure
-        WHERE drug_concept_id IN (1234, 5678, 9012)
-        """
-        errors = self._validate_hierarchy(sql)
-        assert len(errors) > 0
-
-    def test_with_concept_ancestor_should_pass(self) -> None:
-        """Query using concept_ancestor for hierarchy should pass."""
-        sql = """
-        SELECT de.*
-        FROM drug_exposure de
-        JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-        WHERE ca.ancestor_concept_id = 1234567
-        """
-        errors = self._validate_hierarchy(sql)
-        # Should pass (uses concept_ancestor)
-        main_errors = [e for e in errors if not e.startswith("Warning:")]
-        assert main_errors == []
-
-    def test_with_concept_ancestor_cte_should_pass(self) -> None:
-        """Query using concept_ancestor via CTE should pass."""
-        sql = """
-        WITH drug_hierarchy AS (
-            SELECT descendant_concept_id AS concept_id
-            FROM concept_ancestor
-            WHERE ancestor_concept_id = 1234567
-        )
-        SELECT de.*
-        FROM drug_exposure de
-        JOIN drug_hierarchy dh ON de.drug_concept_id = dh.concept_id
-        """
-        errors = self._validate_hierarchy(sql)
-        main_errors = [e for e in errors if not e.startswith("Warning:")]
-        assert main_errors == []
-
-    def test_zero_concept_id_should_be_exempt(self) -> None:
-        """Filtering on concept_id = 0 should not trigger the rule."""
-        sql = """
-        SELECT * FROM drug_exposure
-        WHERE drug_concept_id = 0
-        """
-        errors = self._validate_hierarchy(sql)
-        assert errors == []
-
-    def test_no_filter_should_not_trigger(self) -> None:
-        """Query without filtering on drug/condition concept_id should not trigger."""
-        sql = """
-        SELECT drug_concept_id, person_id
-        FROM drug_exposure
-        WHERE person_id = 12345
-        """
-        errors = self._validate_hierarchy(sql)
-        assert errors == []
-
-    def test_other_concept_columns_should_not_trigger(self) -> None:
-        """Filtering on other concept_id columns should not trigger."""
-        sql = """
-        SELECT * FROM measurement
-        WHERE measurement_concept_id = 3012345
-        """
-        errors = self._validate_hierarchy(sql)
-        assert errors == []
-
-    def test_wrong_join_direction_should_warn(self) -> None:
-        """Joining on ancestor_concept_id instead of descendant should warn."""
-        # This query filters on drug_concept_id AND uses concept_ancestor,
-        # but joins in the wrong direction (ancestor_concept_id instead of descendant)
-        sql = """
-        SELECT de.*
-        FROM drug_exposure de
-        JOIN concept_ancestor ca ON de.drug_concept_id = ca.ancestor_concept_id
-        WHERE de.drug_concept_id = 1234567
-        """
-        errors = self._validate_hierarchy(sql)
-        # Should have a warning about join direction
-        warnings = [e for e in errors if e.startswith("Warning:")]
-        assert len(warnings) > 0
-        assert any("direction" in w.lower() for w in warnings)
+        errors = self._validate_temporal(sql)
+        op_errors = [e for e in errors if "observation_period" in e]
+        assert op_errors == []
 
 
 class TestEdgeCases:
@@ -641,8 +546,10 @@ class TestInvalidReasonEnforcement:
         errors = self._run_invalid_reason_rule(sql)
         assert errors == []
 
-    def test_mixed_vocabulary_and_clinical_tables(self) -> None:
-        """Query mixing vocabulary and clinical tables should still check."""
+    def test_mixed_vocabulary_and_clinical_tables_with_standard_filter_passes(self) -> None:
+        """Query that already filters standard_concept = 'S' has effectively narrowed
+        to valid concepts (standard concepts are almost always valid in OMOP), so the
+        additional invalid_reason check is redundant — no warning."""
         sql = """
         SELECT co.person_id, c.concept_name
         FROM condition_occurrence co
@@ -650,9 +557,32 @@ class TestInvalidReasonEnforcement:
         WHERE c.standard_concept = 'S'
         """
         errors = self._run_invalid_reason_rule(sql)
-        # Should still flag missing invalid_reason on concept table
+        assert errors == []
+
+    def test_mixed_vocabulary_and_clinical_tables_without_standard_filter_warns(self) -> None:
+        """Without standard_concept filter, source-column filter (domain_id) still warns."""
+        sql = """
+        SELECT co.person_id, c.concept_name
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.domain_id = 'Condition'
+        """
+        errors = self._run_invalid_reason_rule(sql)
         assert len(errors) > 0
         assert any("concept" in e for e in errors)
+
+    def test_concept_join_as_lookup_only_should_not_warn(self) -> None:
+        """Joining concept purely to decode concept_id -> concept_name (no filters on
+        concept.vocabulary_id / domain_id / etc.) is lookup usage, not source usage,
+        and should not trigger the invalid_reason warning."""
+        sql = """
+        SELECT p.gender_concept_id, c.concept_name AS gender_name, COUNT(p.person_id)
+        FROM person p
+        JOIN concept c ON p.gender_concept_id = c.concept_id
+        GROUP BY p.gender_concept_id, c.concept_name
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert errors == []
 
     def test_subquery_with_concept_table(self) -> None:
         """Subquery using concept table should be checked."""
@@ -15297,27 +15227,35 @@ class TestDrugExposureCardinalityValidation:
 
     # CLIN_057: Drug exposure cardinality awareness
 
-    def test_clin_057_count_star_fires(self):
-        """Test that COUNT(*) on drug_exposure fires."""
+    def test_clin_057_count_star_with_record_alias_passes(self):
+        """Record-level alias (`exposure_count`) signals deliberate record counting — no warning."""
         sql = """
         SELECT drug_concept_id, COUNT(*) AS exposure_count
         FROM drug_exposure
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "count" in violations[0].message.lower()
-        assert "distinct" in violations[0].message.lower()
+        assert len(violations) == 0
 
-    def test_clin_057_count_column_fires(self):
-        """Test that COUNT(column) on drug_exposure fires."""
+    def test_clin_057_count_star_with_patient_alias_fires(self):
+        """Patient-intent alias (`num_persons`) with COUNT(*) should warn."""
+        sql = """
+        SELECT drug_concept_id, COUNT(*) AS num_persons
+        FROM drug_exposure
+        GROUP BY drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_clin_057_count_column_with_record_alias_passes(self):
+        """Record-level alias on COUNT(column) — no warning."""
         sql = """
         SELECT drug_concept_id, COUNT(drug_exposure_id) AS exposure_count
         FROM drug_exposure
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        assert len(violations) == 1
+        assert len(violations) == 0
 
     def test_clin_057_count_distinct_person_id_passes(self):
         """Test that COUNT(DISTINCT person_id) passes."""
@@ -15360,8 +15298,8 @@ class TestDrugExposureCardinalityValidation:
         violations = self._run_rule(sql)
         assert len(violations) == 0
 
-    def test_clin_057_count_star_with_join_fires(self):
-        """Test COUNT(*) with joins to other tables."""
+    def test_clin_057_count_star_with_join_and_record_alias_passes(self):
+        """Record-level alias even with joins — no warning."""
         sql = """
         SELECT c.concept_name, COUNT(*) AS exposure_count
         FROM drug_exposure de
@@ -15369,10 +15307,10 @@ class TestDrugExposureCardinalityValidation:
         GROUP BY c.concept_name
         """
         violations = self._run_rule(sql)
-        assert len(violations) == 1
+        assert len(violations) == 0
 
-    def test_clin_057_multiple_counts_mixed_fires(self):
-        """Test query with both COUNT(*) and COUNT(DISTINCT person_id)."""
+    def test_clin_057_multiple_counts_all_record_aliases_pass(self):
+        """Both counts record-level — no warning (user is being explicit)."""
         sql = """
         SELECT drug_concept_id,
                COUNT(*) AS total_exposures,
@@ -15381,11 +15319,10 @@ class TestDrugExposureCardinalityValidation:
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        # Should still fire because of COUNT(*)
-        assert len(violations) == 1
+        assert len(violations) == 0
 
-    def test_clin_057_subquery_with_count_star_fires(self):
-        """Test COUNT(*) in subquery."""
+    def test_clin_057_subquery_with_count_star_record_alias_passes(self):
+        """Record-level alias `cnt` — no warning."""
         sql = """
         SELECT *
         FROM (
@@ -15396,12 +15333,22 @@ class TestDrugExposureCardinalityValidation:
         WHERE cnt > 100
         """
         violations = self._run_rule(sql)
-        assert len(violations) == 1
+        assert len(violations) == 0
 
-    def test_clin_057_count_distinct_other_column_fires(self):
-        """Test COUNT(DISTINCT non-person_id) still fires."""
+    def test_clin_057_count_distinct_other_column_record_alias_passes(self):
+        """Record-level alias on COUNT(DISTINCT non-person) — no warning."""
         sql = """
         SELECT drug_concept_id, COUNT(DISTINCT drug_exposure_id) AS distinct_exposures
+        FROM drug_exposure
+        GROUP BY drug_concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_clin_057_count_star_with_patient_count_alias_fires(self):
+        """Patient-intent alias with naked COUNT(*) — warn."""
+        sql = """
+        SELECT drug_concept_id, COUNT(*) AS patient_count
         FROM drug_exposure
         GROUP BY drug_concept_id
         """
@@ -15442,8 +15389,8 @@ class TestDrugExposureCardinalityValidation:
         # Passes because drug_era is present (recommended approach)
         assert len(violations) == 0
 
-    def test_clin_057_count_with_where_clause_fires(self):
-        """Test COUNT(*) with WHERE clause still fires."""
+    def test_clin_057_count_with_where_clause_record_alias_passes(self):
+        """Record-level alias with WHERE clause — no warning."""
         sql = """
         SELECT drug_concept_id, COUNT(*) AS exposure_count
         FROM drug_exposure
@@ -15451,7 +15398,7 @@ class TestDrugExposureCardinalityValidation:
         GROUP BY drug_concept_id
         """
         violations = self._run_rule(sql)
-        assert len(violations) == 1
+        assert len(violations) == 0
 
 """Unit tests for vocabulary validation rules."""
 
@@ -17296,216 +17243,6 @@ class TestMultipleMapsToTargets:
         assert any("scalar" in e.lower() for e in errors)
 
 
-class TestConceptRelationshipIncompleteJoin:
-    """Tests for VOCAB_015: concept_relationship_no_join_to_concept_on_both_sides."""
-
-    def _run_rule(self, sql: str):
-        from fastssv.core.registry import get_rule
-        rule = get_rule("joins.concept_relationship_incomplete_join")()
-        return rule.validate(sql, dialect="postgres")
-
-    def test_violation_only_concept_id_1_joined(self) -> None:
-        """VIOLATION: Only concept_id_1 is joined to concept."""
-        from fastssv.core.base import Severity
-        sql = """
-        SELECT c1.concept_name, cr.concept_id_2
-        FROM concept c1
-        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "concept_id_2" in violations[0].message
-        assert "concept_id_1" in violations[0].details["joined_side"]
-        assert "concept_id_2" in violations[0].details["missing_side"]
-
-    def test_violation_only_concept_id_2_joined(self) -> None:
-        """VIOLATION: Only concept_id_2 is joined to concept."""
-        from fastssv.core.base import Severity
-        sql = """
-        SELECT c2.concept_name, cr.concept_id_1
-        FROM concept c2
-        JOIN concept_relationship cr ON c2.concept_id = cr.concept_id_2
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "concept_id_1" in violations[0].message
-        assert "concept_id_2" in violations[0].details["joined_side"]
-        assert "concept_id_1" in violations[0].details["missing_side"]
-
-    def test_correct_both_sides_joined(self) -> None:
-        """CORRECT: Both concept_id_1 and concept_id_2 are joined."""
-        sql = """
-        SELECT c1.concept_name AS source_name, c2.concept_name AS target_name
-        FROM concept c1
-        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2 ON c2.concept_id = cr.concept_id_2
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_both_sides_with_aliases(self) -> None:
-        """CORRECT: Both sides joined with meaningful aliases."""
-        sql = """
-        SELECT
-          c_source.concept_name AS source_concept,
-          c_target.concept_name AS target_concept
-        FROM concept_relationship cr
-        JOIN concept c_source ON cr.concept_id_1 = c_source.concept_id
-        JOIN concept c_target ON cr.concept_id_2 = c_target.concept_id
-        WHERE cr.relationship_id = 'Has indication'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_no_violation_no_concept_table(self) -> None:
-        """NO VIOLATION: concept_relationship without concept table."""
-        sql = """
-        SELECT *
-        FROM concept_relationship cr
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_no_violation_no_concept_relationship_table(self) -> None:
-        """NO VIOLATION: Query doesn't use concept_relationship."""
-        sql = """
-        SELECT * FROM concept WHERE concept_id = 12345
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_in_subquery(self) -> None:
-        """VIOLATION: Incomplete join in subquery."""
-        sql = """
-        SELECT * FROM (
-          SELECT c1.concept_name, cr.concept_id_2
-          FROM concept c1
-          JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-          WHERE cr.relationship_id = 'Maps to'
-        ) AS incomplete_mapping
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_violation_in_cte(self) -> None:
-        """VIOLATION: Incomplete join in CTE."""
-        sql = """
-        WITH mappings AS (
-          SELECT c2.concept_name, cr.concept_id_1
-          FROM concept c2
-          JOIN concept_relationship cr ON c2.concept_id = cr.concept_id_2
-        )
-        SELECT * FROM mappings
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_violation_reverse_join_direction(self) -> None:
-        """VIOLATION: Join direction reversed but still incomplete."""
-        sql = """
-        SELECT c.concept_name, cr.concept_id_2
-        FROM concept_relationship cr
-        JOIN concept c ON cr.concept_id_1 = c.concept_id
-        WHERE cr.relationship_id = 'Is a'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "concept_id_2" in violations[0].message
-
-    def test_correct_complex_query_both_joined(self) -> None:
-        """CORRECT: Complex query with both sides properly joined."""
-        sql = """
-        SELECT
-          c1.concept_name AS source,
-          c2.concept_name AS target,
-          r.relationship_name
-        FROM concept_relationship cr
-        JOIN concept c1 ON cr.concept_id_1 = c1.concept_id
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        JOIN relationship r ON cr.relationship_id = r.relationship_id
-        WHERE c1.vocabulary_id = 'SNOMED'
-          AND c2.standard_concept = 'S'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_with_table_schema_prefix(self) -> None:
-        """VIOLATION: Works with schema-qualified table names."""
-        sql = """
-        SELECT c.concept_name, cr.concept_id_2
-        FROM vocab.concept c
-        JOIN vocab.concept_relationship cr ON c.concept_id = cr.concept_id_1
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_correct_multiple_relationships_both_joined(self) -> None:
-        """CORRECT: Multiple relationship types, both sides joined."""
-        sql = """
-        SELECT
-          c1.concept_name,
-          c2.concept_name,
-          cr.relationship_id
-        FROM concept_relationship cr
-        JOIN concept c1 ON cr.concept_id_1 = c1.concept_id
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id IN ('Maps to', 'Is a', 'Subsumes')
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_only_one_side_with_filter(self) -> None:
-        """VIOLATION: Only one side joined even with complex WHERE clause."""
-        sql = """
-        SELECT c1.concept_name, cr.concept_id_2
-        FROM concept c1
-        JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-        WHERE cr.relationship_id = 'Maps to'
-          AND c1.vocabulary_id = 'ICD10CM'
-          AND c1.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_correct_both_sides_different_join_types(self) -> None:
-        """CORRECT: Both sides joined using different join types."""
-        sql = """
-        SELECT c1.concept_name, c2.concept_name
-        FROM concept c1
-        INNER JOIN concept_relationship cr ON c1.concept_id = cr.concept_id_1
-        LEFT JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_multiple_cr_aliases_one_incomplete(self) -> None:
-        """VIOLATION: Multiple CR instances - one complete, one incomplete."""
-        from fastssv.core.base import Severity
-        sql = """
-        SELECT
-          c1.concept_name AS source1,
-          c2.concept_name AS target1,
-          c3.concept_name AS source2,
-          cr2.concept_id_2 AS missing_target2
-        FROM concept_relationship cr1
-        JOIN concept c1 ON cr1.concept_id_1 = c1.concept_id
-        JOIN concept c2 ON cr1.concept_id_2 = c2.concept_id,
-        concept_relationship cr2
-        JOIN concept c3 ON cr2.concept_id_1 = c3.concept_id
-        WHERE cr1.relationship_id = 'Maps to'
-          AND cr2.relationship_id = 'Has indication'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].details["cr_alias"] == "cr2"
-        assert violations[0].details["missing_side"] == "concept_id_2"
-        assert "cr2.concept_id_2" in violations[0].suggested_fix
-
-
 class TestStandardConceptOrWithClassification:
     """Tests for VOCAB_016: standard_concept_filter_with_or_instead_of_in."""
 
@@ -17986,266 +17723,6 @@ class TestConceptAncestorSelfIncludeRedundancy:
         violations = self._run_rule(sql)
         # Still flags as violation - user must explicitly filter min_levels
         assert len(violations) == 1
-
-
-class TestConceptRelationshipMissingRelationshipFilter:
-    """Tests for VOCAB_018: concept_relationship_multiple_relationship_types_without_filter."""
-
-    def _run_rule(self, sql: str):
-        from fastssv.core.registry import get_rule
-        rule = get_rule("anti_patterns.concept_relationship_missing_relationship_filter")()
-        return rule.validate(sql, dialect="postgres")
-
-    def test_violation_join_no_filter(self) -> None:
-        """VIOLATION: JOIN without relationship_id filter."""
-        from fastssv.core.base import Severity
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE c1.concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].details["type"] == "unfiltered_join"
-        assert "row multiplication" in violations[0].message
-
-    def test_correct_filter_in_on_clause(self) -> None:
-        """CORRECT: Filter relationship_id in JOIN ON clause."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-          AND cr.relationship_id = 'Maps to'
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE c1.concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_filter_in_where_clause(self) -> None:
-        """CORRECT: Filter relationship_id in WHERE clause."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE c1.concept_id = 201826
-          AND cr.relationship_id = 'Is a'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_select_relationship_id(self) -> None:
-        """CORRECT: Query explicitly SELECTs relationship_id (intentional enumeration)."""
-        sql = """
-        SELECT c1.concept_name, cr.relationship_id, c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE c1.concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_with_distinct(self) -> None:
-        """CORRECT: Use DISTINCT to handle duplicates."""
-        sql = """
-        SELECT DISTINCT de.drug_exposure_id, c.concept_name
-        FROM drug_exposure de
-        JOIN concept_relationship cr
-          ON de.drug_concept_id = cr.concept_id_1
-        JOIN concept c
-          ON cr.concept_id_2 = c.concept_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_filter_with_in_clause(self) -> None:
-        """CORRECT: Filter with IN clause for multiple relationship types."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id IN ('Maps to', 'Mapped from')
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_with_table_alias(self) -> None:
-        """VIOLATION: Aliased table without filter."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship rel
-          ON c1.concept_id = rel.concept_id_1
-        JOIN concept c2
-          ON rel.concept_id_2 = c2.concept_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].details["alias"] == "rel"
-
-    def test_violation_multiple_joins(self) -> None:
-        """VIOLATION: Multiple unfiltered JOINs."""
-        sql = """
-        SELECT c1.concept_name, c2.concept_name, c3.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr1
-          ON c1.concept_id = cr1.concept_id_1
-        JOIN concept c2
-          ON cr1.concept_id_2 = c2.concept_id
-        JOIN concept_relationship cr2
-          ON c2.concept_id = cr2.concept_id_1
-        JOIN concept c3
-          ON cr2.concept_id_2 = c3.concept_id
-        """
-        violations = self._run_rule(sql)
-        # Should detect both unfiltered joins
-        assert len(violations) == 2
-
-    def test_correct_one_filtered_one_not(self) -> None:
-        """CORRECT: At least one filter applies to all."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_no_violation_without_concept_relationship(self) -> None:
-        """NO VIOLATION: Query doesn't use concept_relationship."""
-        sql = """
-        SELECT c.concept_name
-        FROM concept c
-        WHERE c.concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_in_subquery(self) -> None:
-        """VIOLATION: Unfiltered JOIN in subquery."""
-        sql = """
-        SELECT *
-        FROM (
-          SELECT c2.concept_name
-          FROM concept c1
-          JOIN concept_relationship cr
-            ON c1.concept_id = cr.concept_id_1
-          JOIN concept c2
-            ON cr.concept_id_2 = c2.concept_id
-        ) AS sub
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_violation_in_cte(self) -> None:
-        """VIOLATION: Unfiltered JOIN in CTE."""
-        sql = """
-        WITH related_concepts AS (
-          SELECT c1.concept_id, c2.concept_name
-          FROM concept c1
-          JOIN concept_relationship cr
-            ON c1.concept_id = cr.concept_id_1
-          JOIN concept c2
-            ON cr.concept_id_2 = c2.concept_id
-        )
-        SELECT * FROM related_concepts
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_correct_group_by_relationship_id(self) -> None:
-        """CORRECT: GROUP BY relationship_id shows awareness of multiple types."""
-        sql = """
-        SELECT cr.relationship_id, COUNT(*) as count
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        GROUP BY cr.relationship_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_relationship_id_not_equals(self) -> None:
-        """CORRECT: Filter with != also counts."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id != 'Subsumes'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_select_star(self) -> None:
-        """CORRECT: SELECT * includes relationship_id."""
-        sql = """
-        SELECT *
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_correct_relationship_id_aliased(self) -> None:
-        """CORRECT: SELECT relationship_id with alias."""
-        sql = """
-        SELECT c1.concept_name, cr.relationship_id AS rel_type
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_violation_count_without_filter(self) -> None:
-        """VIOLATION: COUNT inflated by unfiltered relationships."""
-        sql = """
-        SELECT c1.concept_name, COUNT(*) as related_count
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        WHERE c1.vocabulary_id = 'SNOMED'
-        GROUP BY c1.concept_name
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_correct_like_filter(self) -> None:
-        """CORRECT: LIKE filter on relationship_id."""
-        sql = """
-        SELECT c2.concept_name
-        FROM concept c1
-        JOIN concept_relationship cr
-          ON c1.concept_id = cr.concept_id_1
-        JOIN concept c2
-          ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id LIKE 'Maps%'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
 
 
 class TestSourceConceptIdStandardFilter:
@@ -20735,291 +20212,6 @@ class TestConceptClassIdIngredientForDrugGrouping:
         violations = self._run_rule(sql)
         assert len(violations) == 1
         assert len(violations[0].details["ingredient_aliases"]) == 2
-
-
-class TestConceptRelationshipValidDateRangeCheck:
-    """Tests for VOCAB_040: Concept Relationship Valid Date Range Check rule."""
-
-    def _run_rule(self, sql: str):
-        from fastssv.rules.concept_standardization.concept_relationship_valid_date_range_check import (
-            ConceptRelationshipValidDateRangeCheckRule,
-        )
-
-        rule = ConceptRelationshipValidDateRangeCheckRule()
-        return rule.validate(sql)
-
-    def test_vocab040_violation_invalid_reason_only(self) -> None:
-        """VIOLATION: Only checks invalid_reason IS NULL."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 44836914
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "valid_end_date" in violations[0].message.lower()
-
-    def test_vocab040_violation_qualified_column(self) -> None:
-        """VIOLATION: Qualified column cr.invalid_reason IS NULL."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 1234
-          AND cr.relationship_id = 'Maps to'
-          AND cr.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_violation_with_other_filters(self) -> None:
-        """VIOLATION: Has other filters but no valid_end_date check."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 5678
-          AND relationship_id = 'Subsumes'
-          AND invalid_reason IS NULL
-          AND concept_id_2 > 0
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_violation_in_join_condition(self) -> None:
-        """VIOLATION: invalid_reason IS NULL in JOIN ON clause."""
-        sql = """
-        SELECT c.concept_name, cr.concept_id_2
-        FROM concept c
-        JOIN concept_relationship cr
-          ON c.concept_id = cr.concept_id_1
-          AND cr.invalid_reason IS NULL
-        WHERE cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_violation_in_cte(self) -> None:
-        """VIOLATION: Missing date check in CTE."""
-        sql = """
-        WITH mappings AS (
-          SELECT concept_id_1, concept_id_2
-          FROM concept_relationship
-          WHERE relationship_id = 'Maps to'
-            AND invalid_reason IS NULL
-        )
-        SELECT * FROM mappings
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_violation_has_valid_start_but_not_end(self) -> None:
-        """VIOLATION: Checks valid_start_date but not valid_end_date."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 5678
-          AND relationship_id = 'Subsumes'
-          AND valid_start_date <= CURRENT_DATE
-          AND invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_correct_with_valid_end_date_gte(self) -> None:
-        """CORRECT: Uses valid_end_date >= CURRENT_DATE."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 44836914
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND valid_end_date >= CURRENT_DATE
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_valid_end_date_gt(self) -> None:
-        """CORRECT: Uses valid_end_date > CURRENT_DATE."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND valid_end_date > CURRENT_DATE
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_between(self) -> None:
-        """CORRECT: Uses BETWEEN for temporal validity."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_far_future_sentinel(self) -> None:
-        """CORRECT: Checks for far-future sentinel '2099-12-31'."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 5678
-          AND relationship_id = 'Subsumes'
-          AND invalid_reason IS NULL
-          AND (valid_end_date = '2099-12-31' OR valid_end_date >= CURRENT_DATE)
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_current_timestamp(self) -> None:
-        """CORRECT: Uses CURRENT_TIMESTAMP instead of CURRENT_DATE."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND valid_end_date >= CURRENT_TIMESTAMP
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_no_invalid_reason_check(self) -> None:
-        """CORRECT: No invalid_reason check, so rule doesn't apply."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_no_concept_relationship_table(self) -> None:
-        """CORRECT: Not using concept_relationship table."""
-        sql = """
-        SELECT concept_id
-        FROM concept
-        WHERE invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_is_not_null(self) -> None:
-        """CORRECT: Using IS NOT NULL doesn't trigger rule."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NOT NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_qualified_columns(self) -> None:
-        """CORRECT: Qualified columns with valid_end_date check."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 1234
-          AND cr.relationship_id = 'Maps to'
-          AND cr.invalid_reason IS NULL
-          AND cr.valid_end_date >= CURRENT_DATE
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_now_function(self) -> None:
-        """CORRECT: Uses NOW() function for current date."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND valid_end_date >= NOW()
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_correct_with_sysdate(self) -> None:
-        """CORRECT: Uses SYSDATE for current date (Oracle style)."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND valid_end_date >= SYSDATE
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_violation_multiple_in_same_query(self) -> None:
-        """VIOLATION: Multiple concept_relationship references without date checks."""
-        sql = """
-        SELECT cr1.concept_id_2 AS target1, cr2.concept_id_2 AS target2
-        FROM concept_relationship cr1
-        JOIN concept_relationship cr2
-          ON cr1.concept_id_2 = cr2.concept_id_1
-        WHERE cr1.concept_id_1 = 1234
-          AND cr1.invalid_reason IS NULL
-          AND cr2.invalid_reason IS NULL
-          AND cr1.relationship_id = 'Maps to'
-          AND cr2.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_correct_mixed_with_and_without_check(self) -> None:
-        """CORRECT: One has date check, satisfies the rule."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 1234
-          AND cr.relationship_id = 'Maps to'
-          AND cr.invalid_reason IS NULL
-          AND cr.valid_end_date >= CURRENT_DATE
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_vocab040_violation_subquery(self) -> None:
-        """VIOLATION: Missing date check in subquery."""
-        sql = """
-        SELECT concept_id
-        FROM concept
-        WHERE concept_id IN (
-          SELECT concept_id_2
-          FROM concept_relationship
-          WHERE concept_id_1 = 1234
-            AND relationship_id = 'Maps to'
-            AND invalid_reason IS NULL
-        )
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_vocab040_correct_historical_query_with_explicit_date(self) -> None:
-        """CORRECT: Historical query with explicit date in BETWEEN."""
-        sql = """
-        SELECT concept_id_2
-        FROM concept_relationship
-        WHERE concept_id_1 = 1234
-          AND relationship_id = 'Maps to'
-          AND invalid_reason IS NULL
-          AND '2015-06-01' BETWEEN valid_start_date AND valid_end_date
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
 
 
 class TestDestructiveOperationsOnClinicalTables:
@@ -26393,161 +25585,6 @@ class TestEventDateColumnCorrectness:
         assert len(violations) == 2
 
 
-class TestMapsToChainFollowToTerminal:
-    """Tests for OMOP_600: maps_to_chain_follow_to_terminal rule."""
-
-    def _run_rule(self, sql: str, dialect: str = "postgres"):
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("concept_standardization.maps_to_chain_follow_to_terminal")()
-        return rule.validate(sql, dialect)
-
-    def test_omop_600_maps_to_without_standard_check_violation(self) -> None:
-        """OMOP_600: Using 'Maps to' without joining concept table should fail."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "does not join concept table" in violations[0].message
-        assert violations[0].severity == Severity.WARNING
-
-    def test_omop_600_maps_to_without_invalid_reason_check_violation(self) -> None:
-        """OMOP_600: Using 'Maps to' with standard check but no invalid_reason check should fail."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        AND c2.standard_concept = 'S'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "invalid_reason IS NULL" in violations[0].message
-
-    def test_omop_600_maps_to_without_either_check_violation(self) -> None:
-        """OMOP_600: Using 'Maps to' without joining concept table should fail."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Maps to'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "does not join concept table" in violations[0].message
-
-    def test_omop_600_maps_to_with_full_validation_passes(self) -> None:
-        """OMOP_600: Using 'Maps to' with both validations should pass."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        AND c2.standard_concept = 'S'
-        AND c2.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_600_maps_to_case_insensitive_passes(self) -> None:
-        """OMOP_600: Case insensitive standard_concept = 's' should pass."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        AND c2.standard_concept = 's'
-        AND c2.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_600_no_maps_to_relationship_passes(self) -> None:
-        """OMOP_600: Query without 'Maps to' should pass."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 44820004
-        AND cr.relationship_id = 'Subsumes'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_600_no_concept_relationship_table_passes(self) -> None:
-        """OMOP_600: Query without concept_relationship table should pass."""
-        sql = """
-        SELECT concept_id, concept_name
-        FROM concept
-        WHERE standard_concept = 'S'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_600_cte_shadowing_passes(self) -> None:
-        """OMOP_600: CTE shadowing concept_relationship should pass."""
-        sql = """
-        WITH concept_relationship AS (
-            SELECT 1 AS concept_id_1, 2 AS concept_id_2, 'Maps to' AS relationship_id
-        )
-        SELECT concept_id_2 FROM concept_relationship
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_600_maps_to_with_table_alias_violation(self) -> None:
-        """OMOP_600: Using 'Maps to' with table aliases but missing checks should fail."""
-        sql = """
-        SELECT cr.concept_id_2
-        FROM concept_relationship cr
-        WHERE cr.concept_id_1 = 123
-        AND cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_600_maps_to_in_subquery_violation(self) -> None:
-        """OMOP_600: Using 'Maps to' in subquery without checks should fail."""
-        sql = """
-        SELECT *
-        FROM condition_occurrence co
-        WHERE co.condition_concept_id IN (
-            SELECT cr.concept_id_2
-            FROM concept_relationship cr
-            WHERE cr.concept_id_1 = 123
-            AND cr.relationship_id = 'Maps to'
-        )
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_600_maps_to_with_multiple_tables_passes(self) -> None:
-        """OMOP_600: Complex query with proper validation should pass."""
-        sql = """
-        SELECT co.person_id, c2.concept_name
-        FROM condition_occurrence co
-        JOIN concept_relationship cr ON co.condition_concept_id = cr.concept_id_1
-        JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-        WHERE cr.relationship_id = 'Maps to'
-        AND cr.invalid_reason IS NULL
-        AND c2.standard_concept = 'S'
-        AND c2.invalid_reason IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-
 class TestLeftJoinThenWhereOnRightTable:
     """Tests for OMOP_149: left_join_then_where_on_right_table rule."""
 
@@ -27761,3 +26798,47 @@ class TestObservationPeriodJoinValidation:
         violations = self._run_rule(sql)
         # Should detect the condition_occurrence violation
         assert len(violations) >= 1
+
+
+class TestIncorrectPercentileCalculation:
+    """Tests for the identical-threshold percentile bug detector."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("data_quality.incorrect_percentile_calculation")()
+        return rule.validate(sql, dialect)
+
+    def test_identical_thresholds_across_percentile_aliases_should_error(self) -> None:
+        """Regression: percentile_25, median, percentile_75 with the SAME threshold
+        is a copy-paste bug and must error."""
+        sql = """
+        SELECT
+            MIN(CASE WHEN order_nr < .50 * population_size THEN 9999 ELSE period_length END) AS percentile_25,
+            MIN(CASE WHEN order_nr < .50 * population_size THEN 9999 ELSE period_length END) AS median,
+            MIN(CASE WHEN order_nr < .50 * population_size THEN 9999 ELSE period_length END) AS percentile_75
+        FROM ordered_data
+        """
+        viols = self._run_rule(sql)
+        assert len(viols) == 1
+        assert "CRITICAL BUG" in viols[0].message
+
+    def test_distinct_thresholds_achilles_pattern_should_not_fire(self) -> None:
+        """Regression: the standard OHDSI Achilles quartile idiom uses different
+        thresholds per column (.25, .50, .75) and must NOT be flagged."""
+        sql = """
+        SELECT
+            MIN(CASE WHEN order_nr < .25 * population_size THEN 9999 ELSE age END) AS percentile_25,
+            MIN(CASE WHEN order_nr < .50 * population_size THEN 9999 ELSE age END) AS median,
+            MIN(CASE WHEN order_nr < .75 * population_size THEN 9999 ELSE age END) AS percentile_75
+        FROM ordered_data
+        """
+        viols = self._run_rule(sql)
+        assert viols == []
+
+    def test_unrelated_case_expression_should_not_fire(self) -> None:
+        """CASE expressions with no order_nr / population_size reference should not trigger."""
+        sql = """
+        SELECT CASE WHEN x > 0 THEN 1 ELSE 0 END AS flag FROM t
+        """
+        viols = self._run_rule(sql)
+        assert viols == []

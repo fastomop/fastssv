@@ -10,7 +10,6 @@ from .concept_name_lookup import ConceptNameLookupRule
 from .type_concept_id_misuse import TypeConceptIdMisuseRule
 from .type_concept_id_domain_filter import TypeConceptIdDomainFilterRule
 from .standard_concept_or_with_classification import StandardConceptOrWithClassificationRule
-from .concept_relationship_missing_relationship_filter import ConceptRelationshipMissingRelationshipFilterRule
 from .concept_relationship_transitive_misuse import ConceptRelationshipTransitiveMisuseRule
 from .concept_ancestor_mixed_with_concept_relationship_redundantly import ConceptAncestorMixedWithConceptRelationshipRedundantlyRule
 from .destructive_operations_on_clinical_tables import DestructiveOperationsOnClinicalTablesRule
@@ -25,7 +24,6 @@ from .vocabulary_table_join_uses_vocabulary_id_string import VocabularyTableJoin
 from .domain_table_join_uses_domain_id_string import DomainTableJoinUsesDomainIdRule
 from .concept_class_table_join_uses_concept_class_id_string import ConceptClassTableJoinUsesConceptClassIdRule
 from .having_without_group_by import HavingWithoutGroupByRule
-from .sql_server_functions_in_postgres import SQLServerFunctionsInPostgresRule
 from .duplicate_column_alias import DuplicateColumnAliasRule
 from .top_as_synthetic_data import TopAsSyntheticDataRule
 from .null_comparison_operator import NullComparisonOperatorRule
@@ -38,7 +36,6 @@ __all__ = [
     "TypeConceptIdMisuseRule",
     "TypeConceptIdDomainFilterRule",
     "StandardConceptOrWithClassificationRule",
-    "ConceptRelationshipMissingRelationshipFilterRule",
     "ConceptRelationshipTransitiveMisuseRule",
     "ConceptAncestorMixedWithConceptRelationshipRedundantlyRule",
     "DestructiveOperationsOnClinicalTablesRule",
@@ -53,7 +50,6 @@ __all__ = [
     "DomainTableJoinUsesDomainIdRule",
     "ConceptClassTableJoinUsesConceptClassIdRule",
     "HavingWithoutGroupByRule",
-    "SQLServerFunctionsInPostgresRule",
     "DuplicateColumnAliasRule",
     "TopAsSyntheticDataRule",
     "NullComparisonOperatorRule",

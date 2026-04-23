@@ -151,7 +151,13 @@ class StandardConceptEnforcementRule(Rule):
             # Check if any STANDARD concept fields are used
             uses_standard_fields = False
             for table, col in refs:
-                key = (normalize_name(table), normalize_name(col))
+                col_norm = normalize_name(col)
+                # *_type_concept_id columns hold data-provenance tokens
+                # (EHR / Claim / etc.), not clinical concepts. Filtering them
+                # by standard_concept = 'S' is a category error — skip.
+                if col_norm.endswith("_type_concept_id"):
+                    continue
+                key = (normalize_name(table), col_norm)
                 if key in standard_fields and key not in already_standard:
                     uses_standard_fields = True
                     break

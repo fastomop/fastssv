@@ -16,9 +16,11 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
+    extract_aliases,
     is_in_where_or_join_clause,
     normalize_name,
     parse_sql,
+    resolve_table_col,
     has_table_reference,
 )
 from fastssv.core.registry import register
@@ -38,6 +40,102 @@ DERIVED_VOCABULARY_TABLES = {
     "drug_strength",
     "source_to_concept_map",
 }
+
+# Columns whose use in WHERE/HAVING indicates the concept table is being
+# queried as a SOURCE (for concept selection/filtering), not merely joined
+# as a lookup to decode a stored concept_id into a name. invalid_reason
+# filtering is only meaningful in the former case.
+CONCEPT_SOURCE_FILTER_COLUMNS = {
+    "vocabulary_id",
+    "domain_id",
+    "concept_class_id",
+    "standard_concept",
+    "concept_name",
+    "concept_code",
+    "relationship_id",
+}
+
+
+def _has_standard_concept_filter(tree: exp.Expression) -> bool:
+    """True if the query filters `standard_concept = 'S'` (or IN ('S', ...)).
+
+    Standard concepts are almost always also valid (`invalid_reason IS NULL`),
+    so when the user has already narrowed to standard concepts, demanding an
+    additional `invalid_reason IS NULL` filter is belt-and-suspenders noise.
+    """
+    for eq in tree.find_all(exp.EQ):
+        if not is_in_where_or_join_clause(eq):
+            continue
+        left, right = eq.left, eq.right
+        for col_node, val_node in ((left, right), (right, left)):
+            if not isinstance(col_node, exp.Column):
+                continue
+            if normalize_name(col_node.name) != "standard_concept":
+                continue
+            if isinstance(val_node, exp.Literal) and val_node.is_string:
+                if str(val_node.this).strip().upper() == "S":
+                    return True
+    for in_expr in tree.find_all(exp.In):
+        if not is_in_where_or_join_clause(in_expr):
+            continue
+        if not isinstance(in_expr.this, exp.Column):
+            continue
+        if normalize_name(in_expr.this.name) != "standard_concept":
+            continue
+        for val in in_expr.expressions or []:
+            if isinstance(val, exp.Literal) and val.is_string:
+                if str(val.this).strip().upper() == "S":
+                    return True
+    return False
+
+
+def _derived_table_in_from(tree: exp.Expression, table_name: str) -> bool:
+    """True if the given derived vocabulary table (concept_ancestor,
+    concept_synonym, etc.) appears in the primary FROM clause of any
+    SELECT — i.e. the query is sourcing from it, not merely joining it
+    as a lookup from some other table.
+    """
+    for select in tree.find_all(exp.Select):
+        from_node = select.args.get("from_") or select.args.get("from")
+        if from_node is None:
+            continue
+        for tbl in from_node.find_all(exp.Table):
+            if normalize_name(tbl.name) == table_name:
+                return True
+    return False
+
+
+def _concept_used_as_source(tree: exp.Expression) -> bool:
+    """True if a vocabulary table is queried as a SOURCE, not merely a lookup.
+
+    Distinguishes:
+    - SOURCE usage: WHERE/HAVING filters on concept.vocabulary_id /
+      domain_id / relationship_id / standard_concept / concept_name /
+      concept_code / concept_class_id — the query is building/filtering
+      a concept set.
+    - LOOKUP usage: vocabulary table appears only to resolve a specific
+      concept_id (e.g., `WHERE c.concept_id = 192671`), with no filters
+      on selection columns.
+
+    Only SOURCE usage warrants an invalid_reason filter warning.
+    """
+    aliases = extract_aliases(tree)
+    for select in tree.find_all(exp.Select):
+        for clause_key in ("where", "having"):
+            clause = select.args.get(clause_key)
+            if clause is None:
+                continue
+            for col in clause.find_all(exp.Column):
+                col_name = normalize_name(col.name)
+                if col_name not in CONCEPT_SOURCE_FILTER_COLUMNS:
+                    continue
+                resolved_table, _ = resolve_table_col(col, aliases)
+                if not resolved_table or resolved_table in (
+                    "concept",
+                    "concept_relationship",
+                ):
+                    return True
+    return False
 
 
 def _has_invalid_reason_filter(tree: exp.Expression) -> bool:
@@ -231,9 +329,22 @@ class InvalidReasonEnforcementRule(Rule):
             # Check if invalid_reason is filtered OR date validity is checked
             has_invalid_reason_filter = _has_invalid_reason_filter(tree)
             has_date_validity = _has_date_validity_check(tree)
+            # Standard concepts are nearly always also valid in OMOP — filtering
+            # by standard_concept = 'S' effectively narrows to the valid-concept
+            # subset, so the additional invalid_reason check is redundant noise
+            # on OHDSI-standard queries.
+            has_standard_filter = _has_standard_concept_filter(tree)
 
-            # Handle tables that have invalid_reason column
-            if tables_with_invalid_reason and not has_invalid_reason_filter and not has_date_validity:
+            # Handle tables that have invalid_reason column.
+            # Only warn when concept is used as a SOURCE (filtered by
+            # vocabulary_id, domain_id, etc.), not as a pure lookup join.
+            if (
+                tables_with_invalid_reason
+                and not has_invalid_reason_filter
+                and not has_date_validity
+                and not has_standard_filter
+                and _concept_used_as_source(tree)
+            ):
                 tables_str = ", ".join(sorted(tables_with_invalid_reason))
 
                 message = (
@@ -253,14 +364,31 @@ class InvalidReasonEnforcementRule(Rule):
                     }
                 ))
 
-            # Handle derived tables (concept_ancestor, etc.)
-            if derived_tables:
+            # Handle derived tables (concept_ancestor, etc.).
+            # Skip when the derived table only appears in a JOIN (auxiliary
+            # lookup) rather than in a primary FROM clause. Example:
+            #   FROM concept c JOIN concept_synonym s ON c.concept_id = s.concept_id
+            #   WHERE c.concept_id = 192671
+            # — here concept_synonym is a lookup to fetch synonyms for a
+            # specific concept, not a source to filter against, so demanding
+            # invalid_reason would exclude legitimate historical results.
+            derived_tables_as_source = {
+                t for t in derived_tables
+                if _derived_table_in_from(tree, t)
+            }
+            if derived_tables_as_source:
                 # Check if they JOIN to concept with invalid_reason filter OR date validity
                 has_concept_join_with_invalid_reason_filter = _has_concept_join_with_invalid_reason_filter(tree)
 
-                # If the main concept table has date validity checks, derived tables are also considered valid
-                if not has_concept_join_with_invalid_reason_filter and not has_date_validity:
-                    tables_str = ", ".join(sorted(derived_tables))
+                # If the main concept table has date validity checks OR the query
+                # filters standard_concept = 'S' (which implies validity), derived
+                # tables are also considered validated.
+                if (
+                    not has_concept_join_with_invalid_reason_filter
+                    and not has_date_validity
+                    and not has_standard_filter
+                ):
+                    tables_str = ", ".join(sorted(derived_tables_as_source))
 
                     message = (
                         f"Query uses derived vocabulary table(s) [{tables_str}] which do not have an invalid_reason column. "
@@ -275,7 +403,7 @@ class InvalidReasonEnforcementRule(Rule):
                             "JOIN to concept table and add: WHERE concept.invalid_reason IS NULL"
                         ),
                         details={
-                            "derived_tables": sorted(derived_tables),
+                            "derived_tables": sorted(derived_tables_as_source),
                             "recommendation": "JOIN concept c ON c.concept_id = <table>.concept_id WHERE c.invalid_reason IS NULL",
                         }
                     ))

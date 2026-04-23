@@ -120,6 +120,28 @@ def _is_subquery_safe(count: exp.Count) -> bool:
     return isinstance(parent, exp.Select) and isinstance(parent.parent, exp.Subquery)
 
 
+# Alias-name fragments that strongly indicate the user is counting patients,
+# not records. Only warn when the user's intent actually is patient-level.
+PATIENT_INTENT_FRAGMENTS = ("person", "patient", "people", "member", "subject")
+
+
+def _count_alias_suggests_patient_intent(count: exp.Count) -> bool:
+    """True if the alias wrapping this COUNT names patients/persons.
+
+    Examples:
+      COUNT(*) AS num_persons      -> True
+      COUNT(*) AS patient_count    -> True
+      COUNT(*) AS num_records      -> False
+      COUNT(*) AS exposure_count   -> False
+      COUNT(*) AS cn               -> False
+    """
+    parent = count.parent
+    if isinstance(parent, exp.Alias):
+        alias = normalize_name(parent.alias) if parent.alias else ""
+        return any(frag in alias for frag in PATIENT_INTENT_FRAGMENTS)
+    return False
+
+
 def _has_problematic_count(select: exp.Select, aliases: Dict[str, str]) -> bool:
     drug_aliases = _get_aliases_for_table(TABLE_DRUG_EXPOSURE, aliases)
 
@@ -130,19 +152,25 @@ def _has_problematic_count(select: exp.Select, aliases: Dict[str, str]) -> bool:
         if _is_subquery_safe(count):
             continue
 
-        # Skip safe case
+        # Skip safe case: COUNT(DISTINCT person_id)
         if _is_count_distinct_person_id(count, aliases):
             continue
 
-        # COUNT(*)
+        # Only warn when the user's alias makes patient-level intent explicit
+        # (e.g. "num_persons", "patient_count"). Record-level aliases like
+        # "num_records", "exposure_count", "cn" are intentionally left alone
+        # -- the user is being explicit that they want rows, not patients.
+        if not _count_alias_suggests_patient_intent(count):
+            continue
+
+        # COUNT(*) or COUNT(non-person-id column) with patient-intent alias
+        # is the classic overcounting pattern worth flagging.
         if _is_count_star(count):
             return True
 
-        # COUNT(DISTINCT something else) - still fires because it's not counting patients
         if isinstance(count.this, exp.Distinct):
             return True
 
-        # COUNT(column)
         if isinstance(count.this, exp.Column):
             table, _ = resolve_table_col(count.this, aliases)
 

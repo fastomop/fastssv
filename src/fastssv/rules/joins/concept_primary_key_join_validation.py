@@ -76,14 +76,17 @@ def _is_concept_id_like(col: Optional[str]) -> bool:
 
 def _is_vocab_safe_column(col: Optional[str]) -> bool:
     """
-    Columns commonly used in legitimate vocabulary joins.
+    Columns whose use as a join predicate to the concept table is suspicious
+    without an accompanying vocabulary_id filter.
+
+    Only `concept_code` qualifies — it is not unique across vocabularies and
+    typically needs `concept.vocabulary_id = '<vocab>'` to disambiguate.
+
+    `vocabulary_id`, `domain_id`, `concept_class_id` are legitimate FK join
+    columns to the respective lookup tables (vocabulary, domain, concept_class)
+    and are excluded here to avoid false positives.
     """
-    return _norm(col) in {
-        "concept_code",
-        "vocabulary_id",
-        "concept_class_id",
-        "domain_id",
-    }
+    return _norm(col) == "concept_code"
 
 
 def _extract_all_equalities(tree: exp.Expression) -> List[exp.EQ]:

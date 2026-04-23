@@ -70,6 +70,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
+from fastssv.schemas import get_table_columns
 
 
 # --- Constants -------------------------------------------------------------
@@ -105,6 +106,32 @@ def _get_table_count(select: exp.Select) -> int:
             tables.add(_norm(table.name))
 
     return len(tables)
+
+
+def _get_tables_in_scope(select: exp.Select) -> Set[str]:
+    """Normalized table names referenced in this SELECT's FROM/JOINs."""
+    tables: Set[str] = set()
+    for table in select.find_all(exp.Table):
+        if table.name:
+            tables.add(_norm(table.name))
+    return tables
+
+
+def _column_is_genuinely_ambiguous(col_name: str, tables_in_scope: Set[str]) -> bool:
+    """True only if the column actually exists in >= 2 tables in scope.
+
+    A query like `FROM drug_exposure JOIN concept ON ...` uses 2 tables, but
+    person_id only exists in drug_exposure (concept has no person_id). So
+    `person_id` is NOT ambiguous there.
+    """
+    tables_with_col = 0
+    for table_name in tables_in_scope:
+        cols = get_table_columns(table_name)
+        if col_name in cols:
+            tables_with_col += 1
+            if tables_with_col >= 2:
+                return True
+    return False
 
 
 def _is_qualified_column(col: exp.Column) -> bool:
@@ -187,7 +214,8 @@ class AmbiguousColumnReferenceRule(Rule):
                 continue
 
             for select_idx, select in enumerate(tree.find_all(exp.Select)):
-                table_count = _get_table_count(select)
+                tables_in_scope = _get_tables_in_scope(select)
+                table_count = len(tables_in_scope)
 
                 # Only enforce for multi-table queries
                 if table_count < 2:
@@ -199,6 +227,11 @@ class AmbiguousColumnReferenceRule(Rule):
 
                 for col in unqualified_cols:
                     col_name = _norm(col.name)
+
+                    # Only warn if the column actually exists in >= 2 tables
+                    # in scope. Otherwise it's not genuinely ambiguous.
+                    if not _column_is_genuinely_ambiguous(col_name, tables_in_scope):
+                        continue
 
                     key = (col_name, select_idx)
                     if key in seen:

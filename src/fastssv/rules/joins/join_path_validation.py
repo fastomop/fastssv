@@ -142,6 +142,94 @@ def _verify_concept_join_path(
             if rt == "concept" and rc == "concept_id":
                 linked_to_concept = True
 
+    # Fallback: extract_join_conditions drops unqualified columns. When
+    # concept / concept_relationship is the join target itself (e.g.
+    # `INNER JOIN vocab.concept ON concept_id = drug_concept_id`), any ON
+    # clause equality referencing `concept_id` is semantically joining to
+    # that table. Walk JOIN nodes whose target is concept / CR and check
+    # their ON clauses for an appropriate join-key column.
+    if uses_concept and not linked_to_concept:
+        for join in tree.find_all(exp.Join):
+            target_tables = [
+                normalize_name(t.name)
+                for t in join.find_all(exp.Table)
+            ]
+            if "concept" not in target_tables:
+                continue
+            on_clause = join.args.get("on")
+            if on_clause is None:
+                continue
+            for col in on_clause.find_all(exp.Column):
+                if normalize_name(col.name) == "concept_id":
+                    linked_to_concept = True
+                    break
+            if linked_to_concept:
+                break
+
+    if uses_concept_rel and not linked_to_concept_rel:
+        for join in tree.find_all(exp.Join):
+            target_tables = [
+                normalize_name(t.name)
+                for t in join.find_all(exp.Table)
+            ]
+            if "concept_relationship" not in target_tables:
+                continue
+            on_clause = join.args.get("on")
+            if on_clause is None:
+                continue
+            for col in on_clause.find_all(exp.Column):
+                if normalize_name(col.name) in ("concept_id_1", "concept_id_2"):
+                    linked_to_concept_rel = True
+                    break
+            if linked_to_concept_rel:
+                break
+
+    # Fallback #2: implicit (comma) joins. When concept / concept_relationship
+    # appears as a comma-joined table in a SELECT's FROM clause, the linkage
+    # equalities live in the WHERE clause, not in any `JOIN ... ON`. If the
+    # enclosing SELECT has concept / CR in its FROM and a WHERE equality that
+    # involves concept.concept_id or concept_relationship.concept_id_1|2,
+    # treat the table as linked.
+    if uses_concept and not linked_to_concept:
+        for select in tree.find_all(exp.Select):
+            from_node = select.args.get("from_") or select.args.get("from")
+            if from_node is None:
+                continue
+            from_table_names = {
+                normalize_name(t.name) for t in from_node.find_all(exp.Table)
+            }
+            if "concept" not in from_table_names:
+                continue
+            where_clause = select.args.get("where")
+            if where_clause is None:
+                continue
+            for col in where_clause.find_all(exp.Column):
+                if normalize_name(col.name) == "concept_id":
+                    linked_to_concept = True
+                    break
+            if linked_to_concept:
+                break
+
+    if uses_concept_rel and not linked_to_concept_rel:
+        for select in tree.find_all(exp.Select):
+            from_node = select.args.get("from_") or select.args.get("from")
+            if from_node is None:
+                continue
+            from_table_names = {
+                normalize_name(t.name) for t in from_node.find_all(exp.Table)
+            }
+            if "concept_relationship" not in from_table_names:
+                continue
+            where_clause = select.args.get("where")
+            if where_clause is None:
+                continue
+            for col in where_clause.find_all(exp.Column):
+                if normalize_name(col.name) in ("concept_id_1", "concept_id_2"):
+                    linked_to_concept_rel = True
+                    break
+            if linked_to_concept_rel:
+                break
+
     if uses_concept and not linked_to_concept:
         warnings.append(
             "Query uses 'concept' table but it may not be properly joined "

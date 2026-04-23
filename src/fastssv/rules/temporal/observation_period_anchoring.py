@@ -191,6 +191,20 @@ def _uses_observation_period(tree: exp.Expression) -> bool:
     return has_table_reference(tree, "observation_period")
 
 
+def _references_clinical_fact_table(tree: exp.Expression) -> bool:
+    """True if the query references any clinical fact table.
+
+    observation_period anchoring is only meaningful for queries over clinical
+    event data. Vocabulary-only queries (FROM concept, concept_synonym, etc.)
+    have no patient dimension and cannot be anchored to an observation window,
+    even if they happen to compare date columns (e.g., valid_start_date).
+    """
+    for clinical_table in CLINICAL_TABLES_WITH_DATES:
+        if has_table_reference(tree, clinical_table):
+            return True
+    return False
+
+
 def _joins_observation_period_on_person_id(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -376,8 +390,16 @@ class ObservationPeriodAnchoringRule(Rule):
             has_date_functions = _has_date_function(tree)
             has_washout_logic = _has_washout_or_followup_logic(tree)
 
-            # If query has temporal constraints or date logic but no observation_period, warn
-            if not uses_op and (has_temporal_constraints or has_washout_logic):
+            # If query has temporal constraints or date logic but no observation_period, warn.
+            # Gate: skip vocabulary-only queries. Anchoring to observation_period requires
+            # clinical event data; a query that only touches concept/concept_synonym/etc.
+            # has no person dimension to anchor to, even if its date columns look temporal
+            # (e.g., concept.valid_start_date / valid_end_date).
+            if (
+                not uses_op
+                and (has_temporal_constraints or has_washout_logic)
+                and _references_clinical_fact_table(tree)
+            ):
                 violations.append(self.create_violation(
                     message=(
                         "Query filters clinical events by date but does not anchor to observation_period. "
