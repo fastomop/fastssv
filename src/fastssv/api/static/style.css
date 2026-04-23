@@ -66,7 +66,7 @@ html, body {
 .site-header {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 0.75rem 0;
+  padding: 1.1rem 0;
 }
 .site-header .wrap {
   display: flex;
@@ -918,10 +918,14 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 .panel-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.55rem 0.85rem;
   margin-bottom: 0.6rem;
+  overflow-x: auto;       /* if the row is ever narrower than its content,
+                             fall back to horizontal scroll rather than wrap */
 }
+.panel-toolbar::-webkit-scrollbar { display: none; }
+.panel-toolbar { scrollbar-width: none; }
 .panel-toolbar-field {
   display: inline-flex;
   align-items: center;
@@ -1024,10 +1028,28 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 /* Same soft pastel treatment as the .hero-trust privacy badge — uses
    semantic tokens so light+dark modes stay consistent. One color per
    example, hinting at the outcome you'll see when clicked. */
-.chip[data-example="valid"]            { background: var(--ok-bg);   color: var(--ok-fg);   border-color: var(--ok-fg); }
-.chip[data-example="missing_standard"] { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-fg); }
-.chip[data-example="unknown_table"]    { background: var(--err-bg);  color: var(--err-fg);  border-color: var(--err-fg); }
-.chip[data-example="multi_statement"]  { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-fg); }
+/* Border uses color-mix() to soften the -fg color against the chip's bg,
+   so the outline feels related to the text without being as dark. */
+.chip[data-example="valid"] {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  border-color: color-mix(in srgb, var(--ok-fg) 28%, var(--ok-bg));
+}
+.chip[data-example="missing_standard"] {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-color: color-mix(in srgb, var(--warn-fg) 28%, var(--warn-bg));
+}
+.chip[data-example="unknown_table"] {
+  background: var(--err-bg);
+  color: var(--err-fg);
+  border-color: color-mix(in srgb, var(--err-fg) 28%, var(--err-bg));
+}
+.chip[data-example="multi_statement"] {
+  background: var(--info-bg);
+  color: var(--info-fg);
+  border-color: color-mix(in srgb, var(--info-fg) 28%, var(--info-bg));
+}
 .chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

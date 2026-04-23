@@ -205,4 +205,38 @@
       applyExample(btn.getAttribute("data-example"));
     }
   });
+
+  // ---- Smooth scroll to results after HTMX swap -------------------------
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function smoothScrollTo(targetY, duration) {
+    var startY = window.scrollY || window.pageYOffset;
+    var distance = targetY - startY;
+    if (Math.abs(distance) < 2) return;
+    var startTime = performance.now();
+    function step(now) {
+      var elapsed = now - startTime;
+      var progress = Math.min(elapsed / duration, 1);
+      window.scrollTo(0, startY + distance * easeInOutCubic(progress));
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  document.body.addEventListener("htmx:afterSwap", function (evt) {
+    var target = evt.target;
+    if (!target || target.id !== "results") return;
+    // Wait one frame so the browser has computed the final layout of the
+    // just-swapped content, then ease the window to show the results panel
+    // near the top of the viewport with a bit of breathing room above.
+    requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      var currentY = window.scrollY || window.pageYOffset;
+      var targetY = rect.top + currentY - 24;  // 24px offset from the top
+      smoothScrollTo(targetY, 700);
+    });
+  });
 })();
