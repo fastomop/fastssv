@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version as pkg_version
 from pathlib import Path
 from typing import Any, Dict, List
 
+import sqlglot
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +27,32 @@ from fastssv.api.config import Settings
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
 from fastssv.core.registry import get_all_rules
+
+# sqlglot dialect names differ slightly from our UI labels; translate here so
+# the pretty-printer reads with the correct grammar. "auto" → None lets
+# sqlglot guess.
+_SQLGLOT_DIALECTS = {
+    "postgres": "postgres",
+    "tsql": "tsql",
+    "auto": None,
+}
+
+
+def _pretty_sql(sql: str, dialect: str) -> str:
+    """Re-serialise the statement through sqlglot with pretty-print.
+
+    Best-effort: if the parser can't handle this statement (comments-only,
+    vendor extension, truncated paste), return the original text unchanged
+    so the user still sees what they submitted.
+    """
+    read_dialect = _SQLGLOT_DIALECTS.get(dialect)
+    try:
+        tree = sqlglot.parse_one(sql, read=read_dialect)
+        if tree is None:
+            return sql
+        return tree.sql(dialect=read_dialect, pretty=True)
+    except Exception:
+        return sql
 
 logger = logging.getLogger("fastssv.api.ui")
 
@@ -215,8 +242,29 @@ async def ui_validate(
                 **result_payload,
                 "violations": result_payload["errors"] + result_payload["warnings"],
                 "json_str": json.dumps(result_payload, indent=2, ensure_ascii=False),
+                "sql_pretty": _pretty_sql(stmt, dialect),
             }
         )
+
+    # Aggregate report JSON — what the user downloads via the "Download JSON"
+    # button in the results summary. Mirrors the /v1/validate JSON shape
+    # (without the per-query "violations" + "json_str" helpers added for UI).
+    aggregate_report = {
+        "is_valid": total_errors == 0,
+        "error_count": total_errors,
+        "warning_count": total_warnings,
+        "query_count": len(statements),
+        "dialect": dialect,
+        "duration_ms": round(duration_ms, 2),
+        "results": [
+            {
+                k: v for k, v in q.items()
+                if k not in ("violations", "json_str", "sql_pretty")
+            }
+            for q in query_results
+        ],
+    }
+    full_report_json = json.dumps(aggregate_report, indent=2, ensure_ascii=False)
 
     logger.info(
         "ui_validation_complete",
@@ -239,6 +287,7 @@ async def ui_validate(
         query_results=query_results,
         duration_ms=round(duration_ms, 2),
         dialect=dialect,
+        full_report_json=full_report_json,
     )
 
 
@@ -260,6 +309,7 @@ def _render_results(
     query_results: List[Dict[str, Any]] | None = None,
     duration_ms: float = 0.0,
     dialect: str = "",
+    full_report_json: str = "",
     status_code: int = 200,
 ) -> HTMLResponse:
     response = templates.TemplateResponse(
@@ -274,6 +324,7 @@ def _render_results(
             "query_results": query_results or [],
             "duration_ms": duration_ms,
             "dialect": dialect,
+            "full_report_json": full_report_json,
             "rules_loaded": _rules_loaded(),
         },
         status_code=status_code,

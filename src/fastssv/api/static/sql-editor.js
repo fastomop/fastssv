@@ -16,6 +16,25 @@
   var pre = hl ? hl.parentElement : null;
   var gutter = document.getElementById("sql-gutter");
 
+  // Hard cap on editor height: anything past the 999th line is dropped
+  // silently in the same spirit as textarea's built-in maxlength. The file
+  // importer does its own pre-flight check and surfaces an explicit alert.
+  var MAX_LINES = 999;
+
+  function enforceLineLimit() {
+    var v = ta.value || "";
+    var newlines = 0;
+    for (var i = 0; i < v.length; i++) {
+      if (v.charCodeAt(i) === 10) newlines++;
+    }
+    if (newlines + 1 <= MAX_LINES) return false;
+    // Keep the selection stable when trimming content the user didn't type
+    // themselves (e.g. a large paste).
+    var lines = v.split("\n");
+    ta.value = lines.slice(0, MAX_LINES).join("\n");
+    return true;
+  }
+
   function renderGutter() {
     if (!gutter) return;
     var text = ta.value || "";
@@ -34,6 +53,7 @@
   }
 
   function update() {
+    enforceLineLimit();
     if (hl) {
       var v = ta.value;
       // Trailing-newline guard: without a trailing space the highlight layer
@@ -203,8 +223,138 @@
       panel.setAttribute("data-view", current === "json" ? "formatted" : "json");
     } else if (action === "example") {
       applyExample(btn.getAttribute("data-example"));
+    } else if (action === "import") {
+      var inputSelector = btn.getAttribute("data-target");
+      var input = inputSelector ? document.querySelector(inputSelector) : null;
+      if (input) input.click();
+    } else if (action === "download") {
+      var text = textFromTarget(btn);
+      if (!text) return;
+      var filename = btn.getAttribute("data-filename") || "fastssv-report.json";
+      try {
+        var blob = new Blob([text], { type: "application/json;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        flash(btn, '<span>Saved</span>');
+      } catch (err) {
+        console.error("Download failed:", err);
+        flash(btn, '<span>Failed</span>');
+      }
     }
   });
+
+  // ---- File import: read one or more .sql files into the editor --------
+
+  var fileInput = document.getElementById("sql-file-input");
+
+  function setImporting(on) {
+    var btns = document.querySelectorAll('[data-action="import"]');
+    for (var i = 0; i < btns.length; i++) {
+      if (on) {
+        btns[i].setAttribute("data-importing", "1");
+        btns[i].disabled = true;
+      } else {
+        btns[i].removeAttribute("data-importing");
+        btns[i].disabled = false;
+      }
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(fileInput.files || []);
+      if (files.length === 0) return;
+
+      // Hard client-side size cap: match the server's max_sql_bytes so we
+      // never ship a payload the server would reject AND never set a
+      // megabyte-scale string on the textarea (which would freeze Prism and
+      // the browser tab). The textarea advertises the limit via maxlength.
+      var maxBytes = parseInt(ta.getAttribute("maxlength") || "100000", 10);
+      var totalBytes = files.reduce(function (s, f) { return s + (f.size || 0); }, 0);
+      var existingBytes = new Blob([ta.value || ""]).size;
+
+      if (existingBytes + totalBytes > maxBytes) {
+        window.alert(
+          "Import too large — FastSSV caps editor content at " + formatBytes(maxBytes) + ".\n\n" +
+          "Selected files:    " + formatBytes(totalBytes) + "\n" +
+          "Editor already has: " + formatBytes(existingBytes) + "\n" +
+          "Combined total:    " + formatBytes(existingBytes + totalBytes) + "\n\n" +
+          "Clear the editor first, or import a smaller file. For bulk batch " +
+          "validation, run the CLI against your files directly:\n" +
+          "  fastssv path/to/queries.sql"
+        );
+        fileInput.value = "";
+        return;
+      }
+
+      setImporting(true);
+
+      var readers = files.map(function (file) {
+        return new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function (e) {
+            resolve({ name: file.name, text: String(e.target.result || "") });
+          };
+          reader.onerror = function () {
+            reject(reader.error || new Error("read failed"));
+          };
+          reader.readAsText(file);
+        });
+      });
+
+      Promise.all(readers).then(function (results) {
+        var parts = results.map(function (r) {
+          var trimmed = (r.text || "").replace(/\s+$/, "");
+          if (!trimmed) return "";
+          return "-- File: " + r.name + "\n" + trimmed;
+        }).filter(Boolean);
+
+        var combined = parts.join("\n\n");
+        if (!combined) {
+          window.alert("The selected file" + (files.length > 1 ? "s were" : " was") + " empty.");
+          return;
+        }
+
+        var existing = ta.value ? ta.value.replace(/\s+$/, "") : "";
+        var draft = existing ? existing + "\n\n" + combined : combined;
+        var draftLines = draft.split("\n").length;
+        if (draftLines > MAX_LINES) {
+          window.alert(
+            "Import too long — FastSSV caps the editor at " + MAX_LINES + " lines.\n\n" +
+            "Selected content would produce " + draftLines + " lines.\n\n" +
+            "For larger batches, run the CLI against your files directly:\n" +
+            "  fastssv path/to/queries.sql"
+          );
+          return;
+        }
+        ta.value = draft;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        ta.focus();
+      }).catch(function (err) {
+        console.error("SQL file import failed:", err);
+        window.alert(
+          "Failed to read one or more files.\n\n" +
+          (err && err.message ? err.message : "See browser console for details.")
+        );
+      }).then(function () {
+        setImporting(false);
+        // Reset so the same file(s) can be re-imported on next pick.
+        fileInput.value = "";
+      });
+    });
+  }
 
   // ---- Smooth scroll to results after HTMX swap -------------------------
 
@@ -229,6 +379,12 @@
   document.body.addEventListener("htmx:afterSwap", function (evt) {
     var target = evt.target;
     if (!target || target.id !== "results") return;
+    // Run Prism over the freshly-swapped fragment so any .language-json /
+    // .language-sql blocks get coloured. highlightAllUnder is a no-op when
+    // Prism isn't loaded yet; the `defer` order in index.html ensures it is.
+    if (window.Prism && Prism.highlightAllUnder) {
+      Prism.highlightAllUnder(target);
+    }
     // Wait one frame so the browser has computed the final layout of the
     // just-swapped content, then ease the window to show the results panel
     // near the top of the viewport with a bit of breathing room above.

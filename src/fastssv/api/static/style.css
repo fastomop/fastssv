@@ -21,28 +21,31 @@
   --radius: 8px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #2a2f3a;
-    --text: #e9ecef;
-    --muted: #9aa0a8;
-    --accent: #6d8cff;
-    --accent-hover: #8aa1ff;
-    --strict: #f09066;
-    --strict-hover: #ffa37c;
-    --err-bg: #3a1919;
-    --err-fg: #ff9090;
-    --warn-bg: #3a2f12;
-    --warn-fg: #ffc66b;
-    --ok-bg: #1a3322;
-    --ok-fg: #8de1a8;
-    --info-bg: #162240;
-    --info-fg: #a9c0ff;
-    --code-bg: #1f232c;
-    --gutter-bg: #12141a;
-  }
+/* Dark-mode palette — applied via a `data-theme="dark"` attribute on
+   <html>. An inline script in base.html seeds the attribute from the
+   user's saved preference (localStorage) or falls back to their system
+   preference on first visit, so `prefers-color-scheme` is respected
+   automatically but the in-page toggle button can override it. */
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --border: #2a2f3a;
+  --text: #e9ecef;
+  --muted: #9aa0a8;
+  --accent: #6d8cff;
+  --accent-hover: #8aa1ff;
+  --strict: #f09066;
+  --strict-hover: #ffa37c;
+  --err-bg: #3a1919;
+  --err-fg: #ff9090;
+  --warn-bg: #3a2f12;
+  --warn-fg: #ffc66b;
+  --ok-bg: #1a3322;
+  --ok-fg: #8de1a8;
+  --info-bg: #162240;
+  --info-fg: #a9c0ff;
+  --code-bg: #1f232c;
+  --gutter-bg: #12141a;
 }
 
 * { box-sizing: border-box; }
@@ -94,6 +97,35 @@ html, body {
 .site-header nav a[aria-current="page"] {
   color: var(--text);
   background: var(--bg);
+}
+.site-header nav .theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  margin-left: 0.25rem;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.site-header nav .theme-toggle:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+.site-header nav .theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Swap the sun/moon glyph so the visible icon represents the mode you'd
+   switch INTO, not the current mode (sun = click-to-go-light). */
+:root[data-theme="light"] .theme-icon-sun,
+:root[data-theme="dark"] .theme-icon-moon {
+  display: none;
 }
 
 main.wrap {
@@ -391,6 +423,51 @@ textarea {
   opacity: 1;
 }
 
+/* Import button — same geometry as Copy; neutral-muted by default. */
+.editor-import-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.4rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 1;
+  transition: color 120ms ease, background 120ms ease;
+}
+.editor-import-btn:hover {
+  color: var(--accent);
+  background: var(--code-bg);
+}
+.editor-import-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.editor-import-btn svg { display: block; }
+.editor-import-btn:disabled,
+.editor-import-btn[data-importing="1"] {
+  cursor: wait;
+  opacity: 0.7;
+}
+/* Spinner replaces the upload icon while a file import is in flight. */
+.editor-import-btn[data-importing="1"] svg { display: none; }
+.editor-import-btn[data-importing="1"]::after {
+  content: "";
+  display: block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fastssv-spin 0.7s linear infinite;
+}
+
 /* Clear (trash) button — mirrors .editor-copy-btn geometry but uses the
    danger colour so it reads as destructive. Borderless, icon-only, same
    size as the copy icon. */
@@ -523,14 +600,12 @@ textarea {
 .sql-editor .token.punctuation { color: var(--muted); }
 .sql-editor .token.variable { color: #a14a1f; }
 
-@media (prefers-color-scheme: dark) {
-  .sql-editor .token.keyword { color: #c792ea; }
-  .sql-editor .token.function { color: #82aaff; }
-  .sql-editor .token.string { color: #9de07f; }
-  .sql-editor .token.number,
-  .sql-editor .token.boolean { color: #f6a878; }
-  .sql-editor .token.variable { color: #ffcc80; }
-}
+[data-theme="dark"] .sql-editor .token.keyword { color: #c792ea; }
+[data-theme="dark"] .sql-editor .token.function { color: #82aaff; }
+[data-theme="dark"] .sql-editor .token.string { color: #9de07f; }
+[data-theme="dark"] .sql-editor .token.number,
+[data-theme="dark"] .sql-editor .token.boolean { color: #f6a878; }
+[data-theme="dark"] .sql-editor .token.variable { color: #ffcc80; }
 input[type="search"], select {
   font-family: inherit;
   font-size: 14px;
@@ -699,6 +774,37 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 }
 .stat-time { margin-left: auto; }
 
+/* Download-report pill in the stat strip — sits after the time pill. */
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.7rem;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.download-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.download-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.download-btn[data-flashed="1"] {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  border-color: var(--ok-fg);
+}
+.download-btn svg { display: block; flex: none; }
+
 /* --- Per-query blocks: pastel-tinted, left accent stripe. Completely
    different silhouette from the editor's clean white shell. */
 .query-block {
@@ -736,9 +842,7 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   background: rgba(0, 0, 0, 0.06);
   color: inherit;
 }
-@media (prefers-color-scheme: dark) {
-  .query-tag { background: rgba(255, 255, 255, 0.1); }
-}
+[data-theme="dark"] .query-tag { background: rgba(255, 255, 255, 0.1); }
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -767,9 +871,7 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   transition: opacity 120ms ease, background 120ms ease;
 }
 .query-block-head .view-toggle:hover { opacity: 1; background: rgba(0, 0, 0, 0.05); }
-@media (prefers-color-scheme: dark) {
-  .query-block-head .view-toggle:hover { background: rgba(255, 255, 255, 0.08); }
-}
+[data-theme="dark"] .query-block-head .view-toggle:hover { background: rgba(255, 255, 255, 0.08); }
 .query-block[data-view="formatted"] .view-toggle .view-label-formatted { display: inline; }
 .query-block[data-view="formatted"] .view-toggle .view-label-json      { display: none; }
 .query-block[data-view="json"]      .view-toggle .view-label-formatted { display: none; }
@@ -785,11 +887,9 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   background: rgba(255, 255, 255, 0.55);
   color: var(--text);
 }
-@media (prefers-color-scheme: dark) {
-  .query-block .query-sql,
-  .query-block .query-json {
-    background: rgba(0, 0, 0, 0.28);
-  }
+[data-theme="dark"] .query-block .query-sql,
+[data-theme="dark"] .query-block .query-json {
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .banner {
@@ -856,6 +956,43 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   background: transparent;
   padding: 0;
 }
+
+/* Prism SQL token colours for the formatted query preview. Mirrors the
+   editor palette but re-scoped to the results area so the dark inline
+   <code> rule doesn't override them. */
+.query-sql .token.comment    { color: var(--muted); font-style: italic; }
+.query-sql .token.keyword    { color: #6b2fb3; font-weight: 600; }
+.query-sql .token.function   { color: #0b5fae; }
+.query-sql .token.string     { color: #1a6b3a; }
+.query-sql .token.number,
+.query-sql .token.boolean    { color: #b5451a; }
+.query-sql .token.operator,
+.query-sql .token.punctuation { color: var(--muted); }
+.query-sql .token.variable   { color: #a14a1f; }
+
+[data-theme="dark"] .query-sql .token.keyword  { color: #c792ea; }
+[data-theme="dark"] .query-sql .token.function { color: #82aaff; }
+[data-theme="dark"] .query-sql .token.string   { color: #9de07f; }
+[data-theme="dark"] .query-sql .token.number,
+[data-theme="dark"] .query-sql .token.boolean  { color: #f6a878; }
+[data-theme="dark"] .query-sql .token.variable { color: #ffcc80; }
+
+/* Prism JSON token colours for the JSON view toggle. Scoped so they
+   don't leak into the SQL editor's own SQL highlighting. */
+.query-json .token.property     { color: #0b5fae; font-weight: 600; }
+.query-json .token.string       { color: #1a6b3a; }
+.query-json .token.number,
+.query-json .token.boolean      { color: #b5451a; }
+.query-json .token.null         { color: #6b2fb3; font-weight: 600; }
+.query-json .token.punctuation,
+.query-json .token.operator     { color: var(--muted); }
+.query-json .token.comment      { color: var(--muted); font-style: italic; }
+
+[data-theme="dark"] .query-json .token.property   { color: #82aaff; }
+[data-theme="dark"] .query-json .token.string     { color: #9de07f; }
+[data-theme="dark"] .query-json .token.number,
+[data-theme="dark"] .query-json .token.boolean    { color: #f6a878; }
+[data-theme="dark"] .query-json .token.null       { color: #c792ea; }
 
 /* Formatted / JSON view toggle inside each query-result */
 .query-result[data-view="formatted"] .query-view-json,
@@ -928,11 +1065,9 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   background: #F8C8C8;
   color: #7A1F1F;
 }
-@media (prefers-color-scheme: dark) {
-  .sev-error {
-    background: #3D1E1E;
-    color: #F8C8C8;
-  }
+[data-theme="dark"] .sev-error {
+  background: #3D1E1E;
+  color: #F8C8C8;
 }
 /* Warning chip stays at the original pastel treatment. */
 .sev-warning { background: var(--warn-bg); color: var(--warn-fg); }
@@ -1063,7 +1198,7 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   gap: 1rem;
   padding: 0.55rem 0.75rem 0.55rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: #F4F5F7;
+  background: var(--gutter-bg);
 }
 .editor-bar-actions {
   display: inline-flex;
@@ -1176,10 +1311,8 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
 .panel-toolbar-field select:focus {
   outline: none;
 }
-@media (prefers-color-scheme: dark) {
-  .panel-toolbar-field select {
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-  }
+[data-theme="dark"] .panel-toolbar-field select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
 }
 @media (max-width: 640px) {
   .panel-toolbar-field { width: 100%; justify-content: flex-start; }

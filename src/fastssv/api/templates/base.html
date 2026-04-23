@@ -5,6 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>{% block title %}FastSSV{% endblock %}</title>
+  {# Seed theme attribute BEFORE any CSS loads so we don't flash light-mode
+     before JS flips to dark. Reads the user's saved choice, falling back to
+     the OS preference on first visit. #}
+  <script>
+    (function () {
+      // Seed the theme attribute before CSS loads so there's no flash of the
+      // wrong palette on the first paint.
+      try {
+        var stored = localStorage.getItem("fastssv-theme");
+        var prefersDark = window.matchMedia
+          && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var theme = stored === "dark" || stored === "light"
+          ? stored
+          : (prefersDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+      // Bind the toggle here (not in sql-editor.js) so it works on every
+      // page, including /rules where the editor script early-returns.
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest && e.target.closest('[data-action="toggle-theme"]');
+        if (!btn) return;
+        var root = document.documentElement;
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("fastssv-theme", next); } catch (_) {}
+      });
+    })();
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v={{ static_version }}">
   <script src="{{ url_for('static', path='htmx.min.js') }}?v={{ static_version }}" defer></script>
   {% block extra_scripts %}{% endblock %}
@@ -19,6 +49,30 @@
         <a href="/docs" target="_blank" rel="noopener">API</a>
         <a href="https://github.com/fastomop/fastSSV/tree/main/docs"
            target="_blank" rel="noopener noreferrer">Docs</a>
+        <button type="button"
+                class="theme-toggle"
+                data-action="toggle-theme"
+                title="Switch theme"
+                aria-label="Switch between light and dark mode">
+          <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" width="16" height="16"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <line x1="12" y1="2" x2="12" y2="5"></line>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+            <line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line>
+            <line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line>
+            <line x1="2" y1="12" x2="5" y2="12"></line>
+            <line x1="19" y1="12" x2="22" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line>
+            <line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" width="16" height="16"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
       </nav>
     </div>
   </header>
