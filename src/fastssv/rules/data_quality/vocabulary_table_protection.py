@@ -26,7 +26,7 @@ Correct approach:
     queries. Vocabulary updates are managed through official OHDSI vocabulary releases.
 """
 
-from typing import List, Optional, Set
+from typing import List, Set
 
 from sqlglot import exp
 

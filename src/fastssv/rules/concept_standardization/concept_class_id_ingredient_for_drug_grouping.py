@@ -291,8 +291,8 @@ class ConceptClassIdIngredientForDrugGroupingRule(Rule):
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        f"Use concept_class_id = 'Ingredient' or use concept_ancestor "
-                        f"to aggregate drugs to ingredient level."
+                        "Use concept_class_id = 'Ingredient' or use concept_ancestor "
+                        "to aggregate drugs to ingredient level."
                     ),
                     details={
                         "ingredient_aliases": list(ingredient_aliases),

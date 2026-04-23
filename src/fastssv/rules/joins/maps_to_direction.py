@@ -6,22 +6,22 @@ Verify that 'Maps to' relationship is used in the correct direction:
 - concept_id_2 should be the standard concept
 
 Example:
--- WRONG direction: joining source concept_id to standard field                                                                                                                               
-SELECT co.*                                                                                                                                                                                   
-FROM condition_occurrence co                                                                                                                                                                  
-JOIN concept_relationship cr                                                                                                                                                                  
-ON co.condition_concept_id = cr.concept_id_1  -- Wrong! This is source                                                                                                                      
-WHERE cr.relationship_id = 'Maps to'                                                                                                                                                          
-                                                                                                                                                                                            
--- CORRECT direction: joining standard concept_id to concept_id_2                                                                                                                             
-SELECT co.*                                                                                                                                                                                   
-FROM condition_occurrence co                                                                                                                                                                  
-JOIN concept_relationship cr                                                                                                                                                                  
-ON co.condition_concept_id = cr.concept_id_2  -- Correct! This is standard                                                                                                                  
+-- WRONG direction: joining source concept_id to standard field
+SELECT co.*
+FROM condition_occurrence co
+JOIN concept_relationship cr
+ON co.condition_concept_id = cr.concept_id_1  -- Wrong! This is source
+WHERE cr.relationship_id = 'Maps to'
+
+-- CORRECT direction: joining standard concept_id to concept_id_2
+SELECT co.*
+FROM condition_occurrence co
+JOIN concept_relationship cr
+ON co.condition_concept_id = cr.concept_id_2  -- Correct! This is standard
 WHERE cr.relationship_id = 'Maps to'
 """
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List
 
 from sqlglot import exp
 

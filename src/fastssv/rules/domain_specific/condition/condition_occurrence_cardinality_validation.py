@@ -169,29 +169,6 @@ def _has_top_level_aggregation(select: exp.Select) -> bool:
     return any(isinstance(node, AGG) for node in select.expressions)
 
 
-def _is_person_level_query(select: exp.Select, aliases: Dict[str, str]) -> bool:
-    """
-    Detect if query appears to intend one row per person.
-    Heuristic: selecting person columns but not condition columns.
-    """
-    person_aliases = _get_aliases_for_table(TABLE_PERSON, aliases)
-    condition_aliases = _get_aliases_for_table(TABLE_CONDITION, aliases)
-
-    has_person_cols = False
-    has_condition_cols = False
-
-    for col in select.find_all(exp.Column):
-        table, _ = resolve_table_col(col, aliases)
-        alias = _resolve_alias(table, aliases)
-
-        if alias in person_aliases:
-            has_person_cols = True
-        if alias in condition_aliases:
-            has_condition_cols = True
-
-    return has_person_cols and not has_condition_cols
-
-
 # --- Detection -------------------------------------------------------------
 
 def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:

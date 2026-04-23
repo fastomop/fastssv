@@ -623,6 +623,45 @@ src/fastssv/
 
 ---
 
+## Stability and Versioning
+
+FastSSV follows [Semantic Versioning](https://semver.org/) starting from `1.0.0`.
+During the current pre-1.0 phase (`0.x.y`), the following stability contract applies:
+
+**Stable (breaking changes bumped as major/1.0+):**
+
+- The top-level Python API: `validate_sql_structured()`, `validate_sql()`,
+  `RuleViolation`, `Severity`, `get_all_rules()`, `get_rule()`,
+  `get_rules_by_category()`.
+- The `rule_id` field format: `<category>.<rule_name>` strings are treated as
+  API. Rules that are renamed will keep an alias for one minor version.
+- The `parse.syntax_error` rule_id for parse failures.
+- The `RuleViolation` schema (rule_id, severity, message, suggested_fix,
+  details, location fields).
+
+**Evolving (may change between minor versions during 0.x):**
+
+- The exact set of rules that ship and their precise detection logic.
+  FastSSV is actively calibrated against real-world OHDSI SQL corpora; rules
+  that produce false positives on standard patterns may be tightened or
+  removed. See [CHANGELOG.md](CHANGELOG.md) for each release's rule changes.
+- Message text inside violations (stable field names, not stable wording).
+- Severity of individual rules (WARNING ↔ ERROR) based on calibration
+  feedback.
+
+**Deprecation policy:**
+
+- Rule_id renames: old rule_id keeps firing as an alias for one minor version,
+  with a warning logged. Removed in the following minor version.
+- Removed rules: documented in CHANGELOG with rationale. Not restored unless a
+  concrete bug in the removal is demonstrated.
+
+**If your workflow pins on specific `rule_id`s** (e.g., a CI gate that fails
+on `anti_patterns.type_concept_id_misuse`), pin FastSSV to a minor version
+(`fastssv>=0.2,<0.3`) and review CHANGELOG between upgrades.
+
+---
+
 ## License
 
 FastSSV is licensed under the Apache License 2.0.

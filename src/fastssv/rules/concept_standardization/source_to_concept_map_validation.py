@@ -221,7 +221,7 @@ class SourceToConceptMapValidationRule(Rule):
         "Requires source_vocabulary_id when filtering source_code "
         "to avoid ambiguity across vocabularies."
     )
-    severity = Severity.WARNING 
+    severity = Severity.WARNING
     suggested_fix = (
         "Add source_vocabulary_id filter alongside source_code."
     )

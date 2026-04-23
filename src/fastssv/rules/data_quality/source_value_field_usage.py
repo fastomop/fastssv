@@ -21,7 +21,7 @@ Recommended approach:
   - Use concept tables to map to standard concepts
 """
 
-from typing import List, Set
+from typing import List
 
 from sqlglot import exp
 
@@ -50,30 +50,6 @@ def _extract_source_value_columns_in_group_by(
 
                 if col_norm.endswith('_source_value'):
                     source_value_cols.append(col)
-
-    return source_value_cols
-
-
-def _extract_source_value_columns_in_select(
-    tree: exp.Expression,
-    aliases: dict
-) -> List[str]:
-    """Find *_source_value columns in SELECT clause (excluding just display)."""
-    source_value_cols = []
-
-    # We only warn if they're being used for aggregation/grouping,
-    # not just for display
-    for group in tree.find_all(exp.Group):
-        # If there's a GROUP BY, check if source_value is in SELECT
-        select = tree.find(exp.Select)
-        if select:
-            for expr in select.expressions:
-                for col in expr.find_all(exp.Column):
-                    col_name = normalize_name(col.name)
-                    if col_name.endswith('_source_value'):
-                        # Only add if it's also in GROUP BY
-                        if col_name in [normalize_name(c) for c in _extract_source_value_columns_in_group_by(tree, aliases)]:
-                            source_value_cols.append(col.name)
 
     return source_value_cols
 

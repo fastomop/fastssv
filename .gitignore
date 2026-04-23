@@ -53,3 +53,6 @@ output/
 !output/run_omop_query_dataset.json
 
 temp/
+
+# Local working notes / implementation planning (not distributed)
+tasks/

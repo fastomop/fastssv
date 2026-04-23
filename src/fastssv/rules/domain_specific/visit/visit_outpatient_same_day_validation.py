@@ -31,7 +31,7 @@ Correct patterns:
       AND DATEDIFF(day, visit_start_date, visit_end_date) <= 1
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from sqlglot import exp
 
@@ -56,8 +56,6 @@ VISIT_END_DATE = "visit_end_date"
 # Standard visit type concepts
 OUTPATIENT_CONCEPT_ID = 9202
 INPATIENT_CONCEPT_ID = 9201
-ER_CONCEPT_ID = 9203
-ER_INPATIENT_CONCEPT_ID = 262
 
 DATE_FUNCTIONS = {
     "datediff",

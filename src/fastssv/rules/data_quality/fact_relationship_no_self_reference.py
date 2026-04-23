@@ -8,8 +8,8 @@ The Problem:
     The fact_relationship table links two clinical events together via a relationship.
     In most cases, linking an event to itself doesn't make semantic sense:
 
-    - A measurement "preceded by" itself 
-    - A condition "followed by" itself 
+    - A measurement "preceded by" itself
+    - A condition "followed by" itself
     - A procedure "causally related to" itself
 
     While there might be extremely rare valid cases, queries that explicitly

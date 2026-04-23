@@ -1,20 +1,20 @@
 """
 Canonical OMOP CDM v5.4 schema graph for join-path validation.
-This defines the OMOP Common Data Model v5.4 schema as a graph. It maps out:                                                                                                                  
-                                                                                                                                                                                            
-- Primary keys for each table                                                                                                                                                                 
-- Foreign key relationships (edges) between tables                                                                                                                                            
-                                                                                                                                                                                            
-"condition_occurrence": {                                                                                                                                                                     
-    "primary_key": "condition_occurrence_id",                                                                                                                                                 
-    "edges": {                                                                                                                                                                                
-        "person": ("person_id", "person_id"),           # FK to person table                                                                                                                  
-        "concept": ("condition_concept_id", "concept_id"),  # FK to concept table                                                                                                             
-        ...                                                                                                                                                                                   
-    },                                                                                                                                                                                        
-},                                                                                                                                                                                            
-                                                                                                                                                                                            
-Purpose: Used by the join_path_validation rule to verify that queries correctly JOIN clinical tables to vocabulary tables. For example, it knows that                                         
+This defines the OMOP Common Data Model v5.4 schema as a graph. It maps out:
+
+- Primary keys for each table
+- Foreign key relationships (edges) between tables
+
+"condition_occurrence": {
+    "primary_key": "condition_occurrence_id",
+    "edges": {
+        "person": ("person_id", "person_id"),           # FK to person table
+        "concept": ("condition_concept_id", "concept_id"),  # FK to concept table
+        ...
+    },
+},
+
+Purpose: Used by the join_path_validation rule to verify that queries correctly JOIN clinical tables to vocabulary tables. For example, it knows that
 condition_occurrence.condition_concept_id should join to concept.concept_id.
 """
 

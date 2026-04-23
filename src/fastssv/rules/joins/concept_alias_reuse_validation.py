@@ -357,8 +357,8 @@ class ConceptAliasReuseValidationRule(Rule):
                         severity=Severity.WARNING,
                         suggested_fix=(
                             "Consider using separate aliases for clarity:\n"
-                            f"  JOIN concept c1 ON ... = c1.concept_id\n"
-                            f"  JOIN concept c2 ON ... = c2.concept_id"
+                            "  JOIN concept c1 ON ... = c1.concept_id\n"
+                            "  JOIN concept c2 ON ... = c2.concept_id"
                         ),
                         details={
                             "type": "alias_reuse_warning",

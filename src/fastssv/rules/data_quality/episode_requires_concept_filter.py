@@ -91,7 +91,6 @@ EPISODE_CONCEPT_ID = "episode_concept_id"
 CONCEPT_ID = "concept_id"
 
 NORM_EPISODE = normalize_name(EPISODE)
-NORM_EPISODE_EVENT = normalize_name(EPISODE_EVENT)
 NORM_EPISODE_CONCEPT_ID = normalize_name(EPISODE_CONCEPT_ID)
 NORM_CONCEPT = normalize_name(CONCEPT)
 NORM_CONCEPT_ID = normalize_name(CONCEPT_ID)

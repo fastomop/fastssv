@@ -40,7 +40,7 @@ Correct patterns:
     -- CORRECT: Foreign key relationship (*_concept_id ↔ concept_id)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
@@ -108,10 +108,6 @@ INCOMPATIBLE_COLUMN_GROUPS: List[Set[str]] = [
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
-
-
-def _is_same_column(col1: str, col2: str) -> bool:
-    return _norm(col1) == _norm(col2)
 
 
 def _is_valid_join_pair(col1: str, col2: str) -> bool:

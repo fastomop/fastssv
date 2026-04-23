@@ -21,7 +21,7 @@ from fastssv.core.helpers import (
     has_table_reference,
 )
 from fastssv.core.registry import register
-from fastssv.schemas import SOURCE_CONCEPT_FIELDS, STANDARD_CONCEPT_FIELDS
+from fastssv.schemas import STANDARD_CONCEPT_FIELDS
 
 # relationship_id values commonly used for standard mapping in OMOP
 MAPS_TO_RELATIONSHIP = "Maps to"
@@ -129,12 +129,9 @@ class StandardConceptEnforcementRule(Rule):
             # Parse errors handled elsewhere
             return []
 
-        # Known standard/source fields from schema lists
+        # Known standard fields from schema lists
         standard_fields: Set[Tuple[str, str]] = {
             (normalize_name(t), normalize_name(c)) for t, c in STANDARD_CONCEPT_FIELDS
-        }
-        source_fields: Set[Tuple[str, str]] = {
-            (normalize_name(t), normalize_name(c)) for t, c in SOURCE_CONCEPT_FIELDS
         }
 
         already_standard: Set[Tuple[str, str]] = {

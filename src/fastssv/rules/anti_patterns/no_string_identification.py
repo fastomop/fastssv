@@ -13,7 +13,6 @@ from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
     is_string_literal,
-    normalize_name,
     parse_sql,
     resolve_table_col,
 )

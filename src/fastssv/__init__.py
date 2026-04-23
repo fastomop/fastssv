@@ -32,7 +32,7 @@ ValidatorType = Literal[
 def validate_sql(
     sql: str,
     validators: ValidatorType | List[str] = "all",
-    dialect: str = "postgres",
+    dialect: str = "auto",
     rule_ids: Optional[List[str]] = None,
     categories: Optional[List[str]] = None,
 ) -> Dict[str, List]:
@@ -42,7 +42,9 @@ def validate_sql(
         sql: SQL query to validate
         validators: Which validators to run - category name or 'all',
                     or list of validator names
-        dialect: SQL dialect for parsing (default: postgres)
+        dialect: SQL dialect for parsing. Pass 'auto' (default) to detect
+                 tsql vs postgres from syntax patterns, or an explicit
+                 dialect name supported by sqlglot.
         rule_ids: Optional list of specific rule IDs to run (overrides validators)
         categories: Optional list of categories to run (overrides validators)
 
@@ -52,8 +54,14 @@ def validate_sql(
             'violations': [...],         # List of RuleViolation objects
             'category_errors': {...},    # Errors grouped by category
             'all_errors': [...],         # Combined errors from all validators
+            'parse_error': None | str,   # Set when SQL couldn't be parsed
+            'dialect': str,              # The dialect actually used
         }
     """
+    from fastssv.core.helpers import parse_sql, detect_dialect
+    if dialect == "auto":
+        dialect = detect_dialect(sql)
+
     results = {
         "violations": [],
         "category_errors": {
@@ -65,7 +73,18 @@ def validate_sql(
             "temporal": [],
         },
         "all_errors": [],
+        "parse_error": None,
+        "dialect": dialect,
     }
+
+    # Check parse status up-front. If parsing fails, no rules can run, so
+    # we return the parse error rather than a misleading empty result.
+    _, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        results["parse_error"] = parse_error
+        results["all_errors"].append(f"Parse error: {parse_error}")
+        results["violations"].append(_make_parse_error_violation(parse_error))
+        return results
 
     # Determine which rules to run
     if rule_ids:
@@ -116,9 +135,32 @@ def validate_sql(
     return results
 
 
+PARSE_ERROR_RULE_ID = "parse.syntax_error"
+
+
+def _make_parse_error_violation(error_message: str) -> RuleViolation:
+    """Build a RuleViolation representing a parse failure.
+
+    Parse errors prevent any rule from running meaningfully, so we surface
+    them as a single ERROR-severity violation. Callers can distinguish a
+    genuinely-clean query (empty list) from an unparseable one (single
+    violation with rule_id == PARSE_ERROR_RULE_ID).
+    """
+    return RuleViolation(
+        rule_id=PARSE_ERROR_RULE_ID,
+        severity=Severity.ERROR,
+        message=error_message,
+        suggested_fix=(
+            "Fix the SQL syntax error. Verify the dialect is correct "
+            "(try dialect='tsql' for SQL Server syntax like DATEDIFF or GETDATE)."
+        ),
+        details={"error": error_message},
+    )
+
+
 def validate_sql_structured(
     sql: str,
-    dialect: str = "postgres",
+    dialect: str = "auto",
     rule_ids: Optional[List[str]] = None,
     categories: Optional[List[str]] = None,
 ) -> List[RuleViolation]:
@@ -129,13 +171,33 @@ def validate_sql_structured(
 
     Args:
         sql: SQL query to validate
-        dialect: SQL dialect for parsing (default: postgres)
+        dialect: SQL dialect for parsing. Pass 'auto' (default) to detect
+                 tsql vs postgres from syntax patterns (T-SQL indicators
+                 like DATEDIFF, GETDATE, TOP N, @variables → tsql, else
+                 postgres). Pass an explicit dialect name to override.
         rule_ids: Optional list of specific rule IDs to run
         categories: Optional list of categories to run (None = all)
 
     Returns:
-        List of RuleViolation objects. Empty list means validation passed.
+        List of RuleViolation objects.
+        - Empty list means the SQL parsed cleanly and no rules fired.
+        - A single violation with rule_id == "parse.syntax_error" means
+          the SQL could not be parsed; rules were not executed.
+        - Multiple violations mean one or more rules detected issues.
     """
+    from fastssv.core.helpers import parse_sql, detect_dialect
+    if dialect == "auto":
+        dialect = detect_dialect(sql)
+
+    # Check parse status up-front so callers can distinguish clean SQL from
+    # unparseable input. Individual rules also call parse_sql() internally and
+    # quietly short-circuit on parse errors, but silent [] would otherwise
+    # hide the failure from the caller.
+    _, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        _logger.warning(f"Parse error (dialect={dialect!r}): {parse_error}")
+        return [_make_parse_error_violation(parse_error)]
+
     # Determine which rules to run
     if rule_ids:
         rule_classes = [get_rule(r) for r in rule_ids]
@@ -189,6 +251,7 @@ __all__ = [
     # Main API
     "validate_sql",
     "validate_sql_structured",
+    "PARSE_ERROR_RULE_ID",
 
     # Core classes
     "Rule",

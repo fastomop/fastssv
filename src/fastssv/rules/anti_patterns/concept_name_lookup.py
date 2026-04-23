@@ -9,7 +9,7 @@ Filtering by concept_name is an anti-pattern because:
 Best practice: Use concept_code + vocabulary_id or concept_id directly.
 """
 
-from typing import Dict, List
+from typing import List
 
 from sqlglot import exp
 
@@ -17,7 +17,6 @@ from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
     is_string_literal,
-    normalize_name,
     parse_sql,
     resolve_table_col,
 )

@@ -94,20 +94,6 @@ def _is_ambiguous_column(col_name: Optional[str]) -> bool:
     return _norm(col_name) in AMBIGUOUS_COLUMNS if col_name else False
 
 
-def _get_table_count(select: exp.Select) -> int:
-    """
-    Count distinct tables referenced in this SELECT.
-    Includes tables from FROM, JOINs, and nested expressions.
-    """
-    tables: Set[str] = set()
-
-    for table in select.find_all(exp.Table):
-        if table.name:
-            tables.add(_norm(table.name))
-
-    return len(tables)
-
-
 def _get_tables_in_scope(select: exp.Select) -> Set[str]:
     """Normalized table names referenced in this SELECT's FROM/JOINs."""
     tables: Set[str] = set()

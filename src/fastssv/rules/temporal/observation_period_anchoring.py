@@ -9,7 +9,7 @@ Events before observation_period_start_date or after observation_period_end_date
 may be incomplete or missing.
 """
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 from sqlglot import exp
 
@@ -75,14 +75,6 @@ TEMPORAL_DATE_COLUMNS = {
     "episode_end_date", "episode_end_datetime",
 }
 
-# Date functions that indicate temporal logic
-DATE_FUNCTION_NAMES = {
-    "dateadd", "date_add", "datediff", "date_diff", "timestampdiff",
-    "date_sub", "date_trunc", "extract", "age", "interval",
-    "months_between", "days", "add_months", "add_days",
-}
-
-
 def is_date_column(col_name: str) -> bool:
     """Check if column name looks like a date/temporal column."""
     col_lower = normalize_name(col_name)
@@ -105,39 +97,19 @@ def _is_date_literal(node: exp.Expression) -> bool:
         val = str(node.this)
         if len(val) >= 10 and val[4:5] == "-" and val[7:8] == "-":
             return True
-    
+
     # Check for DATE 'literal' or CAST(... AS DATE)
     if isinstance(node, exp.Cast):
         to_type = node.to
         if to_type and normalize_name(str(to_type)).startswith("date"):
             return True
-    
+
     # Check for date function calls like DATE('2020-01-01')
     if isinstance(node, exp.Anonymous):
         func_name = normalize_name(node.name) if hasattr(node, 'name') else ""
         if func_name in {"date", "timestamp", "datetime"}:
             return True
-    
-    return False
 
-
-def _has_date_function(tree: exp.Expression) -> bool:
-    """Check if query uses date manipulation functions."""
-    for node in tree.walk():
-        if isinstance(node, (exp.Anonymous, exp.Func)):
-            func_name = ""
-            if hasattr(node, 'name'):
-                func_name = normalize_name(node.name)
-            elif hasattr(node, 'key'):
-                func_name = normalize_name(node.key)
-            
-            if func_name in DATE_FUNCTION_NAMES:
-                return True
-        
-        # Check for INTERVAL expressions
-        if isinstance(node, exp.Interval):
-            return True
-    
     return False
 
 
@@ -147,32 +119,32 @@ def _extract_temporal_constraints(
 ) -> List[Tuple[str, str, exp.Expression]]:
     """
     Find temporal constraints in the query.
-    
+
     Returns list of (table, column, constraint_expression) tuples.
     """
     constraints: List[Tuple[str, str, exp.Expression]] = []
-    
+
     # Comparison operators that indicate filtering
     comparison_types = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)
-    
+
     for node in tree.walk():
         if not isinstance(node, comparison_types):
             continue
-        
+
         if not is_in_where_or_join_clause(node):
             continue
-        
+
         # Extract columns involved in the comparison
         columns_in_node = list(node.find_all(exp.Column))
-        
+
         for col in columns_in_node:
             col_name = normalize_name(col.name)
-            
+
             if not _is_date_column(col_name):
                 continue
-            
+
             table, _ = resolve_table_col(col, aliases)
-            
+
             # If we can identify the table and it's a clinical table
             if table and table in CLINICAL_TABLES_WITH_DATES:
                 constraints.append((table, col_name, node))
@@ -182,7 +154,7 @@ def _extract_temporal_constraints(
                     if alias_table in CLINICAL_TABLES_WITH_DATES:
                         constraints.append((alias_table, col_name, node))
                         break
-    
+
     return constraints
 
 
@@ -202,77 +174,6 @@ def _references_clinical_fact_table(tree: exp.Expression) -> bool:
     for clinical_table in CLINICAL_TABLES_WITH_DATES:
         if has_table_reference(tree, clinical_table):
             return True
-    return False
-
-
-def _joins_observation_period_on_person_id(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    clinical_tables: Set[str]
-) -> Tuple[bool, List[str]]:
-    """
-    Verify that observation_period is properly joined to clinical tables on person_id.
-
-    Returns (is_valid, list_of_issues)
-    """
-    if not _uses_observation_period(tree):
-        return False, ["Query does not use observation_period table"]
-
-    join_conditions = extract_join_conditions(tree, aliases)
-
-    # Check if any join involves observation_period and person_id
-    op_joined_to_clinical = False
-
-    for lt, lc, rt, rc in join_conditions:
-        # Check if observation_period is involved
-        if lt == "observation_period" or rt == "observation_period":
-            # Check if join is on person_id
-            if lc == "person_id" and rc == "person_id":
-                # Check if the other table is a clinical table
-                other_table = rt if lt == "observation_period" else lt
-                if other_table in clinical_tables or other_table in CLINICAL_TABLES_WITH_DATES:
-                    op_joined_to_clinical = True
-                    break
-
-    if not op_joined_to_clinical:
-        return False, [
-            "observation_period table is not properly joined to clinical tables on person_id"
-        ]
-
-    return True, []
-
-
-def _is_cohort_or_patient_level_query(tree: exp.Expression) -> bool:
-    """Check if query is doing cohort selection or patient-level inference.
-
-    This distinguishes between:
-    - Cohort/patient-level queries: observation_period anchoring required
-    - Descriptive aggregations: observation_period NOT required
-
-    Cohort/patient-level indicators:
-    - Selecting DISTINCT person_id in outer query
-    - Patient-level filtering (WHERE on person-level attributes)
-
-    Descriptive aggregation indicators (observation_period NOT required):
-    - Aggregating over events (COUNT(*), AVG(duration))
-    - Era-level summaries
-    - Distribution statistics without patient selection
-    """
-    # Check if query selects DISTINCT person_id in outer SELECT
-    if isinstance(tree, exp.Select):
-        for select_col in tree.find_all(exp.Column):
-            # Only check columns directly in the SELECT expressions, not nested
-            parent = select_col.parent
-            is_in_select_expr = False
-            while parent and not isinstance(parent, exp.Select):
-                parent = parent.parent
-            if isinstance(parent, exp.Select) and parent == tree:
-                # This is a top-level SELECT column
-                if normalize_name(select_col.name) == "person_id":
-                    # Check if it's wrapped in DISTINCT
-                    if tree.find(exp.Distinct):
-                        return True
-
     return False
 
 
@@ -364,7 +265,7 @@ class ObservationPeriodAnchoringRule(Rule):
         "AND clinical_table.date BETWEEN op.observation_period_start_date "
         "AND op.observation_period_end_date"
     )
-    
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
@@ -386,8 +287,6 @@ class ObservationPeriodAnchoringRule(Rule):
             temporal_constraints = _extract_temporal_constraints(tree, aliases)
             has_temporal_constraints = len(temporal_constraints) > 0
 
-            # Check for date functions that indicate temporal logic
-            has_date_functions = _has_date_function(tree)
             has_washout_logic = _has_washout_or_followup_logic(tree)
 
             # If query has temporal constraints or date logic but no observation_period, warn.

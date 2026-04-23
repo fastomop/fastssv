@@ -10,7 +10,7 @@ Fixed to handle:
 3. Scope-aware validation - only validate references to physical CDM tables
 """
 
-from typing import List, Set, Dict
+from typing import List, Set
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
@@ -64,69 +64,6 @@ def _extract_select_aliases(tree: exp.Expression) -> Set[str]:
                 select_aliases.add(_norm(expr.alias))
 
     return select_aliases
-
-
-def _is_in_select_clause(node: exp.Expression) -> bool:
-    """Check if a column reference is in a SELECT clause (as output).
-
-    Columns in SELECT output are being defined, not referenced from schema.
-    We only want to validate columns referenced FROM tables.
-    """
-    parent = node.parent
-    while parent:
-        # If we're directly under a Select's expressions, we're in SELECT output
-        if isinstance(parent, exp.Select):
-            # Check if this node is in the SELECT expressions (not WHERE, JOIN, etc.)
-            if hasattr(parent, 'expressions') and node in parent.walk():
-                # Walk up from node to see if we're in the expressions list
-                temp = node
-                while temp and temp.parent != parent:
-                    temp = temp.parent
-                if temp and hasattr(parent, 'expressions') and temp in parent.expressions:
-                    return True
-            return False
-        parent = parent.parent
-    return False
-
-
-def _is_column_from_physical_table(column: exp.Column, aliases: Dict[str, str],
-                                   cte_names: Set[str], subquery_aliases: Set[str]) -> bool:
-    """Check if a column reference is from a physical CDM table.
-
-    Returns False if:
-    - Column is from a CTE
-    - Column is from a subquery
-    - Column has no table qualifier
-    - Table is not in OMOP schema
-    """
-    if not column.table:
-        return False
-
-    table_ref = _norm(column.table)
-
-    # Check if it's a CTE
-    if table_ref in cte_names:
-        return False
-
-    # Check if it's a subquery alias
-    if table_ref in subquery_aliases:
-        return False
-
-    # Resolve through aliases
-    if table_ref in aliases:
-        resolved_table = _norm(aliases[table_ref])
-        # Handle schema-qualified tables
-        if "." in resolved_table:
-            resolved_table = resolved_table.split(".")[-1]
-    else:
-        resolved_table = table_ref
-
-    # Check if it's a CTE (after alias resolution)
-    if resolved_table in cte_names or resolved_table in subquery_aliases:
-        return False
-
-    # Check if it's a valid OMOP table
-    return is_valid_table(resolved_table)
 
 
 @register

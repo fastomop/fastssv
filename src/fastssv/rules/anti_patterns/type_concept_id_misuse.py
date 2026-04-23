@@ -30,7 +30,7 @@ WHERE condition_concept_id = 201826        -- Clinical filter
   AND condition_type_concept_id = 32817    -- Provenance filter (EHR only)
 """
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 from sqlglot import exp
 

@@ -174,8 +174,8 @@ def _find_violations(
 
                 elif isinstance(node, exp.NEQ) and value == VALID_CLASS:
                     issues.append(
-                        f"Invalid filter: concept_class_id != 'Ingredient'. "
-                        f"drug_era only contains 'Ingredient' concepts. Query will return 0 rows."
+                        "Invalid filter: concept_class_id != 'Ingredient'. "
+                        "drug_era only contains 'Ingredient' concepts. Query will return 0 rows."
                     )
 
             # --- IN clause ---

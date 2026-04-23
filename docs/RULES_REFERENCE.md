@@ -1,15 +1,31 @@
 # FastSSV Rules Reference
 
-This document provides comprehensive documentation for all 156 validation rules in FastSSV.
+This document provides comprehensive documentation for FastSSV's validation rules.
 
-The rule registry contains:
+**Current registry: 157 rules across 6 categories.**
 
-- **anti_patterns**: 22 rules
-- **concept_standardization**: 21 rules
-- **data_quality**: 26 rules
-- **domain_specific**: 40 rules
-- **joins**: 37 rules
+- **anti_patterns**: 24 rules
+- **concept_standardization**: 18 rules
+- **data_quality**: 27 rules
+- **domain_specific**: 42 rules
+- **joins**: 36 rules
 - **temporal**: 10 rules
+
+> **Note:** The prose descriptions below reflect the stable rule set. Rule
+> removals and rule renames are tracked in [CHANGELOG.md](../CHANGELOG.md).
+> If a rule listed here is no longer in the registry, check the CHANGELOG
+> for the removal rationale. If a rule appears in the registry but not
+> below, it was added after this document's last full pass — the rule's
+> own docstring and `suggested_fix` field are the authoritative source.
+>
+> For the live registered rule set at any moment, use:
+>
+> ```python
+> from fastssv import get_all_rules
+> for rule_cls in get_all_rules():
+>     rule = rule_cls()
+>     print(rule.rule_id, "—", rule.description)
+> ```
 
 For each rule you will find:
 

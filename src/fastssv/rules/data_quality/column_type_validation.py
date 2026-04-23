@@ -32,9 +32,6 @@ from fastssv.schemas import (
     are_types_compatible,
     INTEGER,
     VARCHAR,
-    DATE,
-    TIMESTAMP,
-    FLOAT,
 )
 
 
@@ -245,7 +242,7 @@ class ColumnTypeValidationRule(Rule):
                     ),
                     severity=Severity.ERROR,
                     suggested_fix=(
-                        f"Use compatible columns or apply explicit CAST."
+                        "Use compatible columns or apply explicit CAST."
                     ),
                     details={
                         "layer": "schema",
@@ -276,7 +273,7 @@ class ColumnTypeValidationRule(Rule):
                     message=message,
                     severity=Severity.ERROR,
                     suggested_fix=(
-                        f"Use consistent literal types or CAST explicitly. Check for logic errors if mixing types."
+                        "Use consistent literal types or CAST explicitly. Check for logic errors if mixing types."
                     ),
                     details={
                         "layer": "schema",

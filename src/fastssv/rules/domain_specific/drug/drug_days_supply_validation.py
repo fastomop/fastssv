@@ -30,7 +30,7 @@ Correct patterns:
     SELECT * FROM drug_exposure WHERE days_supply IN (7, 14, 30, 90)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
 

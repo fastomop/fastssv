@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Sequence
 
 from fastssv import validate_sql_structured
 from fastssv.core.base import RuleViolation, Severity
+from fastssv.core.helpers import detect_dialect as _auto_detect_dialect
 from fastssv.core.logging import (
     setup_logging,
-    get_logger,
     log_validation_start,
     log_validation_complete,
 )
@@ -26,33 +26,6 @@ def _read_sql(sql_file: str | None) -> str:
     if not sys.stdin.isatty():
         return sys.stdin.read()
     raise SystemExit("Provide a SQL file path or pipe SQL via stdin.")
-
-
-def _auto_detect_dialect(sql: str) -> str:
-    """Auto-detect SQL dialect from syntax patterns.
-
-    Returns 'tsql' for SQL Server syntax, 'postgres' otherwise.
-    """
-    sql_lower = sql.lower()
-
-    # SQL Server indicators
-    tsql_indicators = [
-        r'@\w+\.',  # @vocab., @cdm. (table variables)
-        r'\bgetdate\s*\(',  # getdate()
-        r'\bgetutcdate\s*\(',  # getutcdate()
-        r'\bdatediff\s*\(',  # datediff()
-        r'\bdateadd\s*\(',  # dateadd()
-        r'\bisnull\s*\(',  # isnull()
-        r'\blen\s*\(',  # len()
-        r'\bcharindex\s*\(',  # charindex()
-        r'\btop\s+\d+\s+',  # TOP N syntax
-    ]
-
-    for pattern in tsql_indicators:
-        if re.search(pattern, sql_lower):
-            return 'tsql'
-
-    return 'postgres'
 
 
 def _clean_llm_output(sql: str) -> str:
@@ -153,7 +126,6 @@ def build_validation_result(
     sql: str,
     violations: List[RuleViolation],
     dialect: str,
-    query_index: int | None = None,
 ) -> Dict[str, Any]:
     """Build JSON validation result from structured violations."""
     errors = [v for v in violations if v.severity == Severity.ERROR]
@@ -347,9 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         query_duration = (time.perf_counter() - query_start) * 1000
 
-        validation_result = build_validation_result(
-            query, violations, dialect, query_index=idx
-        )
+        validation_result = build_validation_result(query, violations, dialect)
         all_results.append(validation_result)
 
         logger.info(

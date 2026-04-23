@@ -41,7 +41,7 @@ Correct pattern:
     -- Correct: Only drug costs where paid_ingredient_cost is meaningful
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from sqlglot import exp
 

@@ -44,7 +44,7 @@ Violation levels:
   - ERROR: domain_id filter is missing or specifies the wrong domain
 """
 
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union
 
 from sqlglot import exp
 

@@ -1,10 +1,46 @@
 """Shared SQL parsing helpers for FastSSV validation rules."""
 
+import re
 from typing import Dict, List, Optional, Set, Tuple
 
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
+
+
+# SQL-Server / T-SQL dialect indicators used by `detect_dialect` below.
+# These patterns catch syntax that sqlglot's postgres parser rejects
+# (DATEDIFF with a unit argument, GETDATE, TOP N, @variable prefix, etc.).
+_TSQL_INDICATORS = [
+    re.compile(r'@\w+\.'),              # @vocab., @cdm. (table variables)
+    re.compile(r'\bgetdate\s*\('),      # GETDATE()
+    re.compile(r'\bgetutcdate\s*\('),   # GETUTCDATE()
+    re.compile(r'\bdatediff\s*\('),     # DATEDIFF(day, ...)
+    re.compile(r'\bdateadd\s*\('),      # DATEADD(day, ...)
+    re.compile(r'\bisnull\s*\('),       # ISNULL(x, 0)
+    re.compile(r'\blen\s*\('),          # LEN(x) vs. LENGTH(x)
+    re.compile(r'\bcharindex\s*\('),    # CHARINDEX
+    re.compile(r'\btop\s+\d+\s+'),      # TOP N
+]
+
+
+def detect_dialect(sql: str) -> str:
+    """Auto-detect SQL dialect from syntax patterns.
+
+    Returns 'tsql' when the SQL contains SQL-Server-specific syntax that
+    sqlglot's default parser would reject or misparse; 'postgres' otherwise.
+
+    This is called automatically when you pass `dialect='auto'` to
+    `validate_sql_structured()` or `validate_sql()`. OHDSI/ATLAS-style SQL
+    frequently contains T-SQL idioms (DATEDIFF(day, ...), GETDATE, TOP N,
+    @variables), and hard-coding dialect='postgres' causes spurious parse
+    failures on otherwise-valid queries.
+    """
+    lowered = sql.lower()
+    for pattern in _TSQL_INDICATORS:
+        if pattern.search(lowered):
+            return "tsql"
+    return "postgres"
 
 
 def normalize_name(s: str) -> str:
@@ -25,10 +61,14 @@ def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Ex
         Tuple of (list_of_trees, error_message). If parsing succeeds,
         error_message is None. If it fails, list_of_trees is None.
     """
+    if not sql or not sql.strip():
+        return None, "Empty or whitespace-only input — no SQL statement to validate."
     try:
         trees = sqlglot.parse(sql, read=dialect)
-        if not trees:
-            return None, "Failed to parse SQL: empty result"
+        # sqlglot returns [None, None, ...] for input that tokenizes but
+        # contains no statements (e.g. only comments or stray semicolons).
+        if not trees or all(t is None for t in trees):
+            return None, "No SQL statement found — input may be comment-only or malformed."
         return trees, None
     except ParseError as e:
         return None, f"SQL parse error: {str(e)}"

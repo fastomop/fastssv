@@ -1,7 +1,7 @@
 """Join Path Validation Rule.
 
 OMOP semantic rule:
-Verify that concept or concept_relationship tables are properly joined to the clinical tables (condition_ocurrence, condition_era, drug_exposure, drug_era, measurement, 
+Verify that concept or concept_relationship tables are properly joined to the clinical tables (condition_ocurrence, condition_era, drug_exposure, drug_era, measurement,
 observation, visit_occurrence, person, death, observation_period) using the standard concept fields.
 In a nutshell: This rule checks "Did you forget to write the JOIN condition?"
 """

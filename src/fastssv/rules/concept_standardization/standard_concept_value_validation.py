@@ -29,7 +29,6 @@ from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
     parse_sql,
-    resolve_table_col,
     is_in_where_or_join_clause,
     has_table_reference,
 )

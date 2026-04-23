@@ -65,7 +65,6 @@ DRUG_STRENGTH = "drug_strength"
 
 AMOUNT_VALUE = "amount_value"
 NUMERATOR_VALUE = "numerator_value"
-DENOMINATOR_VALUE = "denominator_value"
 
 
 # --- Helpers ---------------------------------------------------------------

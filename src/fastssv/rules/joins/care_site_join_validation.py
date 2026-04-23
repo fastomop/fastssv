@@ -22,7 +22,7 @@ Correct pattern:
     JOIN location l ON cs.location_id = l.location_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
 
@@ -66,10 +66,6 @@ def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
-def _is(table: Optional[str], name: str) -> bool:
-    return _norm(table) == name
-
-
 def _is_clinical(table: Optional[str]) -> bool:
     return _norm(table) in CLINICAL_TABLES
 
@@ -91,11 +87,6 @@ def _is_col(col: Optional[str], name: str) -> bool:
 
 
 # --- Join detection --------------------------------------------------------
-
-def _extract_joins(tree: exp.Expression):
-    for node in tree.find_all(exp.Join):
-        yield node
-
 
 def _extract_conditions(join: exp.Join):
     on = join.args.get("on")

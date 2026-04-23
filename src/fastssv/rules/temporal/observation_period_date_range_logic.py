@@ -16,7 +16,7 @@ Incorrect pattern (reversed):
                                                AND event_end_date
 """
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set
 
 from sqlglot import exp
 
@@ -69,14 +69,6 @@ def _is_event_date(table: str, col: str) -> bool:
         or col.endswith("_date")
         or col.endswith("_datetime")
     )
-
-
-def _is_start(col: str) -> bool:
-    return "start" in normalize_name(col)
-
-
-def _is_end(col: str) -> bool:
-    return "end" in normalize_name(col)
 
 
 # --- BETWEEN detection -----------------------------------------------------

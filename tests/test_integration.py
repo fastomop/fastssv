@@ -79,3 +79,50 @@ class TestUnifiedAPI:
             f"Unexpected concept standardization errors for dialect {dialect}"
         )
         assert results["all_errors"] == [], f"Unexpected errors for dialect {dialect}"
+
+
+class TestParseErrorSurface:
+    """Tests for structured parse-error surfacing (not silent)."""
+
+    def test_validate_sql_structured_surfaces_parse_error(self) -> None:
+        """Unparseable SQL should return a single parse.syntax_error violation,
+        not an empty list (which would be indistinguishable from clean SQL)."""
+        from fastssv import validate_sql_structured, PARSE_ERROR_RULE_ID, Severity
+        violations = validate_sql_structured("SELECT FROM WHERE", dialect="postgres")
+        assert len(violations) == 1
+        assert violations[0].rule_id == PARSE_ERROR_RULE_ID
+        assert violations[0].severity == Severity.ERROR
+        assert "parse" in violations[0].message.lower() or "error" in violations[0].message.lower()
+
+    def test_validate_sql_structured_clean_sql_returns_empty(self) -> None:
+        """Cleanly-parsing SQL with no violations returns empty list (unchanged)."""
+        from fastssv import validate_sql_structured
+        violations = validate_sql_structured("SELECT person_id FROM person", dialect="postgres")
+        assert all(v.rule_id != "parse.syntax_error" for v in violations)
+
+    def test_validate_sql_surfaces_parse_error_field(self) -> None:
+        """Dict-returning validate_sql() exposes parse_error field when input is unparseable."""
+        from fastssv import validate_sql
+        results = validate_sql("totally not SQL !!!", validators="all")
+        # Either the garbage parses as something trivial or fails — but if it
+        # fails, parse_error must be set and violations must include the marker.
+        if results["parse_error"] is not None:
+            assert any("Parse error" in e for e in results["all_errors"])
+            assert any(v.rule_id == "parse.syntax_error" for v in results["violations"])
+
+    def test_validate_sql_parse_error_field_defaults_to_none(self) -> None:
+        """parse_error field is None for cleanly-parsing SQL."""
+        from fastssv import validate_sql
+        results = validate_sql("SELECT person_id FROM person", validators="all")
+        assert results["parse_error"] is None
+
+    def test_validate_sql_structured_rejects_empty_input(self) -> None:
+        """Empty/whitespace/comment-only input is surfaced as a parse error,
+        not silently treated as a clean query with zero violations."""
+        from fastssv import validate_sql_structured, PARSE_ERROR_RULE_ID
+        for sql in ["", "   \n\t  ", ";;;", "-- just a comment", "/* block */"]:
+            viols = validate_sql_structured(sql, dialect="postgres")
+            assert len(viols) == 1, f"Expected exactly 1 parse-error violation for {sql!r}"
+            assert viols[0].rule_id == PARSE_ERROR_RULE_ID, (
+                f"Expected parse.syntax_error for {sql!r}, got {viols[0].rule_id}"
+            )

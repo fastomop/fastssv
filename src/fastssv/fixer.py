@@ -5,11 +5,8 @@ Automatically applies semantic fixes to OMOP CDM queries based on validation vio
 
 from typing import Dict, List, Optional, Tuple
 import re
-from sqlglot import exp, parse_one
-from sqlglot.expressions import Expression
 
-from fastssv.core.base import RuleViolation, Severity
-from fastssv.core.helpers import parse_sql
+from fastssv.core.base import RuleViolation
 
 
 class QueryFixer:
@@ -136,11 +133,6 @@ class QueryFixer:
                 vocab_id = self._infer_vocabulary(code)
 
                 if vocab_id:
-                    # Find the concept_code filter and add vocabulary_id
-                    pattern = rf"(\b\w+\.concept_code\s*(?:=|LIKE)\s*'{re.escape(code)}')"
-                    replacement = rf"\1 AND \1.replace('concept_code', 'vocabulary_id') = '{vocab_id}'"
-
-                    # Actually, let's use a smarter approach with AST
                     fixed_sql = self._add_vocabulary_id_filter(fixed_sql, code, vocab_id)
                     changes.append(f"Added vocabulary_id = '{vocab_id}' for concept_code '{code}'")
 
@@ -287,7 +279,6 @@ class QueryFixer:
         match = re.search(pattern, sql, re.IGNORECASE)
 
         if match:
-            join_on_clause = match.group(1)
             # Add domain filter to the ON clause or WHERE clause
             if 'WHERE' in sql:
                 where_pos = sql.find('WHERE')

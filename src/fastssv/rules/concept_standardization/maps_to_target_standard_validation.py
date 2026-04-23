@@ -33,7 +33,7 @@ Correct pattern:
       AND c2.standard_concept = 'S'
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from sqlglot import exp
 

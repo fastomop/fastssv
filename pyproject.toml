@@ -1,10 +1,10 @@
 [project]
 name = "fastssv"
-version = "0.1.0"
+version = "0.2.0"
 description = "FastOMOP Semantic Static Validator - A semantic validation framework for OMOP CDM SQL queries"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [
 	{name = "FastSSV contributors"},
 ]
@@ -14,15 +14,15 @@ classifiers = [
 	"Intended Audience :: Developers",
 	"License :: OSI Approved :: Apache Software License",
 	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
 	"Topic :: Database",
 	"Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-	"build>=1.4.2",
-	"pip>=26.0.1",
 	"sqlglot>=24.6.0",
-	"twine>=6.2.0",
 ]
 
 [project.urls]
@@ -35,8 +35,11 @@ fastssv = "fastssv.cli:main"
 
 [project.optional-dependencies]
 dev = [
-	"build>=1.2.2",
 	"pytest>=9.0.3",
+]
+build = [
+	"build>=1.4.2",
+	"twine>=6.2.0",
 ]
 viz = [
 	"matplotlib>=3.10.8",
@@ -59,3 +62,26 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["build", "dist", ".venv", "tests/test_rules.py"]
+
+[tool.ruff.lint]
+# Start conservative: flake8 pyflakes, basic pycodestyle errors,
+# unused imports. Expand after the codebase is clean.
+select = ["E", "F", "W"]
+ignore = [
+	"E501",  # line-too-long (we set line-length but many existing lines exceed)
+	"E741",  # ambiguous variable name 'l', 'I' — existing style
+	"E402",  # module-level import not at top — intentional in __init__.py
+	         # and category modules to avoid circular imports
+	"F841",  # unused local variable — some rules build WIP regex/match
+	         # variables that are not yet wired up; kept for future work
+]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py imports submodules to trigger @register decorators;
+# the modules themselves are the "side effect," not consumed by name.
+"src/fastssv/__init__.py" = ["F401"]

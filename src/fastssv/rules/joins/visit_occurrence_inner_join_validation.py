@@ -158,17 +158,17 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
         if intentional:
             issues.append({
                 "message": (
-                    f"INNER JOIN to visit_occurrence with explicit filtering. "
-                    f"This restricts results to visit-linked events only."
+                    "INNER JOIN to visit_occurrence with explicit filtering. "
+                    "This restricts results to visit-linked events only."
                 ),
                 "severity": Severity.WARNING,
             })
         else:
             issues.append({
                 "message": (
-                    f"INNER JOIN to visit_occurrence may drop events with NULL "
-                    f"visit_occurrence_id (often 20–60% of records). "
-                    f"Consider LEFT JOIN unless filtering is intentional."
+                    "INNER JOIN to visit_occurrence may drop events with NULL "
+                    "visit_occurrence_id (often 20–60% of records). "
+                    "Consider LEFT JOIN unless filtering is intentional."
                 ),
                 "severity": Severity.WARNING,
             })
@@ -188,8 +188,8 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
 
                 issues.append({
                     "message": (
-                        f"Implicit INNER JOIN involving visit_occurrence detected. "
-                        f"This may unintentionally drop records with NULL visit_occurrence_id."
+                        "Implicit INNER JOIN involving visit_occurrence detected. "
+                        "This may unintentionally drop records with NULL visit_occurrence_id."
                     ),
                     "severity": Severity.WARNING,
                 })

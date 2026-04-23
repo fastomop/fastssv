@@ -33,11 +33,11 @@ Correct pattern:
     WHERE ca.ancestor_concept_id = 201826
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Rule, Severity
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
@@ -174,7 +174,6 @@ def _detect(
     warnings = []
 
     seen_e = set()
-    seen_w = set()
 
     joins = _extract_ca_concept_joins(tree, aliases)
 

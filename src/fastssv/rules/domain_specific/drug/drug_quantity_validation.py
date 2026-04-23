@@ -87,13 +87,6 @@ def _extract_numeric(node: exp.Expression) -> Optional[float]:
     return None
 
 
-def _is_negative(node: exp.Expression) -> Optional[float]:
-    value = _extract_numeric(node)
-    if value is None:
-        return None
-    return value if value < 0 else None
-
-
 # --- Detection -------------------------------------------------------------
 
 def _find_violations(

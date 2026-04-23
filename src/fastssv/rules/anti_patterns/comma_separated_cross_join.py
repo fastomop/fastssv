@@ -60,7 +60,7 @@ Correct pattern:
     -- CORRECT: Comma with WHERE join condition
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from sqlglot import exp
 

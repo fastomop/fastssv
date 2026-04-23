@@ -1,15 +1,15 @@
 """
-This defines which columns should contain standard vs source concepts:                                                                                                                        
-┌─────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐                                                                                    
-│        Constant         │                                   Purpose                                    │                                                                                    
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤                                                                                    
-│ SOURCE_VOCABS           │ Vocabulary names that are "source" (ICD10CM, CPT4, NDC, etc.)                │                                                                                    
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤                                                                                    
-│ STANDARD_CONCEPT_FIELDS │ Columns that must contain standard concepts (e.g., condition_concept_id)     │                                                                                    
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤                                                                                    
-│ SOURCE_CONCEPT_FIELDS   │ Columns that may contain source concepts (e.g., condition_source_concept_id) │                                                                                    
-└─────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘                                                                                    
-Purpose: Used by the standard_concept_enforcement rule to know which columns require standard_concept = 'S' enforcement. If a query uses condition_occurrence.condition_concept_id, it must   
+This defines which columns should contain standard vs source concepts:
+┌─────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+│        Constant         │                                   Purpose                                    │
+├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ SOURCE_VOCABS           │ Vocabulary names that are "source" (ICD10CM, CPT4, NDC, etc.)                │
+├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ STANDARD_CONCEPT_FIELDS │ Columns that must contain standard concepts (e.g., condition_concept_id)     │
+├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+│ SOURCE_CONCEPT_FIELDS   │ Columns that may contain source concepts (e.g., condition_source_concept_id) │
+└─────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
+Purpose: Used by the standard_concept_enforcement rule to know which columns require standard_concept = 'S' enforcement. If a query uses condition_occurrence.condition_concept_id, it must
 ensure standard concepts are used.
 """
 

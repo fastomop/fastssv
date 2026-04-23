@@ -151,16 +151,6 @@ def _has_limit_one(tree: exp.Expression) -> bool:
     return False
 
 
-# --- Detection -------------------------------------------------------------
-
-def _detect_scalar_subquery(tree: exp.Expression) -> List[str]:
-    """Detect scalar subqueries anywhere in AST."""
-    contexts = []
-    for subquery in tree.find_all(exp.Subquery):
-        contexts.append(subquery.sql())
-    return contexts
-
-
 # --- Rule ------------------------------------------------------------------
 
 @register

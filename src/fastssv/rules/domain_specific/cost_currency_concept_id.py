@@ -25,7 +25,7 @@ Violation patterns:
     SELECT SUM(total_paid) FROM cost
     -- WARNING: Sums across all currencies
 
-    SELECT AVG(total_charge) FROM cost WHERE cost_type_concept_id = 32 
+    SELECT AVG(total_charge) FROM cost WHERE cost_type_concept_id = 32
     -- WARNING: type filter doesn't help — still mixes currencies
 
 Correct patterns:
@@ -225,11 +225,11 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
             if agg_col == "derived cost column":
                 issues.append(
-                    f"Aggregation on cost-derived column without currency_concept_id "
-                    f"constraint or GROUP BY. In multi-currency datasets this mixes "
-                    f"amounts across different currencies (e.g., USD + EUR). "
-                    f"Add WHERE currency_concept_id = <value> or "
-                    f"GROUP BY currency_concept_id."
+                    "Aggregation on cost-derived column without currency_concept_id "
+                    "constraint or GROUP BY. In multi-currency datasets this mixes "
+                    "amounts across different currencies (e.g., USD + EUR). "
+                    "Add WHERE currency_concept_id = <value> or "
+                    "GROUP BY currency_concept_id."
                 )
             else:
                 issues.append(

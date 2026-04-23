@@ -45,7 +45,7 @@ Correct patterns:
     JOIN person p ON de.person_id = p.person_id;
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlglot import exp
 

@@ -85,15 +85,6 @@ def _has_table(target: str, aliases: Dict[str, str]) -> bool:
     return any(_norm(t) == _norm(target) for t in aliases.values())
 
 
-def _is_patient_level_query(select: exp.Select, aliases: Dict[str, str]) -> bool:
-    """Heuristic: query references person_id → likely patient-level."""
-    for col in select.find_all(exp.Column):
-        _, name = resolve_table_col(col, aliases)
-        if _norm(name) == PERSON_ID:
-            return True
-    return False
-
-
 def _is_count_distinct_person_id(count_node: exp.Count, aliases: Dict[str, str]) -> bool:
     expr = count_node.this
 

@@ -151,11 +151,9 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
             if left_is_death:
                 death_side = "left"
                 comparator = node.expression
-                op_type = type(node)
             else:
                 death_side = "right"
                 comparator = node.this
-                op_type = type(node)
 
             # Skip if both sides are death columns
             if left_is_death and right_is_death:

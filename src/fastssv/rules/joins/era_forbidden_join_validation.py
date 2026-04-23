@@ -49,7 +49,6 @@ from fastssv.core.helpers import (
     normalize_name,
     parse_sql,
     resolve_table_col,
-    has_table_reference,
 )
 from fastssv.core.registry import register
 

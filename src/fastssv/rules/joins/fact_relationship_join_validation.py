@@ -27,7 +27,7 @@ Correct pattern:
     WHERE fr.domain_concept_id_1 = 21  -- 21 = Measurement domain
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlglot import exp
 

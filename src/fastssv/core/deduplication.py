@@ -3,7 +3,7 @@
 Prevents duplicate reporting of the same underlying issue by multiple rules.
 """
 
-from typing import List, Set, Tuple
+from typing import List
 from fastssv.core.base import RuleViolation
 
 
