@@ -240,6 +240,15 @@ class CostPayerPlanPeriodIdJoinRule(Rule):
         "Use: cost.payer_plan_period_id = payer_plan_period.payer_plan_period_id"
     )
 
+    example_bad = (
+        "SELECT c.cost_id FROM cost c\n"
+        "JOIN payer_plan_period p ON c.payer_plan_period_id = p.person_id;"
+    )
+    example_good = (
+        "SELECT c.cost_id FROM cost c\n"
+        "JOIN payer_plan_period p ON c.payer_plan_period_id = p.payer_plan_period_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

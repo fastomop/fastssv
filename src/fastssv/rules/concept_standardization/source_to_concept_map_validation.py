@@ -225,6 +225,26 @@ class SourceToConceptMapValidationRule(Rule):
     suggested_fix = (
         "Add source_vocabulary_id filter alongside source_code."
     )
+    long_description = (
+        "source_to_concept_map is the per-site translation table from "
+        "source codes to OMOP standard concepts. Source codes are not "
+        "globally unique: 'R51' can exist in ICD10CM (headache), ICD9CM, "
+        "and some local billing vocabularies. Filtering on source_code "
+        "alone can pick up matches from unrelated vocabularies, returning "
+        "incorrect target_concept_ids. Always pair source_code with "
+        "source_vocabulary_id so the match is unambiguous."
+    )
+    example_bad = (
+        "SELECT target_concept_id\n"
+        "FROM source_to_concept_map\n"
+        "WHERE source_code = 'R51';"
+    )
+    example_good = (
+        "SELECT target_concept_id\n"
+        "FROM source_to_concept_map\n"
+        "WHERE source_code = 'R51'\n"
+        "  AND source_vocabulary_id = 'ICD10CM';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

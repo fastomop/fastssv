@@ -111,7 +111,16 @@
     </div>
     <div class="site-footer-main">
       <div class="wrap">
-        <span>Static validation of OMOP CDM SQL · {{ rules_loaded }} rules loaded</span>
+        <span>
+          Static validation of OMOP CDM SQL · {{ rules_loaded }} rules loaded
+          <span class="footer-sep">·</span>
+          <a href="https://github.com/fastomop/fastSSV/blob/main/LICENSE"
+             class="footer-meta-link"
+             target="_blank" rel="noopener noreferrer"
+             title="FastSSV is released under the {{ app_license }} license">
+            v{{ app_version }} · {{ app_license }}
+          </a>
+        </span>
         <a href="https://github.com/fastomop/fastSSV"
            class="footer-link"
            target="_blank"

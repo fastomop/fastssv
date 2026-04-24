@@ -296,6 +296,15 @@ class PersonBirthFieldValidationRule(Rule):
 
     suggested_fix = "Use valid birth field values within plausible ranges"
 
+    example_bad = (
+        "SELECT person_id FROM person\n"
+        "WHERE year_of_birth = 1800;"
+    )
+    example_good = (
+        "SELECT person_id FROM person\n"
+        "WHERE year_of_birth BETWEEN 1900 AND 2024;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

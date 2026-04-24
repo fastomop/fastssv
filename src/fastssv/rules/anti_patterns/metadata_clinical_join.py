@@ -166,6 +166,23 @@ class MetadataClinicalJoinRule(Rule):
         "Query the metadata table standalone to retrieve CDM instance information. "
         "Do not join it to clinical tables like person, condition_occurrence, or drug_exposure."
     )
+    long_description = (
+        "The metadata table stores CDM-level metadata (ETL provenance, "
+        "data-characterization results, version tags), not patient-level "
+        "data. It has no person_id column and no foreign key into any "
+        "clinical table. Joining it to clinical tables produces Cartesian "
+        "products or spurious integer matches. Query metadata "
+        "independently when you need it."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM person p\n"
+        "JOIN metadata m ON p.person_id = m.metadata_concept_id;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM metadata;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

@@ -30,10 +30,19 @@ from fastssv.core.registry import get_all_rules
 
 # sqlglot dialect names differ slightly from our UI labels; translate here so
 # the pretty-printer reads with the correct grammar. "auto" → None lets
-# sqlglot guess.
+# sqlglot guess. Keep this list in lock-step with:
+#   - src/fastssv/api/models.py   (ValidationRequest.dialect Literal)
+#   - src/fastssv/cli.py          (--dialect choices)
+#   - src/fastssv/api/templates/index.html  (the <select>)
 _SQLGLOT_DIALECTS = {
     "postgres": "postgres",
     "tsql": "tsql",
+    "oracle": "oracle",
+    "redshift": "redshift",
+    "bigquery": "bigquery",
+    "snowflake": "snowflake",
+    "databricks": "databricks",
+    "duckdb": "duckdb",
     "auto": None,
 }
 
@@ -72,6 +81,9 @@ except PackageNotFoundError:
     _PKG_VERSION = "dev"
 _STATIC_VERSION = f"{_PKG_VERSION}.{int(time.time())}"
 templates.env.globals["static_version"] = _STATIC_VERSION
+templates.env.globals["app_version"] = _PKG_VERSION
+# Kept in lock-step with pyproject.toml's license = {text = "..."} field.
+templates.env.globals["app_license"] = "Apache-2.0"
 
 
 def _sql_hash(sql: str) -> str:
@@ -116,6 +128,9 @@ async def rules_page(request: Request):
                 "description": r.description,
                 "severity": r.severity.value if hasattr(r.severity, "value") else str(r.severity),
                 "category": r.rule_id.split(".", 1)[0] if "." in r.rule_id else "uncategorized",
+                "long_description": getattr(r, "long_description", None),
+                "example_bad": getattr(r, "example_bad", None),
+                "example_good": getattr(r, "example_good", None),
             }
             for r in get_all_rules()
         ),
@@ -142,11 +157,14 @@ async def ui_validate(
 ) -> HTMLResponse:
     settings: Settings = request.app.state.settings
 
-    if dialect not in ("auto", "postgres", "tsql"):
+    # Same allowlist as the JSON API and CLI; _SQLGLOT_DIALECTS is the
+    # single source of truth for "which dialects does the UI accept".
+    if dialect not in _SQLGLOT_DIALECTS:
+        valid = ", ".join(sorted(_SQLGLOT_DIALECTS))
         return _render_results(
             request,
             error="Invalid dialect.",
-            detail=f"'{dialect}' is not one of: auto, postgres, tsql.",
+            detail=f"'{dialect}' is not one of: {valid}.",
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 

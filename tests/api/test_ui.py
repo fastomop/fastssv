@@ -41,7 +41,8 @@ def test_rules_page_renders_all_rules(client: TestClient):
     resp = client.get("/rules")
     assert resp.status_code == 200
     body = resp.text
-    assert body.count('class="rule-card"') > 100  # 157 in practice
+    # Each rule renders as a <details class="rule-block ..."> accordion.
+    assert body.count('class="rule-block ') > 100  # 157 in practice
     assert "rule-filter" in body
 
 

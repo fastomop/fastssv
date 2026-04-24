@@ -232,6 +232,15 @@ class DrugDaysSupplyValidationRule(Rule):
         f"Ensure days_supply values are between {MIN_DAYS_SUPPLY} and {MAX_DAYS_SUPPLY}"
     )
 
+    example_bad = (
+        "SELECT person_id FROM drug_exposure\n"
+        "WHERE days_supply = 400;"
+    )
+    example_good = (
+        "SELECT person_id FROM drug_exposure\n"
+        "WHERE days_supply BETWEEN 1 AND 365;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

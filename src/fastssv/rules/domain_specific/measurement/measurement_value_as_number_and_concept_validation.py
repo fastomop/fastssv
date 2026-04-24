@@ -162,6 +162,15 @@ class MeasurementValueAsNumberAndConceptValidationRule(Rule):
     severity = Severity.ERROR
     suggested_fix = "Use OR or separate logic depending on measurement type"
 
+    example_bad = (
+        "SELECT person_id FROM measurement\n"
+        "WHERE value_as_number > 140 AND value_as_concept_id = 4126681;"
+    )
+    example_good = (
+        "SELECT person_id FROM measurement\n"
+        "WHERE value_as_number > 140;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:

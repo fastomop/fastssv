@@ -69,6 +69,24 @@ class SourceValueFieldUsageRule(Rule):
         "Use standard concept fields (*_concept_id) instead of source_value fields "
         "for consistent analytical results across data sources"
     )
+    long_description = (
+        "*_source_value columns store the raw, unstandardised source "
+        "strings from the originating system and are meant for audit or "
+        "provenance. Aggregating or grouping by source_value produces "
+        "results that aren't comparable across sites (different ETLs "
+        "map differently) and won't federate in multi-site studies. "
+        "Aggregate on the paired *_concept_id for portability."
+    )
+    example_bad = (
+        "SELECT condition_source_value, COUNT(*) AS n\n"
+        "FROM condition_occurrence\n"
+        "GROUP BY condition_source_value;"
+    )
+    example_good = (
+        "SELECT condition_concept_id, COUNT(*) AS n\n"
+        "FROM condition_occurrence\n"
+        "GROUP BY condition_concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

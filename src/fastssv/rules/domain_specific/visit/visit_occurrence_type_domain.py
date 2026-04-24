@@ -254,6 +254,16 @@ class VisitOccurrenceTypeDomainRule(Rule):
         "Add domain filter: c.domain_id = 'Type Concept' in WHERE or JOIN clause."
     )
 
+    example_bad = (
+        "SELECT vo.visit_occurrence_id FROM visit_occurrence vo\n"
+        "JOIN concept c ON vo.visit_type_concept_id = c.concept_id;"
+    )
+    example_good = (
+        "SELECT vo.visit_occurrence_id FROM visit_occurrence vo\n"
+        "JOIN concept c ON vo.visit_type_concept_id = c.concept_id\n"
+        "WHERE c.domain_id = 'Type Concept';"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

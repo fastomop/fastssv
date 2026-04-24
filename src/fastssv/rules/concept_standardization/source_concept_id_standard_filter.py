@@ -362,6 +362,28 @@ class SourceConceptIdStandardFilterRule(Rule):
         "Remove standard_concept = 'S' filter when joining source concept IDs, "
         "or use the standard *_concept_id column instead."
     )
+    long_description = (
+        "Every OMOP clinical table has two concept columns: *_concept_id "
+        "(the standard vocabulary mapping, e.g. SNOMED for conditions) and "
+        "*_source_concept_id (the code from the originating system, "
+        "e.g. ICD10CM). Source concepts are by definition non-standard, so "
+        "joining *_source_concept_id to concept and then filtering "
+        "standard_concept = 'S' always returns zero rows. Either join "
+        "against *_concept_id (for standard-code analytics) or drop the "
+        "standard filter (to inspect source codes)."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_source_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'S';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'S';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "source_concept_id" not in sql.lower():

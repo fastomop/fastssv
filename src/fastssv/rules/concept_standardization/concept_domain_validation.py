@@ -224,6 +224,27 @@ class ConceptDomainValidationRule(Rule):
     suggested_fix = (
         "Add or correct concept.domain_id filter to match expected domain."
     )
+    long_description = (
+        "Each OMOP *_concept_id column has a canonical domain_id: "
+        "condition_occurrence.condition_concept_id is always 'Condition', "
+        "drug_exposure.drug_concept_id is always 'Drug', and so on. "
+        "Filtering a concept join with the wrong domain "
+        "(e.g. c.domain_id = 'Drug' while joining on condition_concept_id) "
+        "silently returns zero rows. The fix is to match the domain to "
+        "the column."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.domain_id = 'Drug';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.domain_id = 'Condition';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

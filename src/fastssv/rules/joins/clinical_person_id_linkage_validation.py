@@ -424,6 +424,16 @@ class ClinicalPersonIdLinkageValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "Add joins on person_id between clinical tables."
+    example_bad = (
+        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.visit_occurrence_id = de.visit_occurrence_id;"
+    )
+    example_good = (
+        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.person_id = de.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

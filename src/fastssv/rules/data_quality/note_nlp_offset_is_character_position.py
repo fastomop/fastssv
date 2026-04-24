@@ -229,6 +229,24 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
         "Use CAST(offset AS INT) or CONVERT(INT, offset) for numeric usage. "
         "Avoid using offset in JOIN conditions."
     )
+    long_description = (
+        "note_nlp.offset is a VARCHAR column that stores the character "
+        "position of the NLP-extracted term within the note text. Despite "
+        "the numeric content, the column type is string — using it in a "
+        "numeric comparison or JOIN without an explicit CAST leads to "
+        "implicit-cast errors on strict dialects and silent mis-sorts on "
+        "lenient ones. CAST to INT when you need numeric semantics."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM note_nlp\n"
+        "WHERE offset > 100;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM note_nlp\n"
+        "WHERE CAST(offset AS INT) > 100;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "note_nlp" not in sql.lower() or "offset" not in sql.lower():

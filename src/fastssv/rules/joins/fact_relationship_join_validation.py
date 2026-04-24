@@ -265,6 +265,15 @@ class FactRelationshipJoinValidationRule(Rule):
         "Add domain filter matching the clinical table, e.g.: "
         "WHERE domain_concept_id_1 = <correct_domain_id>"
     )
+    example_bad = (
+        "SELECT fr.fact_id_1 FROM fact_relationship fr\n"
+        "JOIN visit_occurrence vo ON fr.fact_id_1 = vo.visit_occurrence_id;"
+    )
+    example_good = (
+        "SELECT fr.fact_id_1 FROM fact_relationship fr\n"
+        "JOIN visit_occurrence vo ON fr.fact_id_1 = vo.visit_occurrence_id\n"
+        "WHERE fr.domain_concept_id_1 = 8;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

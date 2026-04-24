@@ -280,6 +280,14 @@ class CohortClinicalJoinValidationRule(Rule):
         "Use: cohort.subject_id = clinical.person_id "
         "or cohort.subject_id = person.person_id and person.person_id = clinical.person_id"
     )
+    example_bad = (
+        "SELECT * FROM cohort c\n"
+        "JOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;"
+    )
+    example_good = (
+        "SELECT * FROM cohort c\n"
+        "JOIN condition_occurrence co ON c.subject_id = co.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

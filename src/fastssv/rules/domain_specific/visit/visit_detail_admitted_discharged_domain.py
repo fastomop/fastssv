@@ -258,6 +258,16 @@ class VisitDetailAdmittedDischargedDomainRule(Rule):
         "c.domain_id IN ('Visit', 'Place of Service')."
     )
 
+    example_bad = (
+        "SELECT visit_detail_id FROM visit_detail\n"
+        "WHERE admitted_from_concept_id = 8870;"
+    )
+    example_good = (
+        "SELECT vd.visit_detail_id FROM visit_detail vd\n"
+        "JOIN concept c ON vd.admitted_from_concept_id = c.concept_id\n"
+        "WHERE c.domain_id IN ('Visit', 'Place of Service');"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

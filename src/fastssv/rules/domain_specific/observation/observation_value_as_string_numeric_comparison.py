@@ -275,6 +275,15 @@ class ObservationValueAsStringNumericComparisonRule(Rule):
         "Replace with value_as_number or explicitly CAST(value_as_string AS NUMERIC)."
     )
 
+    example_bad = (
+        "SELECT person_id FROM observation\n"
+        "WHERE value_as_string > 100;"
+    )
+    example_good = (
+        "SELECT person_id FROM observation\n"
+        "WHERE value_as_number > 100;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

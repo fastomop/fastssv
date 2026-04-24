@@ -160,6 +160,14 @@ class VisitDetailJoinValidationRule(Rule):
     suggested_fix = (
         "Join using: vd.visit_occurrence_id = vo.visit_occurrence_id"
     )
+    example_bad = (
+        "SELECT * FROM visit_detail vd\n"
+        "JOIN visit_occurrence vo ON vd.person_id = vo.person_id;"
+    )
+    example_good = (
+        "SELECT * FROM visit_detail vd\n"
+        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

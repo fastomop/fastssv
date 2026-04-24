@@ -155,6 +155,26 @@ class SourceConceptIdWarningRule(Rule):
         "Replace *_source_concept_id with corresponding standard *_concept_id column. "
         "If this is for ETL validation or source exploration, this warning can be ignored."
     )
+    long_description = (
+        "*_source_concept_id stores the original, unmapped code from the "
+        "source system (ICD10CM, NDC, CPT, etc.) and is intended for audit "
+        "and ETL provenance, not for cohort analytics. Filtering cohorts "
+        "on source concepts produces results that do not federate across "
+        "sites (each warehouse ETL maps slightly differently) and misses "
+        "patients whose underlying data was mapped from a different "
+        "source vocabulary. Use the paired *_concept_id (standard) column "
+        "for any cohort or analytical query."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_source_concept_id = 44831230;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

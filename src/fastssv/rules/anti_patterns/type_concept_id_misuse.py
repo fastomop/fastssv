@@ -156,6 +156,26 @@ class TypeConceptIdMisuseRule(Rule):
         "Use the primary concept_id column (e.g., condition_concept_id) for clinical filtering. "
         "type_concept_id should only be used to understand data source/provenance."
     )
+    long_description = (
+        "`*_type_concept_id` columns carry provenance (EHR, claim, "
+        "patient-reported, registry) — information about *where* the "
+        "record came from, not what the record means clinically. Using "
+        "them in WHERE / GROUP BY / HAVING as if they were clinical "
+        "concepts yields cohorts defined by data-source type, not "
+        "disease. For cohort logic use the primary `*_concept_id` "
+        "column; keep `*_type_concept_id` for data-quality and "
+        "provenance audits."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_type_concept_id = 32020;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

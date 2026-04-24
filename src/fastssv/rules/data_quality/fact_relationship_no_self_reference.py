@@ -197,6 +197,26 @@ class FactRelationshipNoSelfReferenceRule(Rule):
         "Remove self-referential filters (fact_id_1 = fact_id_2). "
         "If intentional, verify this is a valid use case."
     )
+    long_description = (
+        "fact_relationship links two facts together; a row where "
+        "fact_id_1 = fact_id_2 represents a fact related to itself, which "
+        "is almost never a real clinical relationship. The predicate "
+        "`WHERE fact_id_1 = fact_id_2` typically comes from a copy-paste "
+        "error where an inequality was flipped. Use `<>` if you want "
+        "distinct facts, and add a relationship_concept_id filter so the "
+        "query picks out one specific relationship type."
+    )
+    example_bad = (
+        "SELECT fact_id_1\n"
+        "FROM fact_relationship\n"
+        "WHERE fact_id_1 = fact_id_2;"
+    )
+    example_good = (
+        "SELECT fact_id_1, fact_id_2\n"
+        "FROM fact_relationship\n"
+        "WHERE fact_id_1 <> fact_id_2\n"
+        "  AND relationship_concept_id = 44818859;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

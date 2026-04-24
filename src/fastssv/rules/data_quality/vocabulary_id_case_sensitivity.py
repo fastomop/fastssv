@@ -222,6 +222,23 @@ class VocabularyIdCaseSensitivityRule(Rule):
     severity = Severity.ERROR  # default (overridden per violation)
 
     suggested_fix = "Use canonical OMOP vocabulary_id values."
+    long_description = (
+        "vocabulary_id values in OMOP follow a canonical casing — "
+        "'SNOMED', 'LOINC', 'RxNorm', 'ICD10CM' — and are case-sensitive. "
+        "A filter with the wrong casing ('snomed', 'SnoMed') quietly "
+        "matches zero rows in most engines. Stick to the canonical form "
+        "published in the OHDSI vocabulary."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE vocabulary_id = 'snomed';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE vocabulary_id = 'SNOMED';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "vocabulary_id" not in sql.lower():

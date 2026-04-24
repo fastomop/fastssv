@@ -178,6 +178,14 @@ class ClinicalPkCrossJoinValidationRule(Rule):
         "Do not join clinical event primary keys. "
         "Use shared foreign keys such as person_id or visit_occurrence_id instead."
     )
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.person_id = de.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

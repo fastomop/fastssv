@@ -180,6 +180,17 @@ class ObservationValueAsConceptConfusionRule(Rule):
         "and value_as_concept_id (answer)"
     )
 
+    example_bad = (
+        "SELECT person_id FROM observation\n"
+        "WHERE observation_concept_id = 4083587\n"
+        "  AND value_as_concept_id = 4083587;"
+    )
+    example_good = (
+        "SELECT person_id FROM observation\n"
+        "WHERE observation_concept_id = 4083587\n"
+        "  AND value_as_concept_id = 4188539;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:

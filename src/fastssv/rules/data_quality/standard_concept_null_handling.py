@@ -233,6 +233,24 @@ class StandardConceptNullHandlingRule(Rule):
         "Use IS NULL for non-standard concepts, IS NOT NULL for standard/classification, "
         "or filter explicitly for valid values ('S', 'C')."
     )
+    long_description = (
+        "In OMOP vocabulary, non-standard concepts are represented by "
+        "standard_concept IS NULL — not 'N', not an empty string, not "
+        "'n'. A filter like `standard_concept = 'N'` returns zero rows "
+        "because no concept actually carries that literal value. To "
+        "select non-standard concepts, use `IS NULL`; to select standard "
+        "or classification, use the explicit literals 'S' or 'C'."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE standard_concept = 'N';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE standard_concept IS NULL;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "standard_concept" not in sql.lower():

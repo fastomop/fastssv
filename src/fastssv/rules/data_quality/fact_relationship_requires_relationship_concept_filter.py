@@ -250,6 +250,23 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
         "Add a filter on relationship_concept_id (e.g., WHERE relationship_concept_id = <id>) "
         "or join to concept with proper filtering."
     )
+    long_description = (
+        "fact_relationship encodes every kind of linkage between OMOP "
+        "facts — visits to procedures, measurements to their ordering "
+        "visits, parent-child condition episodes, etc. — each identified "
+        "by relationship_concept_id. Querying fact_relationship without "
+        "that filter combines unrelated link types into one result set. "
+        "Always restrict to the specific relationship you need."
+    )
+    example_bad = (
+        "SELECT fact_id_1, fact_id_2\n"
+        "FROM fact_relationship;"
+    )
+    example_good = (
+        "SELECT fact_id_1, fact_id_2\n"
+        "FROM fact_relationship\n"
+        "WHERE relationship_concept_id = 44818859;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

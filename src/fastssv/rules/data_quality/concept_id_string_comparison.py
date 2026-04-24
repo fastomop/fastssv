@@ -241,6 +241,25 @@ class ConceptIdStringComparisonRule(Rule):
         "Replace string literals with integer literals: "
         "concept_id = 201826 instead of concept_id = '201826'"
     )
+    long_description = (
+        "Every *_concept_id column in OMOP is an INTEGER. Comparing it to a "
+        "string literal forces the database to implicitly cast one side per "
+        "row. In PostgreSQL this usually works but bypasses the concept_id "
+        "index; in SQL Server and BigQuery it can raise a conversion error "
+        "or, worse, silently evaluate to FALSE for every row. Writing the "
+        "literal as a plain integer keeps index usage intact and the "
+        "semantics identical across every supported dialect."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM person\n"
+        "WHERE gender_concept_id = '8532';"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM person\n"
+        "WHERE gender_concept_id = 8532;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

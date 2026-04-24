@@ -1,41 +1,136 @@
 {% extends "base.html" %}
 {% block title %}Rules · FastSSV{% endblock %}
 
-{% block content %}
-<section class="panel">
-  <h1>Validation rules</h1>
-  <p class="muted">{{ rules|length }} rules registered across {{ categories|length }} categories.</p>
+{% block extra_scripts %}
+<script src="{{ url_for('static', path='prism.min.js') }}?v={{ static_version }}" defer></script>
+<script src="{{ url_for('static', path='prism-sql.min.js') }}?v={{ static_version }}" defer></script>
+{% endblock %}
 
-  <div class="row">
-    <input type="search"
-           id="rule-filter"
-           placeholder="Filter by id, name, description…"
-           autocomplete="off"
-           oninput="filterRules(this.value)">
-    <select id="cat-filter" onchange="filterRules()">
+{% block content %}
+
+<section class="hero">
+  <p class="hero-lead">
+    FastSSV ships <strong>{{ rules|length }} static rules</strong> covering OMOP CDM v5.4,
+    grouped into <strong>{{ categories|length }} categories</strong>. Click any rule to see
+    a longer write-up and the SQL pattern that trips it.
+  </p>
+</section>
+
+<div class="panel-toolbar rules-toolbar">
+  <svg class="rules-search-icon" viewBox="0 0 24 24" width="16" height="16"
+       fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="11" cy="11" r="7"></circle>
+    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+  </svg>
+  <input type="search"
+         id="rule-filter"
+         class="rules-search-input"
+         placeholder="Filter by id, name, description…"
+         autocomplete="off"
+         aria-label="Search rules"
+         oninput="filterRules()">
+
+  <div class="panel-toolbar-field" title="Category">
+    <svg class="panel-toolbar-icon" viewBox="0 0 24 24" width="15" height="15"
+         fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 6h18M6 12h12M10 18h4"></path>
+    </svg>
+    <select id="cat-filter" onchange="filterRules()" aria-label="Category filter">
       <option value="">All categories</option>
       {% for cat in categories %}
         <option value="{{ cat }}">{{ cat }}</option>
       {% endfor %}
     </select>
   </div>
-</section>
 
-<section class="rules-list">
+  <div class="rules-toolbar-actions" role="group" aria-label="Expand controls">
+    <button type="button" class="chip" onclick="toggleAllRules(true)">Expand all</button>
+    <button type="button" class="chip" onclick="toggleAllRules(false)">Collapse all</button>
+  </div>
+</div>
+
+<section class="rules-list" id="rules-list">
   {% for r in rules %}
-    <article class="rule-card"
+    <details class="rule-block sev-block-{{ r.severity }}"
              data-rule-id="{{ r.rule_id|lower }}"
              data-name="{{ r.name|lower }}"
              data-desc="{{ r.description|lower }}"
              data-category="{{ r.category }}">
-      <header>
+      <summary class="rule-block-head">
         <span class="sev sev-{{ r.severity }}">{{ r.severity }}</span>
+        <span class="rule-block-title">{{ r.name }}</span>
+        <code class="rule-id">{{ r.rule_id }}</code>
         <span class="cat">{{ r.category }}</span>
-      </header>
-      <h2>{{ r.name }}</h2>
-      <code class="rule-id">{{ r.rule_id }}</code>
-      <p>{{ r.description }}</p>
-    </article>
+        <span class="rule-block-chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </summary>
+
+      <div class="rule-block-body">
+        <p class="rule-block-desc">{{ r.description }}</p>
+
+        {% if r.long_description %}
+          <div class="rule-block-section">
+            <span class="rule-block-label">What this rule detects</span>
+            <p>{{ r.long_description }}</p>
+          </div>
+        {% endif %}
+
+        {% if r.example_bad %}
+          <div class="rule-block-section">
+            <span class="rule-block-label rule-block-label-bad">Example that trips the rule</span>
+            <div class="rule-example">
+              <pre class="query-sql"><code class="language-sql">{{ r.example_bad }}</code></pre>
+              <button type="button"
+                      class="rule-block-play"
+                      data-action="send-to-validator"
+                      data-sql="{{ r.example_bad }}"
+                      title="Open this example in the validator"
+                      aria-label="Open this example in the validator">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+                     stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if r.example_good %}
+          <div class="rule-block-section">
+            <span class="rule-block-label rule-block-label-good">Corrected version</span>
+            <div class="rule-example">
+              <pre class="query-sql"><code class="language-sql">{{ r.example_good }}</code></pre>
+              <button type="button"
+                      class="rule-block-play"
+                      data-action="send-to-validator"
+                      data-sql="{{ r.example_good }}"
+                      title="Open the corrected version in the validator"
+                      aria-label="Open the corrected version in the validator">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+                     stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if not r.long_description and not r.example_bad %}
+          <p class="rule-block-empty muted">
+            A longer write-up and example for this rule are still being authored.
+          </p>
+        {% endif %}
+      </div>
+    </details>
   {% endfor %}
 </section>
 
@@ -43,7 +138,7 @@
   function filterRules() {
     const q = (document.getElementById('rule-filter').value || '').toLowerCase().trim();
     const cat = document.getElementById('cat-filter').value;
-    document.querySelectorAll('.rule-card').forEach(card => {
+    document.querySelectorAll('.rule-block').forEach(card => {
       const matchesText = !q
         || card.dataset.ruleId.includes(q)
         || card.dataset.name.includes(q)
@@ -52,5 +147,30 @@
       card.hidden = !(matchesText && matchesCat);
     });
   }
+  function toggleAllRules(open) {
+    document.querySelectorAll('.rule-block').forEach(card => {
+      if (!card.hidden) card.open = open;
+    });
+  }
+  // Play-button handler: navigate to the validator with the SQL encoded
+  // in the URL query string. The validator reads ?sql and ?autorun, wipes
+  // the editor, populates it, and auto-submits. URL params (vs
+  // sessionStorage) survive private-mode quotas and are debuggable from
+  // the address bar.
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest && e.target.closest('[data-action="send-to-validator"]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const sql = btn.getAttribute('data-sql') || '';
+    if (!sql) return;
+    const params = new URLSearchParams();
+    params.set('sql', sql);
+    params.set('autorun', '1');
+    window.location.href = '/?' + params.toString();
+  });
+  window.addEventListener('load', function () {
+    if (window.Prism && Prism.highlightAll) Prism.highlightAll();
+  });
 </script>
 {% endblock %}

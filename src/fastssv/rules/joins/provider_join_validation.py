@@ -152,6 +152,14 @@ class ProviderJoinValidationRule(Rule):
         "Join clinical tables to provider using provider_id: "
         "clinical_table.provider_id = provider.provider_id"
     )
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN provider p ON co.person_id = p.provider_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN provider p ON co.provider_id = p.provider_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

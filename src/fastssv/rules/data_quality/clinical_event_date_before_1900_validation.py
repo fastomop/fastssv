@@ -296,6 +296,24 @@ class ClinicalEventDateBefore1900ValidationRule(Rule):
     suggested_fix = (
         "Use realistic date ranges (>= 1900-01-01) unless intentionally analyzing historical placeholders."
     )
+    long_description = (
+        "Dates before 1900 in OMOP clinical tables are almost always "
+        "placeholders for missing or unparseable source dates, not real "
+        "clinical events. Filtering for these dates typically surfaces "
+        "data-quality artefacts rather than clinical signal. Restrict "
+        "queries to >= 1900-01-01 unless the intent is explicitly a "
+        "data-quality audit of the placeholder rows."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_start_date < '1900-01-01';"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_start_date >= '1900-01-01';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

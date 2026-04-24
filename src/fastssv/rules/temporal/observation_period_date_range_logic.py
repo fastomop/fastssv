@@ -171,6 +171,31 @@ class ObservationPeriodDateRangeLogicRule(Rule):
         "Use: event_date BETWEEN op.observation_period_start_date "
         "AND op.observation_period_end_date."
     )
+    long_description = (
+        "The conventional OMOP invariant is "
+        "event_date BETWEEN observation_period_start_date AND "
+        "observation_period_end_date: the event is the value being tested, "
+        "the observation window is the range. Reversed forms like "
+        "observation_period_start_date BETWEEN event_start_date AND "
+        "event_end_date produce rows only when the observation window "
+        "happens to fall inside a single event, which is almost never what "
+        "was intended. It is a classic copy-paste bug from swapping the "
+        "BETWEEN operands."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN observation_period op ON co.person_id = op.person_id\n"
+        "WHERE op.observation_period_start_date\n"
+        "      BETWEEN co.condition_start_date AND co.condition_end_date;"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN observation_period op ON co.person_id = op.person_id\n"
+        "WHERE co.condition_start_date\n"
+        "      BETWEEN op.observation_period_start_date AND op.observation_period_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

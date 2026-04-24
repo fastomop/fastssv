@@ -224,6 +224,17 @@ class DrugEraConceptClassValidationRule(Rule):
         "Use concept_class_id = 'Ingredient' or remove the filter."
     )
 
+    example_bad = (
+        "SELECT de.person_id FROM drug_era de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
+        "WHERE c.concept_class_id = 'Branded Drug';"
+    )
+    example_good = (
+        "SELECT de.person_id FROM drug_era de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
+        "WHERE c.concept_class_id = 'Ingredient';"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

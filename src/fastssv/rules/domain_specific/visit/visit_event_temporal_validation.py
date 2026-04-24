@@ -232,6 +232,17 @@ class VisitEventTemporalValidationRule(Rule):
     severity = Severity.WARNING
     suggested_fix = "Use event_date >= visit_start_date or review join logic"
 
+    example_bad = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id\n"
+        "WHERE co.condition_start_date < vo.visit_start_date;"
+    )
+    example_good = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id\n"
+        "WHERE co.condition_start_date >= vo.visit_start_date;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

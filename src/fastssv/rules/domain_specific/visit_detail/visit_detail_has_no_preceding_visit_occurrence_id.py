@@ -214,6 +214,15 @@ class VisitDetailHasNoPrecedingVisitOccurrenceIdRule(Rule):
         "Use preceding_visit_occurrence_id only with visit_occurrence table."
     )
 
+    example_bad = (
+        "SELECT visit_detail_id, preceding_visit_occurrence_id\n"
+        "FROM visit_detail;"
+    )
+    example_good = (
+        "SELECT visit_detail_id, preceding_visit_detail_id\n"
+        "FROM visit_detail;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

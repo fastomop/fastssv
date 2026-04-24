@@ -205,6 +205,24 @@ class NoteNlpTermModifiersIsFreeTextRule(Rule):
     suggested_fix = (
         "Use LIKE or full-text search. Do not JOIN or CAST term_modifiers."
     )
+    long_description = (
+        "note_nlp.term_modifiers is free-text storing pipe-delimited "
+        "modifier descriptors like 'negated=true|subject=patient'. It has "
+        "no mapping into the concept table and is not a structured "
+        "identifier. Joining it to concept or casting it to a number "
+        "returns zero or meaningless rows. Use LIKE for substring matches, "
+        "or parse the pipe-separated structure at the application layer."
+    )
+    example_bad = (
+        "SELECT nnlp.note_nlp_id\n"
+        "FROM note_nlp nnlp\n"
+        "JOIN concept c ON nnlp.term_modifiers = c.concept_name;"
+    )
+    example_good = (
+        "SELECT nnlp.note_nlp_id\n"
+        "FROM note_nlp nnlp\n"
+        "JOIN concept c ON nnlp.note_nlp_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "note_nlp" not in sql.lower() or "term_modifiers" not in sql.lower():

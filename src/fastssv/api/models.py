@@ -7,7 +7,17 @@ from pydantic import BaseModel, Field
 
 class ValidationRequest(BaseModel):
     sql: str = Field(..., min_length=1, description="SQL query to validate.")
-    dialect: Literal["auto", "postgres", "tsql"] = Field(default="auto")
+    dialect: Literal[
+        "auto",
+        "postgres",
+        "tsql",
+        "oracle",
+        "redshift",
+        "bigquery",
+        "snowflake",
+        "databricks",
+        "duckdb",
+    ] = Field(default="auto")
     strict: bool = Field(
         default=False,
         description="Strict mode: escalates best-practice warnings to errors.",

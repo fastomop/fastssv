@@ -246,6 +246,23 @@ class UnionConceptIdDomainIndicatorRule(Rule):
         "Add a domain indicator column to each SELECT, e.g.: "
         "SELECT 'Condition' AS domain, condition_concept_id FROM ... UNION ..."
     )
+    long_description = (
+        "UNION-ing concept_id columns from multiple domains into a single "
+        "output column loses the semantic difference — the downstream "
+        "consumer cannot tell whether a given concept_id came from the "
+        "Condition or Drug side. Always add an explicit domain-indicator "
+        "column so each row's origin is preserved."
+    )
+    example_bad = (
+        "SELECT condition_concept_id AS concept_id FROM condition_occurrence\n"
+        "UNION\n"
+        "SELECT drug_concept_id AS concept_id FROM drug_exposure;"
+    )
+    example_good = (
+        "SELECT 'Condition' AS domain, condition_concept_id AS concept_id FROM condition_occurrence\n"
+        "UNION ALL\n"
+        "SELECT 'Drug'      AS domain, drug_concept_id      AS concept_id FROM drug_exposure;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

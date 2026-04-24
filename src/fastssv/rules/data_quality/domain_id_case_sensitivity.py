@@ -201,6 +201,24 @@ class DomainIdCaseSensitivityRule(Rule):
 
     severity = Severity.ERROR
     suggested_fix = "Use canonical OMOP domain_id values with correct casing."
+    long_description = (
+        "domain_id values in the OMOP vocabulary follow a canonical "
+        "capitalisation: 'Condition', 'Drug', 'Procedure', 'Measurement', "
+        "'Observation', 'Device', 'Visit', 'Type Concept'. Filters with "
+        "lowercase or upper-cased variants ('condition', 'DRUG') do not "
+        "match anything because string comparison in most engines is "
+        "case-sensitive. Stick to the canonical form."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE domain_id = 'condition';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE domain_id = 'Condition';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "domain_id" not in sql.lower():

@@ -182,6 +182,14 @@ class VisitOccurrenceIdJoinValidationRule(Rule):
         "Join visit_occurrence_id only with visit_occurrence_id. "
         "If linking across domains, use the correct foreign key (e.g., person_id)."
     )
+    example_bad = (
+        "SELECT * FROM visit_occurrence vo\n"
+        "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id;"
+    )
+    example_good = (
+        "SELECT * FROM visit_occurrence vo\n"
+        "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.visit_occurrence_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

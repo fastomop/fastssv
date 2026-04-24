@@ -177,6 +177,28 @@ class DeathDateBeforeBirthValidationRule(Rule):
 
     severity = Severity.ERROR
     suggested_fix = "Ensure death_date >= birth_datetime"
+    long_description = (
+        "A predicate that allows death_date < birth_datetime to evaluate "
+        "TRUE encodes an impossibility, no patient can die before they are "
+        "born. When this condition appears in a WHERE or JOIN clause, it is "
+        "almost always a column-swap bug: the tables on either side of the "
+        "comparison have been reversed, or start/end columns from a "
+        "template have been mixed up. The rule flags the impossible "
+        "comparison so the author can restore the intended temporal "
+        "ordering before the query silently returns zero rows."
+    )
+    example_bad = (
+        "SELECT p.person_id\n"
+        "FROM person p\n"
+        "JOIN death d ON p.person_id = d.person_id\n"
+        "WHERE d.death_date < p.birth_datetime;"
+    )
+    example_good = (
+        "SELECT p.person_id\n"
+        "FROM person p\n"
+        "JOIN death d ON p.person_id = d.person_id\n"
+        "WHERE d.death_date > p.birth_datetime;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

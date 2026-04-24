@@ -145,6 +145,24 @@ class ConceptClassIdCaseSensitivityRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "Use canonical OMOP concept_class_id values."
+    long_description = (
+        "concept_class_id values in the OMOP vocabulary are case-sensitive "
+        "and follow a canonical casing: 'Ingredient', 'Clinical Drug', "
+        "'Branded Drug', 'Clinical Finding' — never 'ingredient' or "
+        "'CLINICAL DRUG'. Most database engines compare strings case-"
+        "sensitively by default, so a filter with the wrong casing quietly "
+        "returns zero rows. Match the canonical form exactly."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE concept_class_id = 'ingredient';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE concept_class_id = 'Ingredient';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         # Fast pre-check

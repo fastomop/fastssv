@@ -213,6 +213,17 @@ class DrugExposureCardinalityValidationRule(Rule):
         "for consolidated exposure periods."
     )
 
+    example_bad = (
+        "SELECT drug_concept_id, COUNT(*) AS patient_count\n"
+        "FROM drug_exposure\n"
+        "GROUP BY drug_concept_id;"
+    )
+    example_good = (
+        "SELECT drug_concept_id, COUNT(DISTINCT person_id) AS patient_count\n"
+        "FROM drug_exposure\n"
+        "GROUP BY drug_concept_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

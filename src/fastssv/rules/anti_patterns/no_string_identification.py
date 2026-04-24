@@ -209,6 +209,25 @@ class NoStringIdentificationRule(Rule):
     )
     severity = Severity.ERROR
     suggested_fix = "Use *_concept_id or *_source_concept_id instead of string matching"
+    long_description = (
+        "`*_source_value` columns store the raw text pulled from the "
+        "source system before OMOP mapping; they are provenance, not "
+        "analytical fields. Using LIKE / equality / IN on them to find "
+        "clinical concepts silently under- or over-matches as source "
+        "values vary by site, clinician, and ETL version. Use the paired "
+        "*_concept_id (standard) or *_source_concept_id (source-mapped) "
+        "column for all concept-level filtering."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_source_value LIKE '%diabetes%';"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

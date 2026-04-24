@@ -120,6 +120,23 @@ class AttributeDefinitionInvalidJoinRule(Rule):
         "Query attribute_definition standalone, or remove it from the query. "
         "This table has no valid join paths to clinical or vocabulary tables."
     )
+    long_description = (
+        "attribute_definition is a legacy OMOP table with no foreign-key "
+        "relationships to any other CDM table. Joining it to clinical or "
+        "vocabulary tables produces either a Cartesian product or spurious "
+        "matches on coincidentally-equal integer values. Query it on its "
+        "own when you need attribute metadata, and drop any JOINs against "
+        "it."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM person p\n"
+        "JOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM attribute_definition;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

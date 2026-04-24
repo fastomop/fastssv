@@ -257,6 +257,14 @@ class JoinPathValidationRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "JOIN concept ON clinical_table.*_concept_id = concept.concept_id"
+    example_bad = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.domain_id;"
+    )
+    example_good = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

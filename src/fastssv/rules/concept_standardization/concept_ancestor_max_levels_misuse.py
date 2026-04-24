@@ -177,6 +177,28 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
         "Use min_levels_of_separation = 1 for direct relationships, "
         "or max_levels_of_separation <= N to limit hierarchy depth."
     )
+    long_description = (
+        "A concept pair can appear multiple times in concept_ancestor via "
+        "different hierarchy paths, each with its own "
+        "max_levels_of_separation. Exact equality on that column only "
+        "matches pairs whose longest path is exactly that value and misses "
+        "pairs where a shorter path also exists. Use "
+        "max_levels_of_separation <= N for depth limits, or "
+        "min_levels_of_separation = 1 when you specifically want direct "
+        "parent-child relationships."
+    )
+    example_bad = (
+        "SELECT descendant_concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820\n"
+        "  AND max_levels_of_separation = 1;"
+    )
+    example_good = (
+        "SELECT descendant_concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820\n"
+        "  AND max_levels_of_separation <= 1;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_ancestor" not in sql.lower():

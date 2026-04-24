@@ -1,4 +1,9 @@
 :root {
+  /* Opt into themed native form-control chrome (scrollbars, the open
+     <select> list, file-picker button). Without this, the browser falls
+     back to the OS default palette, which is what made the dialect
+     dropdown's open list look mismatched in dark mode. */
+  color-scheme: light;
   --bg: #f7f7f8;
   --panel: #ffffff;
   --border: #e5e5e8;
@@ -27,6 +32,7 @@
    preference on first visit, so `prefers-color-scheme` is respected
    automatically but the in-page toggle button can override it. */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0f1115;
   --panel: #171a21;
   --border: #2a2f3a;
@@ -214,6 +220,25 @@ main.wrap {
 .footer-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.footer-sep {
+  margin: 0 0.35rem;
+  color: var(--muted);
+  opacity: 0.6;
+}
+.footer-meta-link {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.footer-meta-link:hover,
+.footer-meta-link:focus-visible {
+  color: var(--text);
+}
+.footer-meta-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 .visually-hidden {
   position: absolute;
@@ -1089,29 +1114,243 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   border-radius: 4px;
 }
 
-.rules-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 0.85rem;
+/* Rules page — follows the same design vocabulary as the validator:
+   hero → panel-toolbar → a list of severity-coloured blocks that mirror
+   the `.query-block` pattern from the results panel. Each block is a
+   native <details> so open/close needs zero JS. The example SQL inside
+   reuses the existing `.query-sql` class, so its Prism palette matches
+   the validator's results panel exactly — single source of truth. */
+
+.rules-toolbar {
+  margin-bottom: 1rem;
+  align-items: center;
 }
-.rule-card {
+/* Search input + category pill + chips all share one height so the row
+   reads as a single band of chrome. */
+.rules-toolbar .rules-search-input,
+.rules-toolbar .panel-toolbar-field,
+.rules-toolbar .chip {
+  height: 2.25rem;
+  box-sizing: border-box;
+}
+/* Standalone magnifier that sits to the LEFT of the search bar — not
+   inside it. Muted stroke colour to match the other toolbar glyphs. */
+.rules-search-icon {
+  color: var(--muted);
+  flex: none;
+  margin-right: -0.15rem;   /* snug against the input without extra whitespace */
+}
+.rules-search-input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 280px;
+  min-width: 220px;
+  padding: 0 0.8rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.rules-search-input::placeholder { color: var(--muted); }
+.rules-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.15);
+}
+/* Hide WebKit's built-in search-cancel button — we don't use it, and it
+   pushes the text frame around when shown. */
+.rules-search-input::-webkit-search-decoration,
+.rules-search-input::-webkit-search-cancel-button,
+.rules-search-input::-webkit-search-results-button,
+.rules-search-input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
+.rules-toolbar-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* Severity-coloured accordion blocks — mirrors .query-block.block-ok /
+   .block-bad in `results.html`. The left stripe is the severity colour,
+   the card interior is the panel colour so the open body reads cleanly. */
+.rule-block {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.9rem 1rem;
+  overflow: hidden;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-.rule-card header {
+.rule-block::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--border);
+}
+/* Left-stripe colour is driven by the rule's CATEGORY (not severity), so
+   the user can scan the list and see at a glance which section of the
+   OMOP ruleset a card belongs to. Palette is borrowed from the existing
+   Prism tokens for visual continuity with the validator results panel. */
+.rule-block[data-category="anti_patterns"]::before          { background: #b5451a; }
+.rule-block[data-category="concept_standardization"]::before { background: #6b2fb3; }
+.rule-block[data-category="data_quality"]::before           { background: #0b5fae; }
+.rule-block[data-category="domain_specific"]::before        { background: #5a6573; }
+.rule-block[data-category="joins"]::before                  { background: #1a6b3a; }
+.rule-block[data-category="temporal"]::before               { background: #a14a1f; }
+
+[data-theme="dark"] .rule-block[data-category="anti_patterns"]::before          { background: #f6a878; }
+[data-theme="dark"] .rule-block[data-category="concept_standardization"]::before { background: #c792ea; }
+[data-theme="dark"] .rule-block[data-category="data_quality"]::before           { background: #82aaff; }
+[data-theme="dark"] .rule-block[data-category="domain_specific"]::before        { background: #9aa0a8; }
+[data-theme="dark"] .rule-block[data-category="joins"]::before                  { background: #9de07f; }
+[data-theme="dark"] .rule-block[data-category="temporal"]::before               { background: #ffcc80; }
+.rule-block[open] {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.rule-block-head {
+  list-style: none;
   display: flex;
-  gap: 0.4rem;
   align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.9rem 0.7rem 1rem;
+  cursor: pointer;
+  user-select: none;
 }
-.rule-card h2 {
-  font-size: 0.95rem;
+.rule-block-head::-webkit-details-marker { display: none; }
+.rule-block-head:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+.rule-block-head .sev { flex: none; }
+.rule-block-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.rule-card p {
-  font-size: 0.88rem;
+.rule-block .rule-id {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.73rem;
   color: var(--muted);
-  margin-top: 0.4rem;
+  background: transparent;
+  padding: 0;
+  flex: none;
+}
+.rule-block .cat {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  padding: 0.12rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex: none;
+}
+.rule-block-chevron {
+  color: var(--muted);
+  transition: transform 160ms ease;
+  flex: none;
+  display: inline-flex;
+}
+.rule-block[open] .rule-block-chevron { transform: rotate(180deg); }
+
+/* Example-SQL wrapper with a play button anchored to its top-right
+   corner — mirrors the copy-button placement used in the results
+   panel's JSON view. Clicking the play button dispatches the SQL to
+   the validator and auto-submits. */
+.rule-example {
+  position: relative;
+}
+.rule-block-play {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.rule-example:hover .rule-block-play { opacity: 1; }
+.rule-block-play:hover { color: var(--ok-fg); }
+.rule-block-play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+.rule-block-body {
+  padding: 0.85rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.rule-block-desc {
+  font-size: 0.88rem;
+  color: var(--text);
+  margin: 0 0 0.85rem;
+  line-height: 1.55;
+}
+.rule-block-section {
+  margin-top: 0.9rem;
+}
+.rule-block-section:first-child { margin-top: 0; }
+.rule-block-label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+/* Colour-tinted labels for before/after example pairs so the eye can
+   distinguish the buggy SQL from its corrected counterpart at a glance. */
+.rule-block-label-bad  { color: var(--err-fg); }
+.rule-block-label-good { color: var(--ok-fg); }
+.rule-block-section p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+/* Reuse the validator's .query-sql example styling verbatim for rule
+   examples — same padding, same Prism palette, same dark-mode treatment. */
+.rule-block .query-sql {
+  max-height: none;
+  margin: 0;
+}
+.rule-block-empty {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .rule-block-head { flex-wrap: wrap; }
+  .rule-block .rule-id,
+  .rule-block .cat { font-size: 0.68rem; }
+  .rules-toolbar-actions { margin-left: 0; width: 100%; }
 }
 
 /* ============================================================
@@ -1183,7 +1422,7 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
    handles the outline. */
 
 .editor-form {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
 }
 .editor-shell {
   background: var(--panel);
@@ -1440,7 +1679,10 @@ button[type="submit"].btn-validate { margin-left: auto; }
   justify-content: flex-end;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1rem;
+  /* Symmetric spacing above and below the primary Validate button.
+     .editor-form's own margin-bottom is set to 0 (see above) so neither
+     side of this gap is affected by margin collapsing. */
+  margin-top: 1.5rem;
   margin-bottom: 1.5rem;
 }
 .panel-footer-actions .htmx-indicator {

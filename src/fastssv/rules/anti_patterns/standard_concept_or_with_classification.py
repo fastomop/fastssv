@@ -209,6 +209,28 @@ class StandardConceptOrWithClassificationRule(Rule):
         "Use standard_concept = 'S' for clinical queries. "
         "Use 'C' only for vocabulary hierarchy analysis."
     )
+    long_description = (
+        "Standard concepts ('S') are meant to represent specific clinical "
+        "events; classification concepts ('C') are vocabulary-level "
+        "grouping nodes (e.g. MedDRA categories). Mixing them in a cohort "
+        "query — `standard_concept = 'S' OR standard_concept = 'C'` — "
+        "inflates counts with classification nodes that don't correspond "
+        "to any clinical event. Keep clinical queries to 'S'; reach for "
+        "'C' only when you're specifically exploring the vocabulary "
+        "hierarchy."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'S' OR c.standard_concept = 'C';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'S';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if STANDARD_CONCEPT not in sql.lower():

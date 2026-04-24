@@ -231,6 +231,13 @@ class EraForbiddenJoinValidationRule(Rule):
         "Do not join era tables with visit/provider/care_site. "
         "Use event tables (condition_occurrence, drug_exposure) for visit-level analysis."
     )
+    example_bad = (
+        "SELECT * FROM drug_era de\n"
+        "JOIN visit_occurrence vo ON de.person_id = vo.person_id;"
+    )
+    example_good = (
+        "SELECT * FROM drug_era de;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

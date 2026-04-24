@@ -171,8 +171,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--dialect",
         default="auto",
-        choices=["auto", "postgres", "tsql"],
-        help="SQL dialect for parsing (default: auto-detect).",
+        choices=[
+            "auto",
+            "postgres",
+            "tsql",
+            "oracle",
+            "redshift",
+            "bigquery",
+            "snowflake",
+            "databricks",
+            "duckdb",
+        ],
+        help=(
+            "SQL dialect for sqlglot parsing (default: auto-detect, which "
+            "picks postgres or tsql; pick explicitly for the others)."
+        ),
     )
     parser.add_argument(
         "--combined",

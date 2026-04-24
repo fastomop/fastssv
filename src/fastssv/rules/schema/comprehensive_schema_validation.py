@@ -89,6 +89,26 @@ class ComprehensiveSchemaValidationRule(Rule):
     )
     severity = Severity.ERROR
     suggested_fix = "Ensure all table and column names match the OMOP CDM 5.4 schema"
+    long_description = (
+        "Every table and column referenced in the query must exist in the "
+        "OMOP CDM 5.4 specification. This rule catches typos "
+        "(e.g. 'cohort_result' instead of 'cohort'), tables from other "
+        "schemas or vocabulary extensions that aren't part of CDM 5.4, and "
+        "non-existent columns on otherwise-valid tables. It operates only "
+        "on physical references; CTEs, subquery aliases, and computed "
+        "expressions are deliberately ignored so compound queries don't "
+        "raise false positives."
+    )
+    example_bad = (
+        "SELECT person_id, cohort_start_date\n"
+        "FROM cohort_result\n"
+        "WHERE cohort_definition_id = 1;"
+    )
+    example_good = (
+        "SELECT condition_occurrence_id, person_id, condition_start_date\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL against OMOP schema with scope awareness."""

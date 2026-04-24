@@ -322,6 +322,18 @@ class PrecedingVisitOccurrenceValidationRule(Rule):
         "preceding_visit_occurrence_id = visit_occurrence_id with separate aliases, "
         "and add person_id equality and temporal ordering constraints."
     )
+    example_bad = (
+        "SELECT vo.visit_occurrence_id FROM visit_occurrence vo\n"
+        "JOIN visit_occurrence prev ON vo.preceding_visit_occurrence_id = prev.person_id;"
+    )
+    example_good = (
+        "SELECT vo.visit_occurrence_id, vo.preceding_visit_occurrence_id\n"
+        "FROM visit_occurrence vo\n"
+        "JOIN visit_occurrence prev\n"
+        "  ON vo.preceding_visit_occurrence_id = prev.visit_occurrence_id\n"
+        "  AND vo.person_id = prev.person_id\n"
+        "  AND prev.visit_end_date <= vo.visit_start_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

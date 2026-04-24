@@ -168,6 +168,25 @@ class DomainTableJoinUsesDomainIdRule(Rule):
     suggested_fix = (
         "Change JOIN condition to: concept.domain_id = domain.domain_id"
     )
+    long_description = (
+        "The domain table has two related columns: domain_id (VARCHAR, the "
+        "natural-key string like 'Condition' or 'Drug') and "
+        "domain_concept_id (INTEGER, a concept_id that represents the "
+        "domain in the concept table). The join from concept to domain "
+        "must use the VARCHAR domain_id on both sides. Joining via "
+        "domain_concept_id mixes a string with an integer and returns zero "
+        "rows."
+    )
+    example_bad = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN domain d ON c.domain_id = d.domain_concept_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN domain d ON c.domain_id = d.domain_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

@@ -375,6 +375,30 @@ class ConceptAncestorSelfIncludeRedundancyRule(Rule):
     suggested_fix = (
         "Use concept_ancestor alone, or filter with min_levels_of_separation > 0."
     )
+    long_description = (
+        "concept_ancestor already includes every concept as its own "
+        "descendant (rows where min_levels_of_separation = 0). Adding a "
+        "UNION or OR that explicitly includes the anchor concept_id "
+        "duplicates the anchor row in the result. The fix is to trust "
+        "concept_ancestor's self-inclusion and drop the explicit branch, "
+        "unless the anchor is deliberately being flagged and tracked "
+        "separately (in which case use UNION ALL with an explicit marker "
+        "column so the duplication is intentional)."
+    )
+    example_bad = (
+        "SELECT descendant_concept_id AS concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820\n"
+        "UNION\n"
+        "SELECT 201820 AS concept_id\n"
+        "FROM concept\n"
+        "WHERE concept_id = 201820;"
+    )
+    example_good = (
+        "SELECT descendant_concept_id AS concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_ancestor" not in sql.lower():

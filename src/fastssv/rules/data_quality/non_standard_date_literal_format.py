@@ -133,6 +133,24 @@ class NonStandardDateLiteralFormatRule(Rule):
         "Use ISO 8601 date format (YYYY-MM-DD) for date literals. "
         "Example: '2011-01-01' instead of '01-jan-2011'"
     )
+    long_description = (
+        "Date literals like '01/31/2020', '31-Jan-2020', or '01-jan-2011' "
+        "are ambiguous: '01/02/2020' means January 2 in the US and "
+        "February 1 in Europe, and engines disagree about which to pick. "
+        "ISO 8601 (YYYY-MM-DD) is unambiguous and portable across every "
+        "supported dialect. Rewrite literals to the ISO form, optionally "
+        "wrapping in DATE '...' to make the type explicit."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_start_date = '01/31/2020';"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_start_date = DATE '2020-01-31';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

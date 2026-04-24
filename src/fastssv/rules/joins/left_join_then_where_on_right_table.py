@@ -277,6 +277,17 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
     suggested_fix = (
         "Use INNER JOIN or move filter into JOIN ON clause."
     )
+    example_bad = (
+        "SELECT p.person_id FROM person p\n"
+        "LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id\n"
+        "WHERE vo.visit_start_date >= DATE '2023-01-01';"
+    )
+    example_good = (
+        "SELECT p.person_id FROM person p\n"
+        "LEFT JOIN visit_occurrence vo\n"
+        "  ON p.person_id = vo.person_id\n"
+        "  AND vo.visit_start_date >= DATE '2023-01-01';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

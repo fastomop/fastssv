@@ -264,6 +264,15 @@ class MeasurementRangeLowHighValidationRule(Rule):
     severity = Severity.ERROR
     suggested_fix = "Ensure range_low <= range_high"
 
+    example_bad = (
+        "SELECT person_id FROM measurement\n"
+        "WHERE range_low > range_high;"
+    )
+    example_good = (
+        "SELECT person_id FROM measurement\n"
+        "WHERE range_low <= range_high;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:

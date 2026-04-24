@@ -219,6 +219,15 @@ class DrugQuantityValidationRule(Rule):
     severity = Severity.WARNING
     suggested_fix = "Ensure quantity >= 0"
 
+    example_bad = (
+        "SELECT person_id FROM drug_exposure\n"
+        "WHERE quantity < 0;"
+    )
+    example_good = (
+        "SELECT person_id FROM drug_exposure\n"
+        "WHERE quantity >= 0;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

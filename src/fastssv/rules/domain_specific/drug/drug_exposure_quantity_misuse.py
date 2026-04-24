@@ -211,6 +211,17 @@ class DrugExposureQuantityMisuseRule(Rule):
         "Use days_supply or date differences instead of quantity."
     )
 
+    example_bad = (
+        "SELECT person_id,\n"
+        "       drug_exposure_start_date + quantity AS end_date\n"
+        "FROM drug_exposure;"
+    )
+    example_good = (
+        "SELECT person_id,\n"
+        "       drug_exposure_start_date + days_supply AS end_date\n"
+        "FROM drug_exposure;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

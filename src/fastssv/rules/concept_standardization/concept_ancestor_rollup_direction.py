@@ -272,6 +272,30 @@ class ConceptAncestorRollupDirectionRule(Rule):
         "Join clinical concept_id to concept_ancestor.descendant_concept_id "
         "and filter on concept_ancestor.ancestor_concept_id."
     )
+    long_description = (
+        "concept_ancestor is directional: ancestor_concept_id is the broader "
+        "category (e.g. 201820 = 'Diabetes mellitus') and descendant_concept_id "
+        "is every more specific concept beneath it. To roll a clinical event "
+        "up to a parent concept, join the event's *_concept_id to "
+        "descendant_concept_id and filter on ancestor_concept_id. Swapping "
+        "the columns silently returns the wrong cohort, usually either empty "
+        "or a small unrelated subset, and is a common source of "
+        "hard-to-debug analytical errors."
+    )
+    example_bad = (
+        "SELECT co.condition_occurrence_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept_ancestor ca\n"
+        "  ON co.condition_concept_id = ca.ancestor_concept_id\n"
+        "WHERE ca.descendant_concept_id = 201820;"
+    )
+    example_good = (
+        "SELECT co.condition_occurrence_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept_ancestor ca\n"
+        "  ON co.condition_concept_id = ca.descendant_concept_id\n"
+        "WHERE ca.ancestor_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_ancestor" not in sql.lower():

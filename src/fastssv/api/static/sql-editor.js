@@ -93,6 +93,29 @@
   update();
   sync();
 
+  // ---- Cross-page handoff from /rules ----------------------------------
+  // The rules page navigates here with `?sql=<urlencoded>&autorun=1` when
+  // a user clicks the ▶ button next to an example. We wipe the editor,
+  // populate it, auto-submit, and strip the params from the URL so a
+  // reload doesn't re-trigger.
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var pendingSql = params.get("sql");
+    if (pendingSql && pendingSql.length > 0) {
+      ta.value = pendingSql;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      if (params.get("autorun") === "1") {
+        var form = ta.closest("form");
+        if (form && typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        }
+      }
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  } catch (_) { /* malformed URL — ignore */ }
+
   // ---- Ctrl/Cmd + Enter to submit ---------------------------------------
 
   ta.addEventListener("keydown", function (e) {
@@ -277,22 +300,17 @@
       var files = Array.prototype.slice.call(fileInput.files || []);
       if (files.length === 0) return;
 
-      // Hard client-side size cap: match the server's max_sql_bytes so we
-      // never ship a payload the server would reject AND never set a
-      // megabyte-scale string on the textarea (which would freeze Prism and
-      // the browser tab). The textarea advertises the limit via maxlength.
+      // File import is a REPLACE, not an append — every new import wipes
+      // the editor so the user doesn't accidentally mix the new file with
+      // whatever was there before (confusing and a frequent footgun).
       var maxBytes = parseInt(ta.getAttribute("maxlength") || "100000", 10);
       var totalBytes = files.reduce(function (s, f) { return s + (f.size || 0); }, 0);
-      var existingBytes = new Blob([ta.value || ""]).size;
 
-      if (existingBytes + totalBytes > maxBytes) {
+      if (totalBytes > maxBytes) {
         window.alert(
           "Import too large — FastSSV caps editor content at " + formatBytes(maxBytes) + ".\n\n" +
-          "Selected files:    " + formatBytes(totalBytes) + "\n" +
-          "Editor already has: " + formatBytes(existingBytes) + "\n" +
-          "Combined total:    " + formatBytes(existingBytes + totalBytes) + "\n\n" +
-          "Clear the editor first, or import a smaller file. For bulk batch " +
-          "validation, run the CLI against your files directly:\n" +
+          "Selected files: " + formatBytes(totalBytes) + "\n\n" +
+          "Split the file or run the CLI against it directly:\n" +
           "  fastssv path/to/queries.sql"
         );
         fileInput.value = "";
@@ -327,9 +345,7 @@
           return;
         }
 
-        var existing = ta.value ? ta.value.replace(/\s+$/, "") : "";
-        var draft = existing ? existing + "\n\n" + combined : combined;
-        var draftLines = draft.split("\n").length;
+        var draftLines = combined.split("\n").length;
         if (draftLines > MAX_LINES) {
           window.alert(
             "Import too long — FastSSV caps the editor at " + MAX_LINES + " lines.\n\n" +
@@ -339,7 +355,8 @@
           );
           return;
         }
-        ta.value = draft;
+        // Replace — this is the wipe-on-import behaviour the user expects.
+        ta.value = combined;
         ta.dispatchEvent(new Event("input", { bubbles: true }));
         ta.focus();
       }).catch(function (err) {

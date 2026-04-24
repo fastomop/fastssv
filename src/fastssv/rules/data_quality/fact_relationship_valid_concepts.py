@@ -293,6 +293,26 @@ class FactRelationshipValidConceptsRule(Rule):
         "Add '<alias>.invalid_reason IS NULL' for each concept join "
         "to ensure only valid concepts are used."
     )
+    long_description = (
+        "When fact_relationship is joined to concept (via "
+        "relationship_concept_id, domain_concept_id_1, or "
+        "domain_concept_id_2), the concept side can include deprecated "
+        "concepts unless filtered. That means historical or retired "
+        "relationship types sneak into the result. Add an "
+        "invalid_reason IS NULL predicate on each concept alias so "
+        "deprecated concepts are excluded."
+    )
+    example_bad = (
+        "SELECT fr.fact_id_1\n"
+        "FROM fact_relationship fr\n"
+        "JOIN concept c ON fr.relationship_concept_id = c.concept_id;"
+    )
+    example_good = (
+        "SELECT fr.fact_id_1\n"
+        "FROM fact_relationship fr\n"
+        "JOIN concept c ON fr.relationship_concept_id = c.concept_id\n"
+        "WHERE c.invalid_reason IS NULL;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

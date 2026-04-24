@@ -209,6 +209,24 @@ class ConceptNameWhitespaceRule(Rule):
         "Use TRIM(concept_name) = 'value' or RTRIM(concept_name) = 'value', "
         "or use LIKE for safer matching."
     )
+    long_description = (
+        "concept.concept_name values are sometimes loaded with trailing "
+        "whitespace or non-breaking characters from vocabulary source "
+        "files. Exact equality matching against a trimmed literal can "
+        "silently fail against those rows. Use TRIM/RTRIM on the column "
+        "side, or use LIKE with explicit wildcards, so the query is "
+        "resilient to whitespace artefacts."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE concept_name = 'Type 2 diabetes mellitus';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE TRIM(concept_name) = 'Type 2 diabetes mellitus';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_name" not in sql.lower():

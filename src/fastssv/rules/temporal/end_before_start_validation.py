@@ -356,6 +356,24 @@ class EndBeforeStartValidationRule(Rule):
     description = "Detects impossible constraints where start_date > end_date"
     severity = Severity.ERROR
     suggested_fix = "Ensure start_date <= end_date in filters"
+    long_description = (
+        "Filtering for *_start_date > *_end_date (or the equivalent "
+        "*_end_date < *_start_date) describes an impossible time range. In "
+        "OMOP tables like visit_occurrence and drug_exposure every record "
+        "has start <= end by specification, so a predicate that returns only "
+        "records where start > end selects zero rows. Useful as a data-"
+        "quality probe, but usually the operator was reversed by accident."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM visit_occurrence\n"
+        "WHERE visit_start_date > visit_end_date;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM visit_occurrence\n"
+        "WHERE visit_start_date <= visit_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

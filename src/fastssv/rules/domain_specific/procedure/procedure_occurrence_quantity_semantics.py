@@ -177,6 +177,17 @@ class ProcedureOccurrenceQuantitySemanticsRule(Rule):
     severity = Severity.WARNING
     suggested_fix = "Use COUNT(*) to count records, or use clearer aliases like 'total_units'"
 
+    example_bad = (
+        "SELECT procedure_concept_id, SUM(quantity) AS procedure_count\n"
+        "FROM procedure_occurrence\n"
+        "GROUP BY procedure_concept_id;"
+    )
+    example_good = (
+        "SELECT procedure_concept_id, COUNT(*) AS procedure_count\n"
+        "FROM procedure_occurrence\n"
+        "GROUP BY procedure_concept_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

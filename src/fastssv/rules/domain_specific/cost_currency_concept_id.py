@@ -316,6 +316,24 @@ class CostCurrencyConceptIdRule(Rule):
         "currency, or GROUP BY currency_concept_id to produce per-currency "
         "aggregates."
     )
+    long_description = (
+        "Records in the cost table carry a currency_concept_id indicating "
+        "which currency their amounts are denominated in. Summing total_paid "
+        "or total_charge across mixed currencies, without filtering or "
+        "grouping by currency_concept_id, produces a meaningless total "
+        "(literally GBP + USD + EUR). Either restrict the query to a single "
+        "currency, or aggregate per currency so downstream code can convert "
+        "before rolling the figures up further."
+    )
+    example_bad = (
+        "SELECT SUM(total_paid) AS paid_total\n"
+        "FROM cost;"
+    )
+    example_good = (
+        "SELECT SUM(total_paid) AS paid_total\n"
+        "FROM cost\n"
+        "WHERE currency_concept_id = 44818668;  -- US Dollar"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

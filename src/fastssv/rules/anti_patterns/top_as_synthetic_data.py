@@ -126,6 +126,24 @@ class TopAsSyntheticDataRule(Rule):
         "Use explicit VALUES clause, generate_series() (PostgreSQL), or recursive CTE. "
         "Example: SELECT n FROM (VALUES (1), (2), ..., (12)) AS numbers(n)"
     )
+    long_description = (
+        "Using `SELECT TOP N ROW_NUMBER() OVER (...) FROM some_table` (or "
+        "the `LIMIT N` equivalent) to generate the integers 1..N from an "
+        "arbitrary clinical table is an anti-pattern: the result depends "
+        "on the table having at least N rows, it isn't portable across "
+        "dialects, and it silently breaks when the reference table "
+        "changes size. Use a real constant-generator — an explicit VALUES "
+        "list, generate_series() in PostgreSQL, or a recursive CTE — so "
+        "the synthetic data is deterministic and dialect-agnostic."
+    )
+    example_bad = (
+        "SELECT TOP 10 ROW_NUMBER() OVER (ORDER BY person_id) AS n\n"
+        "FROM person;"
+    )
+    example_good = (
+        "SELECT n\n"
+        "FROM (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t(n);"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

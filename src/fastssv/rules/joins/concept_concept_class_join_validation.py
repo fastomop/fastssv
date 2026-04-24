@@ -206,6 +206,15 @@ class ConceptConceptClassJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    example_bad = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN concept_class cc ON c.vocabulary_id = cc.concept_class_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

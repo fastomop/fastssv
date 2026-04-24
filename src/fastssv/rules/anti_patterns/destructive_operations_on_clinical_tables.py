@@ -175,6 +175,24 @@ class DestructiveOperationsOnClinicalTablesRule(Rule):
         "Use SELECT for analysis. Perform data modifications only via "
         "controlled ETL pipelines or governed workflows."
     )
+    long_description = (
+        "Analytical SQL against OMOP clinical tables should be strictly "
+        "read-only. DELETE, UPDATE, INSERT, TRUNCATE, DROP, and ALTER "
+        "statements against person, condition_occurrence, drug_exposure, "
+        "etc. either corrupt cohort history or break reproducibility for "
+        "anyone else using the same warehouse. Any data modification "
+        "belongs in a governed ETL pipeline, not in a cohort-exploration "
+        "query."
+    )
+    example_bad = (
+        "DELETE FROM condition_occurrence\n"
+        "WHERE person_id = 1;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE person_id = 1;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

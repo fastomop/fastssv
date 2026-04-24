@@ -171,6 +171,27 @@ class MultipleMapsToTargetsRule(Rule):
         "Use DISTINCT, GROUP BY with aggregation (e.g., ARRAY_AGG), "
         "or explicitly handle multiple mappings."
     )
+    long_description = (
+        "Not every source concept maps 1:1 to a standard concept: one "
+        "ICD-10 code can split into multiple SNOMED concepts, and one NDC "
+        "can fan out to several RxNorm ingredients. Querying "
+        "concept_relationship for 'Maps to' without DISTINCT (or a GROUP "
+        "BY / aggregate handling the fan-out) duplicates source rows "
+        "whenever a one-to-many mapping exists, inflating downstream "
+        "counts. Decide deliberately: DISTINCT to collapse, GROUP BY with "
+        "ARRAY_AGG to preserve all targets, or a subquery that picks one "
+        "target per source."
+    )
+    example_bad = (
+        "SELECT cr.concept_id_1, cr.concept_id_2\n"
+        "FROM concept_relationship cr\n"
+        "WHERE cr.relationship_id = 'Maps to';"
+    )
+    example_good = (
+        "SELECT DISTINCT cr.concept_id_1, cr.concept_id_2\n"
+        "FROM concept_relationship cr\n"
+        "WHERE cr.relationship_id = 'Maps to';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_relationship" not in sql.lower():

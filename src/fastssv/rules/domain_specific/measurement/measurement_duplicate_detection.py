@@ -292,6 +292,16 @@ class MeasurementDuplicateDetectionRule(Rule):
         "OVER (PARTITION BY person_id, measurement_concept_id, measurement_date)."
     )
 
+    example_bad = (
+        "SELECT AVG(value_as_number) FROM measurement;"
+    )
+    example_good = (
+        "SELECT person_id, measurement_date, measurement_concept_id,\n"
+        "       AVG(value_as_number) AS avg_value\n"
+        "FROM measurement\n"
+        "GROUP BY person_id, measurement_date, measurement_concept_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

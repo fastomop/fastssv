@@ -217,6 +217,15 @@ class CohortDefinitionSyntaxNotExecutableSqlRule(Rule):
         "cohort_definition_syntax should only be retrieved, not filtered with string patterns."
     )
 
+    example_bad = (
+        "SELECT cohort_definition_id FROM cohort_definition\n"
+        "WHERE cohort_definition_syntax LIKE '%SELECT%';"
+    )
+    example_good = (
+        "SELECT cohort_definition_id, cohort_definition_syntax\n"
+        "FROM cohort_definition;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

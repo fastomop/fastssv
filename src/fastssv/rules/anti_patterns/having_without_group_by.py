@@ -112,6 +112,25 @@ class HavingWithoutGroupByRule(Rule):
     suggested_fix = (
         "Add GROUP BY clause to aggregate data, or use WHERE clause for non-aggregated filtering."
     )
+    long_description = (
+        "HAVING filters aggregate groups; it is designed to run after "
+        "GROUP BY collapses rows. Without a GROUP BY clause, HAVING "
+        "filters over an implicit single-group aggregate, which some "
+        "dialects accept with surprising semantics and others reject. In "
+        "OMOP analytics this is almost always a mistake — the author "
+        "wanted WHERE (for row-level filtering) or forgot to add the "
+        "GROUP BY for their aggregates."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM person\n"
+        "HAVING person_id > 1;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM person\n"
+        "WHERE person_id > 1;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

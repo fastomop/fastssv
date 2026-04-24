@@ -255,6 +255,17 @@ class VisitOutpatientSameDayValidationRule(Rule):
         "or adjust date range for outpatient visits"
     )
 
+    example_bad = (
+        "SELECT person_id FROM visit_occurrence\n"
+        "WHERE visit_concept_id = 9202\n"
+        "  AND DATEDIFF(day, visit_start_date, visit_end_date) > 30;"
+    )
+    example_good = (
+        "SELECT person_id FROM visit_occurrence\n"
+        "WHERE visit_concept_id = 9202\n"
+        "  AND DATEDIFF(day, visit_start_date, visit_end_date) <= 1;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

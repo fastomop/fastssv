@@ -246,6 +246,24 @@ class NegativeConceptIdValidationRule(Rule):
     description = "Concept IDs must be non-negative integers (>= 0)."
     severity = Severity.ERROR
     suggested_fix = "Use valid non-negative concept_id values. Use 0 for unmapped."
+    long_description = (
+        "Every concept_id in OMOP is a non-negative integer (>= 0); 0 "
+        "represents unmapped records, positive values are real concepts. "
+        "Negative literals never match any concept and are usually the "
+        "result of either a sign error or a confusion with ROW_NUMBER-"
+        "style synthetic IDs from another system. Replace the literal "
+        "with the correct non-negative concept_id."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = -1;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM condition_occurrence\n"
+        "WHERE condition_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

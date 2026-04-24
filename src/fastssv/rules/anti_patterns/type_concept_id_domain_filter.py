@@ -284,6 +284,28 @@ class TypeConceptIdDomainFilterRule(Rule):
     suggested_fix = (
         "Use domain_id = 'Type Concept' or remove the domain_id filter."
     )
+    long_description = (
+        "The `*_type_concept_id` columns resolve to concepts whose "
+        "domain_id is 'Type Concept' — they describe record provenance "
+        "(EHR, claim, patient-reported), not clinical entities. Joining "
+        "`*_type_concept_id` to concept and then filtering "
+        "domain_id = 'Condition' (or 'Drug', etc.) always returns zero "
+        "rows because type concepts don't live in clinical domains. Use "
+        "domain_id = 'Type Concept' if you need the filter, or drop the "
+        "domain_id predicate entirely."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_type_concept_id = c.concept_id\n"
+        "WHERE c.domain_id = 'Condition';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_type_concept_id = c.concept_id\n"
+        "WHERE c.domain_id = 'Type Concept';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "type_concept_id" not in sql.lower() or "domain_id" not in sql.lower():

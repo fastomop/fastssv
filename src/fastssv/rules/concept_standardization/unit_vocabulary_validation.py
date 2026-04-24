@@ -315,6 +315,26 @@ class UnitVocabularyValidationRule(Rule):
         "Use vocabulary_id = 'UCUM' for unit concept lookups, or remove "
         "the vocabulary_id filter entirely."
     )
+    long_description = (
+        "OMOP unit concepts live in the UCUM vocabulary (Unified Code for "
+        "Units of Measure). Filtering unit_concept_id joins with "
+        "vocabulary_id = 'LOINC' (or any other non-UCUM vocabulary) "
+        "returns zero rows because units are not stored there. Use UCUM "
+        "for unit lookups, or drop the vocabulary filter if the join "
+        "already constrains to unit_concept_id."
+    )
+    example_bad = (
+        "SELECT m.person_id\n"
+        "FROM measurement m\n"
+        "JOIN concept c ON m.unit_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'LOINC';"
+    )
+    example_good = (
+        "SELECT m.person_id\n"
+        "FROM measurement m\n"
+        "JOIN concept c ON m.unit_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'UCUM';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

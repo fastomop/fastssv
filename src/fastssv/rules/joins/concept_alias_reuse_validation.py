@@ -272,6 +272,17 @@ class ConceptAliasReuseValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "JOIN concept c ON co.condition_source_concept_id = c.concept_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN concept c1 ON co.condition_concept_id = c1.concept_id\n"
+        "JOIN concept c2 ON co.condition_source_concept_id = c2.concept_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

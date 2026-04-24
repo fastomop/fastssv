@@ -298,6 +298,29 @@ class ConceptAncestorCrossDomainValidation(Rule):
         "Match descendant domain_id to the ancestor's domain, or use "
         "concept_relationship for cross-domain relationships."
     )
+    long_description = (
+        "concept_ancestor hierarchies are built within a single domain: a "
+        "Condition ancestor has only Condition descendants, a Drug ancestor "
+        "has only Drug descendants, and so on. Filtering descendants by a "
+        "different domain_id always yields zero rows, which is almost never "
+        "what the author intended. Cross-domain lookups belong in "
+        "concept_relationship (e.g. 'Has indication' from Drug to Condition), "
+        "not in concept_ancestor."
+    )
+    example_bad = (
+        "SELECT ca.descendant_concept_id\n"
+        "FROM concept_ancestor ca\n"
+        "JOIN concept c ON ca.descendant_concept_id = c.concept_id\n"
+        "WHERE ca.ancestor_concept_id = 201820\n"
+        "  AND c.domain_id = 'Drug';"
+    )
+    example_good = (
+        "SELECT ca.descendant_concept_id\n"
+        "FROM concept_ancestor ca\n"
+        "JOIN concept c ON ca.descendant_concept_id = c.concept_id\n"
+        "WHERE ca.ancestor_concept_id = 201820\n"
+        "  AND c.domain_id = 'Condition';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_ancestor" not in sql.lower():

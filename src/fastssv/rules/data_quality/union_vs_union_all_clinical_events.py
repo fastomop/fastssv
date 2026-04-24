@@ -206,6 +206,29 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
         "Replace UNION with UNION ALL to preserve all clinical events. "
         "If deduplication is intentional, document it explicitly."
     )
+    long_description = (
+        "UNION de-duplicates rows; UNION ALL preserves them. Two distinct "
+        "clinical events can share identical values on the selected "
+        "columns (same person, same date, different visit) — "
+        "de-duplicating them via UNION silently drops legitimate events "
+        "and under-counts the cohort. Use UNION ALL for clinical-event "
+        "combinations; use UNION only when you genuinely want to "
+        "collapse duplicates and can justify why."
+    )
+    example_bad = (
+        "SELECT person_id, condition_start_date AS event_date\n"
+        "FROM condition_occurrence\n"
+        "UNION\n"
+        "SELECT person_id, drug_exposure_start_date\n"
+        "FROM drug_exposure;"
+    )
+    example_good = (
+        "SELECT person_id, condition_start_date AS event_date\n"
+        "FROM condition_occurrence\n"
+        "UNION ALL\n"
+        "SELECT person_id, drug_exposure_start_date\n"
+        "FROM drug_exposure;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         # --- Fast pre-check ---

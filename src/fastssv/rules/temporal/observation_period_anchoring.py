@@ -265,6 +265,30 @@ class ObservationPeriodAnchoringRule(Rule):
         "AND clinical_table.date BETWEEN op.observation_period_start_date "
         "AND op.observation_period_end_date"
     )
+    long_description = (
+        "When a query touches observation_period alongside a clinical table, "
+        "OMOP semantics require the two to be linked by person_id, otherwise "
+        "the join produces every (person, observation_period) combination, "
+        "mixing one patient's observation window with another's clinical "
+        "events. The rule fires when observation_period appears in the FROM "
+        "list without a person_id equality linking it to the clinical side. "
+        "If you only need observation_period's date columns without tying "
+        "them to a specific patient, that is usually a query-design smell; "
+        "restructure to make the person_id join explicit."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co, observation_period op\n"
+        "WHERE co.condition_start_date BETWEEN op.observation_period_start_date\n"
+        "  AND op.observation_period_end_date;"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN observation_period op ON co.person_id = op.person_id\n"
+        "WHERE co.condition_start_date BETWEEN op.observation_period_start_date\n"
+        "  AND op.observation_period_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

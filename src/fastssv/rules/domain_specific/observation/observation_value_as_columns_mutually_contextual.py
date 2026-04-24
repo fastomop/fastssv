@@ -288,6 +288,15 @@ class ObservationValueAsColumnsMutuallyContextualRule(Rule):
         "Use a single value_as_* column or OR conditions for alternatives."
     )
 
+    example_bad = (
+        "SELECT person_id FROM observation\n"
+        "WHERE value_as_number > 5 AND value_as_string = 'positive';"
+    )
+    example_good = (
+        "SELECT person_id FROM observation\n"
+        "WHERE value_as_number > 5;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

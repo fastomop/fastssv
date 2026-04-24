@@ -239,6 +239,32 @@ class ConceptClassIdIngredientForDrugGroupingRule(Rule):
         "Use concept_class_id = 'Ingredient' or use concept_ancestor to roll up "
         "drug products to ingredients."
     )
+    long_description = (
+        "Drug concepts in OMOP are stored at several granularities: "
+        "Ingredient (metformin), Clinical Drug Form (metformin tablet), "
+        "Clinical Drug (metformin 500 mg oral tablet), Branded Drug, and so "
+        "on. Labelling a result column 'ingredient' while grouping by a "
+        "more specific concept_class (like Clinical Drug) reports "
+        "formulation-level counts under an ingredient name, which "
+        "fragments and undercounts real ingredient usage. Either filter "
+        "directly to concept_class_id = 'Ingredient', or roll products up "
+        "to their ingredient via concept_ancestor."
+    )
+    example_bad = (
+        "SELECT c.concept_name AS ingredient, COUNT(*) AS n\n"
+        "FROM drug_exposure de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
+        "WHERE c.concept_class_id = 'Clinical Drug'\n"
+        "GROUP BY c.concept_name;"
+    )
+    example_good = (
+        "SELECT ing.concept_name AS ingredient, COUNT(*) AS n\n"
+        "FROM drug_exposure de\n"
+        "JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id\n"
+        "JOIN concept ing ON ca.ancestor_concept_id = ing.concept_id\n"
+        "WHERE ing.concept_class_id = 'Ingredient'\n"
+        "GROUP BY ing.concept_name;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

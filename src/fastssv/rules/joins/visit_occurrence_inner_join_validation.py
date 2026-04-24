@@ -214,6 +214,14 @@ class VisitOccurrenceInnerJoinValidationRule(Rule):
         "Use LEFT JOIN to preserve all events, or explicitly filter "
         "visit_occurrence_id to indicate intentional restriction."
     )
+    example_bad = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id;"
+    )
+    example_good = (
+        "SELECT co.person_id FROM condition_occurrence co\n"
+        "LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

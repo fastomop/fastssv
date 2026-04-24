@@ -141,6 +141,24 @@ class NullComparisonOperatorRule(Rule):
         "Replace '= NULL' with 'IS NULL' and '<> NULL' or '!= NULL' with 'IS NOT NULL'. "
         "For example: WHERE column IS NULL instead of WHERE column = NULL"
     )
+    long_description = (
+        "Comparing a column to NULL with `=`, `<>`, `!=`, `<`, `>`, `<=`, "
+        "or `>=` always evaluates to UNKNOWN, which behaves as FALSE in "
+        "WHERE and HAVING. A predicate like `WHERE death_date = NULL` "
+        "returns zero rows regardless of the data, silently. Use the "
+        "dedicated predicates `IS NULL` and `IS NOT NULL` — they are the "
+        "only correct way to test nullability in SQL."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM death\n"
+        "WHERE death_date = NULL;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM death\n"
+        "WHERE death_date IS NULL;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations = []

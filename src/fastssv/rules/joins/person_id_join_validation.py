@@ -178,6 +178,14 @@ class PersonIdJoinValidationRule(Rule):
         "Join person_id only with person_id. "
         "If linking tables, use the correct foreign key (e.g., visit_occurrence_id)."
     )
+    example_bad = (
+        "SELECT * FROM person p\n"
+        "JOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id;"
+    )
+    example_good = (
+        "SELECT * FROM person p\n"
+        "JOIN visit_occurrence vo ON p.person_id = vo.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

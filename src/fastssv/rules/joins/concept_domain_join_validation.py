@@ -189,6 +189,15 @@ class ConceptDomainJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    example_bad = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN domain d ON c.vocabulary_id = d.domain_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN domain d ON c.domain_id = d.domain_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

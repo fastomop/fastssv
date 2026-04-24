@@ -166,6 +166,16 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
         "via visit_occurrence_id when visit-level context is needed"
     )
 
+    example_bad = (
+        "SELECT visit_detail_id, visit_detail_concept_id\n"
+        "FROM visit_detail;"
+    )
+    example_good = (
+        "SELECT vd.visit_detail_id, vd.visit_detail_concept_id, vo.visit_concept_id\n"
+        "FROM visit_detail vd\n"
+        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

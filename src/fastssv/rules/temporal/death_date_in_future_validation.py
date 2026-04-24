@@ -229,6 +229,22 @@ class DeathDateInFutureValidationRule(Rule):
 
     severity = Severity.WARNING
     suggested_fix = "Ensure death_date <= CURRENT_DATE"
+    long_description = (
+        "Filtering for death_date > CURRENT_DATE describes patients who die "
+        "in the future, which is not possible. Like the clinical-event-in-"
+        "future rule, this is almost always either a data-quality audit "
+        "(looking for impossible deaths to clean up) or an accidentally "
+        "reversed comparison. The severity is WARNING rather than ERROR to "
+        "allow legitimate audit queries."
+    )
+    example_bad = (
+        "SELECT * FROM death\n"
+        "WHERE death_date > CURRENT_DATE;"
+    )
+    example_good = (
+        "SELECT * FROM death\n"
+        "WHERE death_date <= CURRENT_DATE;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

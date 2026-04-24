@@ -228,6 +228,16 @@ class MeasurementCrossUnitComparisonRule(Rule):
         "Alternatively, convert values to a common unit before aggregation."
     )
 
+    example_bad = (
+        "SELECT AVG(m.value_as_number) FROM measurement m\n"
+        "WHERE m.measurement_concept_id = 3004249;"
+    )
+    example_good = (
+        "SELECT AVG(m.value_as_number) FROM measurement m\n"
+        "WHERE m.measurement_concept_id = 3004249\n"
+        "  AND m.unit_concept_id = 8876;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         seen: Set[str] = set()

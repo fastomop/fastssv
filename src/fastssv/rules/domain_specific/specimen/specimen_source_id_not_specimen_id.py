@@ -135,6 +135,15 @@ class SpecimenSourceIdNotSpecimenIdRule(Rule):
         "Use specimen_source_id only for filtering."
     )
 
+    example_bad = (
+        "SELECT s.specimen_id FROM specimen s\n"
+        "JOIN measurement m ON s.specimen_source_id = m.measurement_source_value;"
+    )
+    example_good = (
+        "SELECT s.specimen_id FROM specimen s\n"
+        "JOIN measurement m ON s.specimen_id = m.specimen_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

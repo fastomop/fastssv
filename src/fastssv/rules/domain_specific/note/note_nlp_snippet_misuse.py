@@ -324,6 +324,15 @@ class NoteNlpSnippetMisuseRule(Rule):
         "Use note_nlp_concept_id instead of text matching."
     )
 
+    example_bad = (
+        "SELECT note_nlp_id FROM note_nlp\n"
+        "WHERE snippet LIKE '%diabetes%';"
+    )
+    example_good = (
+        "SELECT note_nlp_id FROM note_nlp\n"
+        "WHERE note_nlp_concept_id = 201820;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

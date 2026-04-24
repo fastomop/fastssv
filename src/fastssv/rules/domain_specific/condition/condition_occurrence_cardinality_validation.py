@@ -205,6 +205,18 @@ class ConditionOccurrenceCardinalityValidationRule(Rule):
         "Use GROUP BY person_id, DISTINCT, or condition_era to avoid duplicate rows per person."
     )
 
+    example_bad = (
+        "SELECT p.person_id, co.condition_concept_id\n"
+        "FROM person p\n"
+        "JOIN condition_occurrence co ON p.person_id = co.person_id;"
+    )
+    example_good = (
+        "SELECT p.person_id, COUNT(DISTINCT co.condition_concept_id) AS n_conditions\n"
+        "FROM person p\n"
+        "JOIN condition_occurrence co ON p.person_id = co.person_id\n"
+        "GROUP BY p.person_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

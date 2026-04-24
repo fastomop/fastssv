@@ -254,6 +254,15 @@ class CostTableDomainValidationRule(Rule):
     suggested_fix = (
         "Add cost.cost_domain_id = '<domain>' matching the joined clinical table."
     )
+    example_bad = (
+        "SELECT * FROM cost c\n"
+        "JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id;"
+    )
+    example_good = (
+        "SELECT * FROM cost c\n"
+        "JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id\n"
+        "WHERE c.cost_domain_id = 'Drug';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -122,6 +122,23 @@ class DuplicateColumnAliasRule(Rule):
         "Remove duplicate columns or ensure each column represents a unique calculation. "
         "If you need the same value with different names, consider using views or derived tables."
     )
+    long_description = (
+        "Selecting the same expression twice with different aliases is "
+        "almost always the result of copy-paste during iteration. It "
+        "produces result-set columns that carry the same value row-for-row "
+        "but different names, doubling the output width without adding "
+        "information. Remove the duplicate, or if you genuinely need the "
+        "same value projected twice, make the second projection "
+        "compute something different (or name them differently via a view)."
+    )
+    example_bad = (
+        "SELECT person_id AS pid_a, person_id AS pid_b\n"
+        "FROM person;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM person;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

@@ -255,6 +255,31 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
     suggested_fix = (
         "Use concept_ancestor table instead for transitive hierarchy traversal."
     )
+    long_description = (
+        "concept_relationship stores only direct (one-hop) relationships. "
+        "Chaining multiple self-joins on it to simulate transitive closure "
+        "('Subsumes' through three levels of hierarchy) is fragile: it "
+        "only captures descendants at the exact depth you chained for, "
+        "misses concepts with multiple inheritance paths, and gets slower "
+        "with each additional self-join. concept_ancestor pre-computes all "
+        "transitive hierarchical paths and is the correct table for "
+        "'everything beneath this concept' queries."
+    )
+    example_bad = (
+        "SELECT cr3.concept_id_2\n"
+        "FROM concept_relationship cr1\n"
+        "JOIN concept_relationship cr2 ON cr1.concept_id_2 = cr2.concept_id_1\n"
+        "JOIN concept_relationship cr3 ON cr2.concept_id_2 = cr3.concept_id_1\n"
+        "WHERE cr1.concept_id_1 = 201820\n"
+        "  AND cr1.relationship_id = 'Subsumes'\n"
+        "  AND cr2.relationship_id = 'Subsumes'\n"
+        "  AND cr3.relationship_id = 'Subsumes';"
+    )
+    example_good = (
+        "SELECT descendant_concept_id AS concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_relationship" not in sql.lower():

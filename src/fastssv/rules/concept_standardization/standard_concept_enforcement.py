@@ -122,6 +122,30 @@ class StandardConceptEnforcementRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "JOIN concept table and add: WHERE concept.standard_concept = 'S'"
+    long_description = (
+        "Standard OMOP *_concept_id columns can point to non-standard or "
+        "deprecated concepts unless the query explicitly enforces "
+        "standard_concept = 'S'. Without that filter, cohort queries "
+        "silently mix in classification-only concepts ('C'), invalid "
+        "entries, or legacy mappings that never should have persisted, "
+        "producing over-counts or non-reproducible results across sites. "
+        "Era tables (condition_era, drug_era) and a handful of other "
+        "columns are already guaranteed-standard by spec and are "
+        "excluded from this rule."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'SNOMED';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'SNOMED'\n"
+        "  AND c.standard_concept = 'S';"
+    )
 
     # Fields that are already guaranteed to be standard by OMOP CDM design
     # These do NOT require explicit standard_concept = 'S' enforcement

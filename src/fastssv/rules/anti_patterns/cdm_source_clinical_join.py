@@ -139,6 +139,23 @@ class CdmSourceClinicalJoinRule(Rule):
         "Remove the JOIN to cdm_source. Query it separately or use a scalar subquery, "
         "e.g. (SELECT cdm_version FROM cdm_source)."
     )
+    long_description = (
+        "cdm_source is a single-row metadata table describing the CDM "
+        "instance (name, version, release date). It has no primary key "
+        "and no foreign-key columns. Joining it to clinical tables "
+        "multiplies every clinical row by the cdm_source row count (a "
+        "Cartesian product). Pull its values with a scalar subquery or a "
+        "separate SELECT, never through a JOIN."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM person p, cdm_source cs;"
+    )
+    example_good = (
+        "SELECT *,\n"
+        "       (SELECT cdm_version FROM cdm_source) AS cdm_version\n"
+        "FROM person;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

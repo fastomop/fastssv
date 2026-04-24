@@ -258,6 +258,24 @@ class DrugExposureLotNumberIsFreeTextRule(Rule):
         "Remove joins between drug_exposure.lot_number and concept table. "
         "Avoid numeric comparisons with lot_number. Treat lot_number as a free-text field."
     )
+    long_description = (
+        "drug_exposure.lot_number is a free-text VARCHAR field that stores "
+        "the manufacturer's lot identifier for the dispensed drug. It can "
+        "contain letters, digits, hyphens, and other characters; it has "
+        "no mapping into the concept table and no reliable numeric "
+        "semantics. Joining it to concept or comparing it numerically "
+        "returns zero or meaningless rows."
+    )
+    example_bad = (
+        "SELECT de.person_id\n"
+        "FROM drug_exposure de\n"
+        "JOIN concept c ON de.lot_number = c.concept_name;"
+    )
+    example_good = (
+        "SELECT de.person_id\n"
+        "FROM drug_exposure de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

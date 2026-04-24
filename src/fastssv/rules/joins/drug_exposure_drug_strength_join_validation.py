@@ -180,6 +180,14 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
     suggested_fix = (
         "Use: drug_exposure.drug_concept_id = drug_strength.drug_concept_id"
     )
+    example_bad = (
+        "SELECT * FROM drug_exposure de\n"
+        "JOIN drug_strength ds ON de.drug_source_concept_id = ds.drug_concept_id;"
+    )
+    example_good = (
+        "SELECT * FROM drug_exposure de\n"
+        "JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -219,6 +219,25 @@ class ColumnTypeValidationRule(Rule):
     suggested_fix = (
         "Ensure column types are compatible. Use proper literals or CAST explicitly if needed."
     )
+    long_description = (
+        "OMOP columns have specific types: *_concept_id and primary-key "
+        "*_id columns are INTEGER, source_value and name columns are "
+        "VARCHAR. Joining or comparing across incompatible types "
+        "(e.g. INTEGER = VARCHAR) forces implicit casting and in some "
+        "dialects silently returns zero rows or raises a type error. Use "
+        "compatible columns or CAST explicitly when you need cross-type "
+        "comparison."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM person p\n"
+        "JOIN condition_occurrence co ON p.person_id = co.condition_source_value;"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM person p\n"
+        "JOIN condition_occurrence co ON p.person_id = co.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

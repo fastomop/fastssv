@@ -177,6 +177,27 @@ class DatetimeBetweenDateLiteralRule(Rule):
         "Use >= start AND < next_day, or include time in end literal, "
         "or use *_date column instead."
     )
+    long_description = (
+        "BETWEEN '2023-01-01' AND '2023-12-31' on a *_datetime column quietly "
+        "drops every record from 2023-12-31 after 00:00:00, because the date "
+        "literal is cast to midnight on that day. The problem is silent: the "
+        "query returns a superset of 2023 data minus the last day's non-midnight "
+        "measurements, which rarely shows up in spot-checks. Use half-open "
+        "intervals (>= '2023-01-01' AND < '2024-01-01'), cast both sides to "
+        "timestamps, or switch to the *_date column when sub-day precision "
+        "is not needed."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM measurement\n"
+        "WHERE measurement_datetime BETWEEN DATE '2023-01-01' AND DATE '2023-12-31';"
+    )
+    example_good = (
+        "SELECT *\n"
+        "FROM measurement\n"
+        "WHERE measurement_datetime >= TIMESTAMP '2023-01-01 00:00:00'\n"
+        "  AND measurement_datetime <  TIMESTAMP '2024-01-01 00:00:00';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

@@ -282,6 +282,17 @@ class DrugExposureSigParsingRule(Rule):
         "instead of parsing sig."
     )
 
+    example_bad = (
+        "SELECT CAST(SUBSTRING(sig, 1, 3) AS INT) AS dose\n"
+        "FROM drug_exposure;"
+    )
+    example_good = (
+        "SELECT de.person_id, ds.amount_value, ds.amount_unit_concept_id\n"
+        "FROM drug_exposure de\n"
+        "JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id\n"
+        "WHERE ds.invalid_reason IS NULL;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

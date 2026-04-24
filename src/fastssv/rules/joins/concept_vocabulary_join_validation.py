@@ -197,6 +197,15 @@ class ConceptVocabularyJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    example_bad = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN vocabulary v ON c.domain_id = v.vocabulary_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id FROM concept c\n"
+        "JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

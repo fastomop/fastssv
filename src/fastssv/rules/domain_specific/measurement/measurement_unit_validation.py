@@ -138,6 +138,18 @@ class MeasurementUnitValidationRule(Rule):
         "AND vocabulary_id = 'UCUM')."
     )
 
+    example_bad = (
+        "SELECT m.person_id FROM measurement m\n"
+        "WHERE m.measurement_concept_id = 3004249\n"
+        "  AND m.value_as_number > 140;"
+    )
+    example_good = (
+        "SELECT m.person_id FROM measurement m\n"
+        "WHERE m.measurement_concept_id = 3004249\n"
+        "  AND m.value_as_number > 140\n"
+        "  AND m.unit_concept_id = 8876;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []

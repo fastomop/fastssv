@@ -243,6 +243,16 @@ class DrugStrengthNumeratorDenominatorForConcentrationRule(Rule):
         "Include denominator_value for concentration context when relevant."
     )
 
+    example_bad = (
+        "SELECT drug_concept_id, amount_value FROM drug_strength\n"
+        "WHERE amount_value > 500;"
+    )
+    example_good = (
+        "SELECT drug_concept_id,\n"
+        "       COALESCE(amount_value, numerator_value / denominator_value) AS dose\n"
+        "FROM drug_strength;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "drug_strength" not in sql.lower():
             return []

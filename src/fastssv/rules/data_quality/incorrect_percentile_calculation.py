@@ -102,6 +102,40 @@ class IncorrectPercentileCalculationRule(Rule):
         "Ensure each percentile column uses a distinct threshold (e.g., 0.25, 0.50, 0.75), "
         "or replace manual percentile logic with NTILE(4) or PERCENTILE_CONT()."
     )
+    long_description = (
+        "Hand-rolled percentile calculations using ROW_NUMBER() + "
+        "population_size + CASE WHEN are easy to copy-paste and easy to "
+        "get wrong: the classic bug is percentile_25, median, and "
+        "percentile_75 all re-using the 0.25 threshold, so three columns "
+        "report the same number. If you spot three aliased percentile "
+        "columns sharing a threshold, either set them to 0.25/0.50/0.75 "
+        "respectively or replace the manual logic with NTILE(4) or "
+        "PERCENTILE_CONT() from the SQL standard."
+    )
+    example_bad = (
+        "SELECT\n"
+        "  MAX(CASE WHEN order_nr < 25 * population_size THEN value END) AS percentile_25,\n"
+        "  MAX(CASE WHEN order_nr < 25 * population_size THEN value END) AS median,\n"
+        "  MAX(CASE WHEN order_nr < 25 * population_size THEN value END) AS percentile_75\n"
+        "FROM (\n"
+        "  SELECT value,\n"
+        "         ROW_NUMBER() OVER (ORDER BY value) AS order_nr,\n"
+        "         COUNT(*) OVER () AS population_size\n"
+        "  FROM measurement\n"
+        ") t;"
+    )
+    example_good = (
+        "SELECT\n"
+        "  MAX(CASE WHEN order_nr < 0.25 * population_size THEN value END) AS percentile_25,\n"
+        "  MAX(CASE WHEN order_nr < 0.50 * population_size THEN value END) AS median,\n"
+        "  MAX(CASE WHEN order_nr < 0.75 * population_size THEN value END) AS percentile_75\n"
+        "FROM (\n"
+        "  SELECT value,\n"
+        "         ROW_NUMBER() OVER (ORDER BY value) AS order_nr,\n"
+        "         COUNT(*) OVER () AS population_size\n"
+        "  FROM measurement\n"
+        ") t;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

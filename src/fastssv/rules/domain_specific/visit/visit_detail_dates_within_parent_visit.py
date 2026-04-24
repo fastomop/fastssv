@@ -228,6 +228,18 @@ class VisitDetailDatesWithinParentVisitRule(Rule):
         "Ensure visit_detail dates are within visit_start_date and visit_end_date"
     )
 
+    example_bad = (
+        "SELECT vd.visit_detail_id FROM visit_detail vd\n"
+        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id\n"
+        "WHERE vd.visit_detail_start_date < vo.visit_start_date;"
+    )
+    example_good = (
+        "SELECT vd.visit_detail_id FROM visit_detail vd\n"
+        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id\n"
+        "WHERE vd.visit_detail_start_date >= vo.visit_start_date\n"
+        "  AND vd.visit_detail_end_date <= vo.visit_end_date;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:

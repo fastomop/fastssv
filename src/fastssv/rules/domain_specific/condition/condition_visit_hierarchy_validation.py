@@ -199,6 +199,19 @@ class ConditionVisitHierarchyValidationRule(Rule):
         "ON vd.visit_occurrence_id = vo.visit_occurrence_id"
     )
 
+    example_bad = (
+        "SELECT co.condition_concept_id, vo.visit_start_date\n"
+        "FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id,\n"
+        "     visit_occurrence vo;"
+    )
+    example_good = (
+        "SELECT co.condition_concept_id, vo.visit_start_date\n"
+        "FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id\n"
+        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;"
+    )
+
     def validate(
         self,
         sql: str,

@@ -305,6 +305,15 @@ class RelationshipBooleanComparisonRule(Rule):
         "Use 0/1 or TRUE/FALSE instead of strings."
     )
 
+    example_bad = (
+        "SELECT relationship_id FROM relationship\n"
+        "WHERE is_hierarchical = 'yes';"
+    )
+    example_good = (
+        "SELECT relationship_id FROM relationship\n"
+        "WHERE is_hierarchical = 1;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

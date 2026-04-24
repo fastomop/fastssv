@@ -135,6 +135,15 @@ class DeathCauseSourceConceptValidationRule(Rule):
     severity = Severity.ERROR
     suggested_fix = "Replace with death.cause_concept_id"
 
+    example_bad = (
+        "SELECT person_id FROM death\n"
+        "WHERE cause_source_concept_id = 4316491;"
+    )
+    example_good = (
+        "SELECT person_id FROM death\n"
+        "WHERE cause_concept_id = 4316491;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:

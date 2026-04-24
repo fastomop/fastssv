@@ -168,6 +168,25 @@ class ConceptClassTableJoinUsesConceptClassIdRule(Rule):
     suggested_fix = (
         "Change JOIN condition to: concept.concept_class_id = concept_class.concept_class_id"
     )
+    long_description = (
+        "The concept_class table has two related columns: concept_class_id "
+        "(VARCHAR, the natural-key string like 'Ingredient' or 'Clinical "
+        "Drug') and concept_class_concept_id (INTEGER, a concept_id that "
+        "represents the class itself in the concept table). The join from "
+        "concept to concept_class must use the VARCHAR concept_class_id on "
+        "both sides. Joining via concept_class_concept_id mixes a string "
+        "with an integer and usually returns zero rows."
+    )
+    example_bad = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

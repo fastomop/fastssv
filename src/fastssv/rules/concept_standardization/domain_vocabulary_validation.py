@@ -453,6 +453,28 @@ class DomainVocabularyValidationRule(Rule):
         "Use the correct standard vocabulary for the domain, or use "
         "*_source_concept_id for source vocabulary filtering."
     )
+    long_description = (
+        "Each OMOP domain has a canonical standard vocabulary: Condition → "
+        "SNOMED, Drug → RxNorm/RxNorm Extension, Procedure → SNOMED / CPT4 "
+        "/ HCPCS depending on site, Measurement → LOINC, Unit → UCUM. "
+        "Filtering a standard *_concept_id column by a *source* vocabulary "
+        "like ICD10CM, ICD9CM, or NDC returns zero rows because those "
+        "codes live on the source side. Use the domain's standard "
+        "vocabulary, or switch to the *_source_concept_id column if you "
+        "genuinely want to filter on the originating code system."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'ICD10CM';"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+        "WHERE c.vocabulary_id = 'SNOMED';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if CONCEPT_TABLE not in sql.lower():

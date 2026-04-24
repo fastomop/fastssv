@@ -204,6 +204,27 @@ class ConceptSynonymLanguageConceptIdRule(Rule):
     suggested_fix = (
         "Add: AND language_concept_id = 4180186 (English), unless multilingual results are intended."
     )
+    long_description = (
+        "The concept_synonym table stores synonym names in many languages: "
+        "English (language_concept_id = 4180186), Spanish, German, French, "
+        "Dutch, etc. Searching concept_synonym_name with a free-text match "
+        "(LIKE / equality) without filtering by language inadvertently "
+        "returns concepts whose non-English synonyms contain the query "
+        "string, which is almost never the intent in English-speaking "
+        "deployments. Add an explicit language filter, or use IN to allow "
+        "a deliberate multilingual scope."
+    )
+    example_bad = (
+        "SELECT cs.concept_id\n"
+        "FROM concept_synonym cs\n"
+        "WHERE cs.concept_synonym_name LIKE '%diabetes%';"
+    )
+    example_good = (
+        "SELECT cs.concept_id\n"
+        "FROM concept_synonym cs\n"
+        "WHERE cs.concept_synonym_name LIKE '%diabetes%'\n"
+        "  AND cs.language_concept_id = 4180186;  -- English"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

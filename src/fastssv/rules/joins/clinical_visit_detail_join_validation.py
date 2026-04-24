@@ -212,6 +212,15 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
 
         return message, suggested_fix
 
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

@@ -111,6 +111,15 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
         "discharge_to_* → discharged_to_*"
     )
 
+    example_bad = (
+        "SELECT visit_occurrence_id, admitting_source_concept_id\n"
+        "FROM visit_occurrence;"
+    )
+    example_good = (
+        "SELECT visit_occurrence_id, admitted_from_concept_id\n"
+        "FROM visit_occurrence;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

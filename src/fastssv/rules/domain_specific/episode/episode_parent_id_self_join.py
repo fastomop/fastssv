@@ -255,6 +255,15 @@ class EpisodeParentIdSelfJoinRule(Rule):
         "ON child.episode_parent_id = parent.episode_id"
     )
 
+    example_bad = (
+        "SELECT e.episode_id FROM episode e\n"
+        "JOIN episode parent ON e.episode_parent_id = parent.person_id;"
+    )
+    example_good = (
+        "SELECT e.episode_id FROM episode e\n"
+        "JOIN episode parent ON e.episode_parent_id = parent.episode_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

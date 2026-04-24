@@ -150,6 +150,37 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
         "Example: cr.relationship_id = 'Maps to'. "
         "For exploratory analysis, consider adding GROUP BY relationship_id."
     )
+    long_description = (
+        "concept_relationship is a many-to-many table: a single source "
+        "concept typically has dozens of relationships "
+        "('Maps to', 'Is a', 'Subsumes', 'Has brand name', …). Joining to "
+        "concept_relationship without filtering on relationship_id pulls "
+        "them all, blowing up the row count and mixing semantically "
+        "different relationships into one result set. For cohort "
+        "definitions, always restrict to a single relationship type "
+        "(typically relationship_id = 'Maps to'); exploratory queries "
+        "should at least GROUP BY it so the direction of each match is "
+        "visible in the output."
+    )
+    example_bad = (
+        "SELECT c1.concept_name, c2.concept_name\n"
+        "FROM concept c1\n"
+        "JOIN concept_relationship cr\n"
+        "  ON c1.concept_id = cr.concept_id_1\n"
+        "JOIN concept c2\n"
+        "  ON cr.concept_id_2 = c2.concept_id\n"
+        "WHERE c1.concept_id = 201820;"
+    )
+    example_good = (
+        "SELECT c1.concept_name, c2.concept_name\n"
+        "FROM concept c1\n"
+        "JOIN concept_relationship cr\n"
+        "  ON c1.concept_id = cr.concept_id_1\n"
+        "  AND cr.relationship_id = 'Maps to'\n"
+        "JOIN concept c2\n"
+        "  ON cr.concept_id_2 = c2.concept_id\n"
+        "WHERE c1.concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -39,6 +39,26 @@ class ConceptNameLookupRule(Rule):
         "WHERE c.concept_code = '...' AND c.vocabulary_id = '...', "
         "or use concept_id directly if known"
     )
+    long_description = (
+        "concept_name is neither unique nor stable: multiple concepts can "
+        "share a display name, and names change across vocabulary releases "
+        "(capitalisation, abbreviations, rewording). Filtering by "
+        "concept_name makes queries silently unreliable across sites and "
+        "breaks after each vocabulary refresh. Prefer filtering by "
+        "concept_code + vocabulary_id, or by concept_id directly if "
+        "you have it."
+    )
+    example_bad = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "WHERE c.concept_name = 'Type 2 diabetes mellitus';"
+    )
+    example_good = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "WHERE c.concept_code = 'E11'\n"
+        "  AND c.vocabulary_id = 'ICD10CM';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

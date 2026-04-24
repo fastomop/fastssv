@@ -187,6 +187,16 @@ class ConceptSynonymJoinValidationRule(Rule):
         "Join concept_synonym to concept using concept_id: "
         "concept_synonym.concept_id = concept.concept_id"
     )
+    example_bad = (
+        "SELECT cs.concept_synonym_name\n"
+        "FROM concept c\n"
+        "JOIN concept_synonym cs ON c.concept_name = cs.concept_synonym_name;"
+    )
+    example_good = (
+        "SELECT cs.concept_synonym_name\n"
+        "FROM concept c\n"
+        "JOIN concept_synonym cs ON c.concept_id = cs.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

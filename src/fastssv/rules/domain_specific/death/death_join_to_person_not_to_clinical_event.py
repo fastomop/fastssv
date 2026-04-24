@@ -198,6 +198,15 @@ class DeathJoinToPersonNotToClinicalEventRule(Rule):
         "Ensure JOIN includes: death.person_id = <clinical_table>.person_id"
     )
 
+    example_bad = (
+        "SELECT d.person_id FROM death d\n"
+        "JOIN condition_occurrence co ON d.death_date = co.condition_start_date;"
+    )
+    example_good = (
+        "SELECT d.person_id FROM death d\n"
+        "JOIN condition_occurrence co ON d.person_id = co.person_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

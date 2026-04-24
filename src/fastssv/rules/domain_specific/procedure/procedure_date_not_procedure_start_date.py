@@ -221,6 +221,15 @@ class EventDateColumnCorrectnessRule(Rule):
         "Use *_datetime columns for timestamp precision."
     )
 
+    example_bad = (
+        "SELECT person_id, procedure_start_date\n"
+        "FROM procedure_occurrence;"
+    )
+    example_good = (
+        "SELECT person_id, procedure_date\n"
+        "FROM procedure_occurrence;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

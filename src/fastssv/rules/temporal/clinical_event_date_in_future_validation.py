@@ -257,6 +257,24 @@ class ClinicalEventDateInFutureValidationRule(Rule):
         "Use date filters consistent with past or present events. "
         "Avoid filtering for future clinical dates unless explicitly intended."
     )
+    long_description = (
+        "Queries that filter condition_start_date > CURRENT_DATE (or the same "
+        "inequality against any clinical event date column) describe events "
+        "that have not happened yet. In production OMOP data this is almost "
+        "always a data-quality audit (trying to find future-dated events to "
+        "clean up) and not a real cohort selection, so the rule warns rather "
+        "than errors. If you genuinely need to audit, document that intent in "
+        "a comment; if the predicate is accidentally reversed, flip the "
+        "operator."
+    )
+    example_bad = (
+        "SELECT * FROM condition_occurrence\n"
+        "WHERE condition_start_date > CURRENT_DATE;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence\n"
+        "WHERE condition_start_date <= CURRENT_DATE;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -149,6 +149,8 @@ class CareSiteLocationJoinValidationRule(Rule):
         "Join care_site to location using location_id: "
         "care_site.location_id = location.location_id"
     )
+    example_bad = "SELECT * FROM care_site cs JOIN location l ON cs.care_site_id = l.location_id;"
+    example_good = "SELECT * FROM care_site cs JOIN location l ON cs.location_id = l.location_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

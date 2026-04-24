@@ -236,6 +236,14 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
     suggested_fix = (
         "Use: concept_relationship.relationship_id = relationship.relationship_id"
     )
+    example_bad = (
+        "SELECT * FROM concept_relationship cr\n"
+        "JOIN relationship r ON cr.concept_id_1 = r.relationship_id;"
+    )
+    example_good = (
+        "SELECT * FROM concept_relationship cr\n"
+        "JOIN relationship r ON cr.relationship_id = r.relationship_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

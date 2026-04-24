@@ -286,6 +286,17 @@ class PayerPlanPeriodJoinValidationRule(Rule):
         "Add temporal overlap: clinical_date BETWEEN payer_plan_period_start_date "
         "AND payer_plan_period_end_date"
     )
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN payer_plan_period ppp ON co.person_id = ppp.person_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN payer_plan_period ppp\n"
+        "  ON co.person_id = ppp.person_id\n"
+        "  AND co.condition_start_date BETWEEN ppp.payer_plan_period_start_date\n"
+        "                                  AND ppp.payer_plan_period_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

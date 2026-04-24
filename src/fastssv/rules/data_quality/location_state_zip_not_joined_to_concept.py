@@ -229,6 +229,23 @@ class LocationStateZipNotJoinedToConceptRule(Rule):
         "Use location.country_concept_id for joins, and treat state/zip "
         "as free-text fields."
     )
+    long_description = (
+        "location.state and location.zip are free-text VARCHAR fields — "
+        "state abbreviations, postal codes, and the like. They have no "
+        "entry in the concept table, and joining them to concept always "
+        "returns zero rows. The only concept-table linkage in the "
+        "location table is via location.country_concept_id."
+    )
+    example_bad = (
+        "SELECT l.location_id\n"
+        "FROM location l\n"
+        "JOIN concept c ON l.state = c.concept_name;"
+    )
+    example_good = (
+        "SELECT l.location_id\n"
+        "FROM location l\n"
+        "JOIN concept c ON l.country_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -232,6 +232,25 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
     )
     severity = Severity.WARNING  # Best practice, not correctness issue
     suggested_fix = "Add a vocabulary_id filter alongside concept_code"
+    long_description = (
+        "concept_code values are unique only within a vocabulary: 'E11' "
+        "exists in ICD10CM (diabetes), ICD10 (diabetes), potentially "
+        "custom vocabularies — and the same code string can mean entirely "
+        "different things. Filtering on concept_code without also filtering "
+        "on vocabulary_id silently matches unintended concepts from other "
+        "vocabularies. Always pair the two predicates in the same scope."
+    )
+    example_bad = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "WHERE c.concept_code = 'E11.9';"
+    )
+    example_good = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "WHERE c.concept_code = 'E11.9'\n"
+        "  AND c.vocabulary_id = 'ICD10CM';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         # Check validation context for severity adjustment

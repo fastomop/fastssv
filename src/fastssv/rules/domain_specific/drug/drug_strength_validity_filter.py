@@ -233,6 +233,15 @@ class DrugStrengthValidityFilterRule(Rule):
         "'CURRENT_DATE BETWEEN valid_start_date AND valid_end_date'."
     )
 
+    example_bad = (
+        "SELECT drug_concept_id, amount_value FROM drug_strength;"
+    )
+    example_good = (
+        "SELECT drug_concept_id, amount_value FROM drug_strength\n"
+        "WHERE invalid_reason IS NULL\n"
+        "  AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "drug_strength" not in sql.lower():
             return []

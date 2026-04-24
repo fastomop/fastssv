@@ -369,6 +369,27 @@ class NullableEndDateNullHandlingRule(Rule):
 
     severity = Severity.WARNING
     suggested_fix = "Use COALESCE(end_date, fallback) or filter IS NOT NULL"
+    long_description = (
+        "Several OMOP end-date columns are nullable (drug_exposure_end_date, "
+        "condition_end_date, device_exposure_end_date). Passing them directly "
+        "into DATEDIFF, arithmetic, or a comparison propagates NULL through "
+        "the expression, which then evaluates to NULL in WHERE and silently "
+        "excludes the row. Wrap the nullable column in COALESCE with a "
+        "sensible fallback (often the paired start_date), or filter "
+        "IS NOT NULL explicitly, so the row-exclusion is deliberate rather "
+        "than accidental."
+    )
+    example_bad = (
+        "SELECT person_id,\n"
+        "       DATEDIFF(day, drug_exposure_start_date, drug_exposure_end_date) AS days_supply\n"
+        "FROM drug_exposure;"
+    )
+    example_good = (
+        "SELECT person_id,\n"
+        "       DATEDIFF(day, drug_exposure_start_date,\n"
+        "                COALESCE(drug_exposure_end_date, drug_exposure_start_date)) AS days_supply\n"
+        "FROM drug_exposure;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

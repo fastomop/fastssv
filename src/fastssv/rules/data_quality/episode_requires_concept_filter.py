@@ -259,6 +259,23 @@ class EpisodeRequiresConceptFilterRule(Rule):
         "Add a filter on episode_concept_id (e.g., WHERE episode_concept_id = <id>) "
         "or join to concept with appropriate filtering."
     )
+    long_description = (
+        "The episode table aggregates care over time (disease episodes, "
+        "treatment episodes) across many episode types identified by "
+        "episode_concept_id. Querying episode without a concept filter "
+        "returns a mixed bag of unrelated episode types, which is rarely "
+        "the intent. Add an episode_concept_id predicate or join to "
+        "concept with an explicit filter to select a single episode type."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM episode;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM episode\n"
+        "WHERE episode_concept_id = 32528;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

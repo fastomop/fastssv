@@ -193,6 +193,25 @@ class JoinKeyValidationRule(Rule):
         "Ensure JOIN conditions use correct foreign key relationships. "
         "For OMOP: person_id ↔ person_id, *_concept_id ↔ concept.concept_id."
     )
+    long_description = (
+        "OMOP uses distinct ID namespaces for different entities: person_id, "
+        "visit_occurrence_id, provider_id, care_site_id, concept_id, and "
+        "so on. Joining incompatible ID columns (e.g. "
+        "`person.person_id = concept.concept_id`) rarely errors, because "
+        "they're both integers — but every match is a numeric coincidence, "
+        "not a real relationship. The result is garbage rows. Pair keys "
+        "with their canonical foreign-key counterparts."
+    )
+    example_bad = (
+        "SELECT *\n"
+        "FROM person p\n"
+        "JOIN concept c ON p.person_id = c.concept_id;"
+    )
+    example_good = (
+        "SELECT p.person_id, c.concept_name AS gender\n"
+        "FROM person p\n"
+        "JOIN concept c ON p.gender_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         # --- Fast pre-check ---

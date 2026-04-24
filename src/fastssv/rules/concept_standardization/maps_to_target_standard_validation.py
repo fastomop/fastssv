@@ -203,6 +203,30 @@ class MapsToTargetStandardValidationRule(Rule):
         "Join concept_relationship.concept_id_2 to concept.concept_id "
         "and add filter: concept.standard_concept = 'S'"
     )
+    long_description = (
+        "concept_relationship with relationship_id = 'Maps to' is the "
+        "canonical mapping from source codes (ICD10CM, NDC, etc.) to OMOP "
+        "standard concepts. But the relationship table also contains "
+        "historical and intermediate mappings, so concept_id_2 is not "
+        "guaranteed to be standard just because the relationship is "
+        "'Maps to'. Without a join to concept with standard_concept = 'S', "
+        "queries can pick up deprecated or non-standard targets that break "
+        "downstream cohort logic."
+    )
+    example_bad = (
+        "SELECT cr.concept_id_2 AS target_concept_id\n"
+        "FROM concept_relationship cr\n"
+        "WHERE cr.concept_id_1 = 44831230\n"
+        "  AND cr.relationship_id = 'Maps to';"
+    )
+    example_good = (
+        "SELECT cr.concept_id_2 AS target_concept_id\n"
+        "FROM concept_relationship cr\n"
+        "JOIN concept c ON cr.concept_id_2 = c.concept_id\n"
+        "WHERE cr.concept_id_1 = 44831230\n"
+        "  AND cr.relationship_id = 'Maps to'\n"
+        "  AND c.standard_concept = 'S';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations = []

@@ -152,6 +152,24 @@ class VocabularyTableProtectionRule(Rule):
         "Do not modify vocabulary tables. Use them as read-only reference data. "
         "Vocabulary updates should be performed via official OHDSI releases."
     )
+    long_description = (
+        "OMOP vocabulary tables (concept, concept_ancestor, "
+        "concept_relationship, vocabulary, domain, concept_class) are "
+        "reference data distributed and versioned by OHDSI. Any local "
+        "modification breaks reproducibility, invalidates cross-site "
+        "comparisons, and typically conflicts with the next vocabulary "
+        "release. Treat them as strictly read-only; vocabulary updates "
+        "must be performed via official OHDSI releases."
+    )
+    example_bad = (
+        "DELETE FROM concept\n"
+        "WHERE concept_id = 0;"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE concept_id = 0;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

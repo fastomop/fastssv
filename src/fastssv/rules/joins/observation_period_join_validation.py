@@ -229,6 +229,17 @@ class ObservationPeriodJoinValidationRule(Rule):
     suggested_fix = (
         "Add: clinical_date BETWEEN observation_period_start_date AND observation_period_end_date"
     )
+    example_bad = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN observation_period op ON co.person_id = op.person_id;"
+    )
+    example_good = (
+        "SELECT * FROM condition_occurrence co\n"
+        "JOIN observation_period op\n"
+        "  ON co.person_id = op.person_id\n"
+        "  AND co.condition_start_date BETWEEN op.observation_period_start_date\n"
+        "                                  AND op.observation_period_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

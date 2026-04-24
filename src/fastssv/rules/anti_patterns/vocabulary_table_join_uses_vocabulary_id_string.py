@@ -154,6 +154,25 @@ class VocabularyTableJoinUsesVocabularyIdStringRule(Rule):
     suggested_fix = (
         "Change JOIN condition to: concept.vocabulary_id = vocabulary.vocabulary_id"
     )
+    long_description = (
+        "The vocabulary table has two related columns: vocabulary_id "
+        "(VARCHAR, the natural-key string like 'SNOMED' or 'LOINC') and "
+        "vocabulary_concept_id (INTEGER, a concept_id that represents the "
+        "vocabulary itself in concept). The join from concept to "
+        "vocabulary must use the VARCHAR vocabulary_id on both sides; "
+        "using vocabulary_concept_id mixes a string with an integer and "
+        "returns zero rows."
+    )
+    example_bad = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id;"
+    )
+    example_good = (
+        "SELECT c.concept_id\n"
+        "FROM concept c\n"
+        "JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

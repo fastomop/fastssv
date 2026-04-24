@@ -204,6 +204,14 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "Use: death.person_id = visit_occurrence.person_id"
+    example_bad = (
+        "SELECT * FROM death d\n"
+        "JOIN visit_occurrence vo ON d.death_date = vo.visit_start_date;"
+    )
+    example_good = (
+        "SELECT * FROM death d\n"
+        "JOIN visit_occurrence vo ON d.person_id = vo.person_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

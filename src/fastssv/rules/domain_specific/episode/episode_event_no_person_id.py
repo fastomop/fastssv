@@ -219,6 +219,14 @@ class EpisodeEventNoPersonIdRule(Rule):
         "JOIN person p ON e.person_id = p.person_id"
     )
 
+    example_bad = (
+        "SELECT person_id FROM episode_event;"
+    )
+    example_good = (
+        "SELECT e.person_id FROM episode_event ee\n"
+        "JOIN episode e ON ee.episode_id = e.episode_id;"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

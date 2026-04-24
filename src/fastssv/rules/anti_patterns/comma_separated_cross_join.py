@@ -204,9 +204,8 @@ class CommaSeparatedCrossJoinRule(Rule):
     name = "Comma-Separated Cross Join"
 
     description = (
-        "Detects comma-separated FROM clauses with multiple clinical tables "
-        "that have no join condition in WHERE clause. This creates Cartesian "
-        "products that can generate billions of rows and crash queries."
+        "Comma-separated FROM between clinical tables with no join predicate, "
+        "produces a Cartesian product."
     )
 
     severity = Severity.ERROR
@@ -214,6 +213,44 @@ class CommaSeparatedCrossJoinRule(Rule):
     suggested_fix = (
         "Use explicit JOIN...ON syntax, or add a WHERE clause with column-to-column "
         "equality to join the tables (e.g., WHERE co.person_id = de.person_id)."
+    )
+    long_description = (
+        "Comma-join syntax (FROM a, b) predates the explicit JOIN...ON form "
+        "introduced in SQL-92 and is still common in analysts who come from "
+        "SAS, SPSS, or older SQL dialects where it was idiomatic. In OMOP the "
+        "mistake is rarely about performance first: even on a small dataset "
+        "the cross-joined query returns row combinations that don't correspond "
+        "to any real clinical event, every condition paired with every drug "
+        "for every patient, so the results are semantically wrong before the "
+        "query size becomes catastrophic. The natural join column between two "
+        "clinical tables is almost always person_id; occasionally "
+        "visit_occurrence_id when both sides sit inside the same encounter. "
+        "If you genuinely want a Cartesian product (test-matrix generation, "
+        "sparse-grid filling), write CROSS JOIN explicitly; this rule fires "
+        "only on the implicit comma form, so an explicit CROSS JOIN documents "
+        "the intent and stays silent."
+    )
+    example_bad = (
+        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "FROM condition_occurrence co, drug_exposure de\n"
+        "WHERE co.condition_concept_id = 201820;"
+    )
+    # Two equivalent fixes: explicit JOIN for readability, or the minimal
+    # WHERE-predicate patch when you're editing legacy comma-style SQL and
+    # want to preserve its shape.
+    example_good = (
+        "-- Fix A: explicit JOIN ... ON (preferred for readability)\n"
+        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN drug_exposure de\n"
+        "  ON co.person_id = de.person_id\n"
+        "WHERE co.condition_concept_id = 201820;\n"
+        "\n"
+        "-- Fix B: keep the comma syntax, add the join predicate to WHERE\n"
+        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "FROM condition_occurrence co, drug_exposure de\n"
+        "WHERE co.person_id = de.person_id\n"
+        "  AND co.condition_concept_id = 201820;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

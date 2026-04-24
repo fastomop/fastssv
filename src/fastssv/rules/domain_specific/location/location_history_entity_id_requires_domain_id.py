@@ -312,6 +312,16 @@ class LocationHistoryEntityIdRequiresDomainIdRule(Rule):
         "Add WHERE location_history.domain_id = '<Domain>' matching the joined table."
     )
 
+    example_bad = (
+        "SELECT lh.location_history_id FROM location_history lh\n"
+        "JOIN person p ON lh.entity_id = p.person_id;"
+    )
+    example_good = (
+        "SELECT lh.location_history_id FROM location_history lh\n"
+        "JOIN person p ON lh.entity_id = p.person_id\n"
+        "WHERE lh.domain_id = 'Person';"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []

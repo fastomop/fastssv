@@ -187,6 +187,26 @@ class AmbiguousColumnReferenceRule(Rule):
         "Qualify the column with a table name or alias "
         "(e.g., co.person_id). Always use explicit qualifiers in multi-table queries."
     )
+    long_description = (
+        "Columns like person_id, visit_occurrence_id, provider_id, and "
+        "care_site_id appear in many OMOP tables. In a multi-table join, an "
+        "unqualified reference is either a hard error (ambiguous column) or "
+        "a silent bug where the parser resolves it to the first matching "
+        "table — which may not be the one the author intended. Always "
+        "qualify every column in a multi-table query with its table alias."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN person p ON co.person_id = p.person_id\n"
+        "WHERE person_id = 1;"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN person p ON co.person_id = p.person_id\n"
+        "WHERE co.person_id = 1;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

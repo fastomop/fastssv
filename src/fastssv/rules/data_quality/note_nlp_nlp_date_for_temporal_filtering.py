@@ -211,6 +211,24 @@ class NoteNlpNlpDateForTemporalFilteringRule(Rule):
     suggested_fix = (
         "Join to note table and filter using note.note_date instead."
     )
+    long_description = (
+        "note_nlp.nlp_date records when the NLP pipeline *processed* the "
+        "source note, which can be months or years after the clinical "
+        "event itself. For temporal cohort logic you need the clinical "
+        "date, not the processing date — that lives on note.note_date. "
+        "Join note_nlp back to note and filter on note_date instead."
+    )
+    example_bad = (
+        "SELECT note_nlp_id\n"
+        "FROM note_nlp\n"
+        "WHERE nlp_date >= DATE '2023-01-01';"
+    )
+    example_good = (
+        "SELECT nnlp.note_nlp_id\n"
+        "FROM note_nlp nnlp\n"
+        "JOIN note n ON nnlp.note_id = n.note_id\n"
+        "WHERE n.note_date >= DATE '2023-01-01';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "note_nlp" not in sql.lower() or "nlp_date" not in sql.lower():

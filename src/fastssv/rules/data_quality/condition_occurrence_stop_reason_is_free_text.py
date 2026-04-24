@@ -256,6 +256,24 @@ class ConditionOccurrenceStopReasonIsFreeTextRule(Rule):
         "Avoid numeric comparisons with stop_reason. Treat stop_reason as a "
         "free-text field."
     )
+    long_description = (
+        "condition_occurrence.stop_reason is a free-text VARCHAR field — "
+        "clinician-entered notes about why a condition was considered "
+        "resolved. It has no mapping into the concept table and no "
+        "numeric semantics. Joining it to concept (on concept_name or "
+        "any concept column) or doing numeric comparisons on it produces "
+        "zero or meaningless rows. Treat it purely as free text."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.stop_reason = c.concept_name;"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN concept c ON co.condition_concept_id = c.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -210,6 +210,14 @@ class CostPaidIngredientCostDrugSpecificRule(Rule):
         "Add WHERE cost_domain_id = 'Drug' to filter for pharmacy/drug claims only."
     )
 
+    example_bad = (
+        "SELECT cost_id, paid_ingredient_cost FROM cost;"
+    )
+    example_good = (
+        "SELECT cost_id, paid_ingredient_cost FROM cost\n"
+        "WHERE cost_domain_id = 'Drug';"
+    )
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "cost" not in sql.lower():
             return []

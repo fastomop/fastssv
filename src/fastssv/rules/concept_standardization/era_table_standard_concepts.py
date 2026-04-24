@@ -166,6 +166,27 @@ class EraTableStandardConceptsRule(Rule):
         "Remove filters for non-standard concepts. Era tables only contain "
         "standard concepts (standard_concept = 'S')."
     )
+    long_description = (
+        "OMOP era tables (condition_era, drug_era, dose_era) are derived "
+        "from their underlying occurrence tables by rolling up standard "
+        "concepts over contiguous time windows. By construction every row "
+        "references a standard concept, so filtering them with "
+        "standard_concept IN ('C', NULL) or <> 'S' always returns zero "
+        "rows. Either drop the filter entirely or filter for 'S' "
+        "explicitly to make the intent readable."
+    )
+    example_bad = (
+        "SELECT de.person_id\n"
+        "FROM drug_era de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'C';"
+    )
+    example_good = (
+        "SELECT de.person_id\n"
+        "FROM drug_era de\n"
+        "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
+        "WHERE c.standard_concept = 'S';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

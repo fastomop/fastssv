@@ -186,6 +186,8 @@ class NoteNlpNoteJoinValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "Use: note_nlp.note_id = note.note_id"
+    example_bad = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_nlp_id = n.note_id;"
+    example_good = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_id = n.note_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -214,6 +214,29 @@ class ConceptAncestorMixedWithConceptRelationshipRedundantlyRule(Rule):
         "Use concept_ancestor alone for hierarchical traversal. "
         "Only use concept_relationship for non-hierarchical relationships."
     )
+    long_description = (
+        "concept_ancestor already encodes every transitive hierarchical "
+        "path (ancestor → descendant, including indirect ones). Joining "
+        "concept_relationship to it for hierarchical relationships like "
+        "'Subsumes' or 'Is a' is redundant and typically changes the "
+        "semantics — the combined filter returns the intersection rather "
+        "than the hierarchy you intended. Use concept_ancestor for "
+        "hierarchy and reserve concept_relationship for non-hierarchical "
+        "links like 'Maps to', 'Has indication', 'Contains'."
+    )
+    example_bad = (
+        "SELECT ca.descendant_concept_id\n"
+        "FROM concept_ancestor ca\n"
+        "JOIN concept_relationship cr\n"
+        "  ON ca.descendant_concept_id = cr.concept_id_1\n"
+        "WHERE ca.ancestor_concept_id = 201820\n"
+        "  AND cr.relationship_id = 'Subsumes';"
+    )
+    example_good = (
+        "SELECT ca.descendant_concept_id\n"
+        "FROM concept_ancestor ca\n"
+        "WHERE ca.ancestor_concept_id = 201820;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

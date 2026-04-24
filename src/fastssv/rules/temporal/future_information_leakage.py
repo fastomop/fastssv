@@ -144,6 +144,30 @@ class FutureInformationLeakageRule(Rule):
         "AND future_event.date <= op.observation_period_end_date, "
         "where op is joined via JOIN observation_period op ON table.person_id = op.person_id"
     )
+    long_description = (
+        "When a query compares event dates across two clinical tables (e.g. "
+        "'condition started before first drug exposure'), the future-facing "
+        "event must be bounded against observation_period_end_date. Without "
+        "that bound, the comparison reaches into events that occurred AFTER "
+        "the person's observation ended, silently pulling data that should "
+        "not be in scope. The leakage is subtle because the join still "
+        "returns rows; they are just rows representing out-of-bounds data. "
+        "Add an explicit observation_period bound on the future-facing side."
+    )
+    example_bad = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.person_id = de.person_id\n"
+        "WHERE co.condition_start_date < de.drug_exposure_start_date;"
+    )
+    example_good = (
+        "SELECT co.person_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN drug_exposure de ON co.person_id = de.person_id\n"
+        "JOIN observation_period op ON co.person_id = op.person_id\n"
+        "WHERE co.condition_start_date < de.drug_exposure_start_date\n"
+        "  AND de.drug_exposure_start_date <= op.observation_period_end_date;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

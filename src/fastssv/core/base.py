@@ -45,9 +45,14 @@ class Rule(ABC):
     Subclasses must define class attributes:
         rule_id: Unique identifier (e.g., "concept_standardization.standard_concept_enforcement")
         name: Human-readable name (e.g., "Standard Concept Enforcement")
-        description: What this rule checks
+        description: Short one-line summary shown in tool output and rule lists
         severity: Default severity level
         suggested_fix: Default fix suggestion
+
+    Subclasses may optionally define:
+        long_description: Multi-sentence explanation rendered on the /rules page
+        example_bad: Minimal SQL snippet that trips the rule (for the /rules page)
+        example_good: Corrected version of example_bad (for the /rules page)
 
     Subclasses must implement:
         validate(sql, dialect) -> List[RuleViolation]
@@ -58,6 +63,9 @@ class Rule(ABC):
     description: str
     severity: Severity
     suggested_fix: str
+    long_description: Optional[str] = None
+    example_bad: Optional[str] = None
+    example_good: Optional[str] = None
 
     @abstractmethod
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

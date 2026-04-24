@@ -167,6 +167,25 @@ class StandardConceptValueValidationRule(Rule):
     suggested_fix = (
         "Use 'S' for standard, 'C' for classification, or NULL for non-standard concepts."
     )
+    long_description = (
+        "The concept.standard_concept column has exactly three valid "
+        "values: 'S' (standard), 'C' (classification), and NULL (neither, "
+        "typically source vocabularies). Any other literal, like 'X', 'Y' "
+        "or an empty string, matches no rows and is almost always a typo "
+        "from a developer who remembered there was some letter value. The "
+        "fix is usually 'S'; reach for 'C' only when you specifically "
+        "want classification-level concepts such as MedDRA grouping."
+    )
+    example_bad = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE standard_concept = 'X';"
+    )
+    example_good = (
+        "SELECT concept_id\n"
+        "FROM concept\n"
+        "WHERE standard_concept = 'S';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

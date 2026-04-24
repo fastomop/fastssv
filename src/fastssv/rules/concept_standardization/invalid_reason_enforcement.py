@@ -295,6 +295,27 @@ class InvalidReasonEnforcementRule(Rule):
         "Add 'WHERE invalid_reason IS NULL' to ensure only valid concepts are used, "
         "or explicitly handle invalid concepts if needed"
     )
+    long_description = (
+        "Concept tables (concept, concept_relationship, concept_ancestor) "
+        "carry an invalid_reason column that marks retired or replaced "
+        "entries: 'D' for deprecated, 'U' for upgraded to a newer concept, "
+        "NULL for currently valid. Queries that omit an "
+        "`invalid_reason IS NULL` predicate silently include retired rows, "
+        "which can pull in concept_ids that your site no longer records or "
+        "that map onward to a better successor. Add the filter to stick "
+        "to current concepts."
+    )
+    example_bad = (
+        "SELECT concept_id, concept_name\n"
+        "FROM concept\n"
+        "WHERE vocabulary_id = 'SNOMED';"
+    )
+    example_good = (
+        "SELECT concept_id, concept_name\n"
+        "FROM concept\n"
+        "WHERE vocabulary_id = 'SNOMED'\n"
+        "  AND invalid_reason IS NULL;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

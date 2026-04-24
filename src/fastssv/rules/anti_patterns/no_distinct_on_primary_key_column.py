@@ -195,6 +195,24 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
         "Remove DISTINCT when selecting only primary key columns. "
         "If joins are present, review join conditions for unintended duplicates."
     )
+    long_description = (
+        "DISTINCT on a primary-key column is a tautology: primary keys are "
+        "unique by definition, so the de-duplication never actually "
+        "removes a row. Its appearance usually signals one of two things: "
+        "the author doesn't realise the column is a primary key (worth "
+        "double-checking the table model), or they suspect a JOIN is "
+        "causing duplicates and are papering over it with DISTINCT instead "
+        "of fixing the join. Remove the DISTINCT and, if duplicates do "
+        "appear, tighten the join predicate."
+    )
+    example_bad = (
+        "SELECT DISTINCT person_id\n"
+        "FROM person;"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM person;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -294,6 +294,26 @@ class RequiredDateColumnValidationRule(Rule):
     suggested_fix = (
         "Use required date columns, COALESCE, or explicit IS NOT NULL checks"
     )
+    long_description = (
+        "Each OMOP clinical table has at least one required (NOT NULL) date "
+        "column and one or more optional end-date columns. Filtering on a "
+        "nullable column (e.g. drug_exposure_end_date instead of "
+        "drug_exposure_start_date) silently excludes every row where that "
+        "column happens to be null, often a sizeable fraction of the data. "
+        "Prefer the required column for the primary temporal filter; reach "
+        "for the nullable ones only when their meaning is specifically what "
+        "you need (duration calculations, end-of-period cohorts)."
+    )
+    example_bad = (
+        "SELECT person_id\n"
+        "FROM drug_exposure\n"
+        "WHERE drug_exposure_end_date >= DATE '2023-01-01';"
+    )
+    example_good = (
+        "SELECT person_id\n"
+        "FROM drug_exposure\n"
+        "WHERE drug_exposure_start_date >= DATE '2023-01-01';"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -221,6 +221,16 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
     suggested_fix = (
         "Use concept_id_1 for source concepts and concept_id_2 for target concepts."
     )
+    example_bad = (
+        "SELECT c_source.concept_name\n"
+        "FROM concept_relationship cr\n"
+        "JOIN concept c_source ON cr.concept_id_2 = c_source.concept_id;"
+    )
+    example_good = (
+        "SELECT c_source.concept_name\n"
+        "FROM concept_relationship cr\n"
+        "JOIN concept c_source ON cr.concept_id_1 = c_source.concept_id;"
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
