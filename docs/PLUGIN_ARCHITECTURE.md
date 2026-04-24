@@ -256,7 +256,7 @@ violations = validate_sql_structured(sql, categories=["joins"])
 # Run specific rules
 violations = validate_sql_structured(
     sql,
-    rule_ids=["joins.my_new_rule", "anti_patterns.concept_lookup_context"]
+    rule_ids=["joins.my_new_rule", "anti_patterns.concept_name_lookup"]
 )
 
 # Process violations
@@ -271,14 +271,14 @@ for v in violations:
 Current registered category counts (see [RULES_REFERENCE.md](RULES_REFERENCE.md)
 for the full list):
 
-- `anti_patterns`: 24
+- `anti_patterns`: 19
 - `concept_standardization`: 18
 - `data_quality`: 27
 - `domain_specific`: 42
 - `joins`: 36
 - `temporal`: 10
 
-**Total: 157**
+**Total: 152**
 
 Representative examples from the current public categories:
 
@@ -290,7 +290,7 @@ Representative examples from the current public categories:
 - `data_quality.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
 - `concept_standardization.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
 - `anti_patterns.no_string_identification` - String-based concept ID lookup detection
-- `anti_patterns.concept_lookup_context` - Concept table string filter validation
+- `anti_patterns.concept_name_lookup` - Concept table concept_name filter detection
 - `anti_patterns.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)
 
 ### Adding New Categories

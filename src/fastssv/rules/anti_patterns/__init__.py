@@ -5,7 +5,6 @@ Rules catching common mistakes and anti-patterns to avoid.
 
 from .no_string_identification import NoStringIdentificationRule
 from .concept_code_requires_vocabulary_id import ConceptCodeRequiresVocabularyIdRule
-from .concept_lookup_context import ConceptLookupContextRule
 from .concept_name_lookup import ConceptNameLookupRule
 from .type_concept_id_misuse import TypeConceptIdMisuseRule
 from .type_concept_id_domain_filter import TypeConceptIdDomainFilterRule
@@ -18,11 +17,7 @@ from .ambiguous_column_reference import AmbiguousColumnReferenceRule
 from .join_key_validation import JoinKeyValidationRule
 from .attribute_definition_invalid_join import AttributeDefinitionInvalidJoinRule
 from .no_distinct_on_primary_key_column import NoDistinctOnPrimaryKeyColumnRule
-from .cdm_source_clinical_join import CdmSourceClinicalJoinRule
-from .metadata_clinical_join import MetadataClinicalJoinRule
-from .vocabulary_table_join_uses_vocabulary_id_string import VocabularyTableJoinUsesVocabularyIdStringRule
-from .domain_table_join_uses_domain_id_string import DomainTableJoinUsesDomainIdRule
-from .concept_class_table_join_uses_concept_class_id_string import ConceptClassTableJoinUsesConceptClassIdRule
+from .singleton_metadata_clinical_join import SingletonMetadataClinicalJoinRule
 from .having_without_group_by import HavingWithoutGroupByRule
 from .duplicate_column_alias import DuplicateColumnAliasRule
 from .top_as_synthetic_data import TopAsSyntheticDataRule
@@ -31,7 +26,6 @@ from .null_comparison_operator import NullComparisonOperatorRule
 __all__ = [
     "NoStringIdentificationRule",
     "ConceptCodeRequiresVocabularyIdRule",
-    "ConceptLookupContextRule",
     "ConceptNameLookupRule",
     "TypeConceptIdMisuseRule",
     "TypeConceptIdDomainFilterRule",
@@ -44,11 +38,7 @@ __all__ = [
     "JoinKeyValidationRule",
     "AttributeDefinitionInvalidJoinRule",
     "NoDistinctOnPrimaryKeyColumnRule",
-    "CdmSourceClinicalJoinRule",
-    "MetadataClinicalJoinRule",
-    "VocabularyTableJoinUsesVocabularyIdStringRule",
-    "DomainTableJoinUsesDomainIdRule",
-    "ConceptClassTableJoinUsesConceptClassIdRule",
+    "SingletonMetadataClinicalJoinRule",
     "HavingWithoutGroupByRule",
     "DuplicateColumnAliasRule",
     "TopAsSyntheticDataRule",

@@ -2,9 +2,9 @@
 
 This document provides comprehensive documentation for FastSSV's validation rules.
 
-**Current registry: 157 rules across 6 categories.**
+**Current registry: 152 rules across 6 categories.**
 
-- **anti_patterns**: 24 rules
+- **anti_patterns**: 19 rules
 - **concept_standardization**: 18 rules
 - **data_quality**: 27 rules
 - **domain_specific**: 42 rules
@@ -145,25 +145,20 @@ For each rule you will find:
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
 | `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | WARNING | anti_patterns |
 | `anti_patterns.attribute_definition_invalid_join` | [Attribute Definition Invalid Join](#anti-patterns-attribute-definition-invalid-join) | ERROR | anti_patterns |
-| `anti_patterns.cdm_source_clinical_join` | [CDM Source Clinical Join](#anti-patterns-cdm-source-clinical-join) | ERROR | anti_patterns |
+| `anti_patterns.singleton_metadata_clinical_join` | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
 | `anti_patterns.comma_separated_cross_join` | [Comma-Separated Cross Join](#anti-patterns-comma-separated-cross-join) | ERROR | anti_patterns |
 | `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly` | [Concept Ancestor Mixed with Concept Relationship Redundantly](#anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly) | WARNING | anti_patterns |
-| `anti_patterns.concept_class_table_join_uses_concept_class_id` | [Concept Class Table Join Uses Concept Class ID](#anti-patterns-concept-class-table-join-uses-concept-class-id) | ERROR | anti_patterns |
 | `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | ERROR | anti_patterns |
-| `anti_patterns.concept_lookup_context` | [Concept Lookup Context](#anti-patterns-concept-lookup-context) | ERROR | anti_patterns |
 | `anti_patterns.concept_name_lookup` | [Concept Name Lookup Anti-pattern](#anti-patterns-concept-name-lookup) | WARNING | anti_patterns |
 | `anti_patterns.concept_relationship_transitive_misuse` | [Concept Relationship Transitive Misuse](#anti-patterns-concept-relationship-transitive-misuse) | WARNING | anti_patterns |
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
-| `anti_patterns.domain_table_join_uses_domain_id` | [Domain Table Join Uses Domain ID](#anti-patterns-domain-table-join-uses-domain-id) | ERROR | anti_patterns |
 | `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
-| `anti_patterns.metadata_clinical_join` | [Metadata Clinical Join](#anti-patterns-metadata-clinical-join) | ERROR | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
 | `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | ERROR | anti_patterns |
 | `anti_patterns.standard_concept_or_with_classification` | [Standard Concept OR with Classification](#anti-patterns-standard-concept-or-with-classification) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_domain_filter` | [Type Concept ID Domain Filter](#anti-patterns-type-concept-id-domain-filter) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_misuse` | [Type Concept ID Not For Clinical Filtering](#anti-patterns-type-concept-id-misuse) | ERROR | anti_patterns |
-| `anti_patterns.vocabulary_table_join_uses_vocabulary_id_string` | [Vocabulary Table Join Uses Vocabulary ID String](#anti-patterns-vocabulary-table-join-uses-vocabulary-id-string) | ERROR | anti_patterns |
 | `domain_specific.cohort_definition_syntax_not_executable_sql` | [Cohort Definition Syntax Not Executable SQL](#domain-specific-cohort-definition-syntax-not-executable-sql) | ERROR | domain_specific |
 | `domain_specific.condition_occurrence_cardinality_validation` | [Condition Occurrence Cardinality Risk](#domain-specific-condition-occurrence-cardinality-validation) | WARNING | domain_specific |
 | `domain_specific.condition_visit_hierarchy_validation` | [Condition Occurrence Visit Hierarchy Validation](#domain-specific-condition-visit-hierarchy-validation) | ERROR | domain_specific |

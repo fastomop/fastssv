@@ -117,7 +117,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 ### Core Categories
 
-**Anti-Pattern Rules (24 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
+**Anti-Pattern Rules (19 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
 
 **Concept Standardization Rules (18 rules)** - Enforce standard concept usage, concept_ancestor rollup direction, invalid reason checks, domain and vocabulary validation, source concept handling, Maps to target correctness, concept relationship validity, and CDM version migration issues.
 
@@ -129,13 +129,11 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Data Quality Rules (27 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
 
-### Key Anti-Pattern Rules (24 rules)
+### Key Anti-Pattern Rules (19 rules)
 
 **Type concept ID misuse** (`anti_patterns.type_concept_id_misuse`, WARNING) - Type concept fields (*_type_concept_id) encode provenance metadata (EHR, claims, registry) and should not be used for clinical filtering. Type concepts indicate data source, not clinical meaning.
 
 **No string identification** (`anti_patterns.no_string_identification`, ERROR) - `*_source_value` columns contain raw, site-specific text from the source system. Filtering on them with `LIKE`, `=`, or `IN` makes queries non-portable and analytically incorrect across CDM instances.
-
-**Concept lookup context** (`anti_patterns.concept_lookup_context`, ERROR) - Filtering the `concept` table by `concept_name`, `concept_code`, or similar text columns is valid only inside a subquery or CTE that outputs `concept_id`. String-based concept selection in the main query body is tied to a specific vocabulary version and breaks silently on upgrade.
 
 **Concept code requires vocabulary ID** (`anti_patterns.concept_code_requires_vocabulary_id`, WARNING) - `concept_code` is not unique across vocabularies. The code `'E11.9'` exists in ICD-10-CM, ICD-10, and other vocabularies simultaneously. Every `concept_code` filter should be paired with a `vocabulary_id` filter in the same scope for unambiguous concept resolution.
 
@@ -270,7 +268,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 157 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 152 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 

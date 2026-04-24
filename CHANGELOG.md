@@ -86,6 +86,52 @@ between minor versions.
   reading, comment/quote-aware `_split_queries`, and the
   `_clean_llm_output` helper (`cli.py` 65% → 95%).
 
+### Removed rules (redundancy cleanup)
+
+- `anti_patterns.concept_class_table_join_uses_concept_class_id`
+- `anti_patterns.domain_table_join_uses_domain_id`
+- `anti_patterns.vocabulary_table_join_uses_vocabulary_id_string`
+
+These three rules detected one narrow shape — joining the concept varchar
+foreign key (`concept.<x>_id`) against the integer "concept-of-the-class"
+column on the reference table (`<ref>.<x>_concept_id`). Their detection
+was a strict subset of `joins.concept_<x>_join_validation`, which catches
+the same shape plus broader wrong-column patterns. On the canonical bad
+query a user got three near-identical error messages for one root cause.
+Net effect: −3 rules, fewer duplicate violations, no detection loss.
+
+### Removed rules (low-value redundancy)
+
+- `anti_patterns.concept_lookup_context` — soft stylistic nudge ("for
+  robustness, consider wrapping in subquery") that overlapped with
+  `concept_name_lookup` and `concept_code_requires_vocabulary_id` on the
+  cases it actually flagged. The rule's escape conditions
+  (`SELECT *`, any `_concept_id` projection, any concept→clinical join,
+  any `concept_relationship` in scope) leaked through nearly every
+  realistic analytical query, so in practice it fired only on a narrow
+  shape already caught — typically with co-firing — by `concept_name_lookup`.
+  No `example_bad`/`example_good` were authored for it. Its description
+  self-acknowledged that "Direct filtering with vocabulary_id +
+  concept_code is valid in OMOP", which is exactly the case
+  `concept_code_requires_vocabulary_id` already enforces. Net effect: −1
+  rule, no detection loss; the broader concept-lookup cases are still
+  caught by the surviving two rules.
+
+### Merged rules
+
+- `anti_patterns.cdm_source_clinical_join` (OMOP_113) and
+  `anti_patterns.metadata_clinical_join` (OMOP_121) are merged into
+  `anti_patterns.singleton_metadata_clinical_join`.
+
+The two old rules had identical detection shape (collect tables in SELECT
+scope, flag if a singleton metadata table appears alongside any clinical
+table) and a literally-duplicated 21-entry `CLINICAL_TABLES` list — they
+differed only in which metadata table they checked. The merged rule
+parameterizes the metadata-table list, keeping all original detection
+coverage. **Breaking change:** consumers reading `rule_id` from JSON
+output should map both old IDs to
+`anti_patterns.singleton_metadata_clinical_join`.
+
 ### Removed (dead-code cleanup)
 
 - **`fastssv.fixer`** — orphaned 185-line module (`QueryFixer` and
