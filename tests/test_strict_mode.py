@@ -23,34 +23,41 @@ class TestStrictMode:
         # Clean up after test
         set_validation_context(ValidationContext(strict_mode=False))
 
-    def test_invalid_reason_enforcement_normal_mode(self):
-        """In normal mode, invalid_reason violations should be WARNING."""
+    def test_invalid_reason_enforcement_normal_mode_silent(self):
+        """invalid_reason_enforcement is gated behind strict mode — silent
+        in default mode regardless of the SQL pattern.
+
+        (Previously this rule fired as WARNING in default mode, which
+        produced a violation on essentially every realistic OMOP query
+        and diluted signal from every other rule. As of [Unreleased] it
+        is opt-in via strict mode.)
+        """
         sql = """
         SELECT concept_id, concept_name
         FROM concept
         WHERE domain_id = 'Drug'
         """
 
-        # Set normal mode
         ctx = ValidationContext(strict_mode=False)
         set_validation_context(ctx)
 
         rule = get_rule("concept_standardization.invalid_reason_enforcement")()
         violations = rule.validate(sql)
 
-        assert len(violations) > 0
-        assert all(v.severity == Severity.WARNING for v in violations)
-        assert all("invalid_reason" in v.message for v in violations)
+        assert violations == []
 
-    def test_invalid_reason_enforcement_strict_mode(self):
-        """In strict mode, invalid_reason violations should be ERROR."""
+    def test_invalid_reason_enforcement_strict_mode_fires_as_warning(self):
+        """In strict mode, invalid_reason_enforcement fires as WARNING.
+
+        Strict mode here *enables* the rule rather than escalating it
+        from WARNING to ERROR — the rule is opt-in.
+        """
         sql = """
         SELECT concept_id, concept_name
         FROM concept
         WHERE domain_id = 'Drug'
         """
 
-        # Set strict mode
         ctx = ValidationContext(strict_mode=True)
         set_validation_context(ctx)
 
@@ -58,7 +65,7 @@ class TestStrictMode:
         violations = rule.validate(sql)
 
         assert len(violations) > 0
-        assert all(v.severity == Severity.ERROR for v in violations)
+        assert all(v.severity == Severity.WARNING for v in violations)
         assert all("invalid_reason" in v.message for v in violations)
 
     def test_invalid_reason_valid_query_both_modes(self):
@@ -182,10 +189,11 @@ class TestStrictMode:
         assert len(violations_normal) == 0
         assert len(violations_strict) == 0
 
-    def test_derived_tables_escalate_in_strict_mode(self):
+    def test_derived_tables_silent_in_default_fire_in_strict(self):
         """Derived-vocabulary-table usage (e.g. concept_ancestor without a
-        JOIN back to concept for invalid_reason) escalates from WARNING
-        to ERROR in strict mode — matching the other escalatable rules.
+        JOIN back to concept for invalid_reason) is silent in default
+        mode and fires as WARNING in strict mode — same gating as the
+        primary case.
         """
         sql = """
         SELECT descendant_concept_id
@@ -195,17 +203,13 @@ class TestStrictMode:
 
         rule = get_rule("concept_standardization.invalid_reason_enforcement")()
 
-        # Default mode: WARNING
+        # Default mode: silent
         set_validation_context(ValidationContext(strict_mode=False))
         violations_normal = rule.validate(sql)
-        assert len(violations_normal) > 0
-        assert all(v.severity == Severity.WARNING for v in violations_normal)
+        assert violations_normal == []
 
-        # Strict mode: escalates to ERROR
+        # Strict mode: fires as WARNING
         set_validation_context(ValidationContext(strict_mode=True))
         violations_strict = rule.validate(sql)
         assert len(violations_strict) > 0
-        assert all(v.severity == Severity.ERROR for v in violations_strict)
-        assert all(
-            v.details.get("strict_mode_escalated") is True for v in violations_strict
-        )
+        assert all(v.severity == Severity.WARNING for v in violations_strict)

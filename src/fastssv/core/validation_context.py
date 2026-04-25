@@ -31,9 +31,15 @@ class ValidationContext:
 
         # Rules that escalate in strict mode (best-practice rules that
         # default to WARNING but cohort-definition workflows want as ERROR).
+        #
+        # Note: ``concept_standardization.invalid_reason_enforcement`` is
+        # NOT in this set even though its rule_id appears related. That
+        # rule is *gated* behind strict mode (silent in default mode,
+        # fires as WARNING when strict mode is on); it isn't escalated
+        # to ERROR. Strict mode there means "enable the rule," not
+        # "promote a warning."
         strict_escalation_rules = {
             "concept_standardization.standard_concept_enforcement",
-            "concept_standardization.invalid_reason_enforcement",
             "concept_standardization.concept_domain_validation",
             "anti_patterns.concept_code_requires_vocabulary_id",
             "joins.concept_relationship_requires_relationship_id",

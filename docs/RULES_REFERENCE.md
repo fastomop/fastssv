@@ -2,12 +2,12 @@
 
 This document provides comprehensive documentation for FastSSV's validation rules.
 
-**Current registry: 147 rules across 6 categories.**
+**Current registry: 154 rules across 6 categories.**
 
-- **anti_patterns**: 19 rules
+- **anti_patterns**: 20 rules
 - **concept_standardization**: 18 rules
 - **data_quality**: 22 rules
-- **domain_specific**: 42 rules
+- **domain_specific**: 48 rules
 - **joins**: 36 rules
 - **temporal**: 10 rules
 
@@ -149,6 +149,7 @@ For each rule you will find:
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
 | `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
+| `anti_patterns.limit_without_order_by` | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
 | `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | ERROR | anti_patterns |
 | `anti_patterns.standard_concept_or_with_classification` | [Standard Concept OR with Classification](#anti-patterns-standard-concept-or-with-classification) | WARNING | anti_patterns |
@@ -158,7 +159,11 @@ For each rule you will find:
 | `domain_specific.condition_occurrence_cardinality_validation` | [Condition Occurrence Cardinality Risk](#domain-specific-condition-occurrence-cardinality-validation) | WARNING | domain_specific |
 | `domain_specific.condition_visit_hierarchy_validation` | [Condition Occurrence Visit Hierarchy Validation](#domain-specific-condition-visit-hierarchy-validation) | ERROR | domain_specific |
 | `domain_specific.condition_start_date_temporal_validation` | [Condition Temporal Column Validation](#domain-specific-condition-start-date-temporal-validation) | WARNING | domain_specific |
+| `domain_specific.cost_event_id_polymorphic_resolution` | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.cost_payer_plan_period_id_join` | [Cost Payer Plan Period ID Join](#domain-specific-cost-payer-plan-period-id-join) | ERROR | domain_specific |
+| `domain_specific.dose_era_cross_unit_comparison` | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
+| `domain_specific.event_cardinality_validation` | [Event Cardinality Risk (observation, device_exposure, visit_detail)](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
+| `domain_specific.event_field_polymorphic_resolution` | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.death_cause_source_concept_validation` | [Death Cause Source Concept Not For Analytical Filtering](#domain-specific-death-cause-source-concept-validation) | ERROR | domain_specific |
 | `domain_specific.death_join_to_person_not_to_clinical_event` | [Death Join to Person Not to Clinical Event](#domain-specific-death-join-to-person-not-to-clinical-event) | ERROR | domain_specific |
 | `domain_specific.drug_days_supply_validation` | [Drug Days Supply Validation](#domain-specific-drug-days-supply-validation) | WARNING | domain_specific |
@@ -183,6 +188,8 @@ For each rule you will find:
 | `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | ERROR | domain_specific |
 | `domain_specific.observation_value_as_string_numeric_comparison` | [Observation Value As String Numeric Comparison](#domain-specific-observation-value-as-string-numeric-comparison) | ERROR | domain_specific |
 | `domain_specific.person_birth_field_validation` | [Person Birth Field Validation](#domain-specific-person-birth-field-validation) | ERROR | domain_specific |
+| `domain_specific.year_of_birth_age_arithmetic` | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
+| `domain_specific.visit_length_of_stay_arithmetic` | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
 | `domain_specific.procedure_date_not_procedure_start_date` | [Procedure Date Not Procedure Start Date](#domain-specific-procedure-date-not-procedure-start-date) | ERROR | domain_specific |
 | `domain_specific.procedure_occurrence_quantity_semantics` | [Procedure Occurrence Quantity Semantics](#domain-specific-procedure-occurrence-quantity-semantics) | WARNING | domain_specific |
 | `domain_specific.vocabulary.relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |

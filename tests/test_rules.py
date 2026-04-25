@@ -413,17 +413,27 @@ class TestEdgeCases:
 
 
 class TestInvalidReasonEnforcement:
-    """Tests for invalid_reason enforcement rule (OMOP_501)."""
+    """Tests for invalid_reason enforcement rule (OMOP_501).
+
+    The rule is gated behind strict mode (silent in default mode), so the
+    helper installs ``ValidationContext(strict_mode=True)`` for the
+    duration of each rule call. The detection-logic assertions below
+    therefore exercise the rule's behavior *when enabled*.
+    """
 
     def _run_invalid_reason_rule(self, sql: str) -> list[str]:
-        """Run invalid_reason enforcement rule and return formatted violations."""
+        """Run invalid_reason enforcement rule (in strict mode) and return formatted violations."""
         from fastssv.core.base import Severity
         from fastssv.core.registry import get_rule
+        from fastssv.core.validation_context import with_strict_mode
 
         rule = get_rule("concept_standardization.invalid_reason_enforcement")()
-        violations = rule.validate(sql)
+        with with_strict_mode(True):
+            violations = rule.validate(sql)
 
-        # Convert to legacy string format
+        # Convert to legacy string format. Severity may be ERROR in strict
+        # mode (escalated by should_escalate_rule) — preserve the legacy
+        # "Warning:" prefix on warnings only.
         results = []
         for v in violations:
             prefix = "Warning: " if v.severity == Severity.WARNING else ""

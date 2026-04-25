@@ -282,15 +282,16 @@ def _has_concept_join_with_invalid_reason_filter(tree: exp.Expression) -> bool:
 
 @register
 class InvalidReasonEnforcementRule(Rule):
-    """Ensures queries on vocabulary tables filter by invalid_reason."""
+    """Strict-mode-only rule: vocabulary queries should filter by invalid_reason."""
 
     rule_id = "concept_standardization.invalid_reason_enforcement"
-    name = "Invalid Reason Enforcement"
+    name = "Invalid Reason Enforcement (strict mode)"
     description = (
-        "Ensures queries on vocabulary/concept tables filter by invalid_reason "
-        "to ensure only valid concepts are used (invalid_reason IS NULL)"
+        "Strict-mode-only. When enabled, ensures queries on vocabulary/concept "
+        "tables filter by invalid_reason so retired or upgraded concepts are "
+        "not silently included. Silent in default mode."
     )
-    severity = Severity.WARNING  # Best practice, not correctness issue
+    severity = Severity.WARNING  # Default; escalated to ERROR by strict mode
     suggested_fix = (
         "Add 'WHERE invalid_reason IS NULL' to ensure only valid concepts are used, "
         "or explicitly handle invalid concepts if needed"
@@ -302,8 +303,13 @@ class InvalidReasonEnforcementRule(Rule):
         "NULL for currently valid. Queries that omit an "
         "`invalid_reason IS NULL` predicate silently include retired rows, "
         "which can pull in concept_ids that your site no longer records or "
-        "that map onward to a better successor. Add the filter to stick "
-        "to current concepts."
+        "that map onward to a better successor.\n\n"
+        "**Gated behind strict mode.** Real-world OMOP queries on the "
+        "concept table almost always omit this filter — firing in default "
+        "mode produced a warning on essentially every realistic query and "
+        "diluted the signal of every other rule. Enable with "
+        "``--strict`` (CLI) or ``strict=True`` (API) when you want the "
+        "vocabulary-hygiene check applied; the rule is silent otherwise."
     )
     example_bad = (
         "SELECT concept_id, concept_name\n"
@@ -318,23 +324,25 @@ class InvalidReasonEnforcementRule(Rule):
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        """Validate SQL and return list of violations."""
+        """Validate SQL and return list of violations.
+
+        Gated behind strict mode: returns ``[]`` immediately when
+        ``ValidationContext.strict_mode`` is False.
+        """
+        from fastssv.core.validation_context import get_validation_context
+        ctx = get_validation_context()
+        if not ctx.strict_mode:
+            return []
+
         violations = []
 
         trees, error = parse_sql(sql, dialect)
         if error:
-            # Parse errors handled elsewhere
             return []
 
-        # Check validation context for severity adjustment
-        from fastssv.core.validation_context import get_validation_context
-        ctx = get_validation_context()
-
-        # Default: WARNING (best practice)
-        # Strict mode: escalate to ERROR
-        severity = Severity.WARNING
-        if ctx.should_escalate_rule(self.rule_id):
-            severity = Severity.ERROR
+        # In strict mode the rule fires; severity is escalated to ERROR
+        # via should_escalate_rule (which returns True for this rule_id).
+        severity = Severity.ERROR if ctx.should_escalate_rule(self.rule_id) else Severity.WARNING
 
         for tree in trees:
             if tree is None:

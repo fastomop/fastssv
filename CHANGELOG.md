@@ -100,6 +100,128 @@ the same shape plus broader wrong-column patterns. On the canonical bad
 query a user got three near-identical error messages for one root cause.
 Net effect: −3 rules, fewer duplicate violations, no detection loss.
 
+### Rule calibration — gated `invalid_reason_enforcement` behind strict mode
+
+`concept_standardization.invalid_reason_enforcement` previously fired as
+a WARNING on virtually every realistic OMOP query that touched the
+``concept`` table without an ``invalid_reason IS NULL`` filter — which
+is most of them. The OMOP-conventions audit found it firing on 15 of
+18 example_bad queries inside `concept_standardization/` alone, plus
+many others elsewhere, drowning out signal from every other rule.
+
+Behavior change:
+
+- **Default mode (no `--strict`):** the rule is silent. `validate()`
+  returns `[]` immediately when ``ValidationContext.strict_mode`` is
+  False. Default-mode fires across the registry's example_bads dropped
+  from 15 to 0.
+- **Strict mode (`--strict` / `strict=True`):** the rule fires as
+  WARNING. Strict mode here *enables* the rule rather than escalating
+  it from WARNING to ERROR — the rule is opt-in, not severity-promoted.
+- Removed the rule_id from
+  ``ValidationContext._strict_escalation_rules`` (it no longer
+  participates in the WARNING→ERROR escalation; the gating is the only
+  effect of strict mode for this rule).
+
+Tests updated: ``tests/test_strict_mode.py``'s normal-mode assertion
+flipped to "silent"; strict-mode assertion flipped from ERROR to
+WARNING; ``tests/test_rules.py::TestInvalidReasonEnforcement``'s
+helper now installs strict mode for the duration of each rule call so
+its 18 detection-logic tests continue to exercise the rule's
+correctness when enabled.
+
+Net: −15 false-positive warnings on realistic queries, no detection
+loss when the user opts into strict mode, all 2,418 tests still pass.
+
+### New rules — Tier A coverage additions
+
+Three new rules and one enhancement, pushing OMOP best-practice coverage
+from ~75–85% toward ~85–90% on the patterns a static SQL validator can
+catch:
+
+- **`domain_specific.event_field_polymorphic_resolution`** (error) — one
+  parameterized rule covering the four remaining v5.4 polymorphic FKs:
+  `note.note_event_id` requires `note_event_field_concept_id`,
+  `observation.observation_event_id` requires `obs_event_field_concept_id`,
+  `measurement.measurement_event_id` requires `meas_event_field_concept_id`,
+  `episode_event.event_id` requires `episode_event_field_concept_id`.
+  Mirrors the existing `cost.cost_event_id` and
+  `location_history.entity_id` rules. After this, fastssv covers every
+  polymorphic FK in v5.4 with consistent semantics.
+- **`anti_patterns.limit_without_order_by`** (warning) — flags
+  `LIMIT N`, `TOP N`, or `FETCH FIRST N ROWS ONLY` on a SELECT with no
+  `ORDER BY`. Most engines make no row-order guarantee, so the result is
+  non-deterministic across runs. Catches sampling, pagination, and CI
+  flakiness bugs. Skips subqueries inside `EXISTS (...)` / `IN (...)`
+  where row order is irrelevant.
+- **`domain_specific.dose_era_cross_unit_comparison`** (warning) —
+  symmetric mirror of `measurement_cross_unit_comparison` for
+  `dose_era.dose_value`. Aggregating across mg, mcg, IU, mL, etc.
+  produces meaningless averages without a `unit_concept_id` filter or
+  GROUP BY.
+- **Enhancement: `device_exposure` added to
+  `domain_specific.event_cardinality_validation`'s target list** —
+  `person → device_exposure` was the last v5.4 cardinality coverage
+  gap. The single-line config change closes it without writing a new
+  rule.
+
+Net: +3 rules (151 → 154), and the cardinality rule now covers
+`person → observation`, `person → device_exposure`, and
+`visit_occurrence → visit_detail`. Sibling rules cover
+`person → condition_occurrence`, `person → drug_exposure`, and
+`measurement` duplicates separately, completing v5.4 fan-out coverage.
+
+### New rules — coverage gaps from the OMOP-conventions audit
+
+Four new rules close concrete gaps identified during the OMOP-coverage
+audit. Each catches a real authoring bug that previously slipped past
+fastssv:
+
+- **`domain_specific.year_of_birth_age_arithmetic`** (warning) — flags
+  age computed as `<year_expression> - person.year_of_birth` (e.g.
+  `EXTRACT(YEAR FROM event_date) - p.year_of_birth >= 65`). This drops
+  month and day, so a person born 1959-12-31 evaluates as 65 on
+  2024-01-01 even though they are barely 64. Suggests using
+  `birth_datetime` (or `MAKE_DATE(year_of_birth, COALESCE(month_of_birth, 7),
+  COALESCE(day_of_birth, 1))`) for full-date arithmetic.
+- **`domain_specific.visit_length_of_stay_arithmetic`** (warning) — fires
+  on `visit_end_date - visit_start_date` (or `DATEDIFF` / `DATE_DIFF`
+  shapes) without an inpatient `visit_concept_id` filter. Outpatient
+  visits (9202) have `visit_end_date = visit_start_date` by spec, so
+  mixed-population LOS averages dilute toward zero. Suggested fix: add
+  `WHERE visit_concept_id IN (9201, 9203, 262, …)`.
+- **`domain_specific.cost_event_id_polymorphic_resolution`** (error) —
+  requires `cost.cost_domain_id` to be filtered when `cost.cost_event_id`
+  appears in a JOIN ON or WHERE clause. `cost_event_id` is a polymorphic
+  FK whose target table depends on `cost_domain_id`; joining without
+  the filter either matches nothing or matches by coincidence. Mirrors
+  the existing `domain_specific.location_history_entity_id_requires_domain_id`.
+- **`domain_specific.event_cardinality_validation`** (warning) — covers
+  the two cardinality gaps in v5.4: `person → observation` and
+  `visit_occurrence → visit_detail` joined without aggregation produce
+  silent fan-out. One parameterized rule rather than duplicating the
+  existing `condition_occurrence_cardinality_validation` /
+  `drug_exposure_cardinality_validation` shape per table.
+
+Net: +4 rules (147 → 151). All four ship with `example_bad` /
+`example_good` and pass the schema-consistency tests; full suite
+remains green at 2,418 tests.
+
+**Skipped from the same audit (with rationale):**
+
+- *Events outside observation_period bounds* — too noisy as a static
+  rule without cohort-context awareness.
+- *Cohort-table overlapping intervals* — vague target; needs a clearer
+  detection pattern before becoming a rule.
+- *NULL date arithmetic* — already covered by
+  `temporal.nullable_end_date_null_handling`.
+- *Vocabulary version awareness, inter-event causality, STCM staleness* —
+  out of scope for static SQL validation.
+- *`provider.<source>_source_value` filter detection* — already covered
+  by `data_quality.source_value_field_usage`.
+- *Calibration of `concept_standardization.invalid_reason_enforcement`* —
+  separate concern (gating in strict mode), not a new rule.
+
 ### Core cleanup — retired dead exports
 
 After the schema work, an audit of `src/fastssv/core/` mapped every

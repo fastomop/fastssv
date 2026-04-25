@@ -22,6 +22,7 @@ from .having_without_group_by import HavingWithoutGroupByRule
 from .duplicate_column_alias import DuplicateColumnAliasRule
 from .top_as_synthetic_data import TopAsSyntheticDataRule
 from .null_comparison_operator import NullComparisonOperatorRule
+from .limit_without_order_by import LimitWithoutOrderByRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -43,4 +44,5 @@ __all__ = [
     "DuplicateColumnAliasRule",
     "TopAsSyntheticDataRule",
     "NullComparisonOperatorRule",
+    "LimitWithoutOrderByRule",
 ]

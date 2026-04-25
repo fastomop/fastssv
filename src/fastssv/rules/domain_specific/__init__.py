@@ -53,7 +53,15 @@ from .vocabulary import *  # noqa: F401, F403
 # Import note rules
 from .note import *  # noqa: F401, F403
 
+# Cross-cutting rules
+from .event_cardinality_validation import EventCardinalityValidationRule
+from .event_field_polymorphic_resolution import EventFieldPolymorphicResolutionRule
+from .dose_era_cross_unit_comparison import DoseEraCrossUnitComparisonRule
+
 __all__ = [
     "CostPaidIngredientCostDrugSpecificRule",
     "CostCurrencyConceptIdRule",
+    "EventCardinalityValidationRule",
+    "EventFieldPolymorphicResolutionRule",
+    "DoseEraCrossUnitComparisonRule",
 ]

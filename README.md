@@ -117,11 +117,11 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 ### Core Categories
 
-**Anti-Pattern Rules (19 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, and context-dependent vocabulary lookups.
+**Anti-Pattern Rules (20 rules)** - Detect common OMOP query anti-patterns including string-based concept identification, improper type concept usage, concept_relationship misuse, redundant hierarchy patterns, ambiguous column references, cross joins, metadata joins, context-dependent vocabulary lookups, and non-deterministic LIMIT/TOP without ORDER BY.
 
 **Concept Standardization Rules (18 rules)** - Enforce standard concept usage, concept_ancestor rollup direction, invalid reason checks, domain and vocabulary validation, source concept handling, Maps to target correctness, concept relationship validity, and CDM version migration issues.
 
-**Domain-Specific Rules (42 rules)** - Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
+**Domain-Specific Rules (48 rules)** - Table-specific validation for cohort, condition, cost, death, drug, episode, location, measurement, note, observation, person, procedure, specimen, visit, visit_detail, and vocabulary domains. Includes cardinality awareness, field validation, temporal constraints, domain-specific semantic rules, and CDM version compatibility checks.
 
 **Join Rules (36 rules)** - Validate foreign key relationships, join path correctness, concept relationship direction, cross-table linkage requirements, left join logic, alias reuse, and observation_period date overlap requirements.
 
@@ -129,7 +129,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Data Quality Rules (22 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
 
-### Key Anti-Pattern Rules (19 rules)
+### Key Anti-Pattern Rules (20 rules)
 
 **Type concept ID misuse** (`anti_patterns.type_concept_id_misuse`, WARNING) - Type concept fields (*_type_concept_id) encode provenance metadata (EHR, claims, registry) and should not be used for clinical filtering. Type concepts indicate data source, not clinical meaning.
 
@@ -149,7 +149,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Concept ancestor rollup direction** (`concept_standardization.concept_ancestor_rollup_direction`, ERROR) - When joining `concept_ancestor` to roll up to ancestor concepts, the join direction must match the intent. Confusing `ancestor_concept_id` and `descendant_concept_id` silently returns the wrong concept set.
 
-**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, WARNING) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` may return retired concept IDs. This is a best practice for vocabulary hygiene.
+**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, WARNING — *strict-mode-only*) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` may return retired concept IDs. Gated behind `--strict` (CLI) / `strict=True` (API) because the filter is missing from most realistic queries; the rule is silent in default mode and fires as a warning in strict mode.
 
 **Concept domain validation** (`concept_standardization.concept_domain_validation`, WARNING for missing filter, ERROR for wrong filter) - Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Missing a `domain_id` filter is a best practice warning. Using the **wrong** `domain_id` is always an ERROR as it will return zero rows.
 
@@ -167,7 +167,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Maps to target standard validation** (`concept_standardization.maps_to_target_standard_validation`, WARNING) - When using 'Maps to' relationships, ensure the target concept is a valid standard concept (`standard_concept = 'S'` AND `invalid_reason IS NULL`). Prevents landing on deprecated or intermediate concepts.
 
-### Key Domain-Specific Rules (42 rules)
+### Key Domain-Specific Rules (48 rules)
 
 **Person birth field validation** (`domain_specific.person_birth_field_validation`, ERROR) - Validates plausible ranges for birth date components: year_of_birth (1900 to current), month_of_birth (1 to 12), day_of_birth (1 to 31).
 
@@ -268,7 +268,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 147 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 154 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 
@@ -455,12 +455,12 @@ Cohort definition validation with elevated standards:
 fastssv cohort_definition.sql --strict
 ```
 
-In strict mode, certain best practice warnings are escalated to errors:
+In strict mode, certain best practice warnings are escalated to errors, and one strict-only rule is enabled:
 - `standard_concept_enforcement`: WARNING → ERROR
-- `invalid_reason_enforcement`: WARNING → ERROR
 - `concept_domain_validation`: WARNING → ERROR (for missing domain filters, wrong domain always ERROR)
 - `concept_code_requires_vocabulary_id`: WARNING → ERROR
 - `concept_relationship_requires_relationship_id`: WARNING → ERROR
+- `invalid_reason_enforcement`: silent → WARNING (gated behind strict mode; not severity-escalated)
 
 **When to use strict mode**:
 - Cohort definitions for research studies

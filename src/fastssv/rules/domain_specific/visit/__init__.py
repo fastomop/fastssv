@@ -7,6 +7,7 @@ from .visit_detail_dates_within_parent_visit import VisitDetailDatesWithinParent
 from .visit_detail_admitted_discharged_domain import VisitDetailAdmittedDischargedDomainRule
 from .visit_occurrence_type_domain import VisitOccurrenceTypeDomainRule
 from .cdm_v53_to_v54_column_renames import CdmV53ToV54ColumnRenamesRule
+from .visit_length_of_stay_arithmetic import VisitLengthOfStayArithmeticRule
 
 __all__ = [
     "VisitOutpatientSameDayValidationRule",
@@ -16,4 +17,5 @@ __all__ = [
     "VisitDetailAdmittedDischargedDomainRule",
     "VisitOccurrenceTypeDomainRule",
     "CdmV53ToV54ColumnRenamesRule",
+    "VisitLengthOfStayArithmeticRule",
 ]
