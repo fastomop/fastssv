@@ -45,6 +45,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -232,11 +233,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use descendant_concept_id for descendant values and "
-        "ancestor_concept_id for ancestor values."
-    )
-
+    suggested_fix = "REPLACE: join on `concept_ancestor.ancestor_concept_id` WHERE the alias suggests descendant intent (or vice versa) WITH the matching column. Use descendant_concept_id when reading descendants, ancestor_concept_id when reading ancestors."
     def validate(self, sql: str, dialect: str = "postgres"):
         violations = []
 
@@ -266,6 +263,19 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
                     else ANCESTOR_CONCEPT_ID
                 )
 
+                fix_text = (
+                    f"REPLACE: `concept_ancestor.{join_col} = concept.concept_id` "
+                    f"WITH `concept_ancestor.{expected} = concept.concept_id`."
+                )
+                patch = build_join_replace_patch(
+                    sql,
+                    CONCEPT_ANCESTOR, join_col,
+                    CONCEPT, CONCEPT_ID,
+                    expected, CONCEPT_ID,
+                    fix_text,
+                    aliases=aliases,
+                )
+
                 violations.append(
                     self.create_violation(
                         message=(
@@ -275,6 +285,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
                         suggested_fix=(
                             f"Use concept_ancestor.{expected} = concept.concept_id"
                         ),
+                        suggested_fix_patch=patch,
                         details={
                             "type": "semantic_mismatch",
                             "column": col,

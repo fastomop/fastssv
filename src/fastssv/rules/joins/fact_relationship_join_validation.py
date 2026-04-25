@@ -39,6 +39,12 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import (
+    add as patch_add,
+    freeform,
+    locate,
+    _qualifiers_for_table,
+)
 from fastssv.core.registry import register
 
 
@@ -261,10 +267,7 @@ class FactRelationshipJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add domain filter matching the clinical table, e.g.: "
-        "WHERE domain_concept_id_1 = <correct_domain_id>"
-    )
+    suggested_fix = "ADD: `AND fr.domain_concept_id_1 = <id1> AND fr.domain_concept_id_2 = <id2>` to disambiguate the polymorphic fact_id_1 / fact_id_2 columns. Each pair points into a different clinical-event table depending on the domain."
     example_bad = (
         "SELECT fr.fact_id_1 FROM fact_relationship fr\n"
         "JOIN visit_occurrence vo ON fr.fact_id_1 = vo.visit_occurrence_id;"
@@ -306,10 +309,45 @@ class FactRelationshipJoinValidationRule(Rule):
                     f"Without this, polymorphic IDs may match wrong tables."
                 )
 
+                # Build an ADD patch that inserts the missing domain_concept_id
+                # filter directly after the offending fact_id_X predicate.
+                fix_text = (
+                    f"ADD: `AND fact_relationship.{domain_col} = {expected_domain}` "
+                    f"to disambiguate the polymorphic fact_id."
+                )
+                patch = freeform(fix_text)
+                clinical_pk = CLINICAL_TABLE_PK.get(table)
+                if clinical_pk:
+                    fr_quals = _qualifiers_for_table(FACT_RELATIONSHIP, aliases)
+                    clin_quals = _qualifiers_for_table(table, aliases)
+                    located = None
+                    chosen_fr = FACT_RELATIONSHIP
+                    for fq in fr_quals:
+                        for cq in clin_quals:
+                            for predicate in (
+                                f"{fq}.{fact_id_col} = {cq}.{clinical_pk}",
+                                f"{cq}.{clinical_pk} = {fq}.{fact_id_col}",
+                            ):
+                                span = locate(sql, predicate)
+                                if span is not None:
+                                    located = span
+                                    chosen_fr = fq
+                                    break
+                            if located:
+                                break
+                        if located:
+                            break
+                    if located:
+                        patch = patch_add(
+                            located[1],
+                            f" AND {chosen_fr}.{domain_col} = {expected_domain}",
+                        )
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "fact_relationship_domain_mismatch",
                             "clinical_table": table,

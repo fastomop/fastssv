@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
@@ -197,6 +198,8 @@ class ConceptVocabularyJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: the concept ↔ vocabulary ON clause WITH `concept.vocabulary_id = vocabulary.vocabulary_id`. Joining via domain_id, concept_class_id, or any other column is incorrect — vocabulary.vocabulary_id is the only FK target."
+
     example_bad = (
         "SELECT c.concept_id FROM concept c\n"
         "JOIN vocabulary v ON c.domain_id = v.vocabulary_id;"
@@ -229,14 +232,21 @@ class ConceptVocabularyJoinValidationRule(Rule):
 
             # --- ERRORS ---
             for c_table, c_col, v_table, v_col in errors:
+                fix_text = (
+                    f"REPLACE: `{c_table}.{c_col} = {v_table}.{v_col}` "
+                    f"WITH `{c_table}.vocabulary_id = {v_table}.vocabulary_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
                             f"Invalid join: {c_table}.{c_col} = {v_table}.{v_col}. "
                             f"Use vocabulary_id = vocabulary_id."
                         ),
-                        suggested_fix=(
-                            f"{c_table}.vocabulary_id = {v_table}.vocabulary_id"
+                        suggested_fix=fix_text,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, v_table, v_col,
+                            "vocabulary_id", "vocabulary_id", fix_text,
+                            aliases=aliases,
                         ),
                         details={
                             "type": "invalid_concept_vocabulary_join",
@@ -248,6 +258,10 @@ class ConceptVocabularyJoinValidationRule(Rule):
 
             # --- WARNINGS ---
             for c_table, c_col, v_table, v_col in warnings:
+                fix_text = (
+                    f"REPLACE: `{c_table}.{c_col} = {v_table}.{v_col}` "
+                    f"WITH `{c_table}.vocabulary_id = {v_table}.vocabulary_id`."
+                )
                 violations.append(
                     RuleViolation(
                         rule_id=self.rule_id,
@@ -256,9 +270,11 @@ class ConceptVocabularyJoinValidationRule(Rule):
                             f"Expected vocabulary_id alignment."
                         ),
                         severity=Severity.WARNING,
-                        suggested_fix=(
-                            f"Use vocabulary_id for joining:\n"
-                            f"  {c_table}.vocabulary_id = {v_table}.vocabulary_id"
+                        suggested_fix=fix_text,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, v_table, v_col,
+                            "vocabulary_id", "vocabulary_id", fix_text,
+                            aliases=aliases,
                         ),
                         details={
                             "type": "suspicious_concept_vocabulary_join",

@@ -274,9 +274,7 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use INNER JOIN or move filter into JOIN ON clause."
-    )
+    suggested_fix = "REPLACE: `WHERE <right>.<col> <op> <val>` (after LEFT JOIN) WITH either: (a) move the predicate into the JOIN ON clause (`LEFT JOIN ... ON ... AND <right>.<col> <op> <val>`) to preserve left-outer semantics, OR (b) accept that the LEFT JOIN is effectively INNER and rewrite as INNER JOIN."
     example_bad = (
         "SELECT p.person_id FROM person p\n"
         "LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id\n"

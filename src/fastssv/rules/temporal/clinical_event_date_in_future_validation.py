@@ -253,10 +253,7 @@ class ClinicalEventDateInFutureValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use date filters consistent with past or present events. "
-        "Avoid filtering for future clinical dates unless explicitly intended."
-    )
+    suggested_fix = "REPLACE: `<event_date> > CURRENT_DATE` (or > GETDATE() / NOW()) WITH `<event_date> <= CURRENT_DATE`. Future-dated clinical events typically indicate ETL bugs."
     long_description = (
         "Queries that filter condition_start_date > CURRENT_DATE (or the same "
         "inequality against any clinical event date column) describe events "

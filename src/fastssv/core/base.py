@@ -23,20 +23,61 @@ class RuleViolation:
     suggested_fix: str
     location: Optional[str] = None
     details: dict = field(default_factory=dict)
+    suggested_fix_patch: Optional[dict] = None
+
+    def __post_init__(self) -> None:
+        # Every violation carries a structured patch envelope so consumers
+        # can switch on `action` uniformly. Rules that haven't supplied a
+        # specific REPLACE/ADD/REMOVE patch fall back to FREEFORM, wrapping
+        # the prose `suggested_fix` text.
+        if self.suggested_fix_patch is None and self.suggested_fix:
+            self.suggested_fix_patch = {
+                "action": "FREEFORM",
+                "text": self.suggested_fix,
+            }
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
+        """Convert to dictionary for JSON serialization.
+
+        The single ``fix`` field unifies the human prose and the structured
+        patch:
+
+        - For FREEFORM patches (the auto-default for ~60% of rules), ``fix``
+          is the prose string — the same text the LLM-friendly
+          ``suggested_fix`` carries.
+        - For REPLACE / ADD / REMOVE patches (mechanical, ~40%), ``fix`` is
+          the patch dict; an outer correction loop can apply it directly
+          via ``apply_patch()``.
+
+        Consumers switch on ``isinstance(fix, str)`` vs ``dict``.
+        """
         result = {
             "rule_id": self.rule_id,
             "severity": self.severity.value,
             "issue": self.message,
-            "suggested_fix": self.suggested_fix,
         }
+        fix = self._serialised_fix()
+        if fix is not None:
+            result["fix"] = fix
         if self.location:
             result["location"] = self.location
-        if self.details:
-            result["details"] = self.details
+        # ``details`` stays as an internal field on the dataclass for tests,
+        # programmatic introspection, and rule-side diagnostics — but it
+        # doesn't appear in the serialised payload. The keys vary too much
+        # across rules to be programmatically useful, and most content
+        # duplicates ``issue``/``fix``.
         return result
+
+    def _serialised_fix(self):
+        """Compute the single-field ``fix`` value: string for FREEFORM /
+        no-patch, dict for mechanical REPLACE/ADD/REMOVE."""
+        patch = self.suggested_fix_patch
+        if patch is None:
+            return self.suggested_fix or None
+        action = patch.get("action")
+        if action == "FREEFORM":
+            return patch.get("text") or self.suggested_fix or None
+        return patch
 
 
 class Rule(ABC):
@@ -87,6 +128,7 @@ class Rule(ABC):
         suggested_fix: Optional[str] = None,
         location: Optional[str] = None,
         details: Optional[dict] = None,
+        suggested_fix_patch: Optional[dict] = None,
     ) -> RuleViolation:
         """Helper to create a violation with rule defaults."""
         return RuleViolation(
@@ -96,6 +138,7 @@ class Rule(ABC):
             suggested_fix=suggested_fix or self.suggested_fix,
             location=location,
             details=details or {},
+            suggested_fix_patch=suggested_fix_patch,
         )
 
 

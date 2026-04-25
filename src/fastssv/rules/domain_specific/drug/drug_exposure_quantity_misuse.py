@@ -207,10 +207,7 @@ class DrugExposureQuantityMisuseRule(Rule):
         "Detects use of drug_exposure.quantity as duration in date logic."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use days_supply or date differences instead of quantity."
-    )
-
+    suggested_fix = "REPLACE: `<start_date> + de.quantity` (or quantity-as-duration arithmetic) WITH `de.drug_exposure_start_date + de.days_supply`, OR use date_diff(de.drug_exposure_end_date, de.drug_exposure_start_date)."
     example_bad = (
         "SELECT person_id,\n"
         "       drug_exposure_start_date + quantity AS end_date\n"

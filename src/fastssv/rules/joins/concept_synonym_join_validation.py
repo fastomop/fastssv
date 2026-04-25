@@ -37,6 +37,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -183,10 +184,7 @@ class ConceptSynonymJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join concept_synonym to concept using concept_id: "
-        "concept_synonym.concept_id = concept.concept_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `concept_synonym.concept_id = concept.concept_id`. Do not join on concept_name or concept_synonym_name (names are not unique)."
     example_bad = (
         "SELECT cs.concept_synonym_name\n"
         "FROM concept c\n"
@@ -218,6 +216,7 @@ class ConceptSynonymJoinValidationRule(Rule):
 
             for lt, lc, rt, rc in detected:
 
+                patch = None
                 if lc == "NONE":
                     msg = (
                         f"{CONCEPT_SYNONYM} and {CONCEPT} are used but not joined. "
@@ -236,11 +235,22 @@ class ConceptSynonymJoinValidationRule(Rule):
                         f"Invalid join: {left} → {right}. "
                         f"concept_synonym must join to concept via concept_id."
                     )
+                    fix_text = (
+                        f"REPLACE: `{left} = {right}` "
+                        f"WITH `{lt}.concept_id = {rt}.concept_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, lt, lc, rt, rc,
+                        CONCEPT_ID, CONCEPT_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
 
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "concept_synonym_invalid_join",
                             "left_table": lt,

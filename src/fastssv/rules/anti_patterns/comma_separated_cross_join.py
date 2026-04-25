@@ -210,10 +210,7 @@ class CommaSeparatedCrossJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use explicit JOIN...ON syntax, or add a WHERE clause with column-to-column "
-        "equality to join the tables (e.g., WHERE co.person_id = de.person_id)."
-    )
+    suggested_fix = "REPLACE: comma-separated FROM with explicit JOIN ... ON. Example: change `FROM a, b WHERE a.x = b.x` to `FROM a JOIN b ON a.x = b.x`."
     long_description = (
         "Comma-join syntax (FROM a, b) predates the explicit JOIN...ON form "
         "introduced in SQL-92 and is still common in analysts who come from "

@@ -268,10 +268,7 @@ class ConceptAncestorRollupDirectionRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join clinical concept_id to concept_ancestor.descendant_concept_id "
-        "and filter on concept_ancestor.ancestor_concept_id."
-    )
+    suggested_fix = "JOIN: clinical_concept_id = concept_ancestor.descendant_concept_id, FILTER: concept_ancestor.ancestor_concept_id = <ancestor>. Reverse the direction if you swapped them."
     long_description = (
         "concept_ancestor is directional: ancestor_concept_id is the broader "
         "category (e.g. 201820 = 'Diabetes mellitus') and descendant_concept_id "
@@ -329,9 +326,10 @@ class ConceptAncestorRollupDirectionRule(Rule):
                         message=message,
                         severity=self.severity,
                         suggested_fix=(
-                            f"Use: {v['clinical_table']}.{v['clinical_column']} = "
-                            f"concept_ancestor.{v['expected']} and filter on "
-                            f"concept_ancestor.{v['joined_to']}"
+                            f"REPLACE: the join keys WITH "
+                            f"`{v['clinical_table']}.{v['clinical_column']} = ca.{v['expected']} "
+                            f"AND ca.{v['joined_to']} = <root_concept>`. "
+                            f"Descendants roll up TO ancestors; reversing the direction returns wrong rows."
                         ),
                         details=v,
                     )

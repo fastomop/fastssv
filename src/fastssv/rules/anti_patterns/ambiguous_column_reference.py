@@ -183,10 +183,7 @@ class AmbiguousColumnReferenceRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Qualify the column with a table name or alias "
-        "(e.g., co.person_id). Always use explicit qualifiers in multi-table queries."
-    )
+    suggested_fix = "QUALIFY: replace bare column references with <alias>.<column> (e.g. co.person_id, c.concept_id). In multi-table queries every column should resolve to exactly one table."
     long_description = (
         "Columns like person_id, visit_occurrence_id, provider_id, and "
         "care_site_id appear in many OMOP tables. In a multi-table join, an "

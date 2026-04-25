@@ -25,6 +25,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import freeform
 from fastssv.core.registry import register
 
 
@@ -100,14 +101,7 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Compute age from the full date when available: e.g. "
-        "FLOOR((event_date - person.birth_datetime) / 365.25), or "
-        "COALESCE(birth_datetime, MAKE_DATE(year_of_birth, COALESCE(month_of_birth, 7), "
-        "COALESCE(day_of_birth, 1))). Use year_of_birth alone only if your dataset has "
-        "no month/day/datetime populated, and document the rounding error."
-    )
-
+    suggested_fix = "REPLACE: `<year_expr> - p.year_of_birth` WITH full-date arithmetic: `FLOOR((event_date - p.birth_datetime) / 365.25)` when birth_datetime is populated, OR `FLOOR((event_date - MAKE_DATE(year_of_birth, COALESCE(month_of_birth, 7), COALESCE(day_of_birth, 1))) / 365.25)` as fallback."
     long_description = (
         "Many OMOP cohort definitions compute age at index by subtracting "
         "`person.year_of_birth` from the event year: "
@@ -163,7 +157,6 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
                     continue
 
                 # Year - YOB pattern (canonical age calc)
-                yob_side = left if left_is_yob else right
                 other_side = right if left_is_yob else left
 
                 # Fire on year-returning expressions, integer literals (1900-2099),
@@ -181,6 +174,15 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
                     continue
                 seen.add(key)
 
+                # Structured patch: WRAP the `<year_expr> - year_of_birth`
+                # subtraction in `FLOOR((... - p.birth_datetime) / 365.25)`
+                # form. Since the right transformation depends on which
+                # date the `year_expr` was extracted from (we'd need to
+                # recover it), we emit FREEFORM with the prose fix —
+                # WRAP isn't structurally accurate here and would yield
+                # invalid SQL.
+                patch = freeform(self.suggested_fix)
+
                 violations.append(
                     self.create_violation(
                         message=(
@@ -195,6 +197,7 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
                             "table": PERSON,
                             "column": YEAR_OF_BIRTH,
                         },
+                        suggested_fix_patch=patch,
                     )
                 )
 

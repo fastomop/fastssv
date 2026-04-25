@@ -72,6 +72,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -311,10 +312,7 @@ class UnitVocabularyValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use vocabulary_id = 'UCUM' for unit concept lookups, or remove "
-        "the vocabulary_id filter entirely."
-    )
+    suggested_fix = "REPLACE: `c.vocabulary_id = '<other>'` WITH `c.vocabulary_id = 'UCUM'` for unit_concept_id joins. Standard OMOP unit concepts come from UCUM."
     long_description = (
         "OMOP unit concepts live in the UCUM vocabulary (Unified Code for "
         "Units of Measure). Filtering unit_concept_id joins with "
@@ -398,11 +396,29 @@ class UnitVocabularyValidationRule(Rule):
                             f"Replace with vocabulary_id = '{VALID_UNIT_VOCABULARY}' or remove the filter"
                         )
 
+                    # Build a mechanical REPLACE patch swapping the bad
+                    # vocab literal with 'UCUM' inside the offending
+                    # predicate. Only attempt this for production
+                    # filtering (not exploratory analyses) and only when
+                    # the bad value appears inside a uniquely-locatable
+                    # predicate. NULL filters (`vocabulary_id IS NULL`)
+                    # are not handled by this REPLACE.
+                    patch = None
+                    if not is_exploratory and vocab_norm and vocab_norm != "null":
+                        span = locate(sql, context)
+                        if span is not None and f"'{vocab_value}'" in context:
+                            new_text = context.replace(
+                                f"'{vocab_value}'",
+                                f"'{VALID_UNIT_VOCABULARY}'",
+                            )
+                            patch = patch_replace(span, new_text)
+
                     violations.append(
                         self.create_violation(
                             message=message,
                             severity=severity,
                             suggested_fix=suggested_fix,
+                            suggested_fix_patch=patch,
                             details={
                                 "unit_column": unit_col,
                                 "incorrect_vocabulary": vocab_value,

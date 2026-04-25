@@ -31,6 +31,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -148,10 +149,7 @@ class ProviderJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join clinical tables to provider using provider_id: "
-        "clinical_table.provider_id = provider.provider_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `<clinical>.provider_id = provider.provider_id`. Clinical event tables join to provider only via provider_id."
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN provider p ON co.person_id = p.provider_id;"
@@ -183,6 +181,10 @@ class ProviderJoinValidationRule(Rule):
             bad_joins = _check_provider_join(tree, aliases)
 
             for clinical_table, clinical_col, provider_table, provider_col in bad_joins:
+                fix_text = (
+                    f"REPLACE: `{clinical_table}.{clinical_col} = {provider_table}.{provider_col}` "
+                    f"WITH `{clinical_table}.provider_id = {provider_table}.provider_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -191,6 +193,13 @@ class ProviderJoinValidationRule(Rule):
                             f"Expected provider_id = provider_id."
                         ),
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, clinical_table, clinical_col,
+                            provider_table, provider_col,
+                            PROVIDER_ID, PROVIDER_ID,
+                            fix_text,
+                            aliases=aliases,
+                        ),
                         details={
                             "clinical_table": clinical_table,
                             "clinical_column": clinical_col,

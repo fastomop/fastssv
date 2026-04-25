@@ -35,6 +35,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     is_in_where_or_join_clause,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -177,11 +178,21 @@ def _collect_domain_filters(
 
 # --- Core Logic ------------------------------------------------------------
 
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
-    issues = []
+def _find_violations(
+    tree: exp.Expression, aliases: Dict[str, str]
+) -> List[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
+    """Return list of (message, cost_alias, expected_domain, eq_sql) tuples.
+
+    ``eq_sql`` is the source SQL of the offending cost-event-id equality and is
+    used to locate the insertion point for an ADD patch. ``cost_alias`` is the
+    qualifier that should appear in the inserted predicate. The wrong-domain
+    case has no good ADD anchor and uses (None, None, None) for the patch slot.
+    """
+    issues: List[Tuple[str, Optional[str], Optional[str], Optional[str]]] = []
     seen = set()
 
-    cost_joins: List[Tuple[str, str]] = []
+    # (cost_alias, expected_domain, eq_sql)
+    cost_joins: List[Tuple[str, str, str]] = []
 
     # Find joins
     for eq in tree.find_all(exp.EQ):
@@ -201,7 +212,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
         match = _match_cost_join(eq, aliases)
         if match:
-            cost_joins.append(match)
+            cost_joins.append((match[0], match[1], eq.sql()))
 
     if not cost_joins:
         return []
@@ -209,7 +220,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
     cost_aliases = _extract_cost_aliases(aliases)
     domain_filters = _collect_domain_filters(tree, aliases, cost_aliases)
 
-    for cost_alias, expected in cost_joins:
+    for cost_alias, expected, eq_sql in cost_joins:
         alias = normalize_name(cost_alias)
         expected_norm = normalize_name(expected)
 
@@ -222,19 +233,26 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
         # No filter
         if not filters:
-            issues.append(
+            issues.append((
                 f"Missing cost_domain_id filter for cost join (expected '{expected}'). "
-                f"Add: {alias}.cost_domain_id = '{expected}'"
-            )
+                f"Add: {alias}.cost_domain_id = '{expected}'",
+                alias,
+                expected,
+                eq_sql,
+            ))
             continue
 
-        # Wrong domain
+        # Wrong domain — no clean ADD anchor; the existing predicate would
+        # need a REPLACE, which the locate-based detector here doesn't emit.
         if expected_norm not in filters:
             actual = ", ".join(sorted(filters))
-            issues.append(
+            issues.append((
                 f"Cost domain mismatch for alias '{alias}': expected '{expected}', "
-                f"found ({actual})"
-            )
+                f"found ({actual})",
+                None,
+                None,
+                None,
+            ))
 
     return issues
 
@@ -251,9 +269,7 @@ class CostTableDomainValidationRule(Rule):
         "Ensures cost joins use correct cost_domain_id to disambiguate polymorphic keys."
     )
     severity = Severity.WARNING  # Changed from ERROR to WARNING
-    suggested_fix = (
-        "Add cost.cost_domain_id = '<domain>' matching the joined clinical table."
-    )
+    suggested_fix = "ADD: `AND c.cost_domain_id = '<Domain>'` when joining cost via cost_event_id to a clinical event table (the polymorphic FK needs disambiguation)."
     example_bad = (
         "SELECT * FROM cost c\n"
         "JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id;"
@@ -279,8 +295,27 @@ class CostTableDomainValidationRule(Rule):
 
             issues = _find_violations(tree, aliases)
 
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
+            for msg, cost_alias, expected, eq_sql in issues:
+                # Structured patch: ADD `AND <cost_alias>.cost_domain_id =
+                # '<Domain>'` immediately after the offending cost ↔ clinical
+                # equality in the JOIN ON clause. If the equality isn't
+                # uniquely locatable, fall back to FREEFORM via auto-default.
+                patch = None
+                if cost_alias and expected and eq_sql:
+                    span = locate(sql, eq_sql)
+                    if span is not None:
+                        # Capitalise the domain string for canonical OMOP form
+                        # (e.g. "drug" → "Drug").
+                        domain_value = expected[:1].upper() + expected[1:]
+                        patch = patch_add(
+                            span[1],
+                            f" AND {cost_alias}.cost_domain_id = '{domain_value}'",
+                        )
+
+                violations.append(self.create_violation(
+                    message=msg,
+                    suggested_fix_patch=patch,
+                ))
 
         return violations
 

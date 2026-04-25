@@ -23,6 +23,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import parse_sql
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -88,12 +89,7 @@ class LimitWithoutOrderByRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add an explicit ORDER BY clause to the SELECT before the LIMIT/TOP/FETCH. "
-        "Use a primary key or a stable composite key (e.g. ORDER BY person_id, "
-        "condition_start_date) so the row choice is reproducible across runs."
-    )
-
+    suggested_fix = "ADD: ORDER BY <stable_key> before LIMIT/TOP/FETCH. Use the table's primary key (e.g. ORDER BY condition_occurrence_id) or a composite key that uniquely identifies a row."
     long_description = (
         "Most SQL engines make no guarantee about row order in the absence of "
         "an explicit ``ORDER BY`` clause. Pairing ``LIMIT N`` (or ``TOP N``, "
@@ -154,6 +150,16 @@ class LimitWithoutOrderByRule(Rule):
                     continue
                 seen.add(key)
 
+                # Mechanical ADD: insert `ORDER BY <stable_key>\n` directly
+                # before the row-limiting clause. The actual key is unknown
+                # (a primary key on the leading table is the usual choice),
+                # so emit a `<stable_key>` placeholder for the outer loop
+                # / LLM to resolve.
+                patch = None
+                span = locate(sql, limit_sql)
+                if span is not None:
+                    patch = patch_add(span[0], "ORDER BY <stable_key>\n")
+
                 violations.append(
                     self.create_violation(
                         message=(
@@ -161,6 +167,7 @@ class LimitWithoutOrderByRule(Rule):
                             f"Row order is non-deterministic — successive runs "
                             f"may return different rows."
                         ),
+                        suggested_fix_patch=patch,
                         details={
                             "limit_clause": limit_sql,
                         },

@@ -236,10 +236,7 @@ class CostPayerPlanPeriodIdJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: cost.payer_plan_period_id = payer_plan_period.payer_plan_period_id"
-    )
-
+    suggested_fix = "REPLACE: the join condition WITH `c.payer_plan_period_id = ppp.payer_plan_period_id`. cost.payer_plan_period_id is a FK only to payer_plan_period.payer_plan_period_id."
     example_bad = (
         "SELECT c.cost_id FROM cost c\n"
         "JOIN payer_plan_period p ON c.payer_plan_period_id = p.person_id;"

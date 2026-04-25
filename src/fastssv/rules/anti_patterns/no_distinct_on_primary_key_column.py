@@ -191,10 +191,7 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Remove DISTINCT when selecting only primary key columns. "
-        "If joins are present, review join conditions for unintended duplicates."
-    )
+    suggested_fix = "REMOVE: DISTINCT when the SELECT list is just primary-key columns (PKs are unique by definition). If duplicates appear, the JOIN conditions are wrong — fix those instead of masking with DISTINCT."
     long_description = (
         "DISTINCT on a primary-key column is a tautology: primary keys are "
         "unique by definition, so the de-duplication never actually "
@@ -252,6 +249,10 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
                         suggestion = (
                             "Review join conditions to ensure they do not introduce duplicates."
                         )
+                        # When joins are present, the right fix is to repair
+                        # the join predicate, not to strip DISTINCT — leave
+                        # the patch on FREEFORM auto-default.
+                        patch = None
                     else:
                         message = (
                             f"Redundant DISTINCT used on primary key column '{pk_col}'. "
@@ -260,11 +261,19 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
                         suggestion = (
                             f"Remove DISTINCT when selecting '{pk_col}'."
                         )
+                        # No joins: a clean REMOVE of `DISTINCT ` (with the
+                        # trailing space). Locate is unique-match-only;
+                        # ambiguous cases (multiple SELECT DISTINCT in the
+                        # same SQL) fall back to FREEFORM via auto-default.
+                        from fastssv.core.patch import locate, remove as patch_remove
+                        span = locate(sql, "DISTINCT ")
+                        patch = patch_remove(span) if span is not None else None
 
                     violations.append(
                         self.create_violation(
                             message=message,
                             suggested_fix=suggestion,
+                            suggested_fix_patch=patch,
                             details={
                                 "column": pk_col,
                                 "has_joins": has_joins,

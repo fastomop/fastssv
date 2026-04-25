@@ -34,11 +34,7 @@ class ConceptNameLookupRule(Rule):
         "or concept_id. Concept names are not guaranteed to be unique or stable across versions."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use concept_code + vocabulary_id instead: "
-        "WHERE c.concept_code = '...' AND c.vocabulary_id = '...', "
-        "or use concept_id directly if known"
-    )
+    suggested_fix = "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, OR with `WHERE c.concept_id = <id>` if the concept_id is known."
     long_description = (
         "concept_name is neither unique nor stable: multiple concepts can "
         "share a display name, and names change across vocabulary releases "

@@ -223,11 +223,7 @@ class MeasurementCrossUnitComparisonRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add unit_concept_id constraint (e.g., = <unit>) or group by unit. "
-        "Alternatively, convert values to a common unit before aggregation."
-    )
-
+    suggested_fix = "ADD: `AND m.unit_concept_id = <unit_id>` (single unit), OR GROUP BY m.unit_concept_id so each aggregate row is in one unit. Same clinical concept can be stored in mmol/L vs mg/dL across sites."
     example_bad = (
         "SELECT AVG(m.value_as_number) FROM measurement m\n"
         "WHERE m.measurement_concept_id = 3004249;"

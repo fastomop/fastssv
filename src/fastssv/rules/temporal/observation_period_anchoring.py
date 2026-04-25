@@ -260,11 +260,7 @@ class ObservationPeriodAnchoringRule(Rule):
         "observation_period (valid design choice for descriptive queries)."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "JOIN observation_period op ON clinical_table.person_id = op.person_id "
-        "AND clinical_table.date BETWEEN op.observation_period_start_date "
-        "AND op.observation_period_end_date"
-    )
+    suggested_fix = "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id` whenever observation_period is used in the query. Don't reference op.* without the person_id linkage."
     long_description = (
         "When a query touches observation_period alongside a clinical table, "
         "OMOP semantics require the two to be linked by person_id, otherwise "
@@ -330,8 +326,9 @@ class ObservationPeriodAnchoringRule(Rule):
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        "JOIN observation_period op ON table.person_id = op.person_id "
-                        "AND date_column BETWEEN op.observation_period_start_date AND op.observation_period_end_date"
+                        "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id "
+                        "AND <event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` "
+                        "to anchor temporal filters inside the patient's observation window."
                     ),
                 ))
 
@@ -363,7 +360,8 @@ class ObservationPeriodAnchoringRule(Rule):
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            "JOIN observation_period op ON table.person_id = op.person_id"
+                            "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id` "
+                            "to link the referenced observation_period rows back to person."
                         ),
                     ))
 

@@ -238,11 +238,7 @@ class DrugStrengthNumeratorDenominatorForConcentrationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use COALESCE(amount_value, numerator_value) to include both formulations. "
-        "Include denominator_value for concentration context when relevant."
-    )
-
+    suggested_fix = "REPLACE: `WHERE amount_value <op> <n>` WITH `COALESCE(amount_value, numerator_value / NULLIF(denominator_value, 0))` to include concentration-based formulations (drug_strength stores liquid/injectable doses in numerator/denominator, not amount_value)."
     example_bad = (
         "SELECT drug_concept_id, amount_value FROM drug_strength\n"
         "WHERE amount_value > 500;"

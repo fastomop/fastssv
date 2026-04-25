@@ -246,10 +246,7 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
 
     severity = Severity.ERROR  # Upgraded for production
 
-    suggested_fix = (
-        "Add a filter on relationship_concept_id (e.g., WHERE relationship_concept_id = <id>) "
-        "or join to concept with proper filtering."
-    )
+    suggested_fix = "ADD: `WHERE relationship_concept_id = <id>` (or IN(...)) when querying fact_relationship. Without it the join fans out across every relationship type."
     long_description = (
         "fact_relationship encodes every kind of linkage between OMOP "
         "facts — visits to procedures, measurements to their ordering "

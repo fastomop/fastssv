@@ -252,9 +252,7 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use concept_ancestor table instead for transitive hierarchy traversal."
-    )
+    suggested_fix = "REPLACE: chained concept_relationship self-joins WITH a single JOIN on concept_ancestor (it stores the transitive closure of the concept_relationship hierarchy)."
     long_description = (
         "concept_relationship stores only direct (one-hop) relationships. "
         "Chaining multiple self-joins on it to simulate transitive closure "
@@ -330,10 +328,11 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        f"Replace the {len(longest_chain)}-join chain with concept_ancestor. "
-                        f"Example: SELECT descendant_concept_id FROM concept_ancestor "
+                        f"REWRITE: the {len(longest_chain)}-join concept_relationship chain WITH "
+                        f"`SELECT descendant_concept_id FROM concept_ancestor "
                         f"WHERE ancestor_concept_id = <start_concept> "
-                        f"AND min_levels_of_separation BETWEEN 1 AND {len(longest_chain)-1}"
+                        f"AND min_levels_of_separation BETWEEN 1 AND {len(longest_chain)-1}`. "
+                        f"concept_ancestor pre-computes the transitive 'Is a' closure."
                     ),
                     details={
                         "chain_length": len(longest_chain),

@@ -50,6 +50,7 @@ from fastssv.core.helpers import (
     is_in_where_or_join_clause,
     has_table_reference,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -129,6 +130,7 @@ def _detect_violations(
                     "operator": type(node).__name__,
                     "value": None,
                     "context": node.sql(),
+                    "col_sql": col_node.sql(),
                 })
                 continue
 
@@ -150,6 +152,7 @@ def _detect_violations(
                     "operator": type(node).__name__,
                     "value": value,
                     "context": node.sql(),
+                    "col_sql": col_node.sql(),
                 })
 
             elif norm_val == "N":
@@ -163,6 +166,7 @@ def _detect_violations(
                     "operator": type(node).__name__,
                     "value": value,
                     "context": node.sql(),
+                    "col_sql": col_node.sql(),
                 })
 
     # --- IN clause ---
@@ -229,10 +233,7 @@ class StandardConceptNullHandlingRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use IS NULL for non-standard concepts, IS NOT NULL for standard/classification, "
-        "or filter explicitly for valid values ('S', 'C')."
-    )
+    suggested_fix = "REPLACE: `standard_concept = ''` or `= 'N'` WITH `standard_concept IS NULL`. Non-standard concepts are encoded as NULL in OMOP, not as empty string or 'N'."
     long_description = (
         "In OMOP vocabulary, non-standard concepts are represented by "
         "standard_concept IS NULL — not 'N', not an empty string, not "
@@ -283,49 +284,70 @@ class StandardConceptNullHandlingRule(Rule):
                             "Using standard_concept = NULL is invalid. "
                             "Use IS NULL to find non-standard concepts."
                         )
-                        fix = "Replace with standard_concept IS NULL"
+                        fix = "REPLACE: `standard_concept = NULL` WITH `standard_concept IS NULL`."
                     else:
                         message = (
                             "Invalid comparison with NULL on standard_concept. "
                             "Use IS NULL or IS NOT NULL."
                         )
-                        fix = "Use IS NULL or IS NOT NULL"
+                        fix = "REPLACE: `standard_concept <op> NULL` WITH `standard_concept IS NULL` (or `IS NOT NULL`)."
 
                 elif issue == "empty_string":
                     message = (
                         "standard_concept = '' is invalid. "
                         "Non-standard concepts are NULL."
                     )
-                    fix = "Replace with standard_concept IS NULL"
+                    fix = "REPLACE: `standard_concept = ''` WITH `standard_concept IS NULL`."
 
                 elif issue == "invalid_n":
                     message = (
                         "standard_concept = 'N' is invalid. "
                         "Non-standard concepts use NULL. Valid values are 'S' and 'C'."
                     )
-                    fix = "Replace with standard_concept IS NULL"
+                    fix = "REPLACE: `standard_concept = 'N'` WITH `standard_concept IS NULL`."
 
                 elif issue == "invalid_n_in_list":
                     message = (
                         "'N' in standard_concept IN clause is invalid. "
                         "Use IS NULL for non-standard concepts."
                     )
-                    fix = "Remove 'N' and handle NULL separately"
+                    fix = "REMOVE: `'N'` from the `standard_concept IN (...)` list, AND ADD `OR standard_concept IS NULL` if non-standard concepts should be included."
 
                 elif issue == "empty_string_in_list":
                     message = (
                         "Empty string in standard_concept IN clause is invalid."
                     )
-                    fix = "Remove empty string from IN clause"
+                    fix = "REMOVE: `''` from the `standard_concept IN (...)` list, AND ADD `OR standard_concept IS NULL` if non-standard concepts should be included."
 
                 else:
                     continue
+
+                # Structured patch for the binary EQ/NEQ cases:
+                #   `<col> = NULL`         → `<col> IS NULL`
+                #   `<col> <> NULL` (NEQ)  → `<col> IS NOT NULL`
+                #   `<col> = ''`           → `<col> IS NULL`
+                #   `<col> = 'N'`          → `<col> IS NULL`
+                # IN-clause variants need list surgery and stay FREEFORM.
+                patch = None
+                col_sql = v.get("col_sql")
+                context = v["context"]
+                if col_sql and issue in {
+                    "null_equality", "empty_string", "invalid_n"
+                }:
+                    if issue == "null_equality" and operator == "NEQ":
+                        replacement = f"{col_sql} IS NOT NULL"
+                    else:
+                        replacement = f"{col_sql} IS NULL"
+                    span = locate(sql, context)
+                    if span is not None:
+                        patch = patch_replace(span, replacement)
 
                 violations.append(
                     self.create_violation(
                         message=message,
                         severity=Severity.WARNING,
                         suggested_fix=fix,
+                        suggested_fix_patch=patch,
                         details={
                             "issue": issue,
                             "operator": operator,

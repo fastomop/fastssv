@@ -41,7 +41,7 @@ Correct patterns:
 """
 
 import logging
-from typing import List
+from typing import List, Set
 
 from sqlglot import exp
 
@@ -52,6 +52,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -66,9 +67,15 @@ SPECIMEN_SOURCE_ID = "specimen_source_id"
 
 # --- Helpers -----------------------------------------------------------------
 
-def _find_invalid_joins(tree: exp.Expression) -> List[str]:
-    """Find JOINs using specimen_source_id as a join key."""
-    issues: List[str] = []
+def _find_invalid_joins(tree: exp.Expression) -> List[dict]:
+    """Find JOINs using specimen_source_id as a join key.
+
+    Returns a list of dicts with keys ``message`` and ``column_sql`` (the
+    exact ``alias.specimen_source_id`` text as written in the source) so
+    callers can build a structured REPLACE patch.
+    """
+    issues: List[dict] = []
+    seen: Set = set()
 
     aliases = extract_aliases(tree)
 
@@ -103,13 +110,21 @@ def _find_invalid_joins(tree: exp.Expression) -> List[str]:
                     if not specimen_present:
                         continue
 
-                issues.append(
-                    "specimen_source_id is used in a JOIN condition. "
-                    "specimen_source_id is a VARCHAR free-text identifier from the source system, "
-                    "not an OMOP foreign key. Use specimen.specimen_id instead."
-                )
+                col_sql = col_expr.sql()
+                if col_sql in seen:
+                    continue
+                seen.add(col_sql)
 
-    return list(dict.fromkeys(issues))
+                issues.append({
+                    "message": (
+                        "specimen_source_id is used in a JOIN condition. "
+                        "specimen_source_id is a VARCHAR free-text identifier from the source system, "
+                        "not an OMOP foreign key. Use specimen.specimen_id instead."
+                    ),
+                    "column_sql": col_sql,
+                })
+
+    return issues
 
 
 # --- Rule --------------------------------------------------------------------
@@ -130,11 +145,7 @@ class SpecimenSourceIdNotSpecimenIdRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Replace specimen_source_id with specimen.specimen_id in JOIN conditions. "
-        "Use specimen_source_id only for filtering."
-    )
-
+    suggested_fix = "REPLACE: joins on `specimen.specimen_source_id` WITH `specimen.specimen_id`. specimen_source_id is free-text from the source system, not the OMOP FK. Use specimen_source_id only as a filter, never in JOIN ON."
     example_bad = (
         "SELECT s.specimen_id FROM specimen s\n"
         "JOIN measurement m ON s.specimen_source_id = m.measurement_source_value;"
@@ -172,11 +183,24 @@ class SpecimenSourceIdNotSpecimenIdRule(Rule):
 
             issues = _find_invalid_joins(tree)
 
-            for msg in issues:
+            for issue in issues:
+                col_sql = issue["column_sql"]
+                # Replace `<qual>.specimen_source_id` with `<qual>.specimen_id`
+                # in the source. If the original column was unqualified (no
+                # alias prefix), we replace the bare column name.
+                replacement = col_sql.rsplit(
+                    SPECIMEN_SOURCE_ID, 1
+                )[0] + "specimen_id"
+                patch = None
+                span = locate(sql, col_sql)
+                if span is not None:
+                    patch = patch_replace(span, replacement)
+
                 violations.append(
                     self.create_violation(
-                        message=msg,
+                        message=issue["message"],
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

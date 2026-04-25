@@ -160,8 +160,7 @@ class MeasurementValueAsNumberAndConceptValidationRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = "Use OR or separate logic depending on measurement type"
-
+    suggested_fix = "REPLACE: `value_as_number <op> <n> AND value_as_concept_id = <id>` WITH a single check, OR use `OR` if you genuinely want either representation. The two columns hold mutually-exclusive representations of the same value."
     example_bad = (
         "SELECT person_id FROM measurement\n"
         "WHERE value_as_number > 140 AND value_as_concept_id = 4126681;"

@@ -372,9 +372,7 @@ class ConceptAncestorSelfIncludeRedundancyRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use concept_ancestor alone, or filter with min_levels_of_separation > 0."
-    )
+    suggested_fix = "REMOVE: the explicit `UNION SELECT <anchor_id>` or `OR concept_id = <anchor>` clause. concept_ancestor already includes self with min_levels_of_separation = 0."
     long_description = (
         "concept_ancestor already includes every concept as its own "
         "descendant (rows where min_levels_of_separation = 0). Adding a "

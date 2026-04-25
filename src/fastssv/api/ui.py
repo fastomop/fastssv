@@ -239,8 +239,7 @@ async def ui_validate(
                     "rule_id": v.rule_id,
                     "severity": v.severity.value,
                     "issue": v.message,
-                    "suggested_fix": v.suggested_fix,
-                    "details": v.details or {},
+                    "fix": v._serialised_fix(),
                 }
                 for v in errs
             ],
@@ -249,8 +248,7 @@ async def ui_validate(
                     "rule_id": v.rule_id,
                     "severity": v.severity.value,
                     "issue": v.message,
-                    "suggested_fix": v.suggested_fix,
-                    "details": v.details or {},
+                    "fix": v._serialised_fix(),
                 }
                 for v in warns
             ],

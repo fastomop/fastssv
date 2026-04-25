@@ -98,10 +98,7 @@ class IncorrectPercentileCalculationRule(Rule):
         "identical results across all percentile columns."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Ensure each percentile column uses a distinct threshold (e.g., 0.25, 0.50, 0.75), "
-        "or replace manual percentile logic with NTILE(4) or PERCENTILE_CONT()."
-    )
+    suggested_fix = "REPLACE: hard-coded percentile thresholds WITH PERCENTILE_CONT(0.25) / PERCENTILE_CONT(0.5) / PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY <value_col>) — the SQL standard percentile aggregate."
     long_description = (
         "Hand-rolled percentile calculations using ROW_NUMBER() + "
         "population_size + CASE WHEN are easy to copy-paste and easy to "

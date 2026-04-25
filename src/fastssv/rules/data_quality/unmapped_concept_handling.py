@@ -22,6 +22,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 # Clinical tables where concept_id = 0 is semantically important
@@ -298,8 +299,7 @@ class UnmappedConceptHandlingRule(Rule):
         "without explicitly handling concept_id = 0 (unmapped records)"
     )
     severity = Severity.WARNING
-    suggested_fix = "Add: column > 0 to explicitly exclude unmapped, or handle them separately"
-
+    suggested_fix = "ADD: explicit handling of unmapped rows (concept_id = 0). Examples: `AND <x>_concept_id <> 0` to exclude them; or `AND <x>_concept_id = 0` to count them; or `COALESCE(<x>_concept_id, 0)` if the column is nullable."
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
@@ -318,7 +318,7 @@ class UnmappedConceptHandlingRule(Rule):
             # Group by (table, column) to avoid duplicate warnings
             checked: Set[Tuple[str, str]] = set()
 
-            for table, column, _ in concept_filters:
+            for table, column, predicate in concept_filters:
                 key = (table, column)
                 if key in checked:
                     continue
@@ -335,12 +335,37 @@ class UnmappedConceptHandlingRule(Rule):
                     continue
 
                 # Check if zero is explicitly handled
-                if not _handles_zero_concept_id(tree, aliases, table, column):
-                    violations.append(self.create_violation(
-                        message=f"Query filters {table}.{column} but does not explicitly handle concept_id = 0 (unmapped records)",
-                        suggested_fix=f"Add: {column} > 0 to explicitly exclude unmapped records",
-                        details={"table": table, "column": column}
-                    ))
+                if _handles_zero_concept_id(tree, aliases, table, column):
+                    continue
+
+                # Structured patch: ADD ` AND <qualifier>.<col> != 0`
+                # immediately after the offending predicate. Use the column's
+                # written qualifier (alias if present, else table name) so the
+                # inserted predicate matches the surrounding style. If the
+                # predicate isn't uniquely locatable, fall back to FREEFORM.
+                patch = None
+                col_node = predicate.this if hasattr(predicate, "this") else None
+                qualifier: Optional[str] = None
+                if isinstance(col_node, exp.Column):
+                    qualifier = (
+                        normalize_name(col_node.table)
+                        if col_node.table
+                        else table
+                    )
+                if qualifier:
+                    span = locate(sql, predicate.sql())
+                    if span is not None:
+                        patch = patch_add(
+                            span[1],
+                            f" AND {qualifier}.{column} != 0",
+                        )
+
+                violations.append(self.create_violation(
+                    message=f"Query filters {table}.{column} but does not explicitly handle concept_id = 0 (unmapped records)",
+                    suggested_fix=f"ADD: `AND {column} != 0` (or `> 0`) to the WHERE clause to explicitly exclude unmapped records (concept_id = 0).",
+                    details={"table": table, "column": column},
+                    suggested_fix_patch=patch,
+                ))
 
         return violations
 

@@ -256,7 +256,7 @@ class JoinPathValidationRule(Rule):
         "to clinical tables using standard concept fields"
     )
     severity = Severity.WARNING
-    suggested_fix = "JOIN concept ON clinical_table.*_concept_id = concept.concept_id"
+    suggested_fix = "ADD: `AND c.standard_concept = 'S'` (or `AND c.invalid_reason IS NULL`) when joining the concept table to clinical tables, OR use concept_relationship 'Maps to' to resolve to standard concepts."
     example_bad = (
         "SELECT co.person_id FROM condition_occurrence co\n"
         "JOIN concept c ON co.condition_concept_id = c.domain_id;"

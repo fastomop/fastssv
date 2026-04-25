@@ -40,6 +40,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -206,6 +207,8 @@ class ConceptConceptClassJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: the concept ↔ concept_class ON clause WITH `concept.concept_class_id = concept_class.concept_class_id`. Joining via vocabulary_id, domain_id, or any other column is incorrect — concept_class.concept_class_id is the only FK target."
+
     example_bad = (
         "SELECT c.concept_id FROM concept c\n"
         "JOIN concept_class cc ON c.vocabulary_id = cc.concept_class_id;"
@@ -239,14 +242,21 @@ class ConceptConceptClassJoinValidationRule(Rule):
 
             # --- ERRORS ---
             for c_table, c_col, cc_table, cc_col in errors:
+                fix_text = (
+                    f"REPLACE: `{c_table}.{c_col} = {cc_table}.{cc_col}` "
+                    f"WITH `{c_table}.concept_class_id = {cc_table}.concept_class_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
                             f"Invalid join: {c_table}.{c_col} = {cc_table}.{cc_col}. "
                             f"Expected {c_table}.concept_class_id = {cc_table}.concept_class_id."
                         ),
-                        suggested_fix=(
-                            f"{c_table}.concept_class_id = {cc_table}.concept_class_id"
+                        suggested_fix=fix_text,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, cc_table, cc_col,
+                            "concept_class_id", "concept_class_id", fix_text,
+                            aliases=aliases,
                         ),
                         details={
                             "type": "invalid_concept_concept_class_join",
@@ -258,6 +268,10 @@ class ConceptConceptClassJoinValidationRule(Rule):
 
             # --- WARNINGS ---
             for c_table, c_col, cc_table, cc_col in warnings:
+                fix_text = (
+                    f"REPLACE: `{c_table}.{c_col} = {cc_table}.{cc_col}` "
+                    f"WITH `{c_table}.concept_class_id = {cc_table}.concept_class_id`."
+                )
                 violations.append(
                     RuleViolation(
                         rule_id=self.rule_id,
@@ -266,8 +280,11 @@ class ConceptConceptClassJoinValidationRule(Rule):
                             f"Expected concept.concept_class_id = concept_class.concept_class_id."
                         ),
                         severity=Severity.WARNING,
-                        suggested_fix=(
-                            f"{c_table}.concept_class_id = {cc_table}.concept_class_id"
+                        suggested_fix=fix_text,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, cc_table, cc_col,
+                            "concept_class_id", "concept_class_id", fix_text,
+                            aliases=aliases,
                         ),
                         details={
                             "type": "suspicious_concept_concept_class_join",

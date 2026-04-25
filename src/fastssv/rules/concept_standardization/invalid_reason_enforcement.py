@@ -292,10 +292,7 @@ class InvalidReasonEnforcementRule(Rule):
         "not silently included. Silent in default mode."
     )
     severity = Severity.WARNING  # Default; escalated to ERROR by strict mode
-    suggested_fix = (
-        "Add 'WHERE invalid_reason IS NULL' to ensure only valid concepts are used, "
-        "or explicitly handle invalid concepts if needed"
-    )
+    suggested_fix = "ADD: `AND invalid_reason IS NULL` to filter out retired/upgraded concepts, OR `AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date`. Strict-mode-only."
     long_description = (
         "Concept tables (concept, concept_relationship, concept_ancestor) "
         "carry an invalid_reason column that marks retired or replaced "
@@ -385,7 +382,7 @@ class InvalidReasonEnforcementRule(Rule):
                 violations.append(self.create_violation(
                     severity=severity,  # Context-aware severity
                     message=message,
-                    suggested_fix="Add WHERE condition: invalid_reason IS NULL",
+                    suggested_fix="ADD: `AND invalid_reason IS NULL` to the WHERE clause to exclude deprecated/superseded vocabulary rows.",
                     details={
                         "vocabulary_tables": sorted(tables_with_invalid_reason),
                         "recommendation": "Add WHERE condition: invalid_reason IS NULL",
@@ -429,7 +426,7 @@ class InvalidReasonEnforcementRule(Rule):
                         message=message,
                         severity=severity,  # Context-aware: WARNING by default, ERROR in strict mode
                         suggested_fix=(
-                            "JOIN to concept table and add: WHERE concept.invalid_reason IS NULL"
+                            "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.invalid_reason IS NULL` to exclude deprecated concepts."
                         ),
                         details={
                             "derived_tables": sorted(derived_tables_as_source),

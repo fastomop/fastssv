@@ -66,8 +66,9 @@ class SourceValueFieldUsageRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = (
-        "Use standard concept fields (*_concept_id) instead of source_value fields "
-        "for consistent analytical results across data sources"
+        "REPLACE: `<col>_source_value` references in SELECT/GROUP BY WITH the "
+        "corresponding `<col>_concept_id` for standardized analytics across data "
+        "sources. JOIN concept on concept_id to recover the human-readable name."
     )
     long_description = (
         "*_source_value columns store the raw, unstandardised source "
@@ -122,7 +123,11 @@ class SourceValueFieldUsageRule(Rule):
 
                     violations.append(self.create_violation(
                         message=message,
-                        suggested_fix=f"Use '{standard_field}' with concept table for standardized grouping",
+                        suggested_fix=(
+                            f"REPLACE: `GROUP BY {col}` WITH `GROUP BY {standard_field}`, "
+                            f"and JOIN concept ON {standard_field} = concept.concept_id to "
+                            f"recover the standardized name."
+                        ),
                         details={
                             "source_value_field": col,
                             "suggested_standard_field": standard_field,

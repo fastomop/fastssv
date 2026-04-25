@@ -28,6 +28,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 from .observation_period_anchoring import (
     CLINICAL_TABLES_WITH_DATES,
@@ -38,15 +39,20 @@ from .observation_period_anchoring import (
 def _find_cross_table_date_comparisons(
     tree: exp.Expression,
     aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
+) -> List[Tuple[str, str, str, str, str, str]]:
     """Find temporal ordering comparisons between date columns from different clinical tables.
 
     Handles both GT/GTE (a > b) and LT/LTE (a < b, normalized so the later
     event is always in the left position of the returned tuple).
 
-    Returns list of (later_table, later_col, earlier_table, earlier_col) tuples.
+    Returns list of
+    ``(later_table, later_col, earlier_table, earlier_col, comparison_sql,
+    later_qualifier)`` tuples. ``comparison_sql`` is the rendered SQL of the
+    comparison node, used to locate the predicate for an ADD patch.
+    ``later_qualifier`` is the table-or-alias prefix that appears next to
+    the later column in the source SQL.
     """
-    results: List[Tuple[str, str, str, str]] = []
+    results: List[Tuple[str, str, str, str, str, str]] = []
     seen: set = set()
 
     for node in tree.find_all((exp.GT, exp.GTE, exp.LT, exp.LTE)):
@@ -82,14 +88,18 @@ def _find_cross_table_date_comparisons(
         if isinstance(node, (exp.LT, exp.LTE)):
             later_table, later_col = right_table, right_col
             earlier_table, earlier_col = left_table, left_col
+            later_qual = right.table or right_table
         else:
             later_table, later_col = left_table, left_col
             earlier_table, earlier_col = right_table, right_col
+            later_qual = left.table or left_table
 
         key = (later_table, later_col, earlier_table, earlier_col)
-        if key not in seen:
-            seen.add(key)
-            results.append(key)
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append((later_table, later_col, earlier_table, earlier_col,
+                        node.sql(), str(later_qual) if later_qual else later_table))
 
     return results
 
@@ -139,11 +149,7 @@ class FutureInformationLeakageRule(Rule):
         "individual follow-up window."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Add an upper bound using observation_period_end_date: "
-        "AND future_event.date <= op.observation_period_end_date, "
-        "where op is joined via JOIN observation_period op ON table.person_id = op.person_id"
-    )
+    suggested_fix = "ADD: `AND <future_event_date> <= op.observation_period_end_date` (or <= cohort_end_date) when comparing dates across event tables. Bound future events against the observation_period to prevent look-ahead leakage in cohort analyses."
     long_description = (
         "When a query compares event dates across two clinical tables (e.g. "
         "'condition started before first drug exposure'), the future-facing "
@@ -190,7 +196,29 @@ class FutureInformationLeakageRule(Rule):
             if _has_observation_period_end_bound(tree):
                 continue
 
-            for later_table, later_col, earlier_table, earlier_col in cross_comparisons:
+            for (
+                later_table,
+                later_col,
+                earlier_table,
+                earlier_col,
+                comparison_sql,
+                later_qual,
+            ) in cross_comparisons:
+                # Structured patch: ADD an `AND <later_qual>.<later_col> <=
+                # <op>.observation_period_end_date` immediately after the
+                # offending comparison. The observation_period alias is left
+                # as a `<op>` placeholder for the outer correction loop to
+                # resolve. If the comparison isn't uniquely locatable, fall
+                # back to FREEFORM via auto-default.
+                patch = None
+                span = locate(sql, comparison_sql)
+                if span is not None:
+                    insert_text = (
+                        f" AND {later_qual}.{later_col} "
+                        f"<= <op>.observation_period_end_date"
+                    )
+                    patch = patch_add(span[1], insert_text)
+
                 violations.append(self.create_violation(
                     message=(
                         f"Query compares {later_table}.{later_col} against "
@@ -199,6 +227,7 @@ class FutureInformationLeakageRule(Rule):
                         f"beyond the patient's observable follow-up window, introducing "
                         f"temporal bias."
                     ),
+                    suggested_fix_patch=patch,
                     details={
                         "later_event": f"{later_table}.{later_col}",
                         "index_event": f"{earlier_table}.{earlier_col}",

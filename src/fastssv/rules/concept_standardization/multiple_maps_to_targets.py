@@ -167,10 +167,7 @@ class MultipleMapsToTargetsRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use DISTINCT, GROUP BY with aggregation (e.g., ARRAY_AGG), "
-        "or explicitly handle multiple mappings."
-    )
+    suggested_fix = "REPLACE: implicit 1:1 assumption WITH explicit handling: GROUP BY cr.concept_id_1 with ARRAY_AGG(cr.concept_id_2), OR DISTINCT, OR pick one target deterministically (e.g. MIN(concept_id_2))."
     long_description = (
         "Not every source concept maps 1:1 to a standard concept: one "
         "ICD-10 code can split into multiple SNOMED concepts, and one NDC "
@@ -259,7 +256,7 @@ class MultipleMapsToTargetsRule(Rule):
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            "Replace scalar subquery with JOIN + DISTINCT or aggregation."
+                            "REWRITE: the scalar subquery as `JOIN concept_relationship cr ON ... AND cr.relationship_id = 'Maps to'` followed by `DISTINCT` or explicit aggregation."
                         ),
                         details={"context": subquery.sql()},
                     )
@@ -279,8 +276,9 @@ class MultipleMapsToTargetsRule(Rule):
                             ),
                             severity=Severity.WARNING,
                             suggested_fix=(
-                                "Add DISTINCT to SELECT or use GROUP BY with aggregation "
-                                "to explicitly handle multiple mappings."
+                                "ADD: `DISTINCT` to the SELECT, OR ADD `GROUP BY <key_cols>` "
+                                "with explicit aggregation. Some source codes map to multiple "
+                                "standard concepts and produce duplicate rows otherwise."
                             ),
                         )
                     )
@@ -299,7 +297,8 @@ class MultipleMapsToTargetsRule(Rule):
                             ),
                             severity=Severity.WARNING,
                             suggested_fix=(
-                                "Remove LIMIT or use aggregation to explicitly select one mapping."
+                                "REMOVE: `LIMIT 1`, OR REPLACE WITH explicit aggregation "
+                                "(e.g. `MIN(concept_id_2)`) so the chosen mapping is deterministic."
                             ),
                             details={"context": tree.sql()},
                         )

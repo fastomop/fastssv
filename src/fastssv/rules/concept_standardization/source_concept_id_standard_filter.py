@@ -76,6 +76,7 @@ Correct patterns:
       ON co.condition_source_concept_id = c.concept_id
 """
 
+import re
 from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
@@ -88,7 +89,50 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import locate, remove as patch_remove
 from fastssv.core.registry import register
+
+
+def _build_remove_predicate_patch(
+    sql: str,
+    predicate_sql: str,
+    is_in_and: bool,
+    is_left_of_and: bool,
+) -> Optional[dict]:
+    """Build a REMOVE patch that drops a single predicate from a compound
+    boolean expression.
+
+    Handles the dangling-AND hazard:
+      * If the predicate is the LEFT side of an AND, remove `<pred> AND `.
+      * If the predicate is the RIGHT side of an AND, remove ` AND <pred>`.
+      * If the predicate stands alone (only WHERE/ON predicate), don't
+        emit a patch — removing the only predicate would leave a dangling
+        WHERE/ON keyword.
+    """
+    span = locate(sql, predicate_sql)
+    if span is None:
+        return None
+
+    if not is_in_and:
+        # Sole predicate; safer to leave on FREEFORM auto-default.
+        return None
+
+    s, e = span
+    if is_left_of_and:
+        # `<pred> AND <rest>` → drop the predicate plus the trailing AND.
+        # Allow tabs/newlines as well as spaces.
+        tail = sql[e:]
+        m = re.match(r"\s+AND\s+", tail, flags=re.IGNORECASE)
+        if m is None:
+            return None
+        return patch_remove((s, e + m.end()))
+    else:
+        # `<rest> AND <pred>` → drop the leading AND plus the predicate.
+        head = sql[:s]
+        m = re.search(r"\s+AND\s+\Z", head, flags=re.IGNORECASE)
+        if m is None:
+            return None
+        return patch_remove((m.start(), e))
 
 
 # --- Constants -------------------------------------------------------------
@@ -177,6 +221,17 @@ def _has_standard_filter(
     concept_aliases: Set[str],
 ) -> bool:
     """Detect standard_concept = 'S' or IN ('S') filters for a given concept alias."""
+    return _find_standard_filter_node(node, aliases, concept_alias, concept_aliases) is not None
+
+
+def _find_standard_filter_node(
+    node: exp.Expression,
+    aliases: Dict[str, str],
+    concept_alias: str,
+    concept_aliases: Set[str],
+) -> Optional[exp.Expression]:
+    """Return the EQ/IN expression matching the standard_concept = 'S'
+    filter (or None). Used so callers can build a structured REMOVE patch."""
 
     # EQ
     for eq in node.find_all(exp.EQ):
@@ -200,7 +255,7 @@ def _has_standard_filter(
 
             val = _extract_string_literal(val_node)
             if val == "s":
-                return True
+                return eq
 
     # IN
     for in_node in node.find_all(exp.In):
@@ -224,22 +279,9 @@ def _has_standard_filter(
         values.discard(None)
 
         if "s" in values:
-            return True
+            return in_node
 
-    return False
-
-
-def _has_having_filter(
-    select: exp.Select,
-    aliases: Dict[str, str],
-    concept_alias: str,
-    concept_aliases: Set[str],
-) -> bool:
-    having = select.args.get("having")
-    if not having:
-        return False
-
-    return _has_standard_filter(having, aliases, concept_alias, concept_aliases)
+    return None
 
 
 # --- Detection -------------------------------------------------------------
@@ -312,19 +354,33 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
             if not found_source_join:
                 continue
 
-            has_filter = False
+            filter_node: Optional[exp.Expression] = None
 
-            if _has_standard_filter(on_clause, aliases, table_alias, concept_aliases):
-                has_filter = True
+            on_filter = _find_standard_filter_node(
+                on_clause, aliases, table_alias, concept_aliases
+            )
+            if on_filter is not None:
+                filter_node = on_filter
 
-            where = select.args.get("where")
-            if where and _has_standard_filter(where, aliases, table_alias, concept_aliases):
-                has_filter = True
+            if filter_node is None:
+                where = select.args.get("where")
+                if where:
+                    where_filter = _find_standard_filter_node(
+                        where, aliases, table_alias, concept_aliases
+                    )
+                    if where_filter is not None:
+                        filter_node = where_filter
 
-            if _has_having_filter(select, aliases, table_alias, concept_aliases):
-                has_filter = True
+            if filter_node is None:
+                having = select.args.get("having")
+                if having:
+                    having_filter = _find_standard_filter_node(
+                        having, aliases, table_alias, concept_aliases
+                    )
+                    if having_filter is not None:
+                        filter_node = having_filter
 
-            if not has_filter:
+            if filter_node is None:
                 continue
 
             key = f"{table_alias}_{source_col_name}_{id(select)}"
@@ -337,6 +393,12 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
                 "alias": table_alias,
                 "source_column": source_col_name,
                 "context": join.sql(),
+                "filter_sql": filter_node.sql(),
+                "filter_parent_is_and": isinstance(filter_node.parent, exp.And),
+                "filter_is_left_of_and": (
+                    isinstance(filter_node.parent, exp.And)
+                    and filter_node.parent.this is filter_node
+                ),
             })
 
     return violations
@@ -358,10 +420,7 @@ class SourceConceptIdStandardFilterRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Remove standard_concept = 'S' filter when joining source concept IDs, "
-        "or use the standard *_concept_id column instead."
-    )
+    suggested_fix = "REMOVE: `AND c.standard_concept = 'S'` from the join on *_source_concept_id (source concepts are non-standard by definition). Either drop the filter or join *_concept_id (without `_source`) instead."
     long_description = (
         "Every OMOP clinical table has two concept columns: *_concept_id "
         "(the standard vocabulary mapping, e.g. SNOMED for conditions) and "
@@ -405,6 +464,12 @@ class SourceConceptIdStandardFilterRule(Rule):
             detected = _detect_source_concept_joins(tree)
 
             for v in detected:
+                patch = _build_remove_predicate_patch(
+                    sql,
+                    v.get("filter_sql", ""),
+                    v.get("filter_parent_is_and", False),
+                    v.get("filter_is_left_of_and", False),
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -415,6 +480,7 @@ class SourceConceptIdStandardFilterRule(Rule):
                         severity=self.severity,
                         suggested_fix=self.suggested_fix,
                         details=v,
+                        suggested_fix_patch=patch,
                     )
                 )
 

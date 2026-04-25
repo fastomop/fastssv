@@ -110,12 +110,7 @@ class EventCardinalityValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use GROUP BY on the parent's key, DISTINCT, or an explicit aggregation "
-        "(COUNT(DISTINCT person_id), MAX(visit_detail_start_date), …) when reading "
-        "from observation or visit_detail joined to its parent."
-    )
-
+    suggested_fix = "ADD: GROUP BY on the parent's key (person_id or visit_occurrence_id), OR SELECT DISTINCT, OR explicit aggregation (COUNT(DISTINCT person_id), MAX(...)) when joining person → observation / device_exposure or visit_occurrence → visit_detail."
     long_description = (
         "OMOP allows multiple ``observation`` rows per person (a single visit can "
         "produce dozens of observations) and multiple ``visit_detail`` rows per "

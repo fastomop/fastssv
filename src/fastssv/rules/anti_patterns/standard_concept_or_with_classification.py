@@ -48,7 +48,7 @@ Correct pattern:
       AND standard_concept = 'C'
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
@@ -60,6 +60,7 @@ from fastssv.core.helpers import (
     has_table_reference,
     is_in_where_or_join_clause,
 )
+from fastssv.core.patch import locate, replace
 from fastssv.core.registry import register
 
 
@@ -133,12 +134,28 @@ def _collect_eq_values(
     return values
 
 
+def _first_standard_concept_column(
+    node: exp.Expression,
+    aliases: Dict[str, str],
+    concept_aliases: Set[str],
+) -> Optional[exp.Column]:
+    """Return the first column reference matching concept.standard_concept under ``node``."""
+    for eq in node.find_all(exp.EQ):
+        for col_node in (eq.this, eq.expression):
+            if isinstance(col_node, exp.Column) and _is_standard_concept_column(
+                col_node, aliases, concept_aliases
+            ):
+                return col_node
+    return None
+
+
 def _detect_or_pattern(
     tree: exp.Expression,
     aliases: Dict[str, str],
     concept_aliases: Set[str],
-) -> List[str]:
-    violations = []
+) -> List[Tuple[str, exp.Expression, Optional[exp.Column]]]:
+    """Return list of (message, offending_node, standard_concept_column)."""
+    violations: List[Tuple[str, exp.Expression, Optional[exp.Column]]] = []
 
     for node in tree.walk():
         if not isinstance(node, exp.Or):
@@ -150,8 +167,13 @@ def _detect_or_pattern(
         values = _collect_eq_values(node, aliases, concept_aliases)
 
         if values & STANDARD_VALUES and values & CLASSIFICATION_VALUES:
+            col = _first_standard_concept_column(node, aliases, concept_aliases)
             violations.append(
-                f"OR mixes standard ('S') and classification ('C'): {node.sql()}"
+                (
+                    f"OR mixes standard ('S') and classification ('C'): {node.sql()}",
+                    node,
+                    col,
+                )
             )
 
     return violations
@@ -161,8 +183,9 @@ def _detect_in_pattern(
     tree: exp.Expression,
     aliases: Dict[str, str],
     concept_aliases: Set[str],
-) -> List[str]:
-    violations = []
+) -> List[Tuple[str, exp.Expression, Optional[exp.Column]]]:
+    """Return list of (message, offending_node, standard_concept_column)."""
+    violations: List[Tuple[str, exp.Expression, Optional[exp.Column]]] = []
 
     for node in tree.walk():
         if not isinstance(node, exp.In):
@@ -183,7 +206,11 @@ def _detect_in_pattern(
 
         if values & STANDARD_VALUES and values & CLASSIFICATION_VALUES:
             violations.append(
-                f"IN mixes standard ('S') and classification ('C'): {node.sql()}"
+                (
+                    f"IN mixes standard ('S') and classification ('C'): {node.sql()}",
+                    node,
+                    node.this,
+                )
             )
 
     return violations
@@ -205,10 +232,7 @@ class StandardConceptOrWithClassificationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use standard_concept = 'S' for clinical queries. "
-        "Use 'C' only for vocabulary hierarchy analysis."
-    )
+    suggested_fix = "REPLACE: `WHERE standard_concept IN ('S','C')` WITH `WHERE standard_concept = 'S'` for clinical analyses. Use 'C' only when intentionally including classification concepts in vocabulary-hierarchy analysis."
     long_description = (
         "Standard concepts ('S') are meant to represent specific clinical "
         "events; classification concepts ('C') are vocabulary-level "
@@ -252,17 +276,28 @@ class StandardConceptOrWithClassificationRule(Rule):
             if not concept_aliases:
                 continue
 
-            messages = (
+            entries = (
                 _detect_or_pattern(tree, aliases, concept_aliases) +
                 _detect_in_pattern(tree, aliases, concept_aliases)
             )
 
-            for msg in messages:
+            for msg, node, col in entries:
+                # Mechanical REPLACE: collapse the OR/IN that mixes 'S' and
+                # 'C' to the canonical clinical predicate `<col> = 'S'`.
+                # Falls back to FREEFORM auto-default if the offending
+                # fragment isn't uniquely locatable.
+                patch = None
+                if col is not None:
+                    span = locate(sql, node.sql())
+                    if span is not None:
+                        patch = replace(span, f"{col.sql()} = 'S'")
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "standard_vs_classification_mix",
                             "values": ["S", "C"],

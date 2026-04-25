@@ -113,12 +113,7 @@ class CostEventIdPolymorphicResolutionRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add a WHERE filter restricting cost_domain_id to the target domain "
-        "(e.g. WHERE c.cost_domain_id = 'Drug') before joining cost_event_id "
-        "to the corresponding event table's primary key."
-    )
-
+    suggested_fix = "ADD: `WHERE c.cost_domain_id = '<Domain>'` (e.g. 'Drug', 'Visit', 'Procedure') matching the table joined to cost_event_id. Without the filter the polymorphic FK matches IDs across disjoint sequences."
     long_description = (
         "cost.cost_event_id has no single foreign-key target; it points into "
         "a different table depending on cost.cost_domain_id. With "

@@ -175,8 +175,7 @@ class ProcedureOccurrenceQuantitySemanticsRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = "Use COUNT(*) to count records, or use clearer aliases like 'total_units'"
-
+    suggested_fix = "REPLACE: `SUM(quantity) AS procedure_count` WITH `COUNT(*) AS procedure_count`. quantity is units-per-procedure, not record count. If you do want sum-of-units, alias it explicitly (`SUM(quantity) AS total_units`)."
     example_bad = (
         "SELECT procedure_concept_id, SUM(quantity) AS procedure_count\n"
         "FROM procedure_occurrence\n"

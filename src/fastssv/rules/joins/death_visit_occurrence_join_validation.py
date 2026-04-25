@@ -49,6 +49,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -203,7 +204,7 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = "Use: death.person_id = visit_occurrence.person_id"
+    suggested_fix = "ADD: `death.person_id = visit_occurrence.person_id` to the join condition. death has no FK to visit_occurrence directly; the link goes through person_id."
     example_bad = (
         "SELECT * FROM death d\n"
         "JOIN visit_occurrence vo ON d.death_date = vo.visit_start_date;"
@@ -235,6 +236,7 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
             errors = _detect(tree, aliases)
 
             for death, death_col, vo, vo_col in errors:
+                patch = None
                 if death_col == "NONE":
                     msg = (
                         "death and visit_occurrence are used but not joined. "
@@ -251,11 +253,22 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
                         f"{death}.{death_col} = {vo}.{vo_col}. "
                         f"Expected person_id = person_id."
                     )
+                    fix_text = (
+                        f"REPLACE: `{death}.{death_col} = {vo}.{vo_col}` "
+                        f"WITH `{death}.person_id = {vo}.person_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, death, death_col, vo, vo_col,
+                        PERSON_ID, PERSON_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
 
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "invalid_fk_join",
                             "death_column": death_col,

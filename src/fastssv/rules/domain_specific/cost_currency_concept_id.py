@@ -311,11 +311,7 @@ class CostCurrencyConceptIdRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add WHERE currency_concept_id = <single_value> to restrict to one "
-        "currency, or GROUP BY currency_concept_id to produce per-currency "
-        "aggregates."
-    )
+    suggested_fix = "ADD: `WHERE c.currency_concept_id = <currency_id>` (or IN(...)) before aggregating cost amount columns, OR GROUP BY c.currency_concept_id so each aggregate row is in one currency."
     long_description = (
         "Records in the cost table carry a currency_concept_id indicating "
         "which currency their amounts are denominated in. Summing total_paid "

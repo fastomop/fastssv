@@ -99,12 +99,7 @@ class DoseEraCrossUnitComparisonRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Either restrict unit_concept_id to a single unit "
-        "(e.g. WHERE unit_concept_id = 8576 for mg) or GROUP BY unit_concept_id "
-        "so each row of the aggregate belongs to one unit."
-    )
-
+    suggested_fix = "ADD: `WHERE de.unit_concept_id = <unit_id>` (single unit), OR GROUP BY de.unit_concept_id so each aggregate row is in one unit. Drug doses live in mg, mcg, IU, mL, mEq, … — averaging across units is meaningless."
     long_description = (
         "``dose_era.dose_value`` is stored alongside ``unit_concept_id``; "
         "the same drug ingredient may have rows in mg, mcg, IU, mL, mEq, "

@@ -250,11 +250,7 @@ class VisitOutpatientSameDayValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use visit_concept_id = 9201 (inpatient) for multi-day stays, "
-        "or adjust date range for outpatient visits"
-    )
-
+    suggested_fix = "REPLACE: `visit_concept_id = 9202` (outpatient) WITH `visit_concept_id IN (9201, 9203)` (inpatient / ER) for multi-day stays, OR keep 9202 and constrain `visit_end_date = visit_start_date` (outpatient is same-day by definition)."
     example_bad = (
         "SELECT person_id FROM visit_occurrence\n"
         "WHERE visit_concept_id = 9202\n"

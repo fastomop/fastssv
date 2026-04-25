@@ -449,10 +449,7 @@ class DomainVocabularyValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use the correct standard vocabulary for the domain, or use "
-        "*_source_concept_id for source vocabulary filtering."
-    )
+    suggested_fix = "REPLACE: `c.vocabulary_id = '<source_vocab>'` WITH the domain's standard vocabulary (Condition→'SNOMED', Drug→'RxNorm', Measurement→'LOINC', Procedure→'SNOMED'/'CPT4', Observation→'SNOMED'). Use *_source_concept_id columns for source-vocabulary filtering."
     long_description = (
         "Each OMOP domain has a canonical standard vocabulary: Condition → "
         "SNOMED, Drug → RxNorm/RxNorm Extension, Procedure → SNOMED / CPT4 "

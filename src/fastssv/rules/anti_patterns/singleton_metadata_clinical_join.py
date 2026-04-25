@@ -115,11 +115,7 @@ class SingletonMetadataClinicalJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Remove the JOIN. Query the metadata table separately or pull a single "
-        "value via a scalar subquery, e.g. (SELECT cdm_version FROM cdm_source)."
-    )
-
+    suggested_fix = "REMOVE: the JOIN to cdm_source / metadata. REPLACE WITH a scalar subquery on the SELECT list, e.g. `SELECT col, (SELECT cdm_version FROM cdm_source) AS v FROM <clinical_table>`."
     long_description = (
         "cdm_source and metadata describe the CDM instance itself (release "
         "version, ETL provenance, data characterization). Neither has a "

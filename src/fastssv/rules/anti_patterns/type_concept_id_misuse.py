@@ -41,6 +41,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace
 from fastssv.core.registry import register
 
 # Type concept ID columns that should NOT be used for clinical filtering
@@ -95,13 +96,13 @@ def _is_join_to_concept_for_labeling(node: exp.Expression, col: exp.Column, alia
 def _find_type_concept_id_misuse(
     tree: exp.Expression,
     aliases: Dict[str, str]
-) -> List[Tuple[str, str, str, str]]:
+) -> List[Tuple[str, str, str, str, exp.Column]]:
     """Find misuse of type_concept_id columns.
 
-    Returns list of (table, column, context, severity) tuples.
+    Returns list of (table, column, context, severity, column_node) tuples.
     - severity: 'error' for cohort definition, 'warning' for labeling joins
     """
-    violations: List[Tuple[str, str, str, str]] = []
+    violations: List[Tuple[str, str, str, str, exp.Column]] = []
 
     for node in tree.walk():
         if isinstance(node, (exp.EQ, exp.In, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.NEQ)):
@@ -132,7 +133,7 @@ def _find_type_concept_id_misuse(
                         parent = parent.parent if hasattr(parent, 'parent') else None
 
                     if severity != "skip":
-                        violations.append((table, normalized_col, context, severity))
+                        violations.append((table, normalized_col, context, severity, left))
 
     return violations
 
@@ -152,10 +153,7 @@ class TypeConceptIdMisuseRule(Rule):
         "Using them in GROUP BY, SELECT, or JOIN for labeling is acceptable."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Use the primary concept_id column (e.g., condition_concept_id) for clinical filtering. "
-        "type_concept_id should only be used to understand data source/provenance."
-    )
+    suggested_fix = "REPLACE: `WHERE <table>.<x>_type_concept_id = <id>` WITH `WHERE <table>.<x>_concept_id = <id>`. *_type_concept_id encodes provenance (EHR, claim, registry), not clinical meaning."
     long_description = (
         "`*_type_concept_id` columns carry provenance (EHR, claim, "
         "patient-reported, registry) — information about *where* the "
@@ -192,7 +190,7 @@ class TypeConceptIdMisuseRule(Rule):
             aliases = extract_aliases(tree)
             misuses = _find_type_concept_id_misuse(tree, aliases)
 
-            for table, col, context, severity in misuses:
+            for table, col, context, severity, col_node in misuses:
                 # Get the suggested primary field
                 primary_field = TYPE_TO_PRIMARY_FIELD.get(col, "the primary concept_id column")
 
@@ -203,9 +201,26 @@ class TypeConceptIdMisuseRule(Rule):
                     f"Only use type_concept_id to understand where the data came from."
                 )
 
+                # Mechanical REPLACE of the offending column reference with
+                # the canonical clinical concept_id column. The integer
+                # literal value almost certainly needs to change too — but
+                # that's a semantic decision left to the author; the column
+                # rename alone yields valid SQL.
+                patch = None
+                primary_col = TYPE_TO_PRIMARY_FIELD.get(col)
+                if primary_col is not None:
+                    qualifier = col_node.table
+                    new_col_sql = (
+                        f"{qualifier}.{primary_col}" if qualifier else primary_col
+                    )
+                    span = locate(sql, col_node.sql())
+                    if span is not None:
+                        patch = replace(span, new_col_sql)
+
                 violations.append(self.create_violation(
                     message=message,
-                    severity=Severity.ERROR if severity == "error" else Severity.WARNING
+                    severity=Severity.ERROR if severity == "error" else Severity.WARNING,
+                    suggested_fix_patch=patch,
                 ))
 
         return violations

@@ -208,11 +208,7 @@ class DrugExposureCardinalityValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use COUNT(DISTINCT person_id) for patient counts or use drug_era "
-        "for consolidated exposure periods."
-    )
-
+    suggested_fix = "REPLACE: `COUNT(*)` (or COUNT(person_id)) WITH `COUNT(DISTINCT person_id)` for patient counts, OR query drug_era for consolidated exposure periods."
     example_bad = (
         "SELECT drug_concept_id, COUNT(*) AS patient_count\n"
         "FROM drug_exposure\n"

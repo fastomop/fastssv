@@ -48,6 +48,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -142,7 +143,7 @@ def _detect_join_usage(tree, aliases, has_note_nlp):
             is_offset, table, col = _is_offset_reference(node, aliases, has_note_nlp)
 
             if is_offset:
-                results.append(("join", table, col, None))
+                results.append(("join", table, col, None, node.sql()))
 
     return results
 
@@ -168,7 +169,7 @@ def _detect_numeric_comparisons(tree, aliases, has_note_nlp):
 
             if is_offset:
                 op = type(node).__name__
-                results.append(("numeric", table, col, op))
+                results.append(("numeric", table, col, op, col_node.sql()))
 
     return results
 
@@ -187,7 +188,7 @@ def _detect_between(tree, aliases, has_note_nlp):
         is_offset, table, col = _is_offset_reference(col_node, aliases, has_note_nlp)
 
         if is_offset:
-            results.append(("between", table, col, None))
+            results.append(("between", table, col, None, col_node.sql()))
 
     return results
 
@@ -204,7 +205,7 @@ def _detect_arithmetic(tree, aliases, has_note_nlp):
 
             if is_offset:
                 op = type(node).__name__
-                results.append(("arithmetic", table, column, op))
+                results.append(("arithmetic", table, column, op, col.sql()))
 
     return results
 
@@ -225,10 +226,7 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use CAST(offset AS INT) or CONVERT(INT, offset) for numeric usage. "
-        "Avoid using offset in JOIN conditions."
-    )
+    suggested_fix = "WRAP: note_nlp.offset in CAST when used numerically — `CAST(offset AS INTEGER)`. Or treat it as VARCHAR (string compare, LIKE). Do not JOIN on it."
     long_description = (
         "note_nlp.offset is a VARCHAR column that stores the character "
         "position of the NLP-extracted term within the note text. Despite "
@@ -272,15 +270,15 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
             findings += _detect_between(tree, aliases, has_note_nlp)
             findings += _detect_arithmetic(tree, aliases, has_note_nlp)
 
-            for kind, table, col, op in findings:
-                key = f"{kind}|{table}|{col}|{op}"
+            for kind, table, col, op, col_sql in findings:
+                key = f"{kind}|{table}|{col}|{op}|{col_sql}"
                 if key in seen:
                     continue
                 seen.add(key)
 
                 if kind == "join":
                     message = f"{table}.{col} used in JOIN condition."
-                    fix = "Remove offset from JOIN; it is not a relational key."
+                    fix = "REMOVE: `note_nlp.offset` from the JOIN ON clause. offset is a VARCHAR character position, not a relational key — JOIN on `note_nlp.note_id = note.note_id` instead."
 
                 elif kind == "numeric":
                     message = f"{table}.{col} used in numeric comparison ({op}) without CAST."
@@ -294,11 +292,25 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
                     message = f"{table}.{col} used in arithmetic operation ({op}) without CAST."
                     fix = self.suggested_fix
 
+                # Structured patch: wrap the offset reference in
+                # CAST(<col> AS INTEGER). This is the canonical fix for
+                # numeric comparison / BETWEEN / arithmetic uses. JOIN
+                # uses are *not* mechanical (the right fix is to remove
+                # the predicate, not cast it), so leave those FREEFORM.
+                patch = None
+                if kind in {"numeric", "between", "arithmetic"} and col_sql:
+                    span = locate(sql, col_sql)
+                    if span is not None:
+                        patch = patch_replace(
+                            span, f"CAST({col_sql} AS INTEGER)"
+                        )
+
                 violations.append(
                     self.create_violation(
                         message=message,
                         severity=self.severity,
                         suggested_fix=fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": kind,
                             "table": table,

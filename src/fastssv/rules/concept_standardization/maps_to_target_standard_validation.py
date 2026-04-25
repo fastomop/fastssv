@@ -199,10 +199,7 @@ class MapsToTargetStandardValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Join concept_relationship.concept_id_2 to concept.concept_id "
-        "and add filter: concept.standard_concept = 'S'"
-    )
+    suggested_fix = "ADD: `JOIN concept tgt ON cr.concept_id_2 = tgt.concept_id AND tgt.standard_concept = 'S'` to ensure the Maps-to target is a standard concept."
     long_description = (
         "concept_relationship with relationship_id = 'Maps to' is the "
         "canonical mapping from source codes (ICD10CM, NDC, etc.) to OMOP "

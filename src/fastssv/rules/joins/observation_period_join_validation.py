@@ -226,9 +226,7 @@ class ObservationPeriodJoinValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add: clinical_date BETWEEN observation_period_start_date AND observation_period_end_date"
-    )
+    suggested_fix = "ADD: `AND <clinical>.<event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` (date-overlap) on every observation_period join, in addition to the person_id linkage."
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN observation_period op ON co.person_id = op.person_id;"

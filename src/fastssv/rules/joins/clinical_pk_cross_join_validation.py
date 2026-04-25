@@ -174,10 +174,7 @@ class ClinicalPkCrossJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Do not join clinical event primary keys. "
-        "Use shared foreign keys such as person_id or visit_occurrence_id instead."
-    )
+    suggested_fix = "REPLACE: joins between clinical event primary keys (e.g. `co.condition_occurrence_id = de.drug_exposure_id`) WITH the intended FK pair: usually person_id on both sides, or visit_occurrence_id on both sides."
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id;"

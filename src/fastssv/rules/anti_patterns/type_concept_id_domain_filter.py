@@ -62,6 +62,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace
 from fastssv.core.registry import register
 
 
@@ -198,8 +199,13 @@ def _find_domain_filters(
     tree: exp.Expression,
     aliases: Dict[str, str],
     concept_alias: str,
-) -> List[Tuple[str, str]]:
-    filters: List[Tuple[str, str]] = []
+) -> List[Tuple[str, str, exp.Expression]]:
+    """Return list of (value, context_sql, node).
+
+    ``node`` is the offending predicate node (EQ / NEQ / IN / IS) so callers
+    can construct a structured patch when the shape is mechanical.
+    """
+    filters: List[Tuple[str, str, exp.Expression]] = []
     concept_alias_norm = _norm(concept_alias)
 
     nodes = (
@@ -229,7 +235,7 @@ def _find_domain_filters(
 
                 value = _extract_string_literal(val_node)
                 if value:
-                    filters.append((value, node.sql()))
+                    filters.append((value, node.sql(), node))
 
         # --- IN ---
         elif isinstance(node, exp.In):
@@ -246,7 +252,7 @@ def _find_domain_filters(
             for expr in node.expressions or []:
                 value = _extract_string_literal(expr)
                 if value:
-                    filters.append((value, node.sql()))
+                    filters.append((value, node.sql(), node))
 
         # --- IS (NULL) ---
         elif isinstance(node, exp.Is):
@@ -260,7 +266,7 @@ def _find_domain_filters(
             if col_table and col_table != concept_alias_norm:
                 continue
 
-            filters.append(("NULL", node.sql()))
+            filters.append(("NULL", node.sql(), node))
 
     return filters
 
@@ -281,9 +287,7 @@ class TypeConceptIdDomainFilterRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use domain_id = 'Type Concept' or remove the domain_id filter."
-    )
+    suggested_fix = "REPLACE: `WHERE c.domain_id = '<clinical_domain>'` WITH `WHERE c.domain_id = 'Type Concept'` when joining to a *_type_concept_id, OR remove the domain_id filter."
     long_description = (
         "The `*_type_concept_id` columns resolve to concepts whose "
         "domain_id is 'Type Concept' — they describe record provenance "
@@ -328,7 +332,7 @@ class TypeConceptIdDomainFilterRule(Rule):
             for type_col, concept_alias, _ in joins:
                 filters = _find_domain_filters(tree, aliases, concept_alias)
 
-                for domain_value, context in filters:
+                for domain_value, context, node in filters:
                     domain_norm = _norm(domain_value)
 
                     if domain_norm == CORRECT_TYPE_DOMAIN_NORM:
@@ -340,6 +344,25 @@ class TypeConceptIdDomainFilterRule(Rule):
                             continue
                         seen.add(key)
 
+                        # Mechanical REPLACE only for the simple EQ case:
+                        # `<col> = '<clinical_domain>'` →
+                        # `<col> = 'Type Concept'`. IN/NEQ/IS shapes vary
+                        # too much for a single canonical rewrite — leave
+                        # them on FREEFORM auto-default.
+                        patch = None
+                        if isinstance(node, exp.EQ):
+                            col_part = (
+                                node.this if isinstance(node.this, exp.Column)
+                                else node.expression
+                            )
+                            if isinstance(col_part, exp.Column):
+                                span = locate(sql, node.sql())
+                                if span is not None:
+                                    patch = replace(
+                                        span,
+                                        f"{col_part.sql()} = '{CORRECT_TYPE_DOMAIN}'",
+                                    )
+
                         violations.append(
                             self.create_violation(
                                 message=(
@@ -350,6 +373,7 @@ class TypeConceptIdDomainFilterRule(Rule):
                                 suggested_fix=(
                                     f"Use domain_id = '{CORRECT_TYPE_DOMAIN}' or remove the filter"
                                 ),
+                                suggested_fix_patch=patch,
                                 details={
                                     "type_column": type_col,
                                     "incorrect_domain": domain_value,

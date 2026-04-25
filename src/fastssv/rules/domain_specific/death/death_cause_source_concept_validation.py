@@ -44,6 +44,7 @@ from fastssv.core.helpers import (
     has_table_reference,
     is_in_where_or_join_clause,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -133,8 +134,7 @@ class DeathCauseSourceConceptValidationRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = "Replace with death.cause_concept_id"
-
+    suggested_fix = "REPLACE: `WHERE death.cause_source_concept_id = <id>` WITH `WHERE death.cause_concept_id = <id>`. Use cause_source_concept_id only for ETL/source exploration."
     example_bad = (
         "SELECT person_id FROM death\n"
         "WHERE cause_source_concept_id = 4316491;"
@@ -158,11 +158,20 @@ class DeathCauseSourceConceptValidationRule(Rule):
             aliases = extract_aliases(tree)
             issues = _find_violations(tree, aliases)
 
+            # Mechanical fix: every violation here is a comparison whose
+            # column should switch from cause_source_concept_id to
+            # cause_concept_id. The simplest unambiguous edit is to rename
+            # the column in source. Only emit a patch when the substring
+            # appears uniquely; otherwise drop to FREEFORM.
+            span = locate(sql, SOURCE_COLUMN)
+            patch = patch_replace(span, STANDARD_COLUMN) if span is not None else None
+
             for msg in issues:
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

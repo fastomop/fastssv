@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
@@ -189,6 +190,8 @@ class ConceptDomainJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: the concept ↔ domain ON clause WITH `concept.domain_id = domain.domain_id`. Joining via vocabulary_id, concept_class_id, or any other column is incorrect — domain.domain_id is the only FK target."
+
     example_bad = (
         "SELECT c.concept_id FROM concept c\n"
         "JOIN domain d ON c.vocabulary_id = d.domain_id;"
@@ -229,7 +232,15 @@ class ConceptDomainJoinValidationRule(Rule):
                             f"Expected {c_table}.domain_id = {d_table}.domain_id."
                         ),
                         suggested_fix=(
-                            f"{c_table}.domain_id = {d_table}.domain_id"
+                            f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
+                            f"WITH `{c_table}.domain_id = {d_table}.domain_id`."
+                        ),
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, d_table, d_col,
+                            "domain_id", "domain_id",
+                            f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
+                            f"WITH `{c_table}.domain_id = {d_table}.domain_id`.",
+                            aliases=aliases,
                         ),
                         details={
                             "type": "invalid_concept_domain_join",
@@ -250,7 +261,15 @@ class ConceptDomainJoinValidationRule(Rule):
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            f"{c_table}.domain_id = {d_table}.domain_id"
+                            f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
+                            f"WITH `{c_table}.domain_id = {d_table}.domain_id`."
+                        ),
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, c_table, c_col, d_table, d_col,
+                            "domain_id", "domain_id",
+                            f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
+                            f"WITH `{c_table}.domain_id = {d_table}.domain_id`.",
+                            aliases=aliases,
                         ),
                         details={
                             "type": "suspicious_concept_domain_join",

@@ -208,9 +208,7 @@ class NoteNlpNlpDateForTemporalFilteringRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Join to note table and filter using note.note_date instead."
-    )
+    suggested_fix = "REPLACE: `WHERE note_nlp.nlp_date <op> <date>` WITH `WHERE note.note_date <op> <date>` (after JOIN note_nlp ON note_id = note.note_id). nlp_date is processing time, not clinical event time."
     long_description = (
         "note_nlp.nlp_date records when the NLP pipeline *processed* the "
         "source note, which can be months or years after the clinical "

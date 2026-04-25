@@ -212,11 +212,7 @@ class CohortDefinitionSyntaxNotExecutableSqlRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use cohort_definition_name or cohort_definition_id for filtering. "
-        "cohort_definition_syntax should only be retrieved, not filtered with string patterns."
-    )
-
+    suggested_fix = "REMOVE: text predicates on cohort_definition.cohort_definition_syntax (it stores JSON/OHDSI metadata, not executable SQL). Filter on cohort_definition_id or cohort_definition_name instead."
     example_bad = (
         "SELECT cohort_definition_id FROM cohort_definition\n"
         "WHERE cohort_definition_syntax LIKE '%SELECT%';"

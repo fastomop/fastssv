@@ -83,8 +83,21 @@
                       <code class="rule-id">{{ v.rule_id }}</code>
                     </header>
                     <p class="issue">{{ v.issue }}</p>
-                    {% if v.suggested_fix %}
-                      <p class="fix"><strong>Fix:</strong> {{ v.suggested_fix }}</p>
+                    {% if v.fix is mapping %}
+                      <p class="fix">
+                        <strong>Fix ({{ v.fix.action }}):</strong>
+                        {% if v.fix.action == 'REPLACE' %}
+                          replace span [{{ v.fix.span[0] }}, {{ v.fix.span[1] }}) with <code>{{ v.fix.text }}</code>
+                        {% elif v.fix.action == 'ADD' %}
+                          insert <code>{{ v.fix.text }}</code> at offset {{ v.fix.at }}
+                        {% elif v.fix.action == 'REMOVE' %}
+                          remove span [{{ v.fix.span[0] }}, {{ v.fix.span[1] }})
+                        {% else %}
+                          {{ v.fix.text or v.fix }}
+                        {% endif %}
+                      </p>
+                    {% elif v.fix %}
+                      <p class="fix"><strong>Fix:</strong> {{ v.fix }}</p>
                     {% endif %}
                   </li>
                 {% endfor %}

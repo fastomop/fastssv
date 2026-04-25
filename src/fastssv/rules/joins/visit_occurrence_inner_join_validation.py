@@ -27,6 +27,7 @@ Correct pattern:
     -- Preserves all conditions, visit info NULL when not linked
 """
 
+import re
 from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
@@ -38,7 +39,33 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import replace as patch_replace
 from fastssv.core.registry import register
+
+
+# Match a JOIN keyword span before `visit_occurrence` that isn't already a
+# LEFT / RIGHT / FULL / OUTER join. INNER / CROSS prefix optional.
+_JOIN_VO_RE = re.compile(
+    r"(?<!LEFT\s)(?<!RIGHT\s)(?<!FULL\s)(?<!OUTER\s)"
+    r"(?:(?:INNER|CROSS)\s+)?\bJOIN\s+visit_occurrence\b",
+    re.IGNORECASE,
+)
+
+
+def _build_left_join_patch(sql: str) -> Optional[dict]:
+    """Build a REPLACE patch swapping the inner JOIN keyword for LEFT JOIN.
+
+    Returns ``None`` if the JOIN keyword cannot be uniquely located (e.g.
+    multiple visit_occurrence joins in the same SQL).
+    """
+    matches = _JOIN_VO_RE.findall(sql)
+    if len(matches) != 1:
+        return None
+    m = _JOIN_VO_RE.search(sql)
+    if m is None:
+        return None
+    span = m.span()
+    return patch_replace(span, "LEFT JOIN visit_occurrence")
 
 
 # --- Constants -------------------------------------------------------------
@@ -162,6 +189,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                     "This restricts results to visit-linked events only."
                 ),
                 "severity": Severity.WARNING,
+                "fixable": False,
             })
         else:
             issues.append({
@@ -171,6 +199,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                     "Consider LEFT JOIN unless filtering is intentional."
                 ),
                 "severity": Severity.WARNING,
+                "fixable": True,
             })
 
     # --- Implicit JOINs ---
@@ -192,6 +221,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                         "This may unintentionally drop records with NULL visit_occurrence_id."
                     ),
                     "severity": Severity.WARNING,
+                    "fixable": False,
                 })
 
     return issues
@@ -210,10 +240,7 @@ class VisitOccurrenceInnerJoinValidationRule(Rule):
         "with NULL visit_occurrence_id."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use LEFT JOIN to preserve all events, or explicitly filter "
-        "visit_occurrence_id to indicate intentional restriction."
-    )
+    suggested_fix = "REPLACE: `INNER JOIN visit_occurrence` WITH `LEFT JOIN visit_occurrence` if events without a recorded visit should be preserved (visit_occurrence_id is nullable on event tables)."
     example_bad = (
         "SELECT co.person_id FROM condition_occurrence co\n"
         "JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id;"
@@ -239,10 +266,15 @@ class VisitOccurrenceInnerJoinValidationRule(Rule):
             issues = _find_violations(tree, aliases)
 
             for issue in issues:
+                patch = None
+                if issue.get("fixable"):
+                    patch = _build_left_join_patch(sql)
+
                 violations.append(
                     self.create_violation(
                         message=issue["message"],
                         severity=issue["severity"],
+                        suggested_fix_patch=patch,
                     )
                 )
 

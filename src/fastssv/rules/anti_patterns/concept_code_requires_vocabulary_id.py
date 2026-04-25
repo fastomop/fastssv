@@ -20,6 +20,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import add as patch_add, freeform, locate
 from fastssv.core.registry import register
 
 STRING_MATCH_EXP_TYPES = (exp.Like, exp.ILike, exp.RegexpLike)
@@ -111,7 +112,11 @@ def _has_vocabulary_id_filter(select: exp.Select, target_alias: Optional[str]) -
     return False
 
 
-def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[RuleViolation]:
+def _check_violations(
+    sql: str,
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+) -> List[RuleViolation]:
     """Find all concept_code filter usages missing a corresponding vocabulary_id filter."""
     violations: List[RuleViolation] = []
     seen: set = set()  # (id(select), alias) — one violation per scope per alias
@@ -126,7 +131,12 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         select = col.find_ancestor(exp.Select)
         return table, alias, select
 
-    def _maybe_add(col: exp.Column, concept_code_value: Optional[str], message: str):
+    def _maybe_add(
+        col: exp.Column,
+        concept_code_value: Optional[str],
+        predicate_sql: str,
+        message: str,
+    ):
         table, alias, select = _resolve(col)
         if select is None:
             return
@@ -137,12 +147,24 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         if not _has_vocabulary_id_filter(select, alias):
             # Try to infer vocabulary from concept_code pattern
             inferred_vocab = None
-            suggested_fix = "Add a vocabulary_id filter in the same scope, e.g.: AND <alias>.vocabulary_id = '<vocab>'"
+            suggested_fix = "ADD: `AND <alias>.vocabulary_id = '<vocab>'` in the same WHERE/JOIN scope as the concept_code filter."
 
             if concept_code_value:
                 inferred_vocab = _infer_vocabulary(concept_code_value)
                 if inferred_vocab:
-                    suggested_fix = f"Add: AND {alias or 'c'}.vocabulary_id = '{inferred_vocab}' (inferred from code pattern)"
+                    suggested_fix = f"ADD: `AND {alias or 'c'}.vocabulary_id = '{inferred_vocab}'` (inferred from code pattern) in the same scope as the concept_code filter."
+
+            # Structured patch: ADD an `AND <alias>.vocabulary_id = '<vocab>'`
+            # immediately after the offending concept_code predicate. If the
+            # predicate isn't uniquely locatable, fall back to FREEFORM.
+            alias_for_patch = alias or "c"
+            vocab_value = f"'{inferred_vocab}'" if inferred_vocab else "'<vocab>'"
+            insert_text = f" AND {alias_for_patch}.vocabulary_id = {vocab_value}"
+            span = locate(sql, predicate_sql)
+            if span is not None:
+                patch = patch_add(span[1], insert_text)
+            else:
+                patch = freeform(suggested_fix)
 
             violations.append(RuleViolation(
                 rule_id="anti_patterns.concept_code_requires_vocabulary_id",
@@ -153,6 +175,7 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
                     "column": f"{table}.concept_code" if table else "concept_code",
                     "inferred_vocabulary": inferred_vocab,
                 },
+                suggested_fix_patch=patch,
             ))
 
     # --- concept_code = 'value' ---
@@ -168,7 +191,12 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         if normalize_name(left.name) != "concept_code":
             continue
         code_value = right.this if hasattr(right, 'this') else str(right)
-        _maybe_add(left, code_value, f"concept_code filtered without vocabulary_id: {left.sql()} = {right.sql()}")
+        _maybe_add(
+            left,
+            code_value,
+            eq.sql(),
+            f"concept_code filtered without vocabulary_id: {left.sql()} = {right.sql()}",
+        )
 
     # --- concept_code IN ('value', ...) ---
     for in_expr in tree.find_all(exp.In):
@@ -186,7 +214,12 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
             vals_str += ", ..."
         # Use first code for inference
         first_code = string_vals[0].this if hasattr(string_vals[0], 'this') else str(string_vals[0])
-        _maybe_add(col, first_code, f"concept_code IN clause without vocabulary_id: {col.sql()} IN ({vals_str})")
+        _maybe_add(
+            col,
+            first_code,
+            in_expr.sql(),
+            f"concept_code IN clause without vocabulary_id: {col.sql()} IN ({vals_str})",
+        )
 
     # --- concept_code LIKE 'pattern' (and ILIKE / NOT variants) ---
     for node in tree.walk():
@@ -214,7 +247,14 @@ def _check_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Rul
         right = check_node.expression
         not_prefix = "NOT " if is_not else ""
         op_name = check_node.key.upper() if hasattr(check_node, "key") else "LIKE"
-        _maybe_add(left, None, f"concept_code {not_prefix}{op_name} without vocabulary_id: {left.sql()} {not_prefix}{op_name} {right.sql()}")
+        # The full predicate including any wrapping NOT — for source-locating.
+        predicate_sql = node.sql() if is_not else check_node.sql()
+        _maybe_add(
+            left,
+            None,
+            predicate_sql,
+            f"concept_code {not_prefix}{op_name} without vocabulary_id: {left.sql()} {not_prefix}{op_name} {right.sql()}",
+        )
 
     return violations
 
@@ -231,7 +271,7 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
         "in the same scope to avoid ambiguous cross-vocabulary matches."
     )
     severity = Severity.WARNING  # Best practice, not correctness issue
-    suggested_fix = "Add a vocabulary_id filter alongside concept_code"
+    suggested_fix = "ADD: AND <alias>.vocabulary_id = '<vocab>' alongside the concept_code filter. concept_code is unique only within a vocabulary; without the filter the same code in two vocabularies matches both."
     long_description = (
         "concept_code values are unique only within a vocabulary: 'E11' "
         "exists in ICD10CM (diabetes), ICD10 (diabetes), potentially "
@@ -272,7 +312,7 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
             if tree is None:
                 continue
             aliases = extract_aliases(tree)
-            violations = _check_violations(tree, aliases)
+            violations = _check_violations(sql, tree, aliases)
 
             # Update severity for all violations
             for violation in violations:

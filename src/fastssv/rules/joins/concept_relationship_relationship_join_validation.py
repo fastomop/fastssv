@@ -41,6 +41,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -233,9 +234,7 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: concept_relationship.relationship_id = relationship.relationship_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `concept_relationship.relationship_id = relationship.relationship_id` (both VARCHAR). Use relationship_id, not relationship_concept_id, for the join."
     example_bad = (
         "SELECT * FROM concept_relationship cr\n"
         "JOIN relationship r ON cr.concept_id_1 = r.relationship_id;"
@@ -269,6 +268,10 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
 
             # --- ERRORS ---
             for cr_table, cr_col, r_table, r_col in errors:
+                fix_text = (
+                    f"REPLACE: `{cr_table}.{cr_col} = {r_table}.{r_col}` "
+                    f"WITH `{cr_table}.relationship_id = {r_table}.relationship_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -277,6 +280,12 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
                             f"Expected relationship_id = relationship_id."
                         ),
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, cr_table, cr_col, r_table, r_col,
+                            RELATIONSHIP_ID, RELATIONSHIP_ID,
+                            fix_text,
+                            aliases=aliases,
+                        ),
                         details={
                             "type": "invalid_fk_join",
                             "concept_relationship_column": cr_col,

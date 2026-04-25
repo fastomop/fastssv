@@ -194,10 +194,7 @@ class DeathJoinToPersonNotToClinicalEventRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Ensure JOIN includes: death.person_id = <clinical_table>.person_id"
-    )
-
+    suggested_fix = "REPLACE: any join on `death.<column>` to a clinical event table WITH `death.person_id = <clinical>.person_id`. death has no FK to clinical events."
     example_bad = (
         "SELECT d.person_id FROM death d\n"
         "JOIN condition_occurrence co ON d.death_date = co.condition_start_date;"

@@ -284,10 +284,7 @@ class ObservationValueAsColumnsMutuallyContextualRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use a single value_as_* column or OR conditions for alternatives."
-    )
-
+    suggested_fix = "REPLACE: `value_as_number AND value_as_string` WITH a single predicate matching the value type for that observation_concept_id, OR use `OR` if both representations are intentional. Per row only one value_as_* column is populated in OMOP."
     example_bad = (
         "SELECT person_id FROM observation\n"
         "WHERE value_as_number > 5 AND value_as_string = 'positive';"

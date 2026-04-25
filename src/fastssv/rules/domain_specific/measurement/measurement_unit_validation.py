@@ -20,7 +20,7 @@ Correct pattern:
       AND m.unit_concept_id = 8554  -- % (UCUM)
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 from sqlglot import exp
 
@@ -33,6 +33,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 # Comparison operators that indicate a numeric threshold filter
@@ -42,8 +43,13 @@ _NUMERIC_COMPARISON_TYPES = (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)
 def _find_value_as_number_threshold(
     tree: exp.Expression,
     aliases: Dict[str, str],
-) -> bool:
-    """Return True if query compares value_as_number against a numeric literal.
+) -> Optional[Tuple[exp.Expression, Optional[str]]]:
+    """Return ``(predicate_node, qualifier)`` for the first value_as_number
+    threshold filter, or None.
+
+    ``qualifier`` is the alias-or-table written next to the column in the
+    source SQL (e.g. ``m`` from ``m.value_as_number``); None if the column
+    was unqualified. The caller uses this to build a structured patch.
 
     Handles both aliased (m.value_as_number > 7) and unqualified
     (value_as_number > 7) column references, and both comparison directions.
@@ -75,7 +81,10 @@ def _find_value_as_number_threshold(
             # Accept if column is unqualified (only measurement in scope)
             # or explicitly from measurement
             if table is None or normalize_name(table) == "measurement":
-                return True
+                qualifier = (
+                    normalize_name(col_side.table) if col_side.table else None
+                )
+                return node, qualifier
 
     # Also handle: value_as_number BETWEEN low AND high
     for node in tree.find_all(exp.Between):
@@ -97,9 +106,12 @@ def _find_value_as_number_threshold(
             if normalize_name(col) != "value_as_number":
                 continue
             if table is None or normalize_name(table) == "measurement":
-                return True
+                qualifier = (
+                    normalize_name(col_node.table) if col_node.table else None
+                )
+                return node, qualifier
 
-    return False
+    return None
 
 
 def _has_unit_concept_constraint(tree: exp.Expression) -> bool:
@@ -130,14 +142,7 @@ class MeasurementUnitValidationRule(Rule):
         "mixes patients measured in different unit conventions."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Add a unit_concept_id constraint alongside the numeric threshold: "
-        "AND m.unit_concept_id = <unit_concept_id>. "
-        "Look up the correct UCUM unit concept ID in the OMOP vocabulary "
-        "(e.g. SELECT concept_id FROM concept WHERE concept_code = '%' "
-        "AND vocabulary_id = 'UCUM')."
-    )
-
+    suggested_fix = "ADD: `AND m.unit_concept_id = <unit_concept_id>` alongside any numeric threshold on m.value_as_number. Look up the UCUM concept_id: `SELECT concept_id FROM concept WHERE concept_code = '<ucum_code>' AND vocabulary_id = 'UCUM' AND invalid_reason IS NULL`."
     example_bad = (
         "SELECT m.person_id FROM measurement m\n"
         "WHERE m.measurement_concept_id = 3004249\n"
@@ -168,11 +173,28 @@ class MeasurementUnitValidationRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            if not _find_value_as_number_threshold(tree, aliases):
+            threshold = _find_value_as_number_threshold(tree, aliases)
+            if threshold is None:
                 continue
 
             if _has_unit_concept_constraint(tree):
                 continue
+
+            predicate_node, qualifier = threshold
+
+            # Structured patch: ADD `AND <qualifier>.unit_concept_id =
+            # <unit_concept_id>` immediately after the offending threshold
+            # predicate. The unit value is left as a `<unit_concept_id>`
+            # placeholder for the outer correction loop. If the predicate
+            # isn't uniquely locatable, fall back to FREEFORM via auto-default.
+            patch = None
+            qual = qualifier or "measurement"
+            span = locate(sql, predicate_node.sql())
+            if span is not None:
+                patch = patch_add(
+                    span[1],
+                    f" AND {qual}.unit_concept_id = <unit_concept_id>",
+                )
 
             violations.append(self.create_violation(
                 message=(
@@ -186,6 +208,7 @@ class MeasurementUnitValidationRule(Rule):
                     "column": "measurement.value_as_number",
                     "missing": "unit_concept_id constraint",
                 },
+                suggested_fix_patch=patch,
             ))
 
         return violations

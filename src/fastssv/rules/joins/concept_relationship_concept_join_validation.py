@@ -53,6 +53,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -218,9 +219,7 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use concept_id_1 for source concepts and concept_id_2 for target concepts."
-    )
+    suggested_fix = "REPLACE: cr.concept_id_1 / cr.concept_id_2 with the column matching the alias intent (concept_id_1 = source, concept_id_2 = target). Do not swap them."
     example_bad = (
         "SELECT c_source.concept_name\n"
         "FROM concept_relationship cr\n"
@@ -256,6 +255,22 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
             for concept_alias, actual_col, intent in errors:
                 expected_col = CONCEPT_ID_1 if intent == "source" else CONCEPT_ID_2
 
+                fix_text = (
+                    f"REPLACE: `concept_relationship.{actual_col} = "
+                    f"{concept_alias}.concept_id` WITH `concept_relationship.{expected_col} = "
+                    f"{concept_alias}.concept_id`."
+                )
+                # `concept_alias` is the alias of the concept table (e.g. c_source);
+                # `build_join_replace_patch` will iterate alias forms for both sides.
+                patch = build_join_replace_patch(
+                    sql,
+                    CONCEPT_RELATIONSHIP, actual_col,
+                    CONCEPT, CONCEPT_ID,
+                    expected_col, CONCEPT_ID,
+                    fix_text,
+                    aliases=aliases,
+                )
+
                 violations.append(
                     self.create_violation(
                         message=(
@@ -266,6 +281,7 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
                             f"Use: concept_relationship.{expected_col} = "
                             f"{concept_alias}.concept_id"
                         ),
+                        suggested_fix_patch=patch,
                         details={
                             "type": "semantic_intent_mismatch",
                             "alias": concept_alias,

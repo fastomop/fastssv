@@ -122,10 +122,7 @@ class TopAsSyntheticDataRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use explicit VALUES clause, generate_series() (PostgreSQL), or recursive CTE. "
-        "Example: SELECT n FROM (VALUES (1), (2), ..., (12)) AS numbers(n)"
-    )
+    suggested_fix = "REPLACE: `SELECT TOP/LIMIT N ROW_NUMBER() OVER (...) FROM <real_table>` WITH a synthetic generator. Examples: `SELECT n FROM (VALUES (1),(2),(3),...,(12)) AS numbers(n)`; OR `SELECT generate_series(1, 12) AS n` (Postgres / DuckDB)."
     long_description = (
         "Using `SELECT TOP N ROW_NUMBER() OVER (...) FROM some_table` (or "
         "the `LIMIT N` equivalent) to generate the integers 1..N from an "

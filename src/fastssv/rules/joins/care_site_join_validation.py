@@ -227,10 +227,7 @@ class CareSiteJoinValidationRule(Rule):
         "Ensures clinical tables join to location via care_site."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use: clinical → care_site → location join path."
-    )
-
+    suggested_fix = "ADD: the full clinical → care_site → location chain: `JOIN care_site cs ON <clinical>.care_site_id = cs.care_site_id JOIN location l ON cs.location_id = l.location_id`. Don't skip care_site to join clinical directly to location."
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

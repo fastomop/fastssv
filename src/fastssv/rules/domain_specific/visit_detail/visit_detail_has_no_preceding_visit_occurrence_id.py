@@ -84,6 +84,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -209,11 +210,7 @@ class VisitDetailHasNoPrecedingVisitOccurrenceIdRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use preceding_visit_detail_id for visit_detail temporal chain. "
-        "Use preceding_visit_occurrence_id only with visit_occurrence table."
-    )
-
+    suggested_fix = "REPLACE: `visit_detail.preceding_visit_occurrence_id` (does not exist) WITH `visit_detail.preceding_visit_detail_id`. Use preceding_visit_occurrence_id only on visit_occurrence."
     example_bad = (
         "SELECT visit_detail_id, preceding_visit_occurrence_id\n"
         "FROM visit_detail;"
@@ -253,10 +250,18 @@ class VisitDetailHasNoPrecedingVisitOccurrenceIdRule(Rule):
             issues = _find_violations(tree, aliases, cte_names)
 
             for msg in issues:
+                # Mechanical fix: replace the non-existent
+                # preceding_visit_occurrence_id with preceding_visit_detail_id.
+                # Locate is unique-match-only; if the column name appears more
+                # than once we leave the patch off and the auto-default
+                # FREEFORM kicks in.
+                span = locate(sql, PRECEDING_VISIT_OCCURRENCE_ID_COL)
+                patch = patch_replace(span, "preceding_visit_detail_id") if span is not None else None
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

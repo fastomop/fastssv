@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.patch import add as patch_add, build_join_replace_patch, freeform, locate
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
@@ -223,6 +224,8 @@ class ConceptJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: any `*_concept_id` join target other than `concept.concept_id` WITH `concept.concept_id`. ADD: `AND <c>.vocabulary_id = '<vocab>'` whenever joining on `concept_code` (concept_code is unique only within a vocabulary)."
+
     example_bad = (
         "SELECT co.person_id FROM condition_occurrence co\n"
         "JOIN concept c ON co.condition_concept_id = c.concept_name;"
@@ -255,15 +258,23 @@ class ConceptJoinValidationRule(Rule):
 
             # --- ERRORS ---
             for other_table, other_col, concept_table, concept_col in errors:
+                fix_text = (
+                    f"REPLACE: `{other_table}.{other_col} = {concept_table}.{concept_col}` "
+                    f"WITH `{other_table}.{other_col} = {concept_table}.concept_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
                             f"Invalid join: {other_table}.{other_col} must join to "
                             f"{concept_table}.concept_id, not {concept_col}."
                         ),
-                        suggested_fix=(
-                            f"Use:\n"
-                            f"  {other_table}.{other_col} = {concept_table}.concept_id"
+                        suggested_fix=fix_text,
+                        # Only the RHS changes (concept_col → concept_id);
+                        # `other_col` is preserved.
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, other_table, other_col, concept_table, concept_col,
+                            other_col, "concept_id", fix_text,
+                            aliases=aliases,
                         ),
                         details={
                             "type": "invalid_concept_id_join",
@@ -276,6 +287,33 @@ class ConceptJoinValidationRule(Rule):
 
             # --- WARNINGS ---
             for other_table, other_col, concept_table, concept_col in warnings:
+                fix_text = (
+                    f"ADD: `AND {concept_table}.vocabulary_id = '<vocab>'` to the existing "
+                    f"`{other_table}.{other_col} = {concept_table}.{concept_col}` join. "
+                    f"concept_code is unique only within a vocabulary."
+                )
+                # Build an ADD patch that inserts after the offending join
+                # predicate; placeholder `<vocab>` left for the LLM /
+                # outer loop to resolve from the concept_code value.
+                # Try aliased forms too — the detector resolved table names
+                # but the SQL may use aliases (e.g. `c.concept_code`).
+                from fastssv.core.patch import _qualifiers_for_table
+                other_quals = _qualifiers_for_table(other_table, aliases)
+                concept_quals = _qualifiers_for_table(concept_table, aliases)
+                patch = freeform(fix_text)
+                for oq in other_quals:
+                    for cq in concept_quals:
+                        bad_predicate_a = f"{oq}.{other_col} = {cq}.{concept_col}"
+                        bad_predicate_b = f"{cq}.{concept_col} = {oq}.{other_col}"
+                        span = locate(sql, bad_predicate_a) or locate(sql, bad_predicate_b)
+                        if span is not None:
+                            patch = patch_add(
+                                span[1],
+                                f" AND {cq}.vocabulary_id = '<vocab>'",
+                            )
+                            break
+                    if patch.get("action") == "ADD":
+                        break
                 violations.append(
                     RuleViolation(
                         rule_id=self.rule_id,
@@ -284,11 +322,8 @@ class ConceptJoinValidationRule(Rule):
                             f"without vocabulary_id constraint."
                         ),
                         severity=Severity.WARNING,
-                        suggested_fix=(
-                            f"Add vocabulary_id constraint to ensure unique matches:\n"
-                            f"  JOIN {concept_table} ON {other_table}.{other_col} = {concept_table}.{concept_col}\n"
-                            f"  AND {concept_table}.vocabulary_id = '<vocabulary>'"
-                        ),
+                        suggested_fix=fix_text,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "ambiguous_vocabulary_join",
                             "column": concept_col,

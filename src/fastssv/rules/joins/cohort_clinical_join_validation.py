@@ -276,10 +276,7 @@ class CohortClinicalJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: cohort.subject_id = clinical.person_id "
-        "or cohort.subject_id = person.person_id and person.person_id = clinical.person_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `cohort.subject_id = <clinical>.person_id` (cohort.subject_id holds person_id values), OR go via person: `JOIN person p ON cohort.subject_id = p.person_id JOIN <clinical> c ON p.person_id = c.person_id`."
     example_bad = (
         "SELECT * FROM cohort c\n"
         "JOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;"

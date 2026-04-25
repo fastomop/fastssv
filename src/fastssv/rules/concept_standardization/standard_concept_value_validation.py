@@ -32,6 +32,7 @@ from fastssv.core.helpers import (
     is_in_where_or_join_clause,
     has_table_reference,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -90,8 +91,8 @@ def _find_invalid_values(
     tree: exp.Expression,
     aliases: Dict[str, str],
     concept_present: bool,
-) -> List[str]:
-    issues = []
+) -> List[dict]:
+    issues: List[dict] = []
     seen: Set[str] = set()
 
     for node in tree.walk():
@@ -122,20 +123,26 @@ def _find_invalid_values(
                     key = f"MIXED:{values}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append(
-                            f"Mixed literal types in standard_concept IN clause: {values}. "
-                            f"Use only 'S', 'C', or NULL."
-                        )
+                        issues.append({
+                            "message": (
+                                f"Mixed literal types in standard_concept IN clause: {values}. "
+                                f"Use only 'S', 'C', or NULL."
+                            ),
+                            "kind": "IN_MIXED",
+                        })
 
                 invalid = [v for v in values if v not in VALID_VALUES]
                 if invalid:
                     key = f"IN:{','.join(sorted(invalid))}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append(
-                            f"Invalid standard_concept values: {invalid}. "
-                            f"Valid values are 'S', 'C', or NULL."
-                        )
+                        issues.append({
+                            "message": (
+                                f"Invalid standard_concept values: {invalid}. "
+                                f"Valid values are 'S', 'C', or NULL."
+                            ),
+                            "kind": "IN_INVALID",
+                        })
 
             # --- Equality / inequality ---
             else:
@@ -144,10 +151,14 @@ def _find_invalid_values(
                     key = f"VAL:{value}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append(
-                            f"Invalid standard_concept value: '{value}'. "
-                            f"Valid values are 'S', 'C', or NULL."
-                        )
+                        issues.append({
+                            "message": (
+                                f"Invalid standard_concept value: '{value}'. "
+                                f"Valid values are 'S', 'C', or NULL."
+                            ),
+                            "kind": "EQ" if isinstance(node, exp.EQ) else "NEQ",
+                            "literal_sql": val_node.sql() if val_node is not None else None,
+                        })
 
     return issues
 
@@ -164,9 +175,7 @@ class StandardConceptValueValidationRule(Rule):
         "Ensures standard_concept uses only valid values: 'S', 'C', or NULL."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Use 'S' for standard, 'C' for classification, or NULL for non-standard concepts."
-    )
+    suggested_fix = "REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'` (classification), `IS NULL` (non-standard). Those are the only valid values in OMOP."
     long_description = (
         "The concept.standard_concept column has exactly three valid "
         "values: 'S' (standard), 'C' (classification), and NULL (neither, "
@@ -203,8 +212,23 @@ class StandardConceptValueValidationRule(Rule):
 
             issues = _find_invalid_values(tree, aliases, concept_present)
 
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
+            for issue in issues:
+                patch = None
+                # Only the EQ-against-invalid-literal case has an unambiguous
+                # mechanical fix: swap the bad literal for 'S' (the most-
+                # common standard value). NEQ, IN, and mixed-type cases
+                # require human judgement and stay FREEFORM.
+                if issue["kind"] == "EQ" and issue.get("literal_sql"):
+                    span = locate(sql, issue["literal_sql"])
+                    if span is not None:
+                        patch = patch_replace(span, "'S'")
+
+                violations.append(
+                    self.create_violation(
+                        message=issue["message"],
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

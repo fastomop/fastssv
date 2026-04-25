@@ -227,10 +227,7 @@ class EraForbiddenJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Do not join era tables with visit/provider/care_site. "
-        "Use event tables (condition_occurrence, drug_exposure) for visit-level analysis."
-    )
+    suggested_fix = "REMOVE: any JOIN from era tables (condition_era, drug_era, dose_era) to visit_occurrence / visit_detail / provider / care_site. Era tables are time-aggregated and have no link to visit-level entities."
     example_bad = (
         "SELECT * FROM drug_era de\n"
         "JOIN visit_occurrence vo ON de.person_id = vo.person_id;"

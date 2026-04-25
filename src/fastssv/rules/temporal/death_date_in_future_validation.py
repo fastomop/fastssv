@@ -228,7 +228,7 @@ class DeathDateInFutureValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = "Ensure death_date <= CURRENT_DATE"
+    suggested_fix = "REPLACE: `death_date > CURRENT_DATE` (or > GETDATE() / NOW()) WITH `death_date <= CURRENT_DATE`. Future death dates always indicate data errors."
     long_description = (
         "Filtering for death_date > CURRENT_DATE describes patients who die "
         "in the future, which is not possible. Like the clinical-event-in-"

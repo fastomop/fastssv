@@ -326,12 +326,7 @@ class FreeTextColumnMisuseRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Treat the column as free text — text equality, LIKE, or NULL checks only. "
-        "Do not join it to the concept table; use the corresponding *_concept_id "
-        "column on the same table for concept lookups."
-    )
-
+    suggested_fix = "REPLACE: the JOIN to concept on the free-text column WITH a JOIN on the row's structural concept_id (condition_concept_id / drug_concept_id / note_nlp_concept_id / country_concept_id). Treat free-text columns as strings (LIKE / IS NULL / equality), never CAST or numeric-compare."
     long_description = (
         "Several OMOP CDM tables expose VARCHAR columns that store free-text "
         "metadata: condition_occurrence.stop_reason, drug_exposure.lot_number, "
@@ -411,9 +406,9 @@ class FreeTextColumnMisuseRule(Rule):
                                     f"Use {table_norm}.{replacement} for concept lookups instead."
                                 ),
                                 suggested_fix=(
-                                    f"Replace {table_norm}.{col_norm} with "
-                                    f"{table_norm}.{replacement} in the JOIN condition, "
-                                    f"or remove the join and treat {col_norm} as free text."
+                                    f"REPLACE: `{table_norm}.{col_norm}` in the JOIN ON "
+                                    f"clause WITH `{table_norm}.{replacement}`, OR REMOVE "
+                                    f"the JOIN entirely and treat `{col_norm}` as opaque text."
                                 ),
                                 details={
                                     "type": "join_to_concept",
@@ -444,8 +439,9 @@ class FreeTextColumnMisuseRule(Rule):
                                 f"an implicit cast and may silently return no rows."
                             ),
                             suggested_fix=(
-                                f"Compare {table_norm}.{col_norm} against a string "
-                                f"literal, or use LIKE / IS NULL."
+                                f"REPLACE: the numeric comparison WITH a string-literal "
+                                f"equality, `LIKE`, or `IS NULL` — `{table_norm}.{col_norm}` "
+                                f"is VARCHAR free text."
                             ),
                             details={
                                 "type": "numeric_comparison",
@@ -473,8 +469,8 @@ class FreeTextColumnMisuseRule(Rule):
                             f"will silently fail or truncate."
                         ),
                         suggested_fix=(
-                            f"Do not CAST {col_norm} to a numeric type. "
-                            f"Use it as text (LIKE / IS NULL / string equality)."
+                            f"REMOVE: the numeric `CAST({col_norm} AS ...)`. "
+                            f"Use `{col_norm}` as text (`LIKE`, `IS NULL`, or string equality)."
                         ),
                         details={
                             "type": "cast_to_numeric",
@@ -505,9 +501,9 @@ class FreeTextColumnMisuseRule(Rule):
                             f"structured semantics and should not appear in joins."
                         ),
                         suggested_fix=(
-                            f"Remove {table_norm}.{col_norm} from the JOIN "
-                            f"condition; use {table_norm}.{info['replacement']} "
-                            f"or a structural FK column instead."
+                            f"REPLACE: `{table_norm}.{col_norm}` in the JOIN ON clause "
+                            f"WITH `{table_norm}.{info['replacement']}` (or another "
+                            f"structural FK column)."
                         ),
                         details={
                             "type": "join_on_free_text",

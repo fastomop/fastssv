@@ -201,10 +201,7 @@ class ConditionOccurrenceCardinalityValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use GROUP BY person_id, DISTINCT, or condition_era to avoid duplicate rows per person."
-    )
-
+    suggested_fix = "ADD: GROUP BY p.person_id (with COUNT/MIN/MAX aggregates), OR SELECT DISTINCT p.person_id, OR query condition_era for consolidated periods. Plain person→condition_occurrence joins fan out per person."
     example_bad = (
         "SELECT p.person_id, co.condition_concept_id\n"
         "FROM person p\n"

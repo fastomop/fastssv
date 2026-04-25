@@ -176,7 +176,7 @@ class DeathDateBeforeBirthValidationRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = "Ensure death_date >= birth_datetime"
+    suggested_fix = "REPLACE: `d.death_date < p.birth_datetime` (or < year_of_birth) WITH `d.death_date >= COALESCE(p.birth_datetime, MAKE_DATE(p.year_of_birth, 1, 1))`. Death-before-birth is logically impossible."
     long_description = (
         "A predicate that allows death_date < birth_datetime to evaluate "
         "TRUE encodes an impossibility, no patient can die before they are "

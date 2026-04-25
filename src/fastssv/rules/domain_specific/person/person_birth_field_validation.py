@@ -294,8 +294,7 @@ class PersonBirthFieldValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = "Use valid birth field values within plausible ranges"
-
+    suggested_fix = "REPLACE: implausible birth-field literals WITH valid ranges: year_of_birth BETWEEN 1900 AND <current_year>, month_of_birth BETWEEN 1 AND 12, day_of_birth BETWEEN 1 AND 31."
     example_bad = (
         "SELECT person_id FROM person\n"
         "WHERE year_of_birth = 1800;"
@@ -328,8 +327,8 @@ class PersonBirthFieldValidationRule(Rule):
                         severity=severity,
                         message=error_msg,
                         suggested_fix=(
-                            f"Use {field_name} values between "
-                            f"{config.min_val} and {max_val}."
+                            f"REPLACE: implausible `{field_name}` filter literals "
+                            f"WITH `{field_name} BETWEEN {config.min_val} AND {max_val}`."
                         ),
                         details={
                             "field": field_name,

@@ -255,10 +255,7 @@ class EpisodeRequiresConceptFilterRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add a filter on episode_concept_id (e.g., WHERE episode_concept_id = <id>) "
-        "or join to concept with appropriate filtering."
-    )
+    suggested_fix = "ADD: `WHERE episode_concept_id = <id>` (or IN(...)) to scope the episode query to a specific clinical concept."
     long_description = (
         "The episode table aggregates care over time (disease episodes, "
         "treatment episodes) across many episode types identified by "

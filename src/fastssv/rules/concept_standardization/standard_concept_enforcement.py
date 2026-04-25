@@ -28,19 +28,41 @@ MAPS_TO_RELATIONSHIP = "Maps to"
 
 
 def _extract_concept_references(
-    tree: exp.Expression, aliases: Dict[str, str]
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+    standard_fields: Set[Tuple[str, str]],
 ) -> List[Tuple[str, str]]:
-    """Extract all resolved (table, column) references for concept fields."""
+    """Extract all resolved (table, column) references for concept fields.
+
+    For unqualified columns (e.g. ``condition_concept_id`` rather than
+    ``co.condition_concept_id``), attribute to the unique table in scope
+    whose schema lists the column as a standard concept field. Without
+    this fallback, single-table queries that omit aliases miss the rule
+    entirely.
+    """
     refs: List[Tuple[str, str]] = []
+    tables_in_scope = {normalize_name(t) for t in aliases.values() if t}
 
     for col in tree.find_all(exp.Column):
         table, col_name = resolve_table_col(col, aliases)
 
-        if not table:
+        if not col_name:
+            continue
+        if col_name != "concept_id" and not col_name.endswith("_concept_id"):
             continue
 
-        if col_name == "concept_id" or col_name.endswith("_concept_id"):
-            refs.append((table, col_name))
+        if not table:
+            # Unqualified — try to attribute to a unique standard-field-owning
+            # table in scope. Skip if zero or multiple candidates (ambiguous).
+            col_norm = normalize_name(col_name)
+            candidates = [
+                t for t in tables_in_scope if (t, col_norm) in standard_fields
+            ]
+            if len(candidates) != 1:
+                continue
+            table = candidates[0]
+
+        refs.append((table, col_name))
 
     return refs
 
@@ -60,6 +82,8 @@ def _has_specific_concept_id_filter(
     """
     from fastssv.core.helpers import is_numeric_literal
 
+    tables_in_scope = {normalize_name(t) for t in aliases.values() if t}
+
     for node in tree.find_all((exp.EQ, exp.In)):
         if not isinstance(node.this, exp.Column):
             continue
@@ -69,8 +93,18 @@ def _has_specific_concept_id_filter(
             continue
 
         # Only literals on actual standard-concept fields count as intent.
-        table_norm = normalize_name(table_resolved) if table_resolved else ""
         col_norm = normalize_name(col_name)
+        if table_resolved:
+            table_norm = normalize_name(table_resolved)
+        else:
+            # Unqualified — attribute to the unique standard-field-owning
+            # table in scope, mirroring _extract_concept_references.
+            candidates = [
+                t for t in tables_in_scope if (t, col_norm) in standard_fields
+            ]
+            if len(candidates) != 1:
+                continue
+            table_norm = candidates[0]
         if (table_norm, col_norm) not in standard_fields:
             continue
 
@@ -121,7 +155,7 @@ class StandardConceptEnforcementRule(Rule):
         "via concept.standard_concept = 'S' or concept_relationship 'Maps to'"
     )
     severity = Severity.WARNING
-    suggested_fix = "JOIN concept table and add: WHERE concept.standard_concept = 'S'"
+    suggested_fix = "ADD: `AND c.standard_concept = 'S'` to clinical-concept filters, OR resolve source concepts via `JOIN concept_relationship cr ON co.<x>_concept_id = cr.concept_id_1 AND cr.relationship_id = 'Maps to'`."
     long_description = (
         "Standard OMOP *_concept_id columns can point to non-standard or "
         "deprecated concepts unless the query explicitly enforces "
@@ -184,7 +218,7 @@ class StandardConceptEnforcementRule(Rule):
                 continue
 
             aliases = extract_aliases(tree)
-            refs = _extract_concept_references(tree, aliases)
+            refs = _extract_concept_references(tree, aliases, standard_fields)
 
             # Check if any STANDARD concept fields are used
             uses_standard_fields = False
@@ -222,7 +256,7 @@ class StandardConceptEnforcementRule(Rule):
                 violations.append(self.create_violation(
                     message=message,
                     severity=severity,
-                    suggested_fix="JOIN concept table and add: WHERE concept.standard_concept = 'S'",
+                    suggested_fix="ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts.",
                     details={"strict_mode_escalated": severity == Severity.ERROR}
                 ))
 

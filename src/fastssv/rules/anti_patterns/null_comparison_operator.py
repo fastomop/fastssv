@@ -44,6 +44,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.patch import freeform, locate, replace
 from fastssv.core.registry import register
 
 
@@ -54,7 +55,7 @@ def _norm(x: Optional[str]) -> Optional[str]:
 def _find_null_comparisons(tree: exp.Expression) -> List[tuple]:
     """Find comparison operators used with NULL literals.
 
-    Returns list of (operator, context) tuples.
+    Returns list of (op_name, context, sql_fragment, node_type, non_null_side_sql).
     """
     violations: List[tuple] = []
 
@@ -90,10 +91,12 @@ def _find_null_comparisons(tree: exp.Expression) -> List[tuple]:
                 # Get context (WHERE, CASE, etc.)
                 context = _get_context(node)
 
-                # Get the SQL fragment
+                # Get the SQL fragment and the non-NULL side (for patch construction).
                 sql_fragment = node.sql()[:100]
+                non_null_side = right if is_left_null else left
+                non_null_sql = non_null_side.sql() if non_null_side is not None else None
 
-                violations.append((op_name, context, sql_fragment))
+                violations.append((op_name, context, sql_fragment, type(node), non_null_sql))
 
     return violations
 
@@ -137,10 +140,7 @@ class NullComparisonOperatorRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Replace '= NULL' with 'IS NULL' and '<> NULL' or '!= NULL' with 'IS NOT NULL'. "
-        "For example: WHERE column IS NULL instead of WHERE column = NULL"
-    )
+    suggested_fix = "REPLACE: `<col> = NULL` WITH `<col> IS NULL`. REPLACE: `<col> <> NULL` or `<col> != NULL` WITH `<col> IS NOT NULL`."
     long_description = (
         "Comparing a column to NULL with `=`, `<>`, `!=`, `<`, `>`, `<=`, "
         "or `>=` always evaluates to UNKNOWN, which behaves as FALSE in "
@@ -173,18 +173,33 @@ class NullComparisonOperatorRule(Rule):
 
             null_comparisons = _find_null_comparisons(tree)
 
-            for operator, context, sql_fragment in null_comparisons:
+            for operator, context, sql_fragment, node_type, non_null_sql in null_comparisons:
                 message = (
                     f"Incorrect NULL comparison using '{operator}' operator in {context}. "
                     f"NULL comparisons with =, <>, !=, >, <, >=, <= always return UNKNOWN (neither true nor false), "
                     f"causing incorrect query behavior. Use 'IS NULL' or 'IS NOT NULL' instead."
                 )
 
+                # Build a structured patch when intent is unambiguous:
+                # `=` → IS NULL, `<>`/`!=` → IS NOT NULL. Range operators
+                # against NULL are nonsense; emit FREEFORM since the user's
+                # intent isn't recoverable.
+                patch = None
+                span = locate(sql, sql_fragment)
+                if span and non_null_sql:
+                    if node_type is exp.EQ:
+                        patch = replace(span, f"{non_null_sql} IS NULL")
+                    elif node_type is exp.NEQ:
+                        patch = replace(span, f"{non_null_sql} IS NOT NULL")
+                if patch is None:
+                    patch = freeform(self.suggested_fix)
+
                 violations.append(
                     self.create_violation(
                         message=message,
                         severity=self.severity,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "operator": operator,
                             "context": context,

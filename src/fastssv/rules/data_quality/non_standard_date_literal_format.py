@@ -25,13 +25,48 @@ Violation patterns:
 """
 
 import re
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
+
+
+# Map non-standard literal → ISO 8601 if unambiguous, else None.
+def _try_canonicalize_to_iso(literal: str) -> Optional[str]:
+    """Convert a non-standard date literal to ISO 8601 (YYYY-MM-DD).
+
+    Only handles unambiguous formats:
+        - DD-MMM-YYYY (e.g., '01-jan-2011')
+        - YYYYMMDD     (e.g., '20110101')
+
+    Returns None for ambiguous formats (e.g., 'M/D/YYYY' vs 'D/M/YYYY')
+    or for two-digit-year formats where century inference is unsafe.
+    """
+    s = literal.strip()
+    # DD-MMM-YYYY
+    if re.fullmatch(r"\d{2}-[a-zA-Z]{3}-\d{4}", s):
+        for fmt in ("%d-%b-%Y", "%d-%B-%Y"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                return dt.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        return None
+    # YYYYMMDD (8 digits)
+    if re.fullmatch(r"\d{8}", s):
+        try:
+            dt = datetime.strptime(s, "%Y%m%d")
+            # Sanity-check the year is plausible for OMOP data.
+            if 1800 <= dt.year <= 2100:
+                return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+    return None
 
 
 # Patterns for non-standard date formats
@@ -129,10 +164,7 @@ class NonStandardDateLiteralFormatRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use ISO 8601 date format (YYYY-MM-DD) for date literals. "
-        "Example: '2011-01-01' instead of '01-jan-2011'"
-    )
+    suggested_fix = "REPLACE: ambiguous date literals ('01-jan-2011', '12/31/2020') WITH ISO 8601 ('2011-01-01', '2020-12-31'). Use CAST(<col> AS DATE) or DATE '<iso>' for explicit typing."
     long_description = (
         "Date literals like '01/31/2020', '31-Jan-2020', or '01-jan-2011' "
         "are ambiguous: '01/02/2020' means January 2 in the US and "
@@ -167,11 +199,28 @@ class NonStandardDateLiteralFormatRule(Rule):
             issues = _find_non_standard_date_literals(tree)
 
             for literal_value, format_desc in issues:
+                # Structured REPLACE patch when the non-standard form is
+                # unambiguous (DD-MMM-YYYY, YYYYMMDD). Slash-delimited
+                # forms (M/D/YYYY vs D/M/YYYY) and two-digit years are
+                # inherently ambiguous — leave those on the FREEFORM
+                # auto-default so a human picks the intended date.
+                patch = None
+                iso = _try_canonicalize_to_iso(literal_value)
+                if iso is not None:
+                    for q in ("'", '"'):
+                        bad_lit = f"{q}{literal_value}{q}"
+                        good_lit = f"{q}{iso}{q}"
+                        span = locate(sql, bad_lit)
+                        if span is not None:
+                            patch = patch_replace(span, good_lit)
+                            break
+
                 violations.append(self.create_violation(
                     message=(
                         f"Non-standard date literal format detected: '{literal_value}' ({format_desc}). "
                         f"Use ISO 8601 format (YYYY-MM-DD) for portability and clarity."
                     ),
+                    suggested_fix_patch=patch,
                     details={
                         "literal": literal_value,
                         "format": format_desc,

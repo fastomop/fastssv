@@ -189,10 +189,7 @@ class JoinKeyValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Ensure JOIN conditions use correct foreign key relationships. "
-        "For OMOP: person_id ↔ person_id, *_concept_id ↔ concept.concept_id."
-    )
+    suggested_fix = "REPLACE: incompatible join keys with the canonical OMOP FK pair. Patterns: person_id = person_id across clinical tables; <event>.<x>_concept_id = concept.concept_id; <clinical>.visit_occurrence_id = visit_occurrence.visit_occurrence_id."
     long_description = (
         "OMOP uses distinct ID namespaces for different entities: person_id, "
         "visit_occurrence_id, provider_id, care_site_id, concept_id, and "

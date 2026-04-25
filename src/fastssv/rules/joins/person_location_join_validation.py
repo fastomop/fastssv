@@ -31,6 +31,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -145,10 +146,7 @@ class PersonLocationJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join person to location using location_id: "
-        "person.location_id = location.location_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `person.location_id = location.location_id`. Patient address comes via the location_id FK, not via person_id or person_source_value."
     example_bad = "SELECT * FROM person p JOIN location l ON p.person_id = l.location_id;"
     example_good = "SELECT * FROM person p JOIN location l ON p.location_id = l.location_id;"
 
@@ -176,6 +174,10 @@ class PersonLocationJoinValidationRule(Rule):
             bad_joins = _check_person_location_join(tree, aliases)
 
             for person_table, person_col, location_table, location_col in bad_joins:
+                fix_text = (
+                    f"REPLACE: `{person_table}.{person_col} = {location_table}.{location_col}` "
+                    f"WITH `{person_table}.location_id = {location_table}.location_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -184,6 +186,13 @@ class PersonLocationJoinValidationRule(Rule):
                             f"Expected location_id = location_id."
                         ),
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, person_table, person_col,
+                            location_table, location_col,
+                            LOCATION_ID, LOCATION_ID,
+                            fix_text,
+                            aliases=aliases,
+                        ),
                         details={
                             "person_table": person_table,
                             "person_column": person_col,

@@ -320,10 +320,7 @@ class NoteNlpSnippetMisuseRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use note_nlp_concept_id instead of text matching."
-    )
-
+    suggested_fix = "REPLACE: text-pattern filters on note_nlp.snippet / note_nlp.lexical_variant WITH `WHERE note_nlp.note_nlp_concept_id = <id>` (or IN(...)). snippet and lexical_variant are free-text context, not structured identifiers."
     example_bad = (
         "SELECT note_nlp_id FROM note_nlp\n"
         "WHERE snippet LIKE '%diabetes%';"

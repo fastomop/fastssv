@@ -173,10 +173,7 @@ class DatetimeBetweenDateLiteralRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use >= start AND < next_day, or include time in end literal, "
-        "or use *_date column instead."
-    )
+    suggested_fix = "REPLACE: `<datetime_col> BETWEEN '<date>' AND '<date>'` WITH `<datetime_col> >= '<start_date>' AND <datetime_col> < '<end_date_plus_one>'` (half-open interval), OR cast both sides to DATE: `CAST(<datetime_col> AS DATE) BETWEEN '<date>' AND '<date>'`."
     long_description = (
         "BETWEEN '2023-01-01' AND '2023-12-31' on a *_datetime column quietly "
         "drops every record from 2023-12-31 after 00:00:00, because the date "
@@ -254,8 +251,10 @@ class DatetimeBetweenDateLiteralRule(Rule):
                         ),
                         severity=self.severity,
                         suggested_fix=(
-                            f"Use: {col_name} >= '{low_val}' AND {col_name} < 'next_day', "
-                            "or include time in end literal."
+                            f"REPLACE: `{col_name} BETWEEN '{low_val}' AND '{high_val}'` "
+                            f"WITH `{col_name} >= '{low_val}' AND {col_name} < '<end_date_plus_one>'` "
+                            f"(half-open interval — BETWEEN is inclusive, so non-midnight "
+                            f"times on the end date are silently excluded)."
                         ),
                         details={
                             "column": col_name,

@@ -31,6 +31,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -145,10 +146,7 @@ class CareSiteLocationJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join care_site to location using location_id: "
-        "care_site.location_id = location.location_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `care_site.location_id = location.location_id`. care_site joins to location only via location_id."
     example_bad = "SELECT * FROM care_site cs JOIN location l ON cs.care_site_id = l.location_id;"
     example_good = "SELECT * FROM care_site cs JOIN location l ON cs.location_id = l.location_id;"
 
@@ -176,6 +174,10 @@ class CareSiteLocationJoinValidationRule(Rule):
             bad_joins = _check_care_site_location_join(tree, aliases)
 
             for cs_table, cs_col, loc_table, loc_col in bad_joins:
+                fix_text = (
+                    f"REPLACE: `{cs_table}.{cs_col} = {loc_table}.{loc_col}` "
+                    f"WITH `{cs_table}.location_id = {loc_table}.location_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -184,6 +186,12 @@ class CareSiteLocationJoinValidationRule(Rule):
                             f"Expected location_id = location_id."
                         ),
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, cs_table, cs_col, loc_table, loc_col,
+                            LOCATION_ID, LOCATION_ID,
+                            fix_text,
+                            aliases=aliases,
+                        ),
                         details={
                             "care_site_table": cs_table,
                             "care_site_column": cs_col,

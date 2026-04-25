@@ -71,13 +71,32 @@ Note:
 """
 
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
+
+
+# Map common truthy/falsy string spellings to the canonical 0/1 OMOP
+# representation. Used when the analyst wrote `is_hierarchical = 'yes'` and
+# we want to emit a deterministic REPLACE rather than freeform.
+_TRUE_STRINGS = {"y", "yes", "true", "t", "1"}
+_FALSE_STRINGS = {"n", "no", "false", "f", "0"}
+
+
+def _string_to_boolean_int(value: str) -> Optional[int]:
+    if not isinstance(value, str):
+        return None
+    norm = value.strip().lower()
+    if norm in _TRUE_STRINGS:
+        return 1
+    if norm in _FALSE_STRINGS:
+        return 0
+    return None
 
 
 logger = logging.getLogger(__name__)
@@ -165,7 +184,13 @@ def _check_comparison(
     aliases: Dict[str, str],
     cte_names: Set[str],
     tables_in_query: Set[str],
-) -> Optional[str]:
+) -> Optional[Tuple[str, Optional[exp.Expression]]]:
+    """Return (message, offending_value_side) when the comparison is invalid.
+
+    ``offending_value_side`` is the AST node holding the bad literal, used
+    by the caller to build a REPLACE patch when the value is a string with
+    a known yes/no spelling.
+    """
     left = comparison.this
     right = comparison.expression
 
@@ -199,17 +224,20 @@ def _check_comparison(
                 if value_side.is_string:
                     return (
                         f"Column '{col_name}' is boolean but compared with string "
-                        f"'{value_side.this}'. Use 0/1 or TRUE/FALSE."
+                        f"'{value_side.this}'. Use 0/1 or TRUE/FALSE.",
+                        value_side,
                     )
                 else:
                     return (
                         f"Column '{col_name}' is boolean but compared with invalid "
-                        f"value '{value_side.this}'. Only 0, 1, TRUE, FALSE allowed."
+                        f"value '{value_side.this}'. Only 0, 1, TRUE, FALSE allowed.",
+                        value_side,
                     )
             else:
                 return (
                     f"Column '{col_name}' is boolean but compared with "
-                    f"invalid expression. Use 0/1 or TRUE/FALSE."
+                    f"invalid expression. Use 0/1 or TRUE/FALSE.",
+                    None,
                 )
 
     return None
@@ -262,25 +290,39 @@ def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
     cte_names: Set[str],
-) -> List[str]:
-    issues: List[str] = []
+) -> List[Tuple[str, Optional[exp.Expression]]]:
+    """Return list of (message, offending_value_node).
+
+    ``offending_value_node`` is the literal whose source span we'll target
+    with a REPLACE patch (or ``None`` when the bad side isn't a literal).
+    """
+    issues: List[Tuple[str, Optional[exp.Expression]]] = []
 
     # Collect tables for unqualified column handling
     tables_in_query = _collect_tables(tree, cte_names)
 
     # Comparisons
     for comp in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
-        msg = _check_comparison(comp, aliases, cte_names, tables_in_query)
-        if msg:
-            issues.append(msg)
+        result = _check_comparison(comp, aliases, cte_names, tables_in_query)
+        if result:
+            issues.append(result)
 
-    # IN clauses (NOT IN is exp.Not wrapping exp.In)
+    # IN clauses (NOT IN is exp.Not wrapping exp.In). We don't try to patch
+    # IN lists — multi-value rewrites are restructure-y; FREEFORM is honest.
     for in_expr in tree.find_all(exp.In):
         msg = _check_in_clause(in_expr, aliases, cte_names, tables_in_query)
         if msg:
-            issues.append(msg)
+            issues.append((msg, None))
 
-    return list(dict.fromkeys(issues))
+    # Deduplicate by message
+    seen = set()
+    out: List[Tuple[str, Optional[exp.Expression]]] = []
+    for msg, val in issues:
+        if msg in seen:
+            continue
+        seen.add(msg)
+        out.append((msg, val))
+    return out
 
 
 # --- Rule --------------------------------------------------------------------
@@ -301,10 +343,7 @@ class RelationshipBooleanComparisonRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use 0/1 or TRUE/FALSE instead of strings."
-    )
-
+    suggested_fix = "REPLACE: `is_hierarchical = 'yes'` (or 'true', 'Y', 'T') WITH `is_hierarchical = 1` (or = 0). Same for defines_ancestry. OMOP stores these as 0/1 strings, not English booleans."
     example_bad = (
         "SELECT relationship_id FROM relationship\n"
         "WHERE is_hierarchical = 'yes';"
@@ -345,11 +384,30 @@ class RelationshipBooleanComparisonRule(Rule):
 
             issues = _find_violations(tree, aliases, cte_names)
 
-            for msg in issues:
+            for msg, value_node in issues:
+                # Build a REPLACE patch only when the offending side is a
+                # string literal whose spelling maps unambiguously to 0/1
+                # ('yes'→1, 'no'→0, etc.). Anything else (numeric outliers
+                # like 2/-1, expressions, IN-clauses) drops to FREEFORM.
+                patch = None
+                if isinstance(value_node, exp.Literal) and value_node.is_string:
+                    mapped = _string_to_boolean_int(str(value_node.this))
+                    if mapped is not None:
+                        # Locate the entire quoted string literal in the SQL.
+                        # We try both quote styles since the user may have
+                        # written 'yes' or "yes".
+                        raw = str(value_node.this)
+                        for fragment in (f"'{raw}'", f'"{raw}"'):
+                            span = locate(sql, fragment)
+                            if span is not None:
+                                patch = patch_replace(span, str(mapped))
+                                break
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

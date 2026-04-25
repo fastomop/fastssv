@@ -56,12 +56,14 @@ Note:
 """
 
 import logging
-from typing import List
+import re
+from typing import List, Optional
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import parse_sql
+from fastssv.core.patch import add as patch_add
 from fastssv.core.registry import register
 
 
@@ -76,6 +78,25 @@ ERROR_MSG = (
 
 
 # --- Helpers -----------------------------------------------------------------
+
+# Match an unqualified HAVING keyword (case-insensitive). We rely on the parser
+# having confirmed presence of a HAVING clause; we just need a stable byte
+# offset for the insertion. ``\b`` keeps us off "having" embedded in
+# identifiers/strings.
+_HAVING_RE = re.compile(r"\bhaving\b", re.IGNORECASE)
+
+
+def _find_having_offset(sql: str) -> Optional[int]:
+    """Return the byte offset of the (unique) HAVING keyword, or None.
+
+    If the SQL contains multiple HAVING clauses we can't pick one safely, so
+    we return None and let the rule fall back to FREEFORM.
+    """
+    matches = list(_HAVING_RE.finditer(sql))
+    if len(matches) == 1:
+        return matches[0].start()
+    return None
+
 
 def _find_violations(tree: exp.Expression) -> List[str]:
     """Find SELECT statements with HAVING but no GROUP BY."""
@@ -109,9 +130,7 @@ class HavingWithoutGroupByRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add GROUP BY clause to aggregate data, or use WHERE clause for non-aggregated filtering."
-    )
+    suggested_fix = "ADD: GROUP BY <columns> if the predicate filters aggregates, OR REPLACE the HAVING clause with WHERE if the predicate is on non-aggregated columns."
     long_description = (
         "HAVING filters aggregate groups; it is designed to run after "
         "GROUP BY collapses rows. Without a GROUP BY clause, HAVING "
@@ -158,11 +177,26 @@ class HavingWithoutGroupByRule(Rule):
 
             issues = _find_violations(tree)
 
+            # Structured patch: ADD `GROUP BY <group_by_cols>\n` immediately
+            # before the HAVING keyword. We can't statically determine the
+            # correct grouping columns (the analyst may want WHERE instead),
+            # so we leave a placeholder. If the SQL has more than one HAVING
+            # we can't pick a target deterministically — fall back to
+            # FREEFORM via auto-default.
+            having_offset = _find_having_offset(sql) if issues else None
+            patch = None
+            if having_offset is not None and len(issues) == 1:
+                patch = patch_add(
+                    having_offset,
+                    "GROUP BY <group_by_cols>\n",
+                )
+
             for msg in issues:
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

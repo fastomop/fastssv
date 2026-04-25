@@ -253,11 +253,7 @@ class VisitDetailAdmittedDischargedDomainRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Join to the concept table and add: "
-        "c.domain_id IN ('Visit', 'Place of Service')."
-    )
-
+    suggested_fix = "REPLACE: hard-coded admitted_from_concept_id / discharged_to_concept_id literals WITH a JOIN to concept and filter `WHERE c.domain_id IN ('Visit', 'Place of Service')` to validate the domain of the concept you're filtering by."
     example_bad = (
         "SELECT visit_detail_id FROM visit_detail\n"
         "WHERE admitted_from_concept_id = 8870;"

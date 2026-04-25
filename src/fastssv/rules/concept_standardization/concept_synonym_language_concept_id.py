@@ -50,7 +50,7 @@ Note:
 """
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from sqlglot import exp
 
@@ -62,6 +62,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -109,6 +110,41 @@ def _has_like_on_synonym_name(tree: exp.Expression, aliases: dict) -> bool:
         return True
 
     return False
+
+
+def _find_like_predicate_for_synonym(
+    tree: exp.Expression, aliases: dict
+) -> Optional[tuple]:
+    """Return (predicate_sql, table_qualifier) for the LIKE predicate on
+    concept_synonym_name. The qualifier is the alias/table used in the SQL
+    (or None when unqualified).
+    """
+    for node in tree.find_all((exp.Like, exp.ILike, exp.Not)):
+        check_node = node
+        outer = node
+
+        if isinstance(node, exp.Not):
+            inner = node.this
+            if isinstance(inner, (exp.Like, exp.ILike)):
+                check_node = inner
+            else:
+                continue
+        else:
+            outer = check_node
+
+        left = check_node.this
+        if not isinstance(left, exp.Column):
+            continue
+
+        table, column = resolve_table_col(left, aliases)
+
+        if not _is_target_column(table, column, tree):
+            continue
+
+        qualifier = left.table if left.table else None
+        return outer.sql(), qualifier
+
+    return None
 
 
 def _has_language_filter(tree: exp.Expression, aliases: dict) -> bool:
@@ -164,8 +200,9 @@ def _has_language_filter(tree: exp.Expression, aliases: dict) -> bool:
     return False
 
 
-def _find_violations(tree: exp.Expression) -> List[str]:
-    issues: List[str] = []
+def _find_violations(sql: str, tree: exp.Expression) -> List[tuple]:
+    """Return list of (message, patch_or_none) tuples."""
+    issues: List[tuple] = []
 
     aliases = extract_aliases(tree)
 
@@ -178,12 +215,26 @@ def _find_violations(tree: exp.Expression) -> List[str]:
     if _has_language_filter(tree, aliases):
         return []
 
-    issues.append(
+    message = (
         "concept_synonym is queried with LIKE on concept_synonym_name but without "
         "filtering language_concept_id. This may return multilingual results. "
         "Add: AND language_concept_id = 4180186 (for English)."
     )
 
+    # Build a structured ADD patch immediately after the LIKE predicate.
+    patch = None
+    pred = _find_like_predicate_for_synonym(tree, aliases)
+    if pred is not None:
+        predicate_sql, qualifier = pred
+        span = locate(sql, predicate_sql)
+        if span is not None:
+            qual = f"{qualifier}." if qualifier else ""
+            patch = patch_add(
+                span[1],
+                f" AND {qual}language_concept_id = 4180186",
+            )
+
+    issues.append((message, patch))
     return issues
 
 
@@ -201,9 +252,7 @@ class ConceptSynonymLanguageConceptIdRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add: AND language_concept_id = 4180186 (English), unless multilingual results are intended."
-    )
+    suggested_fix = "ADD: `AND cs.language_concept_id = 4180186` (English) when filtering by concept_synonym_name, unless multilingual results are intended."
     long_description = (
         "The concept_synonym table stores synonym names in many languages: "
         "English (language_concept_id = 4180186), Spanish, German, French, "
@@ -249,11 +298,15 @@ class ConceptSynonymLanguageConceptIdRule(Rule):
             if not tree:
                 continue
 
-            issues = _find_violations(tree)
+            issues = _find_violations(sql, tree)
 
-            for msg in issues:
+            for msg, patch in issues:
                 violations.append(
-                    self.create_violation(message=msg, severity=self.severity)
+                    self.create_violation(
+                        message=msg,
+                        severity=self.severity,
+                        suggested_fix_patch=patch,
+                    )
                 )
 
         return violations

@@ -81,6 +81,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -143,8 +144,12 @@ def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
     cte_names: Set[str],
-) -> List[str]:
-    issues: List[str] = []
+) -> List[Tuple[str, str]]:
+    """Return list of (message, incorrect_column_name) tuples.
+
+    The second element is the bad column name to be REPLACEd in source.
+    """
+    issues: List[Tuple[str, str]] = []
 
     # Fast guards - check if any of our tables are used
     tables_in_query = _collect_tables(tree, cte_names)
@@ -171,11 +176,12 @@ def _find_violations(
         if t and t in TABLE_COLUMN_MAPPINGS:
             incorrect_col, correct_col, correct_datetime = TABLE_COLUMN_MAPPINGS[t]
             if c == _norm(incorrect_col):
-                issues.append(
+                issues.append((
                     f"Reference to {t}.{incorrect_col} is invalid. "
                     f"The {t} table has no {incorrect_col} column. "
-                    f"Use {correct_col} or {correct_datetime} instead."
-                )
+                    f"Use {correct_col} or {correct_datetime} instead.",
+                    incorrect_col,
+                ))
                 continue
 
         # --- Case 2: Unqualified misuse (safe heuristic) ---
@@ -185,14 +191,23 @@ def _find_violations(
                 if c == _norm(incorrect_col) and table_name in relevant_tables:
                     # Only flag if no other tables could own the column
                     if not other_tables:
-                        issues.append(
+                        issues.append((
                             f"Unqualified {incorrect_col} likely refers to "
                             f"{table_name}.{incorrect_col}, which does not exist. "
-                            f"Use {correct_col} or {correct_datetime} instead."
-                        )
+                            f"Use {correct_col} or {correct_datetime} instead.",
+                            incorrect_col,
+                        ))
                         break
 
-    return list(dict.fromkeys(issues))
+    # Deduplicate while preserving order and keeping the first incorrect_col
+    seen = set()
+    out = []
+    for msg, bad in issues:
+        if msg in seen:
+            continue
+        seen.add(msg)
+        out.append((msg, bad))
+    return out
 
 
 # --- Rule --------------------------------------------------------------------
@@ -214,13 +229,7 @@ class EventDateColumnCorrectnessRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use the correct date column names: procedure_date (not procedure_start_date), "
-        "measurement_date (not measurement_start_date), observation_date (not observation_start_date), "
-        "specimen_date (not specimen_start_date), note_date (not note_start_date). "
-        "Use *_datetime columns for timestamp precision."
-    )
-
+    suggested_fix = "REPLACE: misnamed date columns with the v5.4 spelling: procedure_start_date → procedure_date, measurement_start_date → measurement_date, observation_start_date → observation_date, specimen_start_date → specimen_date, note_start_date → note_date."
     example_bad = (
         "SELECT person_id, procedure_start_date\n"
         "FROM procedure_occurrence;"
@@ -262,11 +271,28 @@ class EventDateColumnCorrectnessRule(Rule):
 
             issues = _find_violations(tree, aliases, cte_names)
 
-            for msg in issues:
+            for msg, bad_col in issues:
+                # REPLACE the deprecated column name with the v5.4 spelling.
+                # Look up the canonical replacement from the mapping (the
+                # *_date variant). Only emit a patch when the bad name occurs
+                # uniquely; ambiguous matches fall back to FREEFORM.
+                correct_col = None
+                for _table, (incorrect, correct, _dt) in TABLE_COLUMN_MAPPINGS.items():
+                    if incorrect == bad_col:
+                        correct_col = correct
+                        break
+
+                patch = None
+                if correct_col is not None:
+                    span = locate(sql, bad_col)
+                    if span is not None:
+                        patch = patch_replace(span, correct_col)
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

@@ -51,6 +51,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -271,10 +272,7 @@ class ObservationValueAsStringNumericComparisonRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Replace with value_as_number or explicitly CAST(value_as_string AS NUMERIC)."
-    )
-
+    suggested_fix = "REPLACE: `WHERE value_as_string <op> <number>` WITH `WHERE value_as_number <op> <number>` (use the typed column), OR explicitly `CAST(value_as_string AS NUMERIC) <op> <number>`."
     example_bad = (
         "SELECT person_id FROM observation\n"
         "WHERE value_as_string > 100;"
@@ -318,11 +316,18 @@ class ObservationValueAsStringNumericComparisonRule(Rule):
 
             issues = _find_violations(tree, aliases)
 
+            # Mechanical fix: switch the column from value_as_string (VARCHAR)
+            # to value_as_number (NUMERIC). Only emit a patch when the column
+            # name occurs uniquely in the SQL; otherwise drop to FREEFORM.
+            span = locate(sql, TARGET_COLUMN)
+            patch = patch_replace(span, "value_as_number") if span is not None else None
+
             for msg in issues:
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

@@ -1,6 +1,6 @@
 """Pydantic request/response schemas for the FastSSV API."""
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -28,9 +28,12 @@ class Violation(BaseModel):
     rule_id: str
     severity: str
     issue: str
-    suggested_fix: str
+    # ``fix`` is heterogeneous: a prose string for FREEFORM patches (the
+    # auto-default), or a structured patch dict ({"action": "REPLACE"|"ADD"
+    # |"REMOVE", "span": [s,e]|"at": pos, "text": ...}) for mechanical
+    # ones. Consumers switch on ``isinstance(fix, str)`` vs ``dict``.
+    fix: Optional[Union[str, Dict[str, Any]]] = None
     location: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
 
 
 class QueryResult(BaseModel):

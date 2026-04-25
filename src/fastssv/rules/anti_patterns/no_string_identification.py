@@ -16,7 +16,46 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
+
+
+def _infer_concept_id_column(source_value_col: str) -> str:
+    """Map `<prefix>_source_value` → `<prefix>_concept_id` if the pattern
+    fits, else return an empty string. Used to build a structured REPLACE
+    patch only when the corresponding *_concept_id column is unambiguous.
+    """
+    if not source_value_col.endswith("_source_value"):
+        return ""
+    prefix = source_value_col[: -len("_source_value")]
+    if not prefix:
+        return ""
+    return f"{prefix}_concept_id"
+
+
+def _build_patch(sql: str, predicate_sql: str, col_qualified_sql: str, source_col: str) -> "dict | None":
+    """Build a REPLACE patch swapping a `<col>_source_value <op> '<text>'`
+    predicate for `<col>_concept_id = <expected_concept_id>`.
+
+    Returns ``None`` when the source column doesn't follow the standard
+    *_source_value naming or the predicate isn't uniquely locatable.
+    """
+    target_col = _infer_concept_id_column(source_col)
+    if not target_col:
+        return None
+    span = locate(sql, predicate_sql)
+    if span is None:
+        return None
+    # Preserve any qualifier (alias.) on the column.
+    if "." in col_qualified_sql:
+        qualifier = col_qualified_sql.rsplit(".", 1)[0]
+        replacement_col = f"{qualifier}.{target_col}"
+    else:
+        replacement_col = target_col
+    return patch_replace(
+        span,
+        f"{replacement_col} = <expected_concept_id>",
+    )
 
 # Pairs of (table_name, column_name) for source value columns
 SOURCE_VALUE_COLUMNS = {
@@ -70,6 +109,7 @@ STRING_MATCH_EXP_TYPES = (exp.Like, exp.ILike, exp.RegexpLike)
 
 
 def _check_string_match_violations(
+    sql: str,
     tree: exp.Expression,
     aliases: Dict[str, str]
 ) -> List[RuleViolation]:
@@ -105,18 +145,25 @@ def _check_string_match_violations(
 
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
+            # Only build a structured patch for the simple positive LIKE
+            # case. NOT LIKE / NOT ILIKE / regex are judgement-required.
+            patch = None
+            if not is_not and isinstance(check_node, (exp.Like, exp.ILike)):
+                patch = _build_patch(sql, check_node.sql(), left.sql(), col)
             violations.append(RuleViolation(
                 rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String matching on source value: {left.sql()} {not_prefix}{op_name} {right.sql()}",
-                suggested_fix="Use *_concept_id or *_source_concept_id instead of string matching",
+                suggested_fix="REPLACE: `<table>.<col>_source_value LIKE '<text>'` WITH `<table>.<col>_concept_id = <concept_id>` (or `<col>_source_concept_id = <concept_id>`). Don't string-match source values.",
                 details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}{op_name}"},
+                suggested_fix_patch=patch,
             ))
 
     return violations
 
 
 def _check_equality_violations(
+    sql: str,
     tree: exp.Expression,
     aliases: Dict[str, str]
 ) -> List[RuleViolation]:
@@ -139,12 +186,14 @@ def _check_equality_violations(
 
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
+            patch = _build_patch(sql, eq.sql(), left.sql(), col)
             violations.append(RuleViolation(
                 rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String equality on source value: {left.sql()} = {right.sql()}",
-                suggested_fix="Use *_concept_id instead",
+                suggested_fix="REPLACE: `<table>.<col>_source_value = '<text>'` WITH `<table>.<col>_concept_id = <concept_id>`. Use the structured concept_id, not the raw source string.",
                 details={"column": f"{table}.{col}" if table else col, "operation": "="},
+                suggested_fix_patch=patch,
             ))
 
     return violations
@@ -190,7 +239,7 @@ def _check_in_clause_violations(
                 rule_id="anti_patterns.no_string_identification",
                 severity=Severity.ERROR,
                 message=f"String IN clause on source value: {col_expr.sql()} {not_prefix}IN ({values_str})",
-                suggested_fix="Use *_concept_id instead",
+                suggested_fix="REPLACE: `<table>.<col>_source_value IN ('<text1>', '<text2>', ...)` WITH `<table>.<col>_concept_id IN (<concept_id1>, <concept_id2>, ...)`. Use the structured concept_id list, not raw source strings.",
                 details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}IN"},
             ))
 
@@ -208,7 +257,7 @@ class NoStringIdentificationRule(Rule):
         "to identify clinical concepts. Use *_concept_id instead."
     )
     severity = Severity.ERROR
-    suggested_fix = "Use *_concept_id or *_source_concept_id instead of string matching"
+    suggested_fix = "REPLACE: `WHERE <table>.<col>_source_value LIKE/= '<text>'` WITH `WHERE <table>.<col>_concept_id = <concept_id>`. Resolve source codes to concept_ids via source_to_concept_map at ETL time, not at analysis time."
     long_description = (
         "`*_source_value` columns store the raw text pulled from the "
         "source system before OMOP mapping; they are provenance, not "
@@ -243,8 +292,8 @@ class NoStringIdentificationRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            all_violations.extend(_check_string_match_violations(tree, aliases))
-            all_violations.extend(_check_equality_violations(tree, aliases))
+            all_violations.extend(_check_string_match_violations(sql, tree, aliases))
+            all_violations.extend(_check_equality_violations(sql, tree, aliases))
             all_violations.extend(_check_in_clause_violations(tree, aliases))
 
         return all_violations

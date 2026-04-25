@@ -34,6 +34,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -144,8 +145,8 @@ def _extract_int(node: exp.Expression) -> Optional[int]:
 
 # --- Detection -------------------------------------------------------------
 
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
-    issues = []
+def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict]:
+    issues: List[dict] = []
     seen: Set[str] = set()
 
     for node in tree.walk():
@@ -174,10 +175,15 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                         continue
                     seen.add(key)
 
-                    issues.append(
-                        f"Invalid negative concept_id: {col_name} {node.key} {value}. "
-                        f"Concept IDs must be >= 0."
-                    )
+                    issues.append({
+                        "message": (
+                            f"Invalid negative concept_id: {col_name} {node.key} {value}. "
+                            f"Concept IDs must be >= 0."
+                        ),
+                        "fragment": node.sql(),
+                        "kind": "EQ" if isinstance(node, exp.EQ) else "OTHER",
+                        "col_qualified_sql": col_node.sql(),
+                    })
 
         # --- IN clause ---
         elif isinstance(node, exp.In):
@@ -202,10 +208,15 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                     continue
                 seen.add(key)
 
-                issues.append(
-                    f"Invalid negative values in {col_name} {node.key}: {sorted(negatives)}. "
-                    f"Concept IDs must be >= 0."
-                )
+                issues.append({
+                    "message": (
+                        f"Invalid negative values in {col_name} {node.key}: {sorted(negatives)}. "
+                        f"Concept IDs must be >= 0."
+                    ),
+                    "fragment": node.sql(),
+                    "kind": "IN",
+                    "col_qualified_sql": col_node.sql(),
+                })
 
         # --- BETWEEN ---
         elif isinstance(node, exp.Between):
@@ -227,10 +238,15 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                     continue
                 seen.add(key)
 
-                issues.append(
-                    f"Invalid BETWEEN range for {col_name}: ({low if low is not None else '?'}, "
-                    f"{high if high is not None else '?'}). Concept IDs must be >= 0."
-                )
+                issues.append({
+                    "message": (
+                        f"Invalid BETWEEN range for {col_name}: ({low if low is not None else '?'}, "
+                        f"{high if high is not None else '?'}). Concept IDs must be >= 0."
+                    ),
+                    "fragment": node.sql(),
+                    "kind": "BETWEEN",
+                    "col_qualified_sql": col_node.sql(),
+                })
 
     return issues
 
@@ -245,7 +261,7 @@ class NegativeConceptIdValidationRule(Rule):
     name = "Negative Concept ID Validation"
     description = "Concept IDs must be non-negative integers (>= 0)."
     severity = Severity.ERROR
-    suggested_fix = "Use valid non-negative concept_id values. Use 0 for unmapped."
+    suggested_fix = "REPLACE: `<x>_concept_id < 0` or negative literal filters WITH `<x>_concept_id >= 0`. Concept IDs are non-negative integers in OMOP."
     long_description = (
         "Every concept_id in OMOP is a non-negative integer (>= 0); 0 "
         "represents unmapped records, positive values are real concepts. "
@@ -283,8 +299,26 @@ class NegativeConceptIdValidationRule(Rule):
             aliases = extract_aliases(tree)
             issues = _find_violations(tree, aliases)
 
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
+            for issue in issues:
+                patch = None
+                # Only EQ predicates have an unambiguous mechanical fix:
+                # replace the entire `<col> = -<n>` predicate with
+                # `<col> = <expected_concept_id>` (placeholder for the
+                # outer correction loop / LLM to resolve).
+                if issue["kind"] == "EQ":
+                    span = locate(sql, issue["fragment"])
+                    if span is not None:
+                        patch = patch_replace(
+                            span,
+                            f"{issue['col_qualified_sql']} = <expected_concept_id>",
+                        )
+
+                violations.append(
+                    self.create_violation(
+                        message=issue["message"],
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

@@ -31,6 +31,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -145,10 +146,7 @@ class ProviderCareSiteJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join provider to care_site using care_site_id: "
-        "provider.care_site_id = care_site.care_site_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `provider.care_site_id = care_site.care_site_id`. provider's practice location comes from care_site_id, not provider_id or specialty_concept_id."
     example_bad = "SELECT * FROM provider p JOIN care_site cs ON p.provider_id = cs.care_site_id;"
     example_good = "SELECT * FROM provider p JOIN care_site cs ON p.care_site_id = cs.care_site_id;"
 
@@ -176,6 +174,10 @@ class ProviderCareSiteJoinValidationRule(Rule):
             bad_joins = _check_provider_care_site_join(tree, aliases)
 
             for provider_table, provider_col, care_site_table, care_site_col in bad_joins:
+                fix_text = (
+                    f"REPLACE: `{provider_table}.{provider_col} = {care_site_table}.{care_site_col}` "
+                    f"WITH `{provider_table}.care_site_id = {care_site_table}.care_site_id`."
+                )
                 violations.append(
                     self.create_violation(
                         message=(
@@ -184,6 +186,13 @@ class ProviderCareSiteJoinValidationRule(Rule):
                             f"Expected care_site_id = care_site_id."
                         ),
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=build_join_replace_patch(
+                            sql, provider_table, provider_col,
+                            care_site_table, care_site_col,
+                            CARE_SITE_ID, CARE_SITE_ID,
+                            fix_text,
+                            aliases=aliases,
+                        ),
                         details={
                             "provider_table": provider_table,
                             "provider_column": provider_col,

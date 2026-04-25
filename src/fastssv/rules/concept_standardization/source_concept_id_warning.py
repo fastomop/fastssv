@@ -29,6 +29,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -79,8 +80,9 @@ def _is_in_where_or_having(node: exp.Expression) -> bool:
 def _find_source_filters(
     tree: exp.Expression,
     aliases: Dict[str, str],
-) -> List[str]:
-    issues: List[str] = []
+) -> List[tuple]:
+    """Return (message, predicate_sql, source_col_name, standard_col_name) tuples."""
+    issues: List[tuple] = []
     seen: Set[Tuple[str, str]] = set()
 
     for node in tree.walk():
@@ -113,11 +115,12 @@ def _find_source_filters(
                 col_norm.replace("_source_", "_"),
             )
 
-            issues.append(
+            message = (
                 f"Filtering on '{col_norm}' for cohort/analytical logic is discouraged. "
                 f"Use '{standard_col}' (standard concept) instead. "
                 f"Source concept IDs are intended for ETL validation, mapping QA, or provenance analysis."
             )
+            issues.append((message, node.sql(), col_norm, standard_col))
 
     return issues
 
@@ -151,10 +154,7 @@ class SourceConceptIdWarningRule(Rule):
         "Use standard *_concept_id instead."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Replace *_source_concept_id with corresponding standard *_concept_id column. "
-        "If this is for ETL validation or source exploration, this warning can be ignored."
-    )
+    suggested_fix = "REPLACE: `WHERE <table>.<x>_source_concept_id = <id>` WITH `WHERE <table>.<x>_concept_id = <id>`. Use *_source_concept_id only for ETL provenance / source exploration, not analytics."
     long_description = (
         "*_source_concept_id stores the original, unmapped code from the "
         "source system (ICD10CM, NDC, CPT, etc.) and is intended for audit "
@@ -197,8 +197,32 @@ class SourceConceptIdWarningRule(Rule):
 
             issues = _find_source_filters(tree, aliases)
 
-            for issue in issues:
-                violations.append(self.create_violation(message=issue))
+            for issue, predicate_sql, source_col, standard_col in issues:
+                # Mechanical REPLACE: swap the source column name for the
+                # standard column name inside the offending predicate.
+                # Only apply when the rendered predicate text is uniquely
+                # locatable in the original SQL.
+                patch = None
+                span = locate(sql, predicate_sql)
+                if span is not None and source_col in predicate_sql.lower():
+                    # Replace case-insensitively while preserving the rest
+                    # of the predicate text.
+                    import re as _re
+                    new_text = _re.sub(
+                        _re.escape(source_col),
+                        standard_col,
+                        predicate_sql,
+                        flags=_re.IGNORECASE,
+                    )
+                    if new_text != predicate_sql:
+                        patch = patch_replace(span, new_text)
+
+                violations.append(
+                    self.create_violation(
+                        message=issue,
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

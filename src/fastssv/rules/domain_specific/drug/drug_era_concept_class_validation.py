@@ -28,7 +28,7 @@ Correct pattern:
     -- Returns all Ingredient-level drug eras
 """
 
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
@@ -40,6 +40,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     is_in_where_or_join_clause,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -131,8 +132,14 @@ def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
     valid_aliases: Set[str],
-) -> List[str]:
-    issues = []
+) -> List[Tuple[str, Optional[exp.Expression]]]:
+    """Return list of (message, replaceable_value_node).
+
+    ``replaceable_value_node`` is the literal node that should be
+    REPLACEd with ``'Ingredient'`` (only the EQ-with-wrong-value case
+    has a deterministic mechanical fix; NEQ and IN are restructure-y).
+    """
+    issues: List[Tuple[str, Optional[exp.Expression]]] = []
     seen: Set[str] = set()
 
     for node in tree.walk():
@@ -167,16 +174,21 @@ def _find_violations(
                 seen.add(key)
 
                 if isinstance(node, exp.EQ) and value != VALID_CLASS:
-                    issues.append(
+                    issues.append((
                         f"Invalid filter: concept_class_id = '{value.title()}'. "
-                        f"drug_era only contains 'Ingredient' concepts. Query will return 0 rows."
-                    )
+                        f"drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
+                        val_node,
+                    ))
 
                 elif isinstance(node, exp.NEQ) and value == VALID_CLASS:
-                    issues.append(
+                    # NEQ to 'Ingredient' means "exclude all" — the right
+                    # fix depends on user intent (drop the predicate or
+                    # invert it). Leave as FREEFORM.
+                    issues.append((
                         "Invalid filter: concept_class_id != 'Ingredient'. "
-                        "drug_era only contains 'Ingredient' concepts. Query will return 0 rows."
-                    )
+                        "drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
+                        None,
+                    ))
 
             # --- IN clause ---
             elif isinstance(node, exp.In):
@@ -200,10 +212,12 @@ def _find_violations(
                 if invalid:
                     # Display values in title case for readability
                     display_values = [v.title() for v in sorted(values)]
-                    issues.append(
+                    # IN-list rewrites are multi-value; drop to FREEFORM.
+                    issues.append((
                         f"Invalid IN filter on concept_class_id: {display_values}. "
-                        f"drug_era only contains 'Ingredient' concepts."
-                    )
+                        f"drug_era only contains 'Ingredient' concepts.",
+                        None,
+                    ))
 
     return issues
 
@@ -220,10 +234,7 @@ class DrugEraConceptClassValidationRule(Rule):
         "Ensures drug_era is filtered only on Ingredient-level concepts."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Use concept_class_id = 'Ingredient' or remove the filter."
-    )
-
+    suggested_fix = "ADD: `AND c.concept_class_id = 'Ingredient'` when joining drug_era to concept. drug_era rolls up to ingredient-level; product-class filters never match."
     example_bad = (
         "SELECT de.person_id FROM drug_era de\n"
         "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
@@ -254,8 +265,23 @@ class DrugEraConceptClassValidationRule(Rule):
 
             issues = _find_violations(tree, aliases, valid_aliases)
 
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
+            for msg, val_node in issues:
+                # Build a REPLACE patch only for the EQ-with-wrong-literal
+                # case where val_node is a string literal we can swap for
+                # ``'Ingredient'``. Try both quote styles since the user may
+                # have written the value with single or double quotes.
+                patch = None
+                if isinstance(val_node, exp.Literal) and val_node.is_string:
+                    raw = str(val_node.this)
+                    for fragment in (f"'{raw}'", f'"{raw}"'):
+                        span = locate(sql, fragment)
+                        if span is not None:
+                            patch = patch_replace(span, "'Ingredient'")
+                            break
+
+                violations.append(
+                    self.create_violation(message=msg, suggested_fix_patch=patch)
+                )
 
         return violations
 

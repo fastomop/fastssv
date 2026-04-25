@@ -1,4 +1,5 @@
-from typing import Dict, List, Set
+import re
+from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
 
@@ -9,7 +10,44 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, remove as patch_remove
 from fastssv.core.registry import register
+
+
+def _build_remove_predicate_patch(
+    sql: str,
+    predicate_sql: str,
+    parent: Optional[exp.Expression],
+    node: exp.Expression,
+) -> Optional[dict]:
+    """REMOVE a single predicate from a WHERE/ON conjunction, handling
+    leading/trailing AND so the result remains valid SQL.
+    """
+    span = locate(sql, predicate_sql)
+    if span is None:
+        return None
+
+    if not isinstance(parent, exp.And):
+        # Sole predicate; cannot mechanically delete the surrounding
+        # WHERE/ON. Leave the patch empty so the auto-default FREEFORM
+        # carries the prose suggestion.
+        return None
+
+    s, e = span
+    if parent.this is node:
+        # `<pred> AND <rest>` → drop predicate + trailing AND.
+        tail = sql[e:]
+        m = re.match(r"\s+AND\s+", tail, flags=re.IGNORECASE)
+        if m is None:
+            return None
+        return patch_remove((s, e + m.end()))
+    else:
+        # `<rest> AND <pred>` → drop leading AND + predicate.
+        head = sql[:s]
+        m = re.search(r"\s+AND\s+\Z", head, flags=re.IGNORECASE)
+        if m is None:
+            return None
+        return patch_remove((m.start(), e))
 
 
 ERA_TABLES = {
@@ -96,9 +134,9 @@ def _check_filters(
     tree: exp.Expression,
     aliases: Dict[str, str],
     valid_aliases: Set[str],
-) -> List[str]:
+) -> List[dict]:
     """Detect invalid filters for non-standard concepts."""
-    issues: List[str] = []
+    issues: List[dict] = []
 
     for node in tree.walk():
         if not isinstance(node, (exp.EQ, exp.NEQ, exp.Is, exp.In)):
@@ -116,22 +154,24 @@ def _check_filters(
 
             value = _extract_literal(val_node)
 
+            msg: Optional[str] = None
+
             # --- Invalid cases ---
             if isinstance(node, exp.Is) and value == "null":
-                issues.append(
+                msg = (
                     "Filtering for non-standard concepts (standard_concept IS NULL) "
                     "on an era table. Era tables only contain standard concepts. "
                     "This query will return 0 rows."
                 )
 
             elif isinstance(node, exp.NEQ) and value == "s":
-                issues.append(
+                msg = (
                     "Filtering for non-standard concepts (standard_concept != 'S') "
                     "on an era table. This will return 0 rows."
                 )
 
             elif isinstance(node, exp.EQ) and value not in ("s", ""):
-                issues.append(
+                msg = (
                     f"Filtering for standard_concept = '{value.upper()}', which is not 'S'. "
                     "Era tables only contain standard concepts. This will return 0 rows."
                 )
@@ -143,10 +183,16 @@ def _check_filters(
                     values = {_extract_literal(v) for v in in_values}
                     # Flag if any value is not 'S'
                     if values and any(v != "s" for v in values):
-                        issues.append(
+                        msg = (
                             "Filtering standard_concept IN (...) with non-'S' values "
                             "on an era table. This will return 0 rows."
                         )
+
+            if msg:
+                issues.append({
+                    "message": msg,
+                    "node": node,
+                })
 
     return issues
 
@@ -162,10 +208,7 @@ class EraTableStandardConceptsRule(Rule):
         "concepts will always return 0 rows."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Remove filters for non-standard concepts. Era tables only contain "
-        "standard concepts (standard_concept = 'S')."
-    )
+    suggested_fix = "REMOVE: any `standard_concept != 'S'` (or `'C'`, `NULL`) filter on era tables. drug_era / condition_era / dose_era contain only standard concepts by construction."
     long_description = (
         "OMOP era tables (condition_era, drug_era, dose_era) are derived "
         "from their underlying occurrence tables by rolling up standard "
@@ -209,7 +252,19 @@ class EraTableStandardConceptsRule(Rule):
             issues = _check_filters(tree, aliases, valid_aliases)
 
             for issue in issues:
-                violations.append(self.create_violation(message=issue))
+                node = issue["node"]
+                patch = _build_remove_predicate_patch(
+                    sql,
+                    node.sql(),
+                    node.parent,
+                    node,
+                )
+                violations.append(
+                    self.create_violation(
+                        message=issue["message"],
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

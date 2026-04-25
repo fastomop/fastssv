@@ -210,10 +210,7 @@ class ConceptAncestorMixedWithConceptRelationshipRedundantlyRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use concept_ancestor alone for hierarchical traversal. "
-        "Only use concept_relationship for non-hierarchical relationships."
-    )
+    suggested_fix = "REMOVE: the concept_relationship hierarchical filter. Use concept_ancestor alone for hierarchical traversal. Reserve concept_relationship for non-hierarchical relationships (Maps to, Has_RxNorm, etc.)."
     long_description = (
         "concept_ancestor already encodes every transitive hierarchical "
         "path (ancestor → descendant, including indirect ones). Joining "
@@ -282,9 +279,10 @@ class ConceptAncestorMixedWithConceptRelationshipRedundantlyRule(Rule):
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        "Remove the concept_relationship join and rely on concept_ancestor "
-                        "for hierarchy traversal. Use concept_relationship only for "
-                        "non-hierarchical relationships."
+                        "REMOVE: the concept_relationship join when concept_ancestor is "
+                        "already in scope. concept_ancestor pre-computes the transitive "
+                        "'Is a' closure; reserve concept_relationship for non-hierarchical "
+                        "relationships (Maps to, Has_RxNorm, etc.)."
                     ),
                     details={
                         "has_concept_ancestor": True,

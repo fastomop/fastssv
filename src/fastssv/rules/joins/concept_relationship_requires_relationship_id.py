@@ -1,4 +1,4 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
 
@@ -9,6 +9,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -105,13 +106,37 @@ def _is_grouping_by_relationship_id(tree: exp.Expression, cr_aliases: Set[str]) 
     return False
 
 
+def _find_join_on_sql_for_alias(
+    tree: exp.Expression, target_alias: str
+) -> Optional[str]:
+    """Find the ON expression SQL for the JOIN that introduces ``target_alias``.
+
+    Returns None if the alias isn't introduced by an explicit JOIN with an ON
+    clause (e.g. it's in the FROM clause, or uses USING). The caller falls
+    back to FREEFORM in that case.
+    """
+    target = normalize_name(target_alias)
+    for join in tree.find_all(exp.Join):
+        table = join.this
+        if not isinstance(table, exp.Table):
+            continue
+        if normalize_name(table.alias_or_name) != target:
+            continue
+        on = join.args.get("on")
+        if on is not None:
+            return on.sql()
+    return None
+
+
 def _check_missing_filters(
     alias_filter_map: Dict[str, bool],
     is_exploratory: bool
 ) -> List[tuple]:
     """Generate issues for aliases missing filters.
 
-    Returns list of (message, severity) tuples.
+    Returns list of (message, severity, alias) tuples. ``alias`` is the
+    concept_relationship alias missing a filter, used to build a structured
+    ADD patch.
 
     If the query groups by relationship_id (exploratory analysis), the
     user has explicitly opted in to seeing all relationships — no warning.
@@ -127,7 +152,8 @@ def _check_missing_filters(
                 f"This may produce a cross-product of all relationship types. "
                 f"For analytical queries exploring all relationships, this may be intentional. "
                 f"For cohort definitions, add a filter on relationship_id.",
-                Severity.WARNING
+                Severity.WARNING,
+                alias,
             ))
 
     return issues
@@ -145,11 +171,7 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
         "omit this filter to analyze all relationships."
     )
     severity = Severity.WARNING  # Changed from ERROR to support analytical queries
-    suggested_fix = (
-        "For cohort definitions, add a filter on relationship_id. "
-        "Example: cr.relationship_id = 'Maps to'. "
-        "For exploratory analysis, consider adding GROUP BY relationship_id."
-    )
+    suggested_fix = "ADD: `WHERE cr.relationship_id = '<relationship>'` (or IN(...)) to every concept_relationship query. Common values: 'Maps to', 'Subsumes', 'Is a', 'Has_RxNorm'."
     long_description = (
         "concept_relationship is a many-to-many table: a single source "
         "concept typically has dozens of relationships "
@@ -213,16 +235,35 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
             ctx = get_validation_context()
             escalate = ctx.should_escalate_rule(self.rule_id)
 
-            for issue, severity in issues:
+            for issue, severity, alias in issues:
                 final_severity = (
                     Severity.ERROR
                     if escalate and severity == Severity.WARNING
                     else severity
                 )
+
+                # Structured patch: ADD `AND <alias>.relationship_id =
+                # '<relationship>'` to the end of the JOIN ON clause that
+                # introduces the offending concept_relationship alias. The
+                # relationship value is left as a `<relationship>`
+                # placeholder for the outer correction loop. If the alias
+                # isn't introduced by an ON-bearing JOIN, fall back to
+                # FREEFORM via auto-default.
+                patch = None
+                on_sql = _find_join_on_sql_for_alias(tree, alias)
+                if on_sql is not None:
+                    span = locate(sql, on_sql)
+                    if span is not None:
+                        patch = patch_add(
+                            span[1],
+                            f" AND {alias}.relationship_id = '<relationship>'",
+                        )
+
                 violations.append(self.create_violation(
                     message=issue,
                     severity=final_severity,
                     details={"strict_mode_escalated": final_severity != severity},
+                    suggested_fix_patch=patch,
                 ))
 
         return violations

@@ -317,11 +317,7 @@ class PrecedingVisitOccurrenceValidationRule(Rule):
         "via a proper self-join with person_id and temporal constraints."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Join visit_occurrence to itself using "
-        "preceding_visit_occurrence_id = visit_occurrence_id with separate aliases, "
-        "and add person_id equality and temporal ordering constraints."
-    )
+    suggested_fix = "REPLACE: the join condition WITH `vo.preceding_visit_occurrence_id = prev.visit_occurrence_id AND vo.person_id = prev.person_id AND prev.visit_end_date <= vo.visit_start_date`. Use distinct aliases (vo, prev) for the two visit_occurrence rows."
     example_bad = (
         "SELECT vo.visit_occurrence_id FROM visit_occurrence vo\n"
         "JOIN visit_occurrence prev ON vo.preceding_visit_occurrence_id = prev.person_id;"

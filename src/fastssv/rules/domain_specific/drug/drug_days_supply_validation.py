@@ -228,10 +228,7 @@ class DrugDaysSupplyValidationRule(Rule):
         "indicate data quality issues or query logic errors."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        f"Ensure days_supply values are between {MIN_DAYS_SUPPLY} and {MAX_DAYS_SUPPLY}"
-    )
-
+    suggested_fix = "REPLACE: implausible days_supply filters (>365, <1) WITH `days_supply BETWEEN 1 AND 365`. Outliers usually indicate ETL errors or mis-encoded multi-fill records."
     example_bad = (
         "SELECT person_id FROM drug_exposure\n"
         "WHERE days_supply = 400;"

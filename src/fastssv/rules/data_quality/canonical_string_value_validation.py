@@ -28,6 +28,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -376,8 +377,7 @@ class CanonicalStringValueValidationRule(Rule):
 
     severity = Severity.ERROR  # default; overridden per violation
 
-    suggested_fix = "Use canonical OMOP values for the column."
-
+    suggested_fix = "REPLACE: the lowercased / hyphenated string literal WITH the canonical OMOP value. Examples: 'snomed' → 'SNOMED', 'icd10cm' → 'ICD10CM', 'ICD-10-CM' → 'ICD10CM', 'condition' → 'Condition', 'ingredient' → 'Ingredient'."
     long_description = (
         "Three OMOP vocabulary string columns are case-sensitive and follow a "
         "fixed canonical casing: concept_class_id ('Ingredient', 'Clinical "
@@ -437,34 +437,49 @@ class CanonicalStringValueValidationRule(Rule):
                         f"Invalid {column} '{value}': contains hyphens. "
                         f"OMOP {column} values are hyphen-free."
                     )
-                    fix = f"Remove hyphens from '{value}'"
+                    fix = f"REPLACE: `'{value}'` WITH the canonical OMOP form — remove hyphens (e.g. 'ICD-10-CM' -> 'ICD10CM')."
 
                 elif issue == "hyphen":
                     message = (
                         f"Invalid {column} '{value}': contains hyphens. "
                         f"OMOP {column} values are hyphen-free."
                     )
-                    fix = f"Replace '{value}' with '{expected}'"
+                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
 
                 elif issue == "both":
                     message = (
                         f"Invalid {column} '{value}': incorrect casing and contains hyphens. "
                         f"Expected '{expected}'."
                     )
-                    fix = f"Replace '{value}' with '{expected}'"
+                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
 
                 else:  # case_sensitivity
                     message = (
                         f"Incorrect {column} casing: '{value}'. "
                         f"Expected '{expected}'. Case-sensitive comparison may fail."
                     )
-                    fix = f"Replace '{value}' with '{expected}'"
+                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column} casing)."
+
+                # Build a structured REPLACE patch for the literal token when
+                # the canonical value is known. The literal in source may use
+                # single or double quotes; try both. If the literal isn't
+                # uniquely locatable, fall back to FREEFORM auto-default.
+                patch = None
+                if expected is not None:
+                    for q in ("'", '"'):
+                        bad_lit = f"{q}{value}{q}"
+                        good_lit = f"{q}{expected}{q}"
+                        span = locate(sql, bad_lit)
+                        if span is not None:
+                            patch = patch_replace(span, good_lit)
+                            break
 
                 violations.append(
                     self.create_violation(
                         message=message,
                         severity=sev,
                         suggested_fix=fix,
+                        suggested_fix_patch=patch,
                         details={
                             "column": column,
                             "provided": value,

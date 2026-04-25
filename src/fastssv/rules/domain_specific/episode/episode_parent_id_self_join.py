@@ -249,12 +249,7 @@ class EpisodeParentIdSelfJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: FROM episode child "
-        "JOIN episode parent "
-        "ON child.episode_parent_id = parent.episode_id"
-    )
-
+    suggested_fix = "REPLACE: the join target WITH `episode.episode_id`. episode_parent_id is a self-FK to episode.episode_id (not person_id, not visit_occurrence_id)."
     example_bad = (
         "SELECT e.episode_id FROM episode e\n"
         "JOIN episode parent ON e.episode_parent_id = parent.person_id;"

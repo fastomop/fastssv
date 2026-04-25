@@ -143,6 +143,26 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert errors == []
 
+    def test_unqualified_column_in_single_table_still_fires(self) -> None:
+        """The homepage 'Missing standard concept' example uses an unqualified
+        ``condition_concept_id`` reference. Detector must attribute unqualified
+        columns to the unique standard-field-owning table in scope, otherwise
+        the example silently produces zero violations and the warning never
+        appears in the UI.
+        """
+        sql = """
+        WITH risk_concepts AS (
+            SELECT descendant_concept_id AS concept_id
+            FROM concept_ancestor
+            WHERE ancestor_concept_id = 201820
+        )
+        SELECT DISTINCT person_id
+        FROM condition_occurrence
+        WHERE condition_concept_id IN (SELECT concept_id FROM risk_concepts)
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
 
 class TestUnmappedConceptHandling:
     """Tests for concept_id = 0 handling rule."""

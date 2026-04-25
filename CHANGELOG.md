@@ -86,6 +86,33 @@ between minor versions.
   reading, comment/quote-aware `_split_queries`, and the
   `_clean_llm_output` helper (`cli.py` 65% → 95%).
 
+### LLM-friendly `suggested_fix` rewrite
+
+- Every rule's `suggested_fix` was rewritten from prose ("Use ... instead of
+  ...") to an imperative, single-line, edit-shaped form intended for an LLM
+  to consume and apply directly. The new style:
+  - Leads with an imperative verb in caps: `REPLACE:`, `ADD:`, `REMOVE:`,
+    `JOIN:`, `FILTER:`, `WRAP:`, `GROUP BY:`, `CAST:`.
+  - Carries a concrete SQL fragment with `<placeholders>` for site-specific
+    values (table aliases, column names, vocabulary ids).
+  - Separates alternatives with `OR`. Stays at a single line, ≤250 chars
+    where possible.
+  - Example: `"REPLACE: \`<col> = NULL\` WITH \`<col> IS NULL\`. REPLACE:
+    \`<col> <> NULL\` or \`<col> != NULL\` WITH \`<col> IS NOT NULL\`."`
+- All 154 rules updated. Rules that build per-violation fixes dynamically
+  (`joins.clinical_visit_detail_join_validation`,
+  `joins.concept_alias_reuse_validation`,
+  `joins.concept_concept_class_join_validation`,
+  `joins.concept_domain_join_validation`,
+  `joins.concept_join_validation`,
+  `joins.concept_vocabulary_join_validation`) now also gain a class-level
+  default `suggested_fix` so the `/v1/rules` listing and rule catalog show
+  a useful fix even when no specific violation is in hand.
+- **Breaking for downstream consumers** that parse `suggested_fix` as
+  free-form English. The text is still human-readable but is now structured
+  for machine application; any regex like `r"Use (.*) instead of"` will no
+  longer match.
+
 ### Removed rules (redundancy cleanup)
 
 - `anti_patterns.concept_class_table_join_uses_concept_class_id`

@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
@@ -176,6 +177,8 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: the join `<clinical>.visit_occurrence_id = visit_detail.visit_detail_id` (or vice versa) WITH `<clinical>.visit_detail_id = visit_detail.visit_detail_id`. Both IDs are integers so the wrong join silently matches unrelated rows."
+
     def _build_message(
         self,
         clinical_table: str,
@@ -195,20 +198,20 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
 
         if error_type == "visit_occurrence_to_visit_detail_id":
             suggested_fix = (
-                f"If visit_detail_id is available, use:\n"
-                f"  {clinical_table}.visit_detail_id = {visit_detail_table}.visit_detail_id\n"
-                f"Otherwise, join via visit_occurrence:\n"
-                f"  {clinical_table}.visit_occurrence_id = visit_occurrence.visit_occurrence_id"
+                f"REPLACE: `{clinical_table}.visit_occurrence_id = {visit_detail_table}.visit_detail_id` "
+                f"WITH `{clinical_table}.visit_detail_id = {visit_detail_table}.visit_detail_id`. "
+                f"OR if visit_detail_id is unpopulated, REPLACE the visit_detail JOIN WITH "
+                f"`JOIN visit_occurrence vo ON {clinical_table}.visit_occurrence_id = vo.visit_occurrence_id`."
             )
 
         elif error_type == "visit_detail_to_visit_occurrence_id":
             suggested_fix = (
-                f"Correct join should be:\n"
-                f"  {clinical_table}.visit_detail_id = {visit_detail_table}.visit_detail_id"
+                f"REPLACE: `{clinical_table}.visit_detail_id = {visit_detail_table}.visit_occurrence_id` "
+                f"WITH `{clinical_table}.visit_detail_id = {visit_detail_table}.visit_detail_id`."
             )
 
         else:
-            suggested_fix = "Review join keys for semantic correctness."
+            suggested_fix = "REPLACE: the visit_detail join keys WITH `<clinical>.visit_detail_id = visit_detail.visit_detail_id`."
 
         return message, suggested_fix
 
@@ -258,10 +261,22 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
                     error_type,
                 )
 
+                # Both error types collapse to the same canonical join:
+                # `<clinical>.visit_detail_id = visit_detail.visit_detail_id`.
+                patch = build_join_replace_patch(
+                    sql,
+                    clinical_table, clinical_col,
+                    visit_detail_table, visit_detail_col,
+                    "visit_detail_id", "visit_detail_id",
+                    suggested_fix,
+                    aliases=aliases,
+                )
+
                 violations.append(
                     self.create_violation(
                         message=message,
                         suggested_fix=suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "clinical_table": clinical_table,
                             "clinical_column": clinical_col,

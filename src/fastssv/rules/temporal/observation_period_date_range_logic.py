@@ -167,10 +167,7 @@ class ObservationPeriodDateRangeLogicRule(Rule):
         "Detects reversed logic where observation_period dates are incorrectly used as values."
     )
     severity = Severity.ERROR
-    suggested_fix = (
-        "Use: event_date BETWEEN op.observation_period_start_date "
-        "AND op.observation_period_end_date."
-    )
+    suggested_fix = "REPLACE: reversed date predicates (e.g. `co.condition_start_date BETWEEN op.observation_period_end_date AND op.observation_period_start_date`) WITH `co.condition_start_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date`. Clinical event dates go between observation_period bounds, not the other way around."
     long_description = (
         "The conventional OMOP invariant is "
         "event_date BETWEEN observation_period_start_date AND "

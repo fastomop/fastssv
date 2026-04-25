@@ -235,10 +235,7 @@ class ConceptClassIdIngredientForDrugGroupingRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use concept_class_id = 'Ingredient' or use concept_ancestor to roll up "
-        "drug products to ingredients."
-    )
+    suggested_fix = "ADD: `AND c.concept_class_id = 'Ingredient'`, OR roll up via `JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id JOIN concept ing ON ca.ancestor_concept_id = ing.concept_id AND ing.concept_class_id = 'Ingredient'`."
     long_description = (
         "Drug concepts in OMOP are stored at several granularities: "
         "Ingredient (metformin), Clinical Drug Form (metformin tablet), "
@@ -317,8 +314,9 @@ class ConceptClassIdIngredientForDrugGroupingRule(Rule):
                     ),
                     severity=Severity.WARNING,
                     suggested_fix=(
-                        "Use concept_class_id = 'Ingredient' or use concept_ancestor "
-                        "to aggregate drugs to ingredient level."
+                        "REPLACE: the `concept_class_id` literal WITH `'Ingredient'` for "
+                        "drug grouping, OR REWRITE using concept_ancestor to roll branded "
+                        "drugs up to the ingredient level."
                     ),
                     details={
                         "ingredient_aliases": list(ingredient_aliases),

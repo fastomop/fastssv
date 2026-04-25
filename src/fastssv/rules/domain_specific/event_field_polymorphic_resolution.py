@@ -151,13 +151,7 @@ class EventFieldPolymorphicResolutionRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Restrict the *_event_field_concept_id column to a specific concept "
-        "(or `IS NOT NULL`) before using the *_event_id column in a JOIN or WHERE. "
-        "Example: `WHERE n.note_event_field_concept_id IS NOT NULL` for note, or "
-        "filter to the specific field concept that identifies the target table."
-    )
-
+    suggested_fix = "ADD: a filter on the table's *_event_field_concept_id column (`note_event_field_concept_id`, `obs_event_field_concept_id`, `meas_event_field_concept_id`, `episode_event_field_concept_id`) before joining/filtering on the polymorphic *_event_id. Use `IS NOT NULL` or `= <field_concept_id>` matching the joined table's PK domain."
     long_description = (
         "Each ``*_event_id`` column in OMOP v5.4 is a polymorphic foreign key — "
         "an INTEGER that points at a row in a different clinical table "

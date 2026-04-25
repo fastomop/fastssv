@@ -228,11 +228,7 @@ class DrugStrengthValidityFilterRule(Rule):
         "drug_strength is time-versioned. Queries must filter for currently valid records."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Add 'invalid_reason IS NULL' OR "
-        "'CURRENT_DATE BETWEEN valid_start_date AND valid_end_date'."
-    )
-
+    suggested_fix = "ADD: `AND ds.invalid_reason IS NULL` (currently valid rows), OR `AND CURRENT_DATE BETWEEN ds.valid_start_date AND ds.valid_end_date` for time-windowed validity. drug_strength is time-versioned."
     example_bad = (
         "SELECT drug_concept_id, amount_value FROM drug_strength;"
     )

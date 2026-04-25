@@ -216,9 +216,7 @@ class ColumnTypeValidationRule(Rule):
         "Type mismatches are schema-level errors that cause query failures or wrong results."
     )
     severity = Severity.ERROR  # SCHEMA layer - always ERROR
-    suggested_fix = (
-        "Ensure column types are compatible. Use proper literals or CAST explicitly if needed."
-    )
+    suggested_fix = "REPLACE: the type-mismatched literal/cast with one matching the column's declared type. Integer columns take integer literals; VARCHAR columns take quoted strings; DATE columns take ISO-formatted dates ('YYYY-MM-DD')."
     long_description = (
         "OMOP columns have specific types: *_concept_id and primary-key "
         "*_id columns are INTEGER, source_value and name columns are "
@@ -261,7 +259,9 @@ class ColumnTypeValidationRule(Rule):
                     ),
                     severity=Severity.ERROR,
                     suggested_fix=(
-                        "Use compatible columns or apply explicit CAST."
+                        "CAST: one side to match the other's type "
+                        "(`CAST(<col> AS <type>)`), OR REPLACE one side WITH a column "
+                        "of the matching type."
                     ),
                     details={
                         "layer": "schema",
@@ -292,7 +292,9 @@ class ColumnTypeValidationRule(Rule):
                     message=message,
                     severity=Severity.ERROR,
                     suggested_fix=(
-                        "Use consistent literal types or CAST explicitly. Check for logic errors if mixing types."
+                        "CAST: the literal to the column's declared type, OR REPLACE WITH "
+                        "a literal of the matching type. Mixing literal types on the same "
+                        "column usually indicates a logic error."
                     ),
                     details={
                         "layer": "schema",

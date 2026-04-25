@@ -53,6 +53,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -88,7 +89,7 @@ def _safe_suggest_value(value: str) -> str:
     return value if value.isdigit() else "<integer_value>"
 
 
-def _check_comparison(node: exp.Expression, aliases: dict) -> List[RuleViolation]:
+def _check_comparison(sql: str, node: exp.Expression, aliases: dict) -> List[RuleViolation]:
     violations = []
 
     left = node.this
@@ -116,6 +117,18 @@ def _check_comparison(node: exp.Expression, aliases: dict) -> List[RuleViolation
 
         suggested_value = _safe_suggest_value(lit_node.this)
 
+        # Structured patch: REPLACE the quoted string literal with its bare
+        # integer form when the value is digit-only. Try both quote styles.
+        # If the literal is not uniquely locatable, fall back to FREEFORM.
+        patch = None
+        raw = str(lit_node.this) if lit_node.this is not None else ""
+        if raw.isdigit():
+            for q in ("'", '"'):
+                span = locate(sql, f"{q}{raw}{q}")
+                if span is not None:
+                    patch = patch_replace(span, raw)
+                    break
+
         violations.append(
             RuleViolation(
                 rule_id="data_quality.concept_id_string_comparison",
@@ -125,9 +138,11 @@ def _check_comparison(node: exp.Expression, aliases: dict) -> List[RuleViolation
                     f"{col_node.sql()} {operator} {lit_node.sql()}"
                 ),
                 suggested_fix=(
-                    f"Use integer literal instead: "
-                    f"{col_node.sql()} {operator} {suggested_value}"
+                    f"REPLACE: `{col_node.sql()} {operator} '<digits>'` (string literal) WITH "
+                    f"`{col_node.sql()} {operator} {suggested_value}` (integer literal). "
+                    f"All *_concept_id columns are INTEGER."
                 ),
+                suggested_fix_patch=patch,
                 details={
                     "column": col,
                     "table": table or "unknown",
@@ -140,7 +155,7 @@ def _check_comparison(node: exp.Expression, aliases: dict) -> List[RuleViolation
     return violations
 
 
-def _check_in_clause(node: exp.In, aliases: dict) -> List[RuleViolation]:
+def _check_in_clause(sql: str, node: exp.In, aliases: dict) -> List[RuleViolation]:
     violations = []
 
     col_expr = node.this
@@ -174,6 +189,27 @@ def _check_in_clause(node: exp.In, aliases: dict) -> List[RuleViolation]:
     if len(string_values) > 3:
         suggested += ", ..."
 
+    # Structured patch: when *every* value in the IN list is digit-only,
+    # REPLACE the entire IN expression with the integer-literal form. We
+    # locate the original IN SQL fragment in source and substitute with
+    # the corrected text. Falls back to FREEFORM for ambiguous matches.
+    patch = None
+    all_digits = [
+        str(val.this) for val in (node.expressions or []) if is_string_literal(val)
+    ]
+    if all_digits and all(s.isdigit() for s in all_digits):
+        # Build a corrected IN body and try to locate the original IN node
+        # span in source. We try the node.sql() as a single fragment.
+        in_sql = node.sql()
+        corrected = in_sql
+        for q in ("'", '"'):
+            for raw in all_digits:
+                corrected = corrected.replace(f"{q}{raw}{q}", raw)
+        if corrected != in_sql:
+            span = locate(sql, in_sql)
+            if span is not None:
+                patch = patch_replace(span, corrected)
+
     violations.append(
         RuleViolation(
             rule_id="data_quality.concept_id_string_comparison",
@@ -183,9 +219,11 @@ def _check_in_clause(node: exp.In, aliases: dict) -> List[RuleViolation]:
                 f"{col_expr.sql()} {operator} ({values_display})"
             ),
             suggested_fix=(
-                f"Use integer literals instead: "
-                f"{col_expr.sql()} {operator} ({suggested})"
+                f"REPLACE: `{col_expr.sql()} {operator} ('<digits>', ...)` (string literals) WITH "
+                f"`{col_expr.sql()} {operator} ({suggested})` (integer literals). "
+                f"All *_concept_id columns are INTEGER."
             ),
+            suggested_fix_patch=patch,
             details={
                 "column": col,
                 "table": table or "unknown",
@@ -198,18 +236,18 @@ def _check_in_clause(node: exp.In, aliases: dict) -> List[RuleViolation]:
     return violations
 
 
-def _find_violations(tree: exp.Expression) -> List[RuleViolation]:
+def _find_violations(sql: str, tree: exp.Expression) -> List[RuleViolation]:
     violations: List[RuleViolation] = []
 
     aliases = extract_aliases(tree)
 
     # Comparisons
     for node in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
-        violations.extend(_check_comparison(node, aliases))
+        violations.extend(_check_comparison(sql, node, aliases))
 
     # IN (handles both IN and NOT IN by checking parent)
     for node in tree.find_all(exp.In):
-        violations.extend(_check_in_clause(node, aliases))
+        violations.extend(_check_in_clause(sql, node, aliases))
 
     # Deduplicate by message
     unique = {}
@@ -237,10 +275,7 @@ class ConceptIdStringComparisonRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Replace string literals with integer literals: "
-        "concept_id = 201826 instead of concept_id = '201826'"
-    )
+    suggested_fix = "REPLACE: `<col>_concept_id = '<digits>'` (string literal) WITH `<col>_concept_id = <digits>` (integer literal). All *_concept_id columns are INTEGER."
     long_description = (
         "Every *_concept_id column in OMOP is an INTEGER. Comparing it to a "
         "string literal forces the database to implicitly cast one side per "
@@ -282,7 +317,7 @@ class ConceptIdStringComparisonRule(Rule):
             if not tree:
                 continue
 
-            violations.extend(_find_violations(tree))
+            violations.extend(_find_violations(sql, tree))
 
         return violations
 

@@ -355,7 +355,7 @@ class EndBeforeStartValidationRule(Rule):
     name = "End Before Start Validation"
     description = "Detects impossible constraints where start_date > end_date"
     severity = Severity.ERROR
-    suggested_fix = "Ensure start_date <= end_date in filters"
+    suggested_fix = "REPLACE: `<event>_end_date < <event>_start_date` WITH `<event>_end_date >= <event>_start_date`, OR remove the predicate (end before start is impossible by spec)."
     long_description = (
         "Filtering for *_start_date > *_end_date (or the equivalent "
         "*_end_date < *_start_date) describes an impossible time range. In "
@@ -397,8 +397,9 @@ class EndBeforeStartValidationRule(Rule):
                         severity=Severity.ERROR,
                         message=msg,
                         suggested_fix=(
-                            f"Ensure {cfg['start']} <= {cfg['end']} "
-                            f"and review conflicting filters"
+                            f"REPLACE: any predicate where `{cfg['end']}` precedes "
+                            f"`{cfg['start']}` WITH `{cfg['start']} <= {cfg['end']}`. "
+                            f"Reversed bounds return zero rows."
                         ),
                         details={
                             "table": table,

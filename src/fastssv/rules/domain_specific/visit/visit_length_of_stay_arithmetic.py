@@ -158,13 +158,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add a WHERE filter restricting visit_concept_id to inpatient-like values "
-        "(9201 Inpatient Visit, 9203 Emergency Room Visit, 262 Emergency Room and "
-        "Inpatient, etc.) before computing length-of-stay. visit_end_date may also "
-        "be NULL for ongoing inpatient stays — wrap with COALESCE if needed."
-    )
-
+    suggested_fix = "ADD: `WHERE vo.visit_concept_id IN (9201, 9203, 262, 32037, 32760, 38004279, 581379)` (inpatient-like) before computing LOS, AND `AND vo.visit_end_date IS NOT NULL` (or COALESCE(visit_end_date, CURRENT_DATE)) to handle ongoing stays."
     long_description = (
         "Length-of-stay arithmetic (`visit_end_date - visit_start_date` or "
         "`DATEDIFF(day, visit_start_date, visit_end_date)`) is meaningful only "

@@ -36,6 +36,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -174,10 +175,7 @@ class PersonIdJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join person_id only with person_id. "
-        "If linking tables, use the correct foreign key (e.g., visit_occurrence_id)."
-    )
+    suggested_fix = "REPLACE: `<table>.person_id = <other_table>.<non_person_id_col>` WITH `<table>.person_id = <other_table>.person_id`. person_id joins only to person_id, never to a non-person_id PK."
     example_bad = (
         "SELECT * FROM person p\n"
         "JOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id;"
@@ -223,10 +221,26 @@ class PersonIdJoinValidationRule(Rule):
                     f"person_id must only join to person_id, not {other_col}."
                 )
 
+                # Build a REPLACE patch that swaps the non-person_id column for
+                # `person_id`, keeping the side that already had person_id.
+                patch = None
+                if lt and rt and lt != "unknown" and rt != "unknown":
+                    fix_text = (
+                        f"REPLACE: `{lt_disp}.{lc} = {rt_disp}.{rc}` "
+                        f"WITH `{lt_disp}.person_id = {rt_disp}.person_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, lt, lc, rt, rc,
+                        PERSON_ID, PERSON_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "person_id_cross_match",
                             "left_table": lt,

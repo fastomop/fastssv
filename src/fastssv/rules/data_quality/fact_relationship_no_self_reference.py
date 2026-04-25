@@ -193,10 +193,7 @@ class FactRelationshipNoSelfReferenceRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Remove self-referential filters (fact_id_1 = fact_id_2). "
-        "If intentional, verify this is a valid use case."
-    )
+    suggested_fix = "REMOVE: the `fact_id_1 = fact_id_2` predicate. Fact-relationship rows where the two fact_ids match are degenerate self-loops."
     long_description = (
         "fact_relationship links two facts together; a row where "
         "fact_id_1 = fact_id_2 represents a fact related to itself, which "

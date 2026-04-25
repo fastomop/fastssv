@@ -69,13 +69,35 @@ Note: UNION without ALL is acceptable for:
     - Non-event data where duplicates are truly errors
 """
 
-from typing import Iterator, List, Optional, Set
+import re
+from typing import Iterator, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.patch import replace as patch_replace
 from fastssv.core.registry import register
+
+
+# Match `UNION` as a standalone keyword that is *not* immediately followed
+# by `ALL` (so we don't false-match the already-correct form). Word
+# boundaries on either side prevent matching e.g. `UNIONS`.
+_UNION_KEYWORD_RE = re.compile(
+    r"\bUNION\b(?!\s+ALL\b)",
+    re.IGNORECASE,
+)
+
+
+def _find_unique_union_keyword_span(sql: str) -> Optional[Tuple[int, int]]:
+    """If the source contains exactly one `UNION` (not followed by ALL),
+    return its [start, end) byte span. Otherwise return None.
+    """
+    matches = list(_UNION_KEYWORD_RE.finditer(sql))
+    if len(matches) != 1:
+        return None
+    m = matches[0]
+    return (m.start(), m.end())
 
 
 # --- Constants -------------------------------------------------------------
@@ -202,10 +224,7 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Replace UNION with UNION ALL to preserve all clinical events. "
-        "If deduplication is intentional, document it explicitly."
-    )
+    suggested_fix = "REPLACE: `UNION` WITH `UNION ALL` when combining clinical event rows. Identical-looking rows can represent distinct events; UNION silently dedupes them."
     long_description = (
         "UNION de-duplicates rows; UNION ALL preserves them. Two distinct "
         "clinical events can share identical values on the selected "
@@ -272,6 +291,17 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
                     continue
                 seen.add(key)
 
+                # Structured patch: REPLACE the bare `UNION` keyword with
+                # `UNION ALL`. Only applied when the source contains a
+                # single `UNION` (without ALL) — otherwise the violation
+                # falls back to FREEFORM auto-default. The applier just
+                # appends ` ALL` after the keyword, preserving casing.
+                patch = None
+                span = _find_unique_union_keyword_span(sql)
+                if span is not None:
+                    keyword_text = sql[span[0]:span[1]]
+                    patch = patch_replace(span, f"{keyword_text} ALL")
+
                 violations.append(
                     self.create_violation(
                         message=(
@@ -281,6 +311,7 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
                         ),
                         severity=self.severity,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "issue": "union_without_all_clinical_events",
                             "union_sql": union.sql(),

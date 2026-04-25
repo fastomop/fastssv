@@ -46,7 +46,7 @@ Correct patterns:
     -- OK: Overlapping range is valid
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
@@ -59,6 +59,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -155,8 +156,17 @@ def _is_measurement_column(col: exp.Column, aliases: Dict[str, str], name: str) 
     return TABLE_NAME in {_norm(t) for t in aliases.values()}
 
 
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
-    violations: List[str] = []
+def _find_violations(
+    tree: exp.Expression, aliases: Dict[str, str]
+) -> List[Tuple[str, Optional[exp.Expression]]]:
+    """Return list of (message, offending_node).
+
+    ``offending_node`` is the AST node whose source span we'll target with a
+    REPLACE patch (only set for the direct ``range_low > range_high``
+    comparison; the static-contradiction case is left as FREEFORM since the
+    fix depends on which side the analyst intended to relax).
+    """
+    violations: List[Tuple[str, Optional[exp.Expression]]] = []
     seen: Set[str] = set()
 
     bounds = {
@@ -194,9 +204,10 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                         key = "direct_comparison"
                         if key not in seen:
                             seen.add(key)
-                            violations.append(
-                                f"Comparison implies {RANGE_LOW} > {RANGE_HIGH}, which is invalid."
-                            )
+                            violations.append((
+                                f"Comparison implies {RANGE_LOW} > {RANGE_HIGH}, which is invalid.",
+                                node,
+                            ))
 
         # --- Column vs literal ---
         if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
@@ -245,9 +256,12 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
         key = "static_contradiction"
         if key not in seen:
             seen.add(key)
-            violations.append(
-                f"Static filters imply {RANGE_LOW} > {RANGE_HIGH}, which is logically impossible."
-            )
+            # Static contradictions span multiple predicates; no single
+            # mechanical edit cleans them up.  Leave patch to FREEFORM.
+            violations.append((
+                f"Static filters imply {RANGE_LOW} > {RANGE_HIGH}, which is logically impossible.",
+                None,
+            ))
 
     return violations
 
@@ -262,8 +276,7 @@ class MeasurementRangeLowHighValidationRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = "Ensure range_low <= range_high"
-
+    suggested_fix = "REPLACE: `range_low > range_high` WITH `range_low <= range_high` (or remove the predicate — range_low must be no greater than range_high by definition)."
     example_bad = (
         "SELECT person_id FROM measurement\n"
         "WHERE range_low > range_high;"
@@ -290,11 +303,33 @@ class MeasurementRangeLowHighValidationRule(Rule):
             aliases = extract_aliases(tree)
             issues = _find_violations(tree, aliases)
 
-            for msg in issues:
+            for msg, offending_node in issues:
+                # When the violation is the direct-comparison case, build a
+                # REPLACE patch that flips the inequality so the predicate
+                # becomes valid (range_low <= range_high). Reverse-orientation
+                # GT/LT pairs are handled symmetrically.
+                patch = None
+                if offending_node is not None:
+                    flipped_op = {
+                        exp.GT: "<=",
+                        exp.GTE: "<",
+                        exp.LT: ">=",
+                        exp.LTE: ">",
+                    }.get(type(offending_node))
+                    if flipped_op is not None:
+                        left = offending_node.this
+                        right = offending_node.expression
+                        if isinstance(left, exp.Column) and isinstance(right, exp.Column):
+                            new_text = f"{left.sql()} {flipped_op} {right.sql()}"
+                            span = locate(sql, offending_node.sql())
+                            if span is not None:
+                                patch = patch_replace(span, new_text)
+
                 violations.append(
                     self.create_violation(
                         message=msg,
                         severity=self.severity,
+                        suggested_fix_patch=patch,
                     )
                 )
 

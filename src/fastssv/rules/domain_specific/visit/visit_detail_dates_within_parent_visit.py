@@ -224,10 +224,7 @@ class VisitDetailDatesWithinParentVisitRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = (
-        "Ensure visit_detail dates are within visit_start_date and visit_end_date"
-    )
-
+    suggested_fix = "ADD: `AND vd.visit_detail_start_date >= vo.visit_start_date AND vd.visit_detail_end_date <= vo.visit_end_date` to constrain visit_detail dates inside the parent visit's window."
     example_bad = (
         "SELECT vd.visit_detail_id FROM visit_detail vd\n"
         "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id\n"

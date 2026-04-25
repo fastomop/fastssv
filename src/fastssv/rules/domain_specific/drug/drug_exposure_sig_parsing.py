@@ -276,12 +276,7 @@ class DrugExposureSigParsingRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Join drug_strength to obtain standardized dose fields "
-        "(amount_value, numerator_value, denominator_value) "
-        "instead of parsing sig."
-    )
-
+    suggested_fix = "REPLACE: substring/regex parsing of de.sig WITH a JOIN to drug_strength: `JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id WHERE ds.invalid_reason IS NULL`. drug_strength carries amount_value / numerator_value / denominator_value as structured fields."
     example_bad = (
         "SELECT CAST(SUBSTRING(sig, 1, 3) AS INT) AS dose\n"
         "FROM drug_exposure;"

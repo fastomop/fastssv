@@ -194,11 +194,7 @@ class ConditionVisitHierarchyValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add: JOIN visit_occurrence vo "
-        "ON vd.visit_occurrence_id = vo.visit_occurrence_id"
-    )
-
+    suggested_fix = "ADD: `JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id` after `JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id`. Visit-level columns must come from visit_occurrence reached through visit_detail."
     example_bad = (
         "SELECT co.condition_concept_id, vo.visit_start_date\n"
         "FROM condition_occurrence co\n"

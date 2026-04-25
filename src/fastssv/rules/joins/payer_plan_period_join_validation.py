@@ -282,10 +282,7 @@ class PayerPlanPeriodJoinValidationRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add temporal overlap: clinical_date BETWEEN payer_plan_period_start_date "
-        "AND payer_plan_period_end_date"
-    )
+    suggested_fix = "ADD: `AND <clinical>.<event_date> BETWEEN ppp.payer_plan_period_start_date AND ppp.payer_plan_period_end_date` (date-overlap) on every payer_plan_period join, in addition to person_id."
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN payer_plan_period ppp ON co.person_id = ppp.person_id;"

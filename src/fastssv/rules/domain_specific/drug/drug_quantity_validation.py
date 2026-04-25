@@ -217,8 +217,7 @@ class DrugQuantityValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = "Ensure quantity >= 0"
-
+    suggested_fix = "REPLACE: `quantity < 0` filters WITH `quantity >= 0`. Negative values indicate ETL errors or refund/return rows that shouldn't feed analytical aggregates."
     example_bad = (
         "SELECT person_id FROM drug_exposure\n"
         "WHERE quantity < 0;"

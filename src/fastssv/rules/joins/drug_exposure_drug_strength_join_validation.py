@@ -48,6 +48,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -177,9 +178,7 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: drug_exposure.drug_concept_id = drug_strength.drug_concept_id"
-    )
+    suggested_fix = "REPLACE: the join target WITH `drug_exposure.drug_concept_id = drug_strength.drug_concept_id`, AND add `AND drug_strength.invalid_reason IS NULL`."
     example_bad = (
         "SELECT * FROM drug_exposure de\n"
         "JOIN drug_strength ds ON de.drug_source_concept_id = ds.drug_concept_id;"
@@ -212,6 +211,7 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
 
             # --- ERRORS ---
             for de, de_col, ds, ds_col in errors:
+                patch = None
                 if de_col == "NONE":
                     msg = (
                         "drug_exposure and drug_strength are used but not joined. "
@@ -227,11 +227,22 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
                         f"Invalid join: {de}.{de_col} = {ds}.{ds_col}. "
                         f"Expected drug_concept_id = drug_concept_id."
                     )
+                    fix_text = (
+                        f"REPLACE: `{de}.{de_col} = {ds}.{ds_col}` "
+                        f"WITH `{de}.drug_concept_id = {ds}.drug_concept_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, de, de_col, ds, ds_col,
+                        DRUG_CONCEPT_ID, DRUG_CONCEPT_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
 
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "invalid_join",
                             "drug_exposure_column": de_col,

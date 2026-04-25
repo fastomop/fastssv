@@ -202,8 +202,7 @@ class MeasurementOperatorConceptValidationRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = "Use one of the valid operator concept_ids"
-
+    suggested_fix = "REPLACE: the invalid operator concept_id WITH one of: 4172703 (>=), 4172704 (>), 4171754 (<=), 4171755 (=), 4171756 (<). These are the only valid measurement operator concepts in OMOP."
     example_bad = (
         "SELECT person_id FROM measurement\n"
         "WHERE operator_concept_id = 99999;"

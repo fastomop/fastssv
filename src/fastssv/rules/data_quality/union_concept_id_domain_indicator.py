@@ -242,10 +242,7 @@ class UnionConceptIdDomainIndicatorRule(Rule):
         "a domain indicator column to avoid ambiguity."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Add a domain indicator column to each SELECT, e.g.: "
-        "SELECT 'Condition' AS domain, condition_concept_id FROM ... UNION ..."
-    )
+    suggested_fix = "ADD: a literal domain indicator column to each branch of the UNION (e.g. `SELECT '<domain>' AS domain, <table>.<x>_concept_id ...`). Without it, identical concept_ids from different domains collapse."
     long_description = (
         "UNION-ing concept_id columns from multiple domains into a single "
         "output column loses the semantic difference — the downstream "

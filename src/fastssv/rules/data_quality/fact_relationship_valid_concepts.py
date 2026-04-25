@@ -289,10 +289,7 @@ class FactRelationshipValidConceptsRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add '<alias>.invalid_reason IS NULL' for each concept join "
-        "to ensure only valid concepts are used."
-    )
+    suggested_fix = "ADD: `AND <concept_alias>.invalid_reason IS NULL` on every JOIN from fact_relationship to concept (for domain_concept_id_1, domain_concept_id_2, relationship_concept_id)."
     long_description = (
         "When fact_relationship is joined to concept (via "
         "relationship_concept_id, domain_concept_id_1, or "

@@ -171,10 +171,7 @@ class DestructiveOperationsOnClinicalTablesRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use SELECT for analysis. Perform data modifications only via "
-        "controlled ETL pipelines or governed workflows."
-    )
+    suggested_fix = "REMOVE: DELETE / UPDATE / INSERT / TRUNCATE / DROP / ALTER / MERGE on clinical tables. Analytical queries are SELECT-only; data modifications belong in ETL pipelines."
     long_description = (
         "Analytical SQL against OMOP clinical tables should be strictly "
         "read-only. DELETE, UPDATE, INSERT, TRUNCATE, DROP, and ALTER "

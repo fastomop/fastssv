@@ -272,6 +272,8 @@ class ConceptAliasReuseValidationRule(Rule):
 
     severity = Severity.ERROR
 
+    suggested_fix = "REPLACE: a single concept alias used for both `*_concept_id` and `*_source_concept_id` (or `*_type_concept_id`) WITH two distinct aliases (e.g. `c_std`, `c_src`), each in its own JOIN. Standard, source, and type concepts are semantically distinct and must not share an alias."
+
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
@@ -312,9 +314,10 @@ class ConceptAliasReuseValidationRule(Rule):
                         f"Standard and source concepts represent different semantics."
                     )
                     suggested_fix = (
-                        "Use separate aliases for standard and source concepts:\n"
-                        f"  JOIN concept c_standard ON {source_table}.{columns[0]} = c_standard.concept_id\n"
-                        f"  JOIN concept c_source ON {source_table}.{columns[1]} = c_source.concept_id"
+                        f"REPLACE: the duplicate `JOIN concept {concept_alias}` blocks WITH two distinct aliases: "
+                        f"`JOIN concept c_std ON {source_table}.{columns[0]} = c_std.concept_id` "
+                        f"AND `JOIN concept c_src ON {source_table}.{columns[1]} = c_src.concept_id`. "
+                        f"Standard and source concepts cannot share an alias."
                     )
                     details_type = "primary_source_alias_conflict"
                 elif error_type == "primary_type":
@@ -324,10 +327,10 @@ class ConceptAliasReuseValidationRule(Rule):
                         f"Clinical concepts and type concepts (provenance) are semantically different."
                     )
                     suggested_fix = (
-                        "Use separate aliases for clinical and type concepts:\n"
-                        f"  JOIN concept c_clinical ON {source_table}.{columns[0]} = c_clinical.concept_id\n"
-                        f"  JOIN concept c_type ON {source_table}.{columns[1]} = c_type.concept_id\n\n"
-                        f"Note: Type concepts represent provenance (e.g., 'EHR', 'Claim'), not clinical meaning."
+                        f"REPLACE: the duplicate `JOIN concept {concept_alias}` blocks WITH two distinct aliases: "
+                        f"`JOIN concept c_clinical ON {source_table}.{columns[0]} = c_clinical.concept_id` "
+                        f"AND `JOIN concept c_type ON {source_table}.{columns[1]} = c_type.concept_id`. "
+                        f"Type concepts encode provenance (EHR, Claim), not clinical meaning."
                     )
                     details_type = "primary_type_alias_conflict"
                 else:
@@ -336,9 +339,9 @@ class ConceptAliasReuseValidationRule(Rule):
                         f"in table '{source_table}' ({col_list})."
                     )
                     suggested_fix = (
-                        "Use separate aliases:\n"
-                        f"  JOIN concept c1 ON {source_table}.{columns[0]} = c1.concept_id\n"
-                        f"  JOIN concept c2 ON {source_table}.{columns[1]} = c2.concept_id"
+                        f"REPLACE: the duplicate `JOIN concept {concept_alias}` blocks WITH two distinct aliases: "
+                        f"`JOIN concept c1 ON {source_table}.{columns[0]} = c1.concept_id` "
+                        f"AND `JOIN concept c2 ON {source_table}.{columns[1]} = c2.concept_id`."
                     )
                     details_type = "alias_conflict"
 
@@ -367,9 +370,9 @@ class ConceptAliasReuseValidationRule(Rule):
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            "Consider using separate aliases for clarity:\n"
-                            "  JOIN concept c1 ON ... = c1.concept_id\n"
-                            "  JOIN concept c2 ON ... = c2.concept_id"
+                            f"REPLACE: the duplicate `JOIN concept {concept_alias}` blocks WITH two distinct aliases "
+                            f"(e.g. `c1`, `c2`), one per concept_id column being looked up. Reusing one alias makes the "
+                            f"ON clauses ambiguous."
                         ),
                         details={
                             "type": "alias_reuse_warning",

@@ -148,10 +148,7 @@ class VocabularyTableProtectionRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Do not modify vocabulary tables. Use them as read-only reference data. "
-        "Vocabulary updates should be performed via official OHDSI releases."
-    )
+    suggested_fix = "REMOVE: DELETE / UPDATE / INSERT / TRUNCATE / MERGE / DROP TABLE on vocabulary tables (concept, concept_relationship, concept_ancestor, vocabulary, …). Vocabulary is OHDSI-managed reference data; modifications must go through the vocabulary release pipeline."
     long_description = (
         "OMOP vocabulary tables (concept, concept_ancestor, "
         "concept_relationship, vocabulary, domain, concept_class) are "

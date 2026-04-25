@@ -206,10 +206,7 @@ class CostPaidIngredientCostDrugSpecificRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Add WHERE cost_domain_id = 'Drug' to filter for pharmacy/drug claims only."
-    )
-
+    suggested_fix = "ADD: `WHERE c.cost_domain_id = 'Drug'` before reading paid_ingredient_cost / paid_dispensing_fee. These columns are NULL or meaningless for non-pharmacy cost rows."
     example_bad = (
         "SELECT cost_id, paid_ingredient_cost FROM cost;"
     )

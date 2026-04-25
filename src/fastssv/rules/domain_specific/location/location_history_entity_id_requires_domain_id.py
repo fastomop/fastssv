@@ -308,10 +308,7 @@ class LocationHistoryEntityIdRequiresDomainIdRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add WHERE location_history.domain_id = '<Domain>' matching the joined table."
-    )
-
+    suggested_fix = "ADD: `AND lh.domain_id = '<Domain>'` matching the joined target table (e.g. 'Person' for person, 'Provider' for provider, 'Care Site' for care_site)."
     example_bad = (
         "SELECT lh.location_history_id FROM location_history lh\n"
         "JOIN person p ON lh.entity_id = p.person_id;"

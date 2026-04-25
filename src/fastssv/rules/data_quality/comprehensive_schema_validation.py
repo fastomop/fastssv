@@ -13,6 +13,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 from fastssv.schemas import CDM_COLUMN_TYPES, get_table_columns
 
@@ -103,7 +104,7 @@ class ComprehensiveSchemaValidationRule(Rule):
         "Only validates physical table references - excludes CTEs, subqueries, and derived expressions."
     )
     severity = Severity.ERROR
-    suggested_fix = "Ensure all table and column names match the OMOP CDM 5.4 schema"
+    suggested_fix = "REPLACE: the misspelled / nonexistent table or column with the correct OMOP CDM v5.4 name. Common cases: 'cohort_result' → 'cohort'; '<event>_start_date' → '<event>_date' for procedure/measurement/observation/specimen/note; v5.3 'admitting_source_concept_id' → v5.4 'admitted_from_concept_id'."
     long_description = (
         "Every table and column referenced in the query must exist in the "
         "OMOP CDM 5.4 specification. This rule catches typos "
@@ -175,9 +176,21 @@ class ComprehensiveSchemaValidationRule(Rule):
                     all_tables = _get_all_tables()
                     similar = [t for t in all_tables if table_name in t or t in table_name]
 
+                    # Structured patch: when there is exactly one similar
+                    # table and the source contains a unique occurrence of
+                    # the misspelled name (case-insensitive whole word
+                    # match handled by locate()), emit a REPLACE patch.
+                    # Otherwise leave the violation FREEFORM.
+                    patch = None
+                    if len(similar) == 1:
+                        span = locate(sql, table_name)
+                        if span is not None:
+                            patch = patch_replace(span, similar[0])
+
                     violations.append(self.create_violation(
                         message=f"Table '{table_name}' does not exist in OMOP CDM 5.4 schema.",
                         severity=Severity.ERROR,
+                        suggested_fix_patch=patch,
                         details={
                             "layer": "schema",
                             "type": "invalid_table",
@@ -246,9 +259,21 @@ class ComprehensiveSchemaValidationRule(Rule):
                     valid_cols = get_table_columns(resolved_table)
                     similar = [c for c in valid_cols if col_name in c or c in col_name]
 
+                    # Structured patch: REPLACE the misspelled column when
+                    # exactly one similar candidate exists *and* the column
+                    # appears uniquely in source. Locating the bare column
+                    # token must avoid false matches in unrelated tables;
+                    # a unique whole-string match is the safest heuristic.
+                    patch = None
+                    if len(similar) == 1:
+                        span = locate(sql, col_name)
+                        if span is not None:
+                            patch = patch_replace(span, similar[0])
+
                     violations.append(self.create_violation(
                         message=f"Column '{col_name}' does not exist in table '{resolved_table}'.",
                         severity=Severity.ERROR,
+                        suggested_fix_patch=patch,
                         details={
                             "layer": "schema",
                             "type": "invalid_column",

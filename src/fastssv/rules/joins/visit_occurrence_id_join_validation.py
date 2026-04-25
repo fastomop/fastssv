@@ -35,6 +35,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -178,10 +179,7 @@ class VisitOccurrenceIdJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Join visit_occurrence_id only with visit_occurrence_id. "
-        "If linking across domains, use the correct foreign key (e.g., person_id)."
-    )
+    suggested_fix = "REPLACE: `<table>.visit_occurrence_id = <other>.<other_id>` WITH `<table>.visit_occurrence_id = <other>.visit_occurrence_id`. visit_occurrence_id joins only to itself."
     example_bad = (
         "SELECT * FROM visit_occurrence vo\n"
         "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id;"
@@ -228,10 +226,25 @@ class VisitOccurrenceIdJoinValidationRule(Rule):
                     f"visit_occurrence_id must only join to visit_occurrence_id, not {other_col}."
                 )
 
+                # REPLACE the non-visit_occurrence_id side with visit_occurrence_id.
+                patch = None
+                if lt and rt and lt != "unknown" and rt != "unknown":
+                    fix_text = (
+                        f"REPLACE: `{lt_disp}.{lc} = {rt_disp}.{rc}` "
+                        f"WITH `{lt_disp}.visit_occurrence_id = {rt_disp}.visit_occurrence_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, lt, lc, rt, rc,
+                        VISIT_OCCURRENCE_ID, VISIT_OCCURRENCE_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
+
                 violations.append(
                     self.create_violation(
                         message=message,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "visit_occurrence_id_cross_match",
                             "left_table": lt,

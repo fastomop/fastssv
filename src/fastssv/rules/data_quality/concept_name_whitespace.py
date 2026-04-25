@@ -84,6 +84,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -145,8 +146,9 @@ def _is_wrapped_in_trim(node: exp.Expression) -> bool:
 def _find_concept_name_equalities(
     tree: exp.Expression,
     aliases: dict,
-) -> List[str]:
-    violations: List[str] = []
+) -> List[tuple]:
+    """Return list of (context_sql, column_sql) tuples for each violation."""
+    violations: List[tuple] = []
 
     # --- EQ ---
     for eq in tree.find_all(exp.EQ):
@@ -163,7 +165,7 @@ def _find_concept_name_equalities(
             if _is_wrapped_in_trim(col_side) or _is_wrapped_in_trim(val_side):
                 continue
 
-            violations.append(eq.sql())
+            violations.append((eq.sql(), col_side.sql()))
             break
 
     # --- IN ---
@@ -184,7 +186,7 @@ def _find_concept_name_equalities(
         if any(_is_wrapped_in_trim(expr) for expr in in_expr.expressions or []):
             continue
 
-        violations.append(in_expr.sql())
+        violations.append((in_expr.sql(), col.sql()))
 
     return violations
 
@@ -205,10 +207,7 @@ class ConceptNameWhitespaceRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Use TRIM(concept_name) = 'value' or RTRIM(concept_name) = 'value', "
-        "or use LIKE for safer matching."
-    )
+    suggested_fix = "WRAP: the column in TRIM() — `WHERE TRIM(concept_name) = '<value>'` or `WHERE RTRIM(concept_name) = '<value>'`. Use LIKE for safer partial matches."
     long_description = (
         "concept.concept_name values are sometimes loaded with trailing "
         "whitespace or non-breaking characters from vocabulary source "
@@ -256,10 +255,19 @@ class ConceptNameWhitespaceRule(Rule):
 
             contexts = _find_concept_name_equalities(tree, aliases)
 
-            for context in contexts:
+            for context, col_sql in contexts:
                 if context in seen:
                     continue
                 seen.add(context)
+
+                # Structured patch: REPLACE the bare column reference with
+                # `TRIM(<col>)`. Falls back to FREEFORM when the column ref
+                # isn't uniquely locatable (e.g. it appears multiple times
+                # in the SQL outside this comparison).
+                patch = None
+                span = locate(sql, col_sql)
+                if span is not None:
+                    patch = patch_replace(span, f"TRIM({col_sql})")
 
                 violations.append(
                     self.create_violation(
@@ -269,8 +277,9 @@ class ConceptNameWhitespaceRule(Rule):
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            "Use TRIM(concept_name) = 'value' or RTRIM(concept_name) = 'value'"
+                            "WRAP: `concept_name` in `TRIM(...)` — `TRIM(concept_name) = '<value>'` or `RTRIM(concept_name) = '<value>'`. Trailing whitespace silently breaks exact equality."
                         ),
+                        suggested_fix_patch=patch,
                         details={"context": context},
                     )
                 )

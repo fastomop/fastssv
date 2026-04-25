@@ -230,8 +230,7 @@ class VisitEventTemporalValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = "Use event_date >= visit_start_date or review join logic"
-
+    suggested_fix = "REPLACE: `<event>.<date> < <visit>.visit_start_date` WITH `<event>.<date> >= <visit>.visit_start_date`. Clinical events should occur on or after the visit's start; a violation usually means the wrong visit_occurrence_id was joined."
     example_bad = (
         "SELECT co.person_id FROM condition_occurrence co\n"
         "JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id\n"

@@ -286,12 +286,7 @@ class MeasurementDuplicateDetectionRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Group by natural key (person_id, measurement_concept_id, measurement_date), "
-        "use DISTINCT, or apply explicit deduplication logic like ROW_NUMBER() "
-        "OVER (PARTITION BY person_id, measurement_concept_id, measurement_date)."
-    )
-
+    suggested_fix = "ADD: GROUP BY (person_id, measurement_concept_id, measurement_date), OR SELECT DISTINCT on those columns, OR deduplicate explicitly with ROW_NUMBER() OVER (PARTITION BY person_id, measurement_concept_id, measurement_date ORDER BY measurement_datetime NULLS LAST) and keep rn = 1."
     example_bad = (
         "SELECT AVG(value_as_number) FROM measurement;"
     )

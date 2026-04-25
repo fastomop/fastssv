@@ -61,6 +61,7 @@ from fastssv.core.helpers import (
     has_table_reference,
     is_in_where_or_join_clause,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -173,10 +174,7 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use min_levels_of_separation = 1 for direct relationships, "
-        "or max_levels_of_separation <= N to limit hierarchy depth."
-    )
+    suggested_fix = "REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` for direct parent/child only, OR `max_levels_of_separation <= N` to limit hierarchy depth."
     long_description = (
         "A concept pair can appear multiple times in concept_ancestor via "
         "different hierarchy paths, each with its own "
@@ -223,8 +221,10 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
             for v in detected:
                 op = v["operator"]
                 value = v["value"]
+                context = v["context"]
 
                 # --- Message logic ---
+                patch = None
                 if op == "EQ":
                     if value == 1:
                         message = (
@@ -232,20 +232,36 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
                             "direct children due to multiple hierarchy paths. "
                             "Use min_levels_of_separation = 1 instead."
                         )
-                        fix = "Replace with min_levels_of_separation = 1"
+                        fix = "REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` to reliably select direct parent/child rows."
+                        # Mechanical REPLACE: swap `max_levels_of_separation`
+                        # for `min_levels_of_separation` in the offending
+                        # equality predicate.
+                        span = locate(sql, context)
+                        if span is not None:
+                            new_text = context.replace(
+                                "max_levels_of_separation",
+                                "min_levels_of_separation",
+                            )
+                            patch = patch_replace(span, new_text)
                     else:
                         message = (
                             f"Using max_levels_of_separation = {value} may exclude valid descendants "
                             f"due to multiple hierarchy paths."
                         )
-                        fix = f"Use max_levels_of_separation <= {value}"
+                        fix = f"REPLACE: `max_levels_of_separation = {value}` WITH `max_levels_of_separation <= {value}` (range, not equality)."
+                        # Mechanical REPLACE: change `=` to `<=`.
+                        span = locate(sql, context)
+                        if span is not None:
+                            new_text = context.replace("=", "<=", 1)
+                            patch = patch_replace(span, new_text)
 
                 elif op == "NEQ":
                     message = (
                         f"Using max_levels_of_separation != {value} is unreliable due to multiple "
                         f"hierarchy paths."
                     )
-                    fix = "Use min_levels_of_separation or range filters (<= / >=)"
+                    fix = f"REPLACE: `max_levels_of_separation != {value}` WITH `min_levels_of_separation = 1` (direct only) or a range filter (`max_levels_of_separation <= <N>` / `>= <N>`)."
+                    # Multi-option fix (range or min_levels) — leave FREEFORM.
 
                 else:
                     continue
@@ -255,6 +271,7 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
                         message=message,
                         severity=self.severity,
                         suggested_fix=fix,
+                        suggested_fix_patch=patch,
                         details={
                             "operator": op,
                             "value": value,

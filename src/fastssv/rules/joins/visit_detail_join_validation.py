@@ -18,7 +18,7 @@ Incorrect pattern:
     JOIN visit_occurrence vo ON vd.person_id = vo.person_id
 """
 
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
@@ -29,6 +29,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -114,8 +115,31 @@ def _is_vd_vo_join(join: exp.Join, aliases: Dict[str, str]) -> bool:
 
 # --- Core detection --------------------------------------------------------
 
-def _find_invalid_joins(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
-    issues = []
+def _qualifier_for(table: str, aliases: Dict[str, str]) -> str:
+    """Return the alias used for ``table`` in this query, falling back to the
+    table name itself when no alias has been declared.
+    """
+    for alias, real in aliases.items():
+        if normalize_name(real) == table:
+            # Skip the trivial alias = table case so we don't return e.g.
+            # ``visit_detail`` when the user actually wrote ``vd``.
+            if normalize_name(alias) != table:
+                return alias
+    # No explicit alias — the table name itself is the qualifier.
+    return table
+
+
+def _find_invalid_joins(
+    tree: exp.Expression, aliases: Dict[str, str]
+) -> List[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
+    """Return list of (message, on_sql, vd_qualifier, vo_qualifier) tuples.
+
+    ``on_sql`` is the rendered SQL of the offending JOIN's ON expression,
+    used to locate the insertion point for an ADD patch. ``vd_qualifier`` /
+    ``vo_qualifier`` are the alias-or-table strings to use in the inserted
+    predicate.
+    """
+    issues: List[Tuple[str, Optional[str], Optional[str], Optional[str]]] = []
     seen = set()
 
     for join in tree.find_all(exp.Join):
@@ -135,11 +159,19 @@ def _find_invalid_joins(tree: exp.Expression, aliases: Dict[str, str]) -> List[s
             continue
         seen.add(key)
 
-        issues.append(
+        on = join.args.get("on")
+        on_sql = on.sql() if on is not None else None
+        vd_qual = _qualifier_for(VD, aliases)
+        vo_qual = _qualifier_for(VO, aliases)
+
+        issues.append((
             f"visit_detail joined to visit_occurrence without {JOIN_KEY}. "
             f"This may produce many-to-many joins and duplicate records. "
-            f"Use: vd.{JOIN_KEY} = vo.{JOIN_KEY}"
-        )
+            f"Use: vd.{JOIN_KEY} = vo.{JOIN_KEY}",
+            on_sql,
+            vd_qual,
+            vo_qual,
+        ))
 
     return issues
 
@@ -157,9 +189,7 @@ class VisitDetailJoinValidationRule(Rule):
         "Joining only on person_id can produce incorrect results."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Join using: vd.visit_occurrence_id = vo.visit_occurrence_id"
-    )
+    suggested_fix = "ADD: `AND vd.visit_occurrence_id = vo.visit_occurrence_id` (the primary FK) to the join, in addition to person_id. Joining on person_id alone fans out across all of the person's visits."
     example_bad = (
         "SELECT * FROM visit_detail vd\n"
         "JOIN visit_occurrence vo ON vd.person_id = vo.person_id;"
@@ -183,8 +213,25 @@ class VisitDetailJoinValidationRule(Rule):
             aliases = extract_aliases(tree)
             issues = _find_invalid_joins(tree, aliases)
 
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
+            for msg, on_sql, vd_qual, vo_qual in issues:
+                # Structured patch: ADD `AND <vd>.visit_occurrence_id =
+                # <vo>.visit_occurrence_id` to the offending JOIN's ON
+                # clause. Anchor at the end of the existing ON expression.
+                # If the ON SQL isn't uniquely locatable, fall back to
+                # FREEFORM via auto-default.
+                patch = None
+                if on_sql and vd_qual and vo_qual:
+                    span = locate(sql, on_sql)
+                    if span is not None:
+                        patch = patch_add(
+                            span[1],
+                            f" AND {vd_qual}.{JOIN_KEY} = {vo_qual}.{JOIN_KEY}",
+                        )
+
+                violations.append(self.create_violation(
+                    message=msg,
+                    suggested_fix_patch=patch,
+                ))
 
         return violations
 

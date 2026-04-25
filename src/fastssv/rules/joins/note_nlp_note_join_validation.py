@@ -48,6 +48,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
 
 
@@ -185,7 +186,7 @@ class NoteNlpNoteJoinValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = "Use: note_nlp.note_id = note.note_id"
+    suggested_fix = "REPLACE: the join target WITH `note_nlp.note_id = note.note_id`. note_nlp links to note via note_id only."
     example_bad = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_nlp_id = n.note_id;"
     example_good = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_id = n.note_id;"
 
@@ -211,6 +212,7 @@ class NoteNlpNoteJoinValidationRule(Rule):
             errors = _detect(tree, aliases)
 
             for nn, nn_col, note, note_col in errors:
+                patch = None
                 if nn_col == "NONE":
                     msg = (
                         "note_nlp and note are used but not joined. "
@@ -227,11 +229,22 @@ class NoteNlpNoteJoinValidationRule(Rule):
                         f"{nn}.{nn_col} = {note}.{note_col}. "
                         f"Expected note_id = note_id."
                     )
+                    fix_text = (
+                        f"REPLACE: `{nn}.{nn_col} = {note}.{note_col}` "
+                        f"WITH `{nn}.note_id = {note}.note_id`."
+                    )
+                    patch = build_join_replace_patch(
+                        sql, nn, nn_col, note, note_col,
+                        NOTE_ID, NOTE_ID,
+                        fix_text,
+                        aliases=aliases,
+                    )
 
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
+                        suggested_fix_patch=patch,
                         details={
                             "type": "invalid_fk_join",
                             "note_nlp_column": nn_col,

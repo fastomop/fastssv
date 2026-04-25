@@ -61,6 +61,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
     has_table_reference,
 )
+from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
 
 
@@ -94,12 +95,14 @@ def _norm(val: Optional[str]) -> Optional[str]:
 def _find_visit_type_concept_joins(
     tree: exp.Expression,
     aliases: Dict[str, str],
-) -> Set[str]:
+) -> Dict[str, str]:
+    """Find joins between visit_occurrence.visit_type_concept_id and
+    concept.concept_id.
+
+    Returns a mapping ``concept_alias → eq_sql`` where ``eq_sql`` is the
+    rendered SQL of the equality predicate (used to anchor an ADD patch).
     """
-    Find joins between visit_occurrence.visit_type_concept_id and concept.concept_id.
-    Returns set of concept table aliases.
-    """
-    concept_aliases: Set[str] = set()
+    concept_alias_to_eq: Dict[str, str] = {}
 
     for eq in tree.find_all(exp.EQ):
         if not is_in_where_or_join_clause(eq):
@@ -138,7 +141,7 @@ def _find_visit_type_concept_joins(
             and rc_norm == CONCEPT_ID_NORM
         ):
             if right_alias and _norm(aliases.get(right_alias)) == CONCEPT_NORM:
-                concept_aliases.add(right_alias)
+                concept_alias_to_eq.setdefault(right_alias, eq.sql())
 
         # concept -> visit_occurrence
         elif (
@@ -148,9 +151,9 @@ def _find_visit_type_concept_joins(
             and lc_norm == CONCEPT_ID_NORM
         ):
             if left_alias and _norm(aliases.get(left_alias)) == CONCEPT_NORM:
-                concept_aliases.add(left_alias)
+                concept_alias_to_eq.setdefault(left_alias, eq.sql())
 
-    return concept_aliases
+    return concept_alias_to_eq
 
 
 def _extract_domain_values(
@@ -250,10 +253,7 @@ class VisitOccurrenceTypeDomainRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Add domain filter: c.domain_id = 'Type Concept' in WHERE or JOIN clause."
-    )
-
+    suggested_fix = "ADD: `AND c.domain_id = 'Type Concept'` when joining visit_occurrence on visit_type_concept_id to concept. visit_type_concept_id references the Type Concept domain only."
     example_bad = (
         "SELECT vo.visit_occurrence_id FROM visit_occurrence vo\n"
         "JOIN concept c ON vo.visit_type_concept_id = c.concept_id;"
@@ -284,9 +284,9 @@ class VisitOccurrenceTypeDomainRule(Rule):
 
             aliases = extract_aliases(tree)
 
-            concept_aliases = _find_visit_type_concept_joins(tree, aliases)
+            concept_alias_to_eq = _find_visit_type_concept_joins(tree, aliases)
 
-            for concept_alias in concept_aliases:
+            for concept_alias, eq_sql in concept_alias_to_eq.items():
                 values = _extract_domain_values(tree, aliases, concept_alias)
 
                 normalized_values = {_norm(v) for v in values}
@@ -295,7 +295,8 @@ class VisitOccurrenceTypeDomainRule(Rule):
                 if EXPECTED_DOMAIN_NORM in normalized_values:
                     continue
 
-                # Case 2: wrong domain(s)
+                # Case 2: wrong domain(s) — existing predicate would need a
+                # REPLACE, which we don't try to construct here.
                 if values:
                     violations.append(
                         self.create_violation(
@@ -317,7 +318,18 @@ class VisitOccurrenceTypeDomainRule(Rule):
                         )
                     )
                 else:
-                    # Case 3: missing filter
+                    # Case 3: missing filter — ADD `AND <c>.domain_id = 'Type
+                    # Concept'` immediately after the type-concept JOIN
+                    # equality. If the EQ isn't uniquely locatable, fall
+                    # back to FREEFORM via auto-default.
+                    patch = None
+                    span = locate(sql, eq_sql)
+                    if span is not None:
+                        patch = patch_add(
+                            span[1],
+                            f" AND {concept_alias}.domain_id = '{EXPECTED_DOMAIN}'",
+                        )
+
                     violations.append(
                         self.create_violation(
                             message=(
@@ -333,6 +345,7 @@ class VisitOccurrenceTypeDomainRule(Rule):
                                 "concept_alias": concept_alias,
                                 "expected_domain": EXPECTED_DOMAIN,
                             },
+                            suggested_fix_patch=patch,
                         )
                     )
 

@@ -423,7 +423,7 @@ class ClinicalPersonIdLinkageValidationRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = "Add joins on person_id between clinical tables."
+    suggested_fix = "ADD: `<clinical_a>.person_id = <clinical_b>.person_id` to every join between clinical event tables. Without person_id linkage the cross-table join produces a Cartesian product per person."
     example_bad = (
         "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
         "FROM condition_occurrence co\n"

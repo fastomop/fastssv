@@ -221,9 +221,7 @@ class ConceptDomainValidationRule(Rule):
         "*_concept_id column."
     )
     severity = Severity.WARNING  # Best practice, not correctness issue
-    suggested_fix = (
-        "Add or correct concept.domain_id filter to match expected domain."
-    )
+    suggested_fix = "ADD: `AND c.domain_id = '<expected_domain>'` matching the clinical table (e.g. 'Condition' for condition_occurrence, 'Drug' for drug_exposure, 'Procedure' for procedure_occurrence)."
     long_description = (
         "Each OMOP *_concept_id column has a canonical domain_id: "
         "condition_occurrence.condition_concept_id is always 'Condition', "
@@ -305,7 +303,7 @@ class ConceptDomainValidationRule(Rule):
                                 f"without domain_id filter. Expected domain '{expected}'."
                             ),
                             suggested_fix=(
-                                f"Add: {concept_alias}.domain_id = '{expected}'"
+                                f"ADD: `AND {concept_alias}.domain_id = '{expected}'` to the WHERE/JOIN-ON predicates."
                             ),
                         ))
                     continue
@@ -317,12 +315,15 @@ class ConceptDomainValidationRule(Rule):
                     if len(expected_domains) > 1:
                         expected_msg = " OR ".join(f"'{d}'" for d in expected_domains)
                         suggested_fix = (
-                            f"Use: {concept_alias}.domain_id IN ('{expected_domains[0]}', "
-                            f"'{expected_domains[1]}')"
+                            f"REPLACE: the existing domain_id filter WITH "
+                            f"`{concept_alias}.domain_id IN ('{expected_domains[0]}', '{expected_domains[1]}')`."
                         )
                     else:
                         expected_msg = f"'{expected}'"
-                        suggested_fix = f"Use: {concept_alias}.domain_id = '{expected}'"
+                        suggested_fix = (
+                            f"REPLACE: the existing domain_id filter WITH "
+                            f"`{concept_alias}.domain_id = '{expected}'`."
+                        )
 
                     violations.append(self.create_violation(
                         severity=Severity.ERROR,  # Wrong domain is always ERROR

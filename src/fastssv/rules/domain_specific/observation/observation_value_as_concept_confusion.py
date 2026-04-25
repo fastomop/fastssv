@@ -175,11 +175,7 @@ class ObservationValueAsConceptConfusionRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = (
-        "Use different concepts for observation_concept_id (question) "
-        "and value_as_concept_id (answer)"
-    )
-
+    suggested_fix = "REPLACE: the duplicated concept_id WITH distinct concepts: observation_concept_id holds the question (what was observed), value_as_concept_id holds the answer (the qualitative value). Same id on both sides is meaningless."
     example_bad = (
         "SELECT person_id FROM observation\n"
         "WHERE observation_concept_id = 4083587\n"

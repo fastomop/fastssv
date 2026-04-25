@@ -213,12 +213,7 @@ class EpisodeEventNoPersonIdRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Use: FROM episode_event ee "
-        "JOIN episode e ON ee.episode_id = e.episode_id "
-        "JOIN person p ON e.person_id = p.person_id"
-    )
-
+    suggested_fix = "REPLACE: `episode_event.person_id` references with a chain through episode: `JOIN episode e ON ee.episode_id = e.episode_id` and read `e.person_id`. episode_event has no person_id column."
     example_bad = (
         "SELECT person_id FROM episode_event;"
     )

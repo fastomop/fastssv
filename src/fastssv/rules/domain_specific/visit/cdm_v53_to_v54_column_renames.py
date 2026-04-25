@@ -44,6 +44,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -105,12 +106,7 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Replace deprecated columns with v5.4 equivalents: "
-        "admitting_source_* → admitted_from_*, "
-        "discharge_to_* → discharged_to_*"
-    )
-
+    suggested_fix = "REPLACE: v5.3 column names with their v5.4 equivalents: admitting_source_concept_id → admitted_from_concept_id, admitting_source_value → admitted_from_source_value, discharge_to_concept_id → discharged_to_concept_id, discharge_to_source_value → discharged_to_source_value."
     example_bad = (
         "SELECT visit_occurrence_id, admitting_source_concept_id\n"
         "FROM visit_occurrence;"
@@ -177,14 +173,23 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
                         continue
                     seen.add(key)
 
+                    # REPLACE the deprecated column reference with its v5.4
+                    # equivalent. Locate by the column-name fragment used in
+                    # source. Only emit a patch when the column name occurs
+                    # uniquely in the SQL (locate returns None otherwise).
+                    new_col = deprecated_cols[col_norm]
+                    span = locate(sql, col_name)
+                    patch = patch_replace(span, new_col) if span is not None else None
+
                     violations.append(
                         self.create_violation(
                             message=(
                                 f"Column '{col_name}' on table '{table_name}' "
                                 f"is deprecated in OMOP CDM v5.4. "
-                                f"Use '{deprecated_cols[col_norm]}' instead."
+                                f"Use '{new_col}' instead."
                             ),
                             severity=self.severity,
+                            suggested_fix_patch=patch,
                         )
                     )
 
@@ -205,13 +210,18 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
                         continue
                     seen.add(key)
 
+                    new_col = deprecated_cols[col_norm]
+                    span = locate(sql, col_name)
+                    patch = patch_replace(span, new_col) if span is not None else None
+
                     violations.append(
                         self.create_violation(
                             message=(
                                 f"Column '{col_name}' is deprecated for table '{table_norm}'. "
-                                f"Use '{deprecated_cols[col_norm]}' instead."
+                                f"Use '{new_col}' instead."
                             ),
                             severity=self.severity,
+                            suggested_fix_patch=patch,
                         )
                     )
 

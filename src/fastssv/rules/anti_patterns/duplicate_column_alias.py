@@ -118,10 +118,7 @@ class DuplicateColumnAliasRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = (
-        "Remove duplicate columns or ensure each column represents a unique calculation. "
-        "If you need the same value with different names, consider using views or derived tables."
-    )
+    suggested_fix = "REMOVE: duplicate SELECT-list columns/aliases that compute the same value. Keep one alias per distinct value."
     long_description = (
         "Selecting the same expression twice with different aliases is "
         "almost always the result of copy-paste during iteration. It "

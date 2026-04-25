@@ -293,9 +293,7 @@ class ClinicalEventDateBefore1900ValidationRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use realistic date ranges (>= 1900-01-01) unless intentionally analyzing historical placeholders."
-    )
+    suggested_fix = "REPLACE: `<date_col> < '1900-01-01'` (or earlier-cutoff predicates) WITH `<date_col> >= '1900-01-01'`. Pre-1900 clinical event dates are almost always ETL sentinels or year_of_birth misuse."
     long_description = (
         "Dates before 1900 in OMOP clinical tables are almost always "
         "placeholders for missing or unparseable source dates, not real "

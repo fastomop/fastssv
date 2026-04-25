@@ -294,10 +294,7 @@ class ConceptAncestorCrossDomainValidation(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Match descendant domain_id to the ancestor's domain, or use "
-        "concept_relationship for cross-domain relationships."
-    )
+    suggested_fix = "REPLACE: `JOIN concept_ancestor` WITH a same-domain ancestor join, OR use `concept_relationship` (with relationship_id filter) for cross-domain relationships. Hierarchies don't span domains in OMOP."
     long_description = (
         "concept_ancestor hierarchies are built within a single domain: a "
         "Condition ancestor has only Condition descendants, a Drug ancestor "
@@ -359,8 +356,9 @@ class ConceptAncestorCrossDomainValidation(Rule):
                         ),
                         severity=self.severity,
                         suggested_fix=(
-                            f"Use domain_id in {issue['expected_domains']} or use "
-                            f"concept_relationship for cross-domain logic."
+                            f"REPLACE: the descendant `domain_id` filter WITH one matching "
+                            f"the ancestor's domain ({', '.join(repr(d) for d in issue['expected_domains'])}), "
+                            f"OR REWRITE using `concept_relationship` for cross-domain mappings."
                         ),
                         details=issue,
                     )

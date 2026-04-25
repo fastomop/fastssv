@@ -69,6 +69,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
 )
+from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
@@ -212,7 +213,7 @@ def _resolve_target_table(
 def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
-) -> List[Tuple[str, str, str]]:
+) -> List[Tuple[str, str, str, str]]:
     issues = []
     seen: Set[str] = set()
 
@@ -273,7 +274,7 @@ def _find_violations(
             f"and won't silently exclude {table_desc}."
         )
 
-        issues.append((target_table, col_norm, message))
+        issues.append((target_table, col_norm, message, col_node.sql()))
 
     return issues
 
@@ -291,9 +292,7 @@ class RequiredDateColumnValidationRule(Rule):
         "columns instead of nullable columns to avoid silently excluding records."
     )
     severity = Severity.WARNING
-    suggested_fix = (
-        "Use required date columns, COALESCE, or explicit IS NOT NULL checks"
-    )
+    suggested_fix = "REPLACE: filters on nullable date columns (condition_end_date, drug_exposure_end_date, …) WITH the required (NOT NULL) start-date column where possible. NULL on the nullable side silently drops rows from the result."
     long_description = (
         "Each OMOP clinical table has at least one required (NOT NULL) date "
         "column and one or more optional end-date columns. Filtering on a "
@@ -329,9 +328,25 @@ class RequiredDateColumnValidationRule(Rule):
             aliases = extract_aliases(tree)
             issues = _find_violations(tree, aliases)
 
-            for table_name, col_name, message in issues:
+            for table_name, col_name, message, col_sql in issues:
                 config = TABLE_CONFIGS[table_name]
                 required_col = config["required"]
+
+                # Structured patch: REPLACE the nullable column reference with
+                # the required (NOT NULL) column. Preserve any table/alias
+                # qualifier present in the source ("a.end" → "a.start"). If
+                # the column reference isn't uniquely locatable, fall back
+                # to FREEFORM via auto-default (the suggested_fix prose
+                # offers two other options that aren't mechanical).
+                patch = None
+                span = locate(sql, col_sql)
+                if span is not None:
+                    if "." in col_sql:
+                        qualifier = col_sql.rsplit(".", 1)[0]
+                        replacement = f"{qualifier}.{required_col}"
+                    else:
+                        replacement = required_col
+                    patch = patch_replace(span, replacement)
 
                 violations.append(
                     self.create_violation(
@@ -342,6 +357,7 @@ class RequiredDateColumnValidationRule(Rule):
                             f"use COALESCE({col_name}, {required_col}), "
                             f"or add '{col_name} IS NOT NULL'"
                         ),
+                        suggested_fix_patch=patch,
                         details={
                             "column": col_name,
                             "preferred_column": required_col,

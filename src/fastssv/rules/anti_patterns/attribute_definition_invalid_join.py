@@ -116,10 +116,7 @@ class AttributeDefinitionInvalidJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = (
-        "Query attribute_definition standalone, or remove it from the query. "
-        "This table has no valid join paths to clinical or vocabulary tables."
-    )
+    suggested_fix = "REMOVE: any JOIN involving attribute_definition. The table has no FK relationships in OMOP CDM. Either query it standalone (SELECT ... FROM attribute_definition WHERE ...) or drop it from the query entirely."
     long_description = (
         "attribute_definition is a legacy OMOP table with no foreign-key "
         "relationships to any other CDM table. Joining it to clinical or "

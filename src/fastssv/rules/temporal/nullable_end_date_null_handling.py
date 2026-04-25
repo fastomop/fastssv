@@ -368,7 +368,7 @@ class NullableEndDateNullHandlingRule(Rule):
     )
 
     severity = Severity.WARNING
-    suggested_fix = "Use COALESCE(end_date, fallback) or filter IS NOT NULL"
+    suggested_fix = "WRAP: nullable end_date columns in COALESCE — `COALESCE(<event>_end_date, <event>_start_date)` for arithmetic / comparisons, OR add explicit `<event>_end_date IS NOT NULL` filter when the analysis requires a known end."
     long_description = (
         "Several OMOP end-date columns are nullable (drug_exposure_end_date, "
         "condition_end_date, device_exposure_end_date). Passing them directly "

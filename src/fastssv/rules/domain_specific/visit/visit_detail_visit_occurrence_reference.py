@@ -161,11 +161,7 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
     )
 
     severity = Severity.ERROR
-    suggested_fix = (
-        "Ensure visit_detail is correctly linked to visit_occurrence "
-        "via visit_occurrence_id when visit-level context is needed"
-    )
-
+    suggested_fix = "ADD: `JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id` whenever visit-level context is needed. visit_detail rows alone don't carry visit_occurrence columns."
     example_bad = (
         "SELECT visit_detail_id, visit_detail_concept_id\n"
         "FROM visit_detail;"
