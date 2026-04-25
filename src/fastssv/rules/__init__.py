@@ -18,7 +18,6 @@ from . import (
     data_quality,
     domain_specific,
     joins,
-    schema,
     temporal,
 )
 
@@ -148,7 +147,6 @@ __all__ = [
     "data_quality",
     "domain_specific",
     "joins",
-    "schema",
     "temporal",
     # Validation functions
     "validate_by_category",

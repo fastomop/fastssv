@@ -8,15 +8,12 @@ Environment Variables:
     FASTSSV_LOG_LEVEL: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     FASTSSV_LOG_FILE: Path to log file (optional, defaults to console only)
     FASTSSV_LOG_FORMAT: Format preset ('simple', 'detailed', 'json')
-    FASTSSV_LOG_PERFORMANCE: Enable performance timing (true/false)
 """
 
 import json
 import logging
 import os
 import sys
-import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -57,49 +54,6 @@ class JSONFormatter(logging.Formatter):
             log_data["exception"] = self.formatException(record.exc_info)
 
         return json.dumps(log_data)
-
-
-class PerformanceLogger:
-    """Logger with performance tracking capabilities."""
-
-    def __init__(self, logger: logging.Logger):
-        """Initialize performance logger.
-
-        Args:
-            logger: Base logger instance
-        """
-        self.logger = logger
-        self.enabled = os.getenv("FASTSSV_LOG_PERFORMANCE", "false").lower() == "true"
-
-    @contextmanager
-    def timed_operation(self, operation_name: str, level: int = logging.INFO):
-        """Context manager for timing operations.
-
-        Args:
-            operation_name: Name of the operation being timed
-            level: Log level for timing message
-
-        Yields:
-            None
-
-        Example:
-            with perf_logger.timed_operation("SQL Validation"):
-                validate_sql(query)
-        """
-        if not self.enabled:
-            yield
-            return
-
-        start_time = time.perf_counter()
-        try:
-            yield
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            self.logger.log(
-                level,
-                f"{operation_name} completed",
-                extra={"duration_ms": round(duration_ms, 2)},
-            )
 
 
 def setup_logging(
@@ -186,19 +140,6 @@ def get_logger(name: str = "fastssv") -> logging.Logger:
     return logger
 
 
-def get_performance_logger(name: str = "fastssv") -> PerformanceLogger:
-    """Get a performance logger instance.
-
-    Args:
-        name: Logger name
-
-    Returns:
-        PerformanceLogger instance
-    """
-    logger = get_logger(name)
-    return PerformanceLogger(logger)
-
-
 # Convenience functions for common log messages
 def log_validation_start(logger: logging.Logger, sql_length: int, dialect: str) -> None:
     """Log validation start message.
@@ -274,8 +215,7 @@ def log_rule_execution(
 __all__ = [
     "setup_logging",
     "get_logger",
-    "get_performance_logger",
-    "PerformanceLogger",
+    "JSONFormatter",
     "log_validation_start",
     "log_validation_complete",
     "log_rule_execution",

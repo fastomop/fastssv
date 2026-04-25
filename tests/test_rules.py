@@ -10011,11 +10011,16 @@ class TestNoteNlpOffsetIsCharacterPosition:
 
 
 class TestNoteNlpTermModifiersIsFreeText:
-    """Tests for GAP_014: note_nlp_term_modifiers_is_free_text."""
+    """Tests for note_nlp.term_modifiers patterns under data_quality.free_text_column_misuse.
+
+    Originally GAP_014 (data_quality.note_nlp_term_modifiers_is_free_text). Merged into
+    free_text_column_misuse in [Unreleased] to share detection with three other free-text
+    column rules (condition_occurrence.stop_reason, drug_exposure.lot_number, location.state/zip).
+    """
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
-        rule = get_rule("data_quality.note_nlp_term_modifiers_is_free_text")()
+        rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect="postgres")
 
     # --- Violation Cases ---
@@ -15855,10 +15860,16 @@ class TestMapsToTargetStandardValidation:
 # =============================================================================
 
 def _run_vocabulary_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
-    """Run the vocabulary_id validation rule, returning messages and suggested fixes combined."""
+    """Run the vocabulary_id validation rule, returning messages and suggested fixes combined.
+
+    Originally VOCAB_004/VOCAB_005 (data_quality.vocabulary_id_validation). Merged into
+    data_quality.canonical_string_value_validation in [Unreleased] to share detection
+    with concept_class_id and domain_id case-sensitivity checks. Tests assert on
+    message/fix text only, so they continue to apply via the merged rule.
+    """
     from fastssv.core.registry import get_rule
 
-    rule = get_rule("data_quality.vocabulary_id_validation")()
+    rule = get_rule("data_quality.canonical_string_value_validation")()
     violations = rule.validate(sql, dialect)
     return [f"{v.message} {v.suggested_fix}" for v in violations]
 
@@ -16111,10 +16122,14 @@ class TestVocabularyIdCaseSensitivity:
 # ============================================================================
 
 def _run_domain_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
-    """Run the domain_id validation rule, returning messages and suggested fixes combined."""
+    """Run the domain_id validation rule, returning messages and suggested fixes combined.
+
+    Originally VOCAB_006 (data_quality.domain_id_case_sensitivity). Merged into
+    data_quality.canonical_string_value_validation in [Unreleased].
+    """
     from fastssv.core.registry import get_rule
 
-    rule = get_rule("data_quality.domain_id_case_sensitivity")()
+    rule = get_rule("data_quality.canonical_string_value_validation")()
     violations = rule.validate(sql, dialect)
     return [f"{v.message} {v.suggested_fix}" for v in violations]
 
@@ -16330,10 +16345,14 @@ class TestDomainIdCaseSensitivity:
 # =============================================================================
 
 def _run_concept_class_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
-    """Run the concept_class_id validation rule, returning messages and suggested fixes combined."""
+    """Run the concept_class_id validation rule, returning messages and suggested fixes combined.
+
+    Originally VOCAB_007 (data_quality.concept_class_id_case_sensitivity). Merged into
+    data_quality.canonical_string_value_validation in [Unreleased].
+    """
     from fastssv.core.registry import get_rule
 
-    rule = get_rule("data_quality.concept_class_id_case_sensitivity")()
+    rule = get_rule("data_quality.canonical_string_value_validation")()
     violations = rule.validate(sql, dialect)
     return [f"{v.message} {v.suggested_fix}" for v in violations]
 
@@ -22621,11 +22640,16 @@ class TestFactRelationshipNoSelfReference:
 
 
 class TestLocationStateZipNotJoinedToConcept:
-    """Tests for OMOP_106: location.state/zip should not be joined to concept."""
+    """Tests for location.state/zip patterns under data_quality.free_text_column_misuse.
+
+    Originally OMOP_106 (data_quality.location_state_zip_not_joined_to_concept). Merged into
+    free_text_column_misuse in [Unreleased] to share detection with three other free-text
+    column rules.
+    """
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("data_quality.location_state_zip_not_joined_to_concept")()
+        rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
     def test_omop_106_state_joined_to_concept_code_fires(self) -> None:
@@ -22769,11 +22793,16 @@ class TestLocationStateZipNotJoinedToConcept:
 
 
 class TestConditionOccurrenceStopReasonIsFreeText:
-    """Tests for OMOP_107: condition_occurrence.stop_reason is free text."""
+    """Tests for condition_occurrence.stop_reason patterns under data_quality.free_text_column_misuse.
+
+    Originally OMOP_107 (data_quality.condition_occurrence_stop_reason_is_free_text). Merged into
+    free_text_column_misuse in [Unreleased] to share detection with three other free-text
+    column rules.
+    """
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("data_quality.condition_occurrence_stop_reason_is_free_text")()
+        rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
     def test_omop_107_stop_reason_joined_to_concept_id_fires(self) -> None:
@@ -22923,11 +22952,16 @@ class TestConditionOccurrenceStopReasonIsFreeText:
 
 
 class TestDrugExposureLotNumberIsFreeText:
-    """Tests for OMOP_108: drug_exposure.lot_number is free text."""
+    """Tests for drug_exposure.lot_number patterns under data_quality.free_text_column_misuse.
+
+    Originally OMOP_108 (data_quality.drug_exposure_lot_number_is_free_text). Merged into
+    free_text_column_misuse in [Unreleased] to share detection with three other free-text
+    column rules.
+    """
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
-        rule = get_rule("data_quality.drug_exposure_lot_number_is_free_text")()
+        rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
     def test_omop_108_lot_number_joined_to_concept_id_fires(self) -> None:

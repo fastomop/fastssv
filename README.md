@@ -127,7 +127,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Temporal Rules (10 rules)** - Validate date logic, observation period constraints, temporal consistency across clinical events, NULL handling for date columns, datetime comparisons, and required date column usage.
 
-**Data Quality Rules (27 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
+**Data Quality Rules (22 rules)** - Catch schema violations, type mismatches, structural issues, unmapped concepts, case-sensitivity mistakes, whitespace issues, negative concept IDs, free-text field constraints, fact relationship validation, episode handling, union domain indicators, and other data quality problems in OMOP queries.
 
 ### Key Anti-Pattern Rules (19 rules)
 
@@ -246,7 +246,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Required date column validation** (`temporal.required_date_column_validation`, WARNING) - Temporal queries on clinical tables should use required (NOT NULL) date columns instead of nullable columns to avoid silently excluding records.
 
-### Key Data Quality Rules (27 rules)
+### Key Data Quality Rules (22 rules)
 
 **Schema validation** (`data_quality.schema_validation`, ERROR) - Validates that queries reference only valid OMOP CDM v5.4 tables and columns. Catches typos in table/column names, references to non-existent columns, and schema violations like using `concept_ancestor` columns on `concept_relationship` table.
 
@@ -268,7 +268,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Standard concept NULL handling** (`data_quality.standard_concept_null_handling`, WARNING) - Warns when `standard_concept` is treated as a simple string field without acknowledging its tri-state semantics (`'S'`, `'C'`, `NULL`).
 
-For comprehensive documentation of all 152 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
+For comprehensive documentation of all 147 rules with detailed examples, see [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md). For the live registered rule set, use `from fastssv import get_all_rules`.
 
 ---
 

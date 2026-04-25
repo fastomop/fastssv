@@ -9,7 +9,7 @@ from typing import Dict, List, Literal, Optional
 from .core.base import Rule, RuleViolation, Severity
 from .core.logging import get_logger, log_rule_execution
 from .core.registry import get_all_rules, get_rule, get_rules_by_category
-from .schemas import CDM_SCHEMA, SOURCE_CONCEPT_FIELDS, SOURCE_VOCABS, STANDARD_CONCEPT_FIELDS
+from .schemas import STANDARD_CONCEPT_FIELDS
 
 # Import rules to trigger registration
 from . import rules
@@ -272,8 +272,5 @@ __all__ = [
     "validate_temporal",
 
     # Schemas
-    "CDM_SCHEMA",
     "STANDARD_CONCEPT_FIELDS",
-    "SOURCE_CONCEPT_FIELDS",
-    "SOURCE_VOCABS",
 ]

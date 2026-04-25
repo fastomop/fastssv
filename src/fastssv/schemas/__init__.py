@@ -1,34 +1,38 @@
-"""FastSSV schemas submodule."""
+"""FastSSV OMOP CDM v5.4 schema views.
 
-from .cdm_schema import CDM_SCHEMA
-from .cdm_columns import CDM_COLUMNS, get_table_columns
+Two files only:
+
+- ``cdm_column_types`` — canonical per-table ``{column: type}`` map plus
+  the derived column-name view (``CDM_COLUMNS``) and helper accessors.
+- ``semantic_schema`` — the set of (table, column) pairs that must hold
+  standard concept ids.
+
+Earlier revisions also shipped ``cdm_columns``, ``cdm_schema``,
+``concept_class_id_canonical``, ``SOURCE_CONCEPT_FIELDS``, and
+``SOURCE_VOCABS``. They were retired in [Unreleased] because no rule
+consumed them; see CHANGELOG for details.
+"""
+
 from .cdm_column_types import (
     CDM_COLUMN_TYPES,
-    get_column_type,
-    are_types_compatible,
-    SOURCE_VALUE_COLUMNS,
-    INTEGER,
-    VARCHAR,
+    CDM_COLUMNS,
     DATE,
     DATETIME,
-    TIMESTAMP,
     FLOAT,
+    INTEGER,
+    SOURCE_VALUE_COLUMNS,
+    TIMESTAMP,
+    VARCHAR,
+    are_types_compatible,
+    get_column_type,
+    get_table_columns,
 )
-from .semantic_schema import (
-    SOURCE_CONCEPT_FIELDS,
-    SOURCE_VOCABS,
-    STANDARD_CONCEPT_FIELDS,
-)
-from .concept_class_id_canonical import (
-    CANONICAL_CONCEPT_CLASSES,
-    get_canonical_concept_class,
-)
+from .semantic_schema import STANDARD_CONCEPT_FIELDS
 
 __all__ = [
-    "CDM_SCHEMA",
+    "CDM_COLUMN_TYPES",
     "CDM_COLUMNS",
     "get_table_columns",
-    "CDM_COLUMN_TYPES",
     "get_column_type",
     "are_types_compatible",
     "SOURCE_VALUE_COLUMNS",
@@ -38,9 +42,5 @@ __all__ = [
     "DATETIME",
     "TIMESTAMP",
     "FLOAT",
-    "SOURCE_CONCEPT_FIELDS",
-    "SOURCE_VOCABS",
     "STANDARD_CONCEPT_FIELDS",
-    "CANONICAL_CONCEPT_CLASSES",
-    "get_canonical_concept_class",
 ]

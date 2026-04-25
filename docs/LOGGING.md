@@ -72,9 +72,6 @@ FASTSSV_LOG_FILE=logs/fastssv.log
 
 # Log format
 FASTSSV_LOG_FORMAT=detailed
-
-# Performance tracking
-FASTSSV_LOG_PERFORMANCE=true
 ```
 
 ### CLI Arguments
@@ -282,61 +279,12 @@ logger.warning("Potential issue detected")
 logger.error("Validation failed")
 ```
 
-### Performance Logging
+### JSON-formatted timing data
 
-Use the performance logger for timing operations:
-
-```python
-from fastssv.core.logging import get_performance_logger
-
-perf_logger = get_performance_logger("my_app")
-
-with perf_logger.timed_operation("SQL Validation"):
-    violations = validate_sql_structured(sql)
-# Logs: "SQL Validation completed" with duration_ms
-```
-
-Enable performance tracking:
-
-```python
-import os
-os.environ["FASTSSV_LOG_PERFORMANCE"] = "true"
-```
-
----
-
-## Performance Tracking
-
-### Enable Performance Logging
-
-```bash
-# Environment variable
-export FASTSSV_LOG_PERFORMANCE=true
-fastssv query.sql --log-level INFO
-
-# Or in Python
-import os
-os.environ["FASTSSV_LOG_PERFORMANCE"] = "true"
-```
-
-### What's Tracked
-
-When performance logging is enabled:
-
-1. **Total validation time** - Overall duration
-2. **Per-query time** - For multi-query validation
-3. **Per-rule time** - Execution time for each rule (DEBUG level)
-
-### Example Output
-
-```
-2026-04-20 19:30:15 - fastssv.cli - INFO - Validation complete: 157 rules, 2 errors, 3 warnings {"duration_ms": 125.45}
-2026-04-20 19:30:15 - fastssv - DEBUG - Rule concept_standardization.concept_ancestor_rollup_direction: 0 violation(s) {"rule_id": "concept_standardization.concept_ancestor_rollup_direction", "violation_count": 0, "duration_ms": 2.34}
-```
-
-### JSON Format with Performance
-
-JSON logs include structured timing data:
+The CLI's `log_validation_complete` and `log_rule_execution` helpers
+already attach `duration_ms` as a structured field on the log record.
+With `FASTSSV_LOG_FORMAT=json`, those values appear in the structured
+output:
 
 ```json
 {
@@ -411,14 +359,14 @@ fastssv query.sql --log-format json | \
 
 ### 5. Performance Monitoring
 
-Enable performance logging in production to track slowdowns:
+The CLI emits `duration_ms` as a structured field on validation-complete
+and per-rule log records (see ``log_validation_complete`` /
+``log_rule_execution`` in ``core.logging``). Pair with JSON output to
+query for slow validations:
 
 ```bash
-FASTSSV_LOG_PERFORMANCE=true
 FASTSSV_LOG_FORMAT=json
 ```
-
-Then query logs for slow validations:
 
 ```bash
 # Find validations over 1 second
@@ -444,7 +392,6 @@ fastssv complex_query.sql \
 export FASTSSV_LOG_LEVEL=INFO
 export FASTSSV_LOG_FORMAT=json
 export FASTSSV_LOG_FILE=logs/production.json
-export FASTSSV_LOG_PERFORMANCE=true
 
 fastssv batch_queries.sql
 ```
@@ -452,22 +399,23 @@ fastssv batch_queries.sql
 ### Example 3: Python API with Custom Logger
 
 ```python
+import time
 from fastssv import validate_sql_structured
-from fastssv.core.logging import setup_logging, get_performance_logger
+from fastssv.core.logging import setup_logging
 
 # Setup
 logger = setup_logging(level="INFO", log_format="json")
-perf = get_performance_logger("my_app")
 
 # Validate with timing
 sql = "SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826;"
 
-with perf.timed_operation("SQL Validation", level=logging.INFO):
-    violations = validate_sql_structured(sql, dialect="postgres")
+start = time.perf_counter()
+violations = validate_sql_structured(sql, dialect="postgres")
+duration_ms = (time.perf_counter() - start) * 1000
 
 logger.info(
     f"Validation complete: {len(violations)} violations",
-    extra={"violation_count": len(violations)}
+    extra={"violation_count": len(violations), "duration_ms": round(duration_ms, 2)},
 )
 ```
 
@@ -502,8 +450,7 @@ cat logs/fastssv.json | \
 ### Too Much Log Output
 
 1. Increase log level to `WARNING` or `ERROR`
-2. Disable performance logging: `FASTSSV_LOG_PERFORMANCE=false`
-3. Filter specific loggers in production
+2. Filter specific loggers in production
 
 ### Log File Growing Too Large
 

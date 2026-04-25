@@ -2,11 +2,11 @@
 
 This document provides comprehensive documentation for FastSSV's validation rules.
 
-**Current registry: 152 rules across 6 categories.**
+**Current registry: 147 rules across 6 categories.**
 
 - **anti_patterns**: 19 rules
 - **concept_standardization**: 18 rules
-- **data_quality**: 27 rules
+- **data_quality**: 22 rules
 - **domain_specific**: 42 rules
 - **joins**: 36 rules
 - **temporal**: 10 rules
@@ -120,28 +120,23 @@ For each rule you will find:
 | `temporal.observation_period_date_range_logic` | [Observation Period Date Range Logic](#temporal-observation-period-date-range-logic) | ERROR | temporal |
 | `temporal.required_date_column_validation` | [Required Date Column Validation](#temporal-required-date-column-validation) | WARNING | temporal |
 | `data_quality.clinical_event_date_before_1900_validation` | [Clinical Event Date Should Not Be Before 1900](#data-quality-clinical-event-date-before-1900-validation) | WARNING | data_quality |
+| `data_quality.canonical_string_value_validation` | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
 | `data_quality.column_type_validation` | [Column Type Validation](#data-quality-column-type-validation) | ERROR | data_quality |
-| `data_quality.concept_class_id_case_sensitivity` | [Concept Class ID Case Sensitivity](#data-quality-concept-class-id-case-sensitivity) | ERROR | data_quality |
 | `data_quality.concept_id_string_comparison` | [Concept ID String Comparison](#data-quality-concept-id-string-comparison) | WARNING | data_quality |
 | `data_quality.concept_name_whitespace` | [Concept Name Whitespace](#data-quality-concept-name-whitespace) | WARNING | data_quality |
-| `data_quality.condition_occurrence_stop_reason_is_free_text` | [Condition Occurrence Stop Reason Is Free Text](#data-quality-condition-occurrence-stop-reason-is-free-text) | ERROR | data_quality |
-| `data_quality.domain_id_case_sensitivity` | [Domain ID Case Sensitivity](#data-quality-domain-id-case-sensitivity) | ERROR | data_quality |
-| `data_quality.drug_exposure_lot_number_is_free_text` | [Drug Exposure Lot Number Is Free Text](#data-quality-drug-exposure-lot-number-is-free-text) | ERROR | data_quality |
 | `data_quality.episode_requires_concept_filter` | [Episode Requires Concept Filter](#data-quality-episode-requires-concept-filter) | WARNING | data_quality |
 | `data_quality.fact_relationship_no_self_reference` | [Fact Relationship No Self-Reference](#data-quality-fact-relationship-no-self-reference) | WARNING | data_quality |
 | `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | ERROR | data_quality |
 | `data_quality.fact_relationship_valid_concepts` | [Fact Relationship Valid Concepts](#data-quality-fact-relationship-valid-concepts) | WARNING | data_quality |
-| `data_quality.location_state_zip_not_joined_to_concept` | [Location State/Zip Not Joined to Concept](#data-quality-location-state-zip-not-joined-to-concept) | ERROR | data_quality |
+| `data_quality.free_text_column_misuse` | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | ERROR | data_quality |
 | `data_quality.negative_concept_id_validation` | [Negative Concept ID Validation](#data-quality-negative-concept-id-validation) | ERROR | data_quality |
 | `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
-| `data_quality.note_nlp_term_modifiers_is_free_text` | [Note NLP Term Modifiers is Free Text](#data-quality-note-nlp-term-modifiers-is-free-text) | ERROR | data_quality |
 | `data_quality.note_nlp_nlp_date_for_temporal_filtering` | [Note NLP nlp_date for Temporal Filtering](#data-quality-note-nlp-nlp-date-for-temporal-filtering) | WARNING | data_quality |
 | `data_quality.schema_validation` | [Schema Validation](#data-quality-schema-validation) | ERROR | data_quality |
 | `data_quality.standard_concept_null_handling` | [Standard Concept NULL Handling](#data-quality-standard-concept-null-handling) | WARNING | data_quality |
 | `data_quality.union_vs_union_all_clinical_events` | [UNION vs UNION ALL for Clinical Events](#data-quality-union-vs-union-all-clinical-events) | WARNING | data_quality |
 | `data_quality.union_concept_id_domain_indicator` | [Union Concept ID Domain Indicator](#data-quality-union-concept-id-domain-indicator) | WARNING | data_quality |
 | `data_quality.unmapped_concept_handling` | [Unmapped Concept Handling](#data-quality-unmapped-concept-handling) | WARNING | data_quality |
-| `data_quality.vocabulary_id_validation` | [Vocabulary ID Validation](#data-quality-vocabulary-id-validation) | ERROR | data_quality |
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
 | `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | WARNING | anti_patterns |
 | `anti_patterns.attribute_definition_invalid_join` | [Attribute Definition Invalid Join](#anti-patterns-attribute-definition-invalid-join) | ERROR | anti_patterns |

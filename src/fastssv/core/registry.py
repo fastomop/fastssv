@@ -57,25 +57,9 @@ def get_rules_by_category(category: str) -> List[Type[Rule]]:
     return [r for r in _registry.values() if r.rule_id.startswith(prefix)]
 
 
-def list_rules() -> Dict[str, str]:
-    """List all registered rules with their descriptions.
-
-    Returns:
-        Dictionary mapping rule_id to description
-    """
-    return {rule_id: cls.description for rule_id, cls in _registry.items()}
-
-
-def clear_registry() -> None:
-    """Clear the registry. Useful for testing."""
-    _registry.clear()
-
-
 __all__ = [
     "register",
     "get_all_rules",
     "get_rule",
     "get_rules_by_category",
-    "list_rules",
-    "clear_registry",
 ]

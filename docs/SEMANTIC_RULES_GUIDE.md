@@ -390,8 +390,8 @@ The following validation opportunities remain:
 ## File Locations
 
 ### Schema Definitions
-- `src/fastssv/schemas/semantic_schema.py` - STANDARD and SOURCE field classifications
-- `src/fastssv/schemas/cdm_schema.py` - OMOP CDM v5.4 table relationships
+- `src/fastssv/schemas/cdm_column_types.py` - canonical OMOP CDM v5.4 table → {column → type} map (single source of truth); `CDM_COLUMNS` is derived from this
+- `src/fastssv/schemas/semantic_schema.py` - `STANDARD_CONCEPT_FIELDS` (set of (table, column) pairs that must hold standard concept ids)
 
 ### Rule Implementations
 - `src/fastssv/rules/concept_standardization/` - standard concept, invalid reason, hierarchy, concept-domain rules

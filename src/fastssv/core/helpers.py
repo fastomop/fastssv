@@ -329,24 +329,16 @@ def is_in_where_or_join_clause(node: exp.Expression) -> bool:
     return False
 
 
-def has_equality_condition(
+def _has_equality_condition(
     tree: exp.Expression,
     column_name: str,
     expected_values: Set[str],
     require_where_clause: bool = True
 ) -> bool:
-    """Check if there's an equality condition for the given column.
+    """Internal: True if there's an equality condition (col = 'value' or
+    'value' = col) for ``column_name`` matching one of ``expected_values``.
 
-    Looks for patterns like: col = 'value' or 'value' = col
-
-    Args:
-        tree: The SQL AST to search
-        column_name: The column to check (normalized)
-        expected_values: Set of acceptable values (normalized)
-        require_where_clause: If True, condition must be in WHERE/JOIN ON clause
-
-    Returns:
-        True if a matching condition is found
+    Used by ``has_condition``; not part of the public API.
     """
     for eq in tree.find_all(exp.EQ):
         if require_where_clause and not is_in_where_or_join_clause(eq):
@@ -367,24 +359,16 @@ def has_equality_condition(
     return False
 
 
-def has_in_condition(
+def _has_in_condition(
     tree: exp.Expression,
     column_name: str,
     expected_values: Set[str],
     require_where_clause: bool = True
 ) -> bool:
-    """Check if there's an IN condition for the given column.
+    """Internal: True if there's an IN condition (col IN ('a','b',...)) for
+    ``column_name`` matching one of ``expected_values``.
 
-    Looks for patterns like: col IN ('value1', 'value2', ...)
-
-    Args:
-        tree: The SQL AST to search
-        column_name: The column to check (normalized)
-        expected_values: Set of acceptable values (normalized)
-        require_where_clause: If True, condition must be in WHERE/JOIN ON clause
-
-    Returns:
-        True if a matching condition is found
+    Used by ``has_condition``; not part of the public API.
     """
     for in_expr in tree.find_all(exp.In):
         if require_where_clause and not is_in_where_or_join_clause(in_expr):
@@ -423,8 +407,8 @@ def has_condition(
         True if a matching condition is found
     """
     return (
-        has_equality_condition(tree, column_name, expected_values, require_where_clause) or
-        has_in_condition(tree, column_name, expected_values, require_where_clause)
+        _has_equality_condition(tree, column_name, expected_values, require_where_clause) or
+        _has_in_condition(tree, column_name, expected_values, require_where_clause)
     )
 
 
@@ -465,6 +449,8 @@ def extract_join_conditions(tree: exp.Expression, aliases: Dict[str, str]) -> Li
 
 
 __all__ = [
+    "split_sql_statements",
+    "detect_dialect",
     "normalize_name",
     "parse_sql",
     "extract_aliases",
@@ -473,8 +459,6 @@ __all__ = [
     "is_numeric_literal",
     "has_table_reference",
     "is_in_where_or_join_clause",
-    "has_equality_condition",
-    "has_in_condition",
     "has_condition",
     "extract_join_conditions",
 ]

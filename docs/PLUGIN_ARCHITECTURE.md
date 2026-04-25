@@ -273,12 +273,12 @@ for the full list):
 
 - `anti_patterns`: 19
 - `concept_standardization`: 18
-- `data_quality`: 27
+- `data_quality`: 22
 - `domain_specific`: 42
 - `joins`: 36
 - `temporal`: 10
 
-**Total: 152**
+**Total: 147**
 
 Representative examples from the current public categories:
 

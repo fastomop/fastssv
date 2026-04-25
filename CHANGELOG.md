@@ -100,6 +100,153 @@ the same shape plus broader wrong-column patterns. On the canonical bad
 query a user got three near-identical error messages for one root cause.
 Net effect: −3 rules, fewer duplicate violations, no detection loss.
 
+### Core cleanup — retired dead exports
+
+After the schema work, an audit of `src/fastssv/core/` mapped every
+public export to its consumers and turned up several that nothing in
+`src/` or `tests/` had ever imported:
+
+- **`core/logging.py`** — `PerformanceLogger` class and its accessor
+  `get_performance_logger` were never instantiated outside the module.
+  The class was a thin wrapper around `time.perf_counter()` with a
+  `timed_operation` context manager and a hidden `FASTSSV_LOG_PERFORMANCE`
+  env-var toggle. Both are removed; the env var is dropped from
+  `.env.example` and `docs/LOGGING.md`. The `examples/logging_demo.py`
+  performance demo and the LOGGING.md "Performance Tracking" section are
+  retired in favour of the simpler pattern (`time.perf_counter()` plus
+  `extra={"duration_ms": ...}` on the structured log record), which is
+  what `core.logging.log_validation_complete` and `log_rule_execution`
+  already do.
+- **`core/registry.py`** — `clear_registry()` and `list_rules()` were
+  test/convenience accessors with no callers anywhere. Removed.
+- **`core/validation_context.py`** — `with_validation_context()` was
+  redundant with `with_strict_mode()`, which is the only context manager
+  consumers actually use. Removed.
+- **`core/helpers.py`** — `has_equality_condition` and `has_in_condition`
+  were declared in `__all__` but never imported externally. They are
+  used only internally by `has_condition` (the dispatcher rules
+  actually call). Renamed to `_has_equality_condition` /
+  `_has_in_condition` and dropped from `__all__` to mark the boundary
+  clearly. Also added `split_sql_statements` and `detect_dialect` to
+  `__all__` (existing live exports that had been missed).
+
+`core/__init__.py` did not re-export any of the removed names, so
+nothing changes at the package boundary.
+
+Net: −103 LOC across 4 files (1,157 → 1,054), zero behavior change,
+zero test changes (all 2,418 tests still pass).
+
+### Schema cleanup — folded `core/omop_schema.py` and the `rules/schema/` folder
+
+After the schema work above, an audit of the rules folder turned up a
+mismatch: `rules/schema/` contained exactly one rule
+(`comprehensive_schema_validation.py`), and that rule's registered ID is
+`data_quality.schema_validation`. Folder name and rule_id namespace
+disagreed.
+
+A second issue surfaced at the same time: `core/omop_schema.py` carried a
+569-LOC `OMOP_SCHEMA` dict (using a `ColumnDef` dataclass with FK info)
+that *independently* encoded the OMOP CDM v5.4 spec. It was consumed
+solely by the rule above. That made it the third copy of the same OMOP
+inventory — the kind of drift target the schemas/ refactor was meant to
+eliminate.
+
+Fixed:
+
+- Moved `comprehensive_schema_validation.py` from `rules/schema/` into
+  `rules/data_quality/`, matching its `data_quality.schema_validation`
+  rule_id. Deleted the empty `rules/schema/` folder.
+- Refactored the rule to derive its `is_valid_table` / `is_valid_column`
+  / `get_all_tables` predicates inline from
+  `fastssv.schemas.CDM_COLUMN_TYPES`. No new public API; the helpers
+  are private to the rule.
+- Deleted `src/fastssv/core/omop_schema.py` (`OMOP_SCHEMA`, `ColumnDef`,
+  `is_valid_table`, `is_valid_column`, `get_all_tables`,
+  `get_table_columns`). They were never imported outside that one rule.
+- Fixed `tests/test_deduplication.py`: it referenced a fictional
+  `schema.comprehensive_schema_validation` rule_id that was never
+  actually registered. Replaced with a clearly-synthetic placeholder
+  string so the dedup tests still exercise the "longer rule_id wins"
+  branch without misleading anyone about which rules exist.
+
+Net: −1 folder, −569 LOC of duplicated OMOP spec, no detection loss.
+The `data_quality.schema_validation` rule continues to fire on the same
+queries; it just reads from the canonical schema now.
+
+### Schema cleanup — retired unused files and exports
+
+After making `cdm_column_types.py` the single source of truth, an audit of
+schema consumers showed that several files and exports had no live caller:
+
+- **`schemas/cdm_schema.py` deleted** — the 540-LOC `CDM_SCHEMA` foreign-key
+  graph was exported as part of the public API but consumed by zero rule.
+  (Despite its name, `joins.join_path_validation` does not read it; that
+  rule imports `STANDARD_CONCEPT_FIELDS` instead.)
+- **`schemas/cdm_columns.py` deleted** — the derived `CDM_COLUMNS` view
+  and `get_table_columns` accessor were folded into `cdm_column_types.py`,
+  removing one layer of indirection.
+- **`schemas/concept_class_id_canonical.py` deleted** — its 110-entry
+  canonical-class map was used by exactly one rule
+  (`data_quality.canonical_string_value_validation`), which already kept
+  the canonical-domain and canonical-vocabulary maps inline. The
+  concept-class map is now inline alongside them.
+- **`schemas/semantic_schema.py` trimmed** — `SOURCE_CONCEPT_FIELDS` and
+  `SOURCE_VOCABS` had no rule consumers and were retired.
+  `STANDARD_CONCEPT_FIELDS` (the live one) stays.
+
+**Breaking changes:** `from fastssv import CDM_SCHEMA`,
+`SOURCE_CONCEPT_FIELDS`, and `SOURCE_VOCABS` no longer resolve. Anyone
+who was reading those should be reading `CDM_COLUMN_TYPES` or
+`CDM_COLUMNS` instead — both are still exported.
+
+`schemas/` is now two files: `cdm_column_types.py` (canonical column +
+type inventory plus the derived column-name view) and `semantic_schema.py`
+(`STANDARD_CONCEPT_FIELDS` only). The schema-consistency test
+(`tests/test_schema_consistency.py`) was simplified accordingly and
+continues to enforce that every entry in `STANDARD_CONCEPT_FIELDS`
+exists in `CDM_COLUMN_TYPES`.
+
+### Schema single source of truth
+
+`fastssv.schemas` is refactored so that `cdm_column_types.CDM_COLUMN_TYPES`
+is the canonical, type-bearing OMOP CDM v5.4 inventory and everything else
+is derived or asserted against it:
+
+- `cdm_columns.CDM_COLUMNS` is now computed at import time as
+  `{table: frozenset(CDM_COLUMN_TYPES[table].keys())}`. The hand-written
+  duplicate dict is gone, eliminating the table/column drift that used to
+  exist between the two files.
+- `cdm_schema.CDM_SCHEMA` keeps primary-key and foreign-key edges, but a
+  module-level consistency check raises a `RuntimeError` at import if any
+  edge references a column that isn't in `CDM_COLUMN_TYPES`.
+- `semantic_schema.SOURCE_CONCEPT_FIELDS` was reconciled against the v5.4
+  spec — 11 entries that referenced columns the spec doesn't define
+  (e.g. `specimen.specimen_source_concept_id`,
+  `visit_occurrence.admitted_from_source_concept_id`) were removed; four
+  real source-concept-id columns that had been missing
+  (e.g. `provider.specialty_source_concept_id`,
+  `payer_plan_period.payer_source_concept_id`) were added.
+- `CDM_COLUMN_TYPES` gained typed entries for 16 previously-untyped
+  tables (measurement, observation, procedure_occurrence, cost, note,
+  note_nlp, drug_era, dose_era, episode, episode_event, specimen,
+  payer_plan_period, metadata, cdm_source, cohort_definition,
+  fact_relationship). `data_quality.column_type_validation` now has full
+  v5.4 coverage instead of silently skipping ~40% of clinical tables.
+- `CDM_SCHEMA` foreign-key edges were corrected against the v5.4 ERD: 18
+  edges that referenced nonexistent columns
+  (e.g. `condition_occurrence.care_site_id`, `cost.person_id`,
+  `note_nlp.term_concept_id`) were removed or renamed
+  (e.g. `visit_detail.visit_detail_parent_id` →
+  `visit_detail.parent_visit_detail_id`,
+  `episode_event.event_field_concept_id` →
+  `episode_event.episode_event_field_concept_id`).
+- `tests/test_schema_consistency.py` (172 parametrized tests) freezes
+  this contract in CI so it cannot regress.
+
+The `attribute_definition` (legacy v5.3) and `location_history` (optional
+v5.4 extension) tables are retained because fastssv ships rules that
+detect their misuse.
+
 ### Removed rules (low-value redundancy)
 
 - `anti_patterns.concept_lookup_context` — soft stylistic nudge ("for
@@ -131,6 +278,41 @@ parameterizes the metadata-table list, keeping all original detection
 coverage. **Breaking change:** consumers reading `rule_id` from JSON
 output should map both old IDs to
 `anti_patterns.singleton_metadata_clinical_join`.
+
+- Four free-text-column rules in `data_quality/` are merged into
+  `data_quality.free_text_column_misuse`:
+  - `data_quality.condition_occurrence_stop_reason_is_free_text` (OMOP_107)
+  - `data_quality.drug_exposure_lot_number_is_free_text` (OMOP_108)
+  - `data_quality.note_nlp_term_modifiers_is_free_text` (GAP_014)
+  - `data_quality.location_state_zip_not_joined_to_concept` (OMOP_106)
+
+  All four detected the same anti-pattern shape (a free-text VARCHAR column
+  joined to the concept table or compared to a numeric literal) with
+  different `(table, column)` coordinates. ~1300 LOC of structural
+  duplication is replaced by a single rule with a `FREE_TEXT_FIELDS`
+  config table. Detection coverage is preserved, including the
+  term_modifiers-only behaviours (CAST-to-numeric and any-JOIN
+  detection), which are now driven by per-field flags.
+
+- Three canonical-string-casing rules in `data_quality/` are merged into
+  `data_quality.canonical_string_value_validation`:
+  - `data_quality.concept_class_id_case_sensitivity` (VOCAB_007)
+  - `data_quality.domain_id_case_sensitivity` (VOCAB_006)
+  - `data_quality.vocabulary_id_validation` (VOCAB_004 / VOCAB_005)
+
+  All three detected the same shape (find EQ/IN/LIKE filters on the
+  column, look up in a canonical map, flag if mismatched) and differed
+  only in (a) which canonical map applied and (b) whether hyphens were
+  also flagged (vocabulary_id only). The merged rule encodes per-column
+  behaviour in a `TARGETS` config table. The vocabulary-id hyphen warning,
+  the wrap-in-function exception, and per-column severity tiering are all
+  preserved.
+
+  **Breaking change:** seven legacy rule_ids vanish; consumers reading
+  `rule_id` from JSON output should remap them to either
+  `data_quality.free_text_column_misuse` or
+  `data_quality.canonical_string_value_validation` depending on which
+  legacy rule they tracked.
 
 ### Removed (dead-code cleanup)
 

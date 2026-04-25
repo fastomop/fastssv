@@ -34,6 +34,12 @@ def test_single_violation_passes_through() -> None:
     assert deduplicate_violations([v]) == [v]
 
 
+# Synthetic rule_id used to exercise the "longer rule_id wins" branch of
+# deduplicate_violations. Real registered rule is data_quality.schema_validation;
+# the second rule_id only needs to be a different (longer) string.
+_LONGER_RULE_ID = "data_quality.schema_validation_longer_synthetic"
+
+
 def test_invalid_column_dedup_by_table_and_column() -> None:
     a = _v(
         "data_quality.schema_validation",
@@ -41,7 +47,7 @@ def test_invalid_column_dedup_by_table_and_column() -> None:
         details={"type": "invalid_column", "table": "person", "column": "foo"},
     )
     b = _v(
-        "schema.comprehensive_schema_validation",
+        _LONGER_RULE_ID,
         "Column 'FOO' does not exist in 'Person'.",
         details={"type": "invalid_column", "table": "Person", "column": "FOO"},
     )
@@ -49,13 +55,13 @@ def test_invalid_column_dedup_by_table_and_column() -> None:
     # Same underlying schema error → one survives
     assert len(out) == 1
     # Longer rule_id wins as "more specific"
-    assert out[0].rule_id == "schema.comprehensive_schema_validation"
+    assert out[0].rule_id == _LONGER_RULE_ID
 
 
 def test_invalid_column_regex_path_matches_message_only() -> None:
     """Second rule reports no details dict, only the prose message — still dedups."""
     a = _v(
-        "schema.comprehensive_schema_validation",
+        _LONGER_RULE_ID,
         "Column 'foo' does not exist in table 'person'.",
         details={"type": "invalid_column", "table": "person", "column": "foo"},
     )
@@ -74,7 +80,7 @@ def test_invalid_table_dedup() -> None:
         details={"type": "invalid_table", "table": "typo_table"},
     )
     b = _v(
-        "schema.comprehensive_schema_validation",
+        _LONGER_RULE_ID,
         "Table 'Typo_Table' does not exist.",
         details={"type": "invalid_table", "table": "Typo_Table"},
     )

@@ -55,20 +55,10 @@ def get_validation_context() -> ValidationContext:
 def set_validation_context(context: ValidationContext) -> None:
     """Set the current validation context.
 
-    Prefer ``with_strict_mode`` / ``with_validation_context`` when the
-    scope is a single call — they restore the prior context automatically.
+    Prefer ``with_strict_mode`` when the scope is a single call — it
+    restores the prior context automatically.
     """
     _current_context.set(context)
-
-
-@contextmanager
-def with_validation_context(context: ValidationContext) -> Iterator[ValidationContext]:
-    """Install ``context`` for the duration of the ``with`` block."""
-    token = _current_context.set(context)
-    try:
-        yield context
-    finally:
-        _current_context.reset(token)
 
 
 @contextmanager
@@ -87,6 +77,5 @@ __all__ = [
     "ValidationContext",
     "get_validation_context",
     "set_validation_context",
-    "with_validation_context",
     "with_strict_mode",
 ]

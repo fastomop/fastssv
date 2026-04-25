@@ -1,13 +1,11 @@
 """Comprehensive OMOP Schema Validation Rule.
 
-Layer: SCHEMA
-Validates all table and column references against OMOP CDM 5.4 schema.
-This is fundamental data model validation - violations are always errors.
+Validates that every table and column referenced in a query exists in the
+OMOP CDM v5.4 schema. Scope-aware: skips CTE names, subquery aliases, and
+SELECT-clause column aliases (those are derived, not physical references).
 
-Fixed to handle:
-1. CTE awareness - CTEs are query-scoped tables, not physical tables
-2. SELECT alias handling - aliases are derived, not physical columns
-3. Scope-aware validation - only validate references to physical CDM tables
+Source of truth is ``fastssv.schemas.CDM_COLUMN_TYPES``; this rule reads
+it through the package boundary.
 """
 
 from typing import List, Set
@@ -15,8 +13,25 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
-from fastssv.core.omop_schema import is_valid_table, is_valid_column, get_table_columns, get_all_tables
 from fastssv.core.registry import register
+from fastssv.schemas import CDM_COLUMN_TYPES, get_table_columns
+
+
+# Schema predicates derived from CDM_COLUMN_TYPES. Inlining them as small
+# helpers keeps the validation logic below readable.
+
+def _is_valid_table(table_name: str) -> bool:
+    return bool(table_name) and table_name.lower() in CDM_COLUMN_TYPES
+
+
+def _is_valid_column(table_name: str, column_name: str) -> bool:
+    if not (table_name and column_name):
+        return False
+    return column_name.lower() in CDM_COLUMN_TYPES.get(table_name.lower(), {})
+
+
+def _get_all_tables() -> Set[str]:
+    return set(CDM_COLUMN_TYPES.keys())
 
 
 def _norm(x: str) -> str:
@@ -155,9 +170,9 @@ class ComprehensiveSchemaValidationRule(Rule):
                 if table_key in reported_tables:
                     continue
 
-                if not is_valid_table(table_name):
+                if not _is_valid_table(table_name):
                     # Check for similar table names
-                    all_tables = get_all_tables()
+                    all_tables = _get_all_tables()
                     similar = [t for t in all_tables if table_name in t or t in table_name]
 
                     violations.append(self.create_violation(
@@ -208,7 +223,7 @@ class ComprehensiveSchemaValidationRule(Rule):
                     for t in tree.find_all(exp.Table):
                         t_name = _norm(t.name)
                         if t_name and t_name not in cte_names and t_name not in subquery_aliases:
-                            if is_valid_table(t_name):
+                            if _is_valid_table(t_name):
                                 physical_tables.append(t_name)
 
                     # If there's exactly one physical table, assume it's that one
@@ -219,14 +234,14 @@ class ComprehensiveSchemaValidationRule(Rule):
                         continue
 
                 # Skip if table is invalid (already reported)
-                if not is_valid_table(resolved_table):
+                if not _is_valid_table(resolved_table):
                     continue
 
                 column_key = f"{resolved_table}.{col_name}"
                 if column_key in reported_columns:
                     continue
 
-                if not is_valid_column(resolved_table, col_name):
+                if not _is_valid_column(resolved_table, col_name):
                     # Get valid columns for suggestions
                     valid_cols = get_table_columns(resolved_table)
                     similar = [c for c in valid_cols if col_name in c or c in col_name]

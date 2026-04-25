@@ -1,25 +1,20 @@
-"""
-This defines which columns should contain standard vs source concepts:
-┌─────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
-│        Constant         │                                   Purpose                                    │
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
-│ SOURCE_VOCABS           │ Vocabulary names that are "source" (ICD10CM, CPT4, NDC, etc.)                │
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
-│ STANDARD_CONCEPT_FIELDS │ Columns that must contain standard concepts (e.g., condition_concept_id)     │
-├─────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
-│ SOURCE_CONCEPT_FIELDS   │ Columns that may contain source concepts (e.g., condition_source_concept_id) │
-└─────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
-Purpose: Used by the standard_concept_enforcement rule to know which columns require standard_concept = 'S' enforcement. If a query uses condition_occurrence.condition_concept_id, it must
-ensure standard concepts are used.
+"""OMOP CDM v5.4 — semantic concept-field declarations.
+
+Defines which (table, column) pairs are *standard* concept-id fields. Used
+by ``concept_standardization.standard_concept_enforcement``,
+``joins.maps_to_direction``, and ``joins.join_path_validation`` to know
+which columns require ``standard_concept = 'S'`` enforcement.
+
+Every entry must be a real column in
+``fastssv.schemas.cdm_column_types.CDM_COLUMN_TYPES``;
+``tests/test_schema_consistency.py`` asserts this in CI.
+
+Older versions of this module also exported ``SOURCE_CONCEPT_FIELDS`` and
+``SOURCE_VOCABS``. Both were retired in [Unreleased] because no rule
+consumed them.
 """
 
-SOURCE_VOCABS = {
-    "ICD10CM", "ICD9CM", "ICD10PCS",
-    "CPT4", "HCPCS", "NDC",
-    "READ", "READCODE", "OPCS4",
-}
-
-# OMOP fields that should be STANDARD concept ids
+# OMOP fields that should hold STANDARD concept ids.
 STANDARD_CONCEPT_FIELDS = {
     # person
     ("person", "gender_concept_id"),
@@ -128,55 +123,5 @@ STANDARD_CONCEPT_FIELDS = {
     ("dose_era", "unit_concept_id"),
 }
 
-# OMOP fields that are explicitly SOURCE concept ids (allowed to be ICD10CM etc.)
-SOURCE_CONCEPT_FIELDS = {
-    # person
-    ("person", "gender_source_concept_id"),
-    ("person", "race_source_concept_id"),
-    ("person", "ethnicity_source_concept_id"),
 
-    # condition_occurrence
-    ("condition_occurrence", "condition_source_concept_id"),
-
-    # drug_exposure
-    ("drug_exposure", "drug_source_concept_id"),
-    ("drug_exposure", "route_source_concept_id"),
-
-    # procedure_occurrence
-    ("procedure_occurrence", "procedure_source_concept_id"),
-    ("procedure_occurrence", "modifier_source_concept_id"),
-
-    # measurement
-    ("measurement", "measurement_source_concept_id"),
-    ("measurement", "unit_source_concept_id"),
-
-    # observation
-    ("observation", "observation_source_concept_id"),
-    ("observation", "qualifier_source_concept_id"),
-
-    # device_exposure
-    ("device_exposure", "device_source_concept_id"),
-
-    # visit tables
-    ("visit_occurrence", "visit_source_concept_id"),
-    ("visit_occurrence", "admitted_from_source_concept_id"),
-    ("visit_occurrence", "discharged_to_source_concept_id"),
-    ("visit_detail", "visit_detail_source_concept_id"),
-    ("visit_detail", "admitted_from_source_concept_id"),
-    ("visit_detail", "discharged_to_source_concept_id"),
-
-    # death
-    ("death", "cause_source_concept_id"),
-
-    # specimen
-    ("specimen", "specimen_source_concept_id"),
-    ("specimen", "unit_source_concept_id"),
-    ("specimen", "anatomic_site_source_concept_id"),
-    ("specimen", "disease_status_source_concept_id"),
-
-    # episode
-    ("episode", "episode_source_concept_id"),
-
-    # note_nlp
-    ("note_nlp", "note_nlp_source_concept_id"),
-}
+__all__ = ["STANDARD_CONCEPT_FIELDS"]

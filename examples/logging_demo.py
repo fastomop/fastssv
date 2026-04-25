@@ -3,9 +3,8 @@
 This script demonstrates different logging configurations and use cases.
 """
 
-import os
 from fastssv import validate_sql_structured
-from fastssv.core.logging import setup_logging, get_performance_logger
+from fastssv.core.logging import setup_logging
 
 # Example SQL query
 SQL_QUERY = """
@@ -65,32 +64,6 @@ def demo_json_logging():
     print()
 
 
-def demo_performance_logging():
-    """Demo 4: Performance tracking."""
-    print("=" * 60)
-    print("Demo 4: Performance tracking")
-    print("=" * 60)
-
-    # Enable performance logging
-    os.environ["FASTSSV_LOG_PERFORMANCE"] = "true"
-
-    logger = setup_logging(level="INFO", log_format="json")
-    perf = get_performance_logger("demo")
-
-    with perf.timed_operation("SQL Validation"):
-        violations = validate_sql_structured(SQL_QUERY, dialect="postgres")
-
-    logger.info(
-        f"Completed with {len(violations)} violations",
-        extra={"violation_count": len(violations)}
-    )
-
-    # Cleanup
-    os.environ.pop("FASTSSV_LOG_PERFORMANCE", None)
-
-    print()
-
-
 def demo_file_logging():
     """Demo 5: Logging to file."""
     print("=" * 60)
@@ -125,7 +98,6 @@ if __name__ == "__main__":
     demo_basic_logging()
     demo_debug_logging()
     demo_json_logging()
-    demo_performance_logging()
     demo_file_logging()
 
     print("=" * 60)
