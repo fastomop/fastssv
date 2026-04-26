@@ -6,8 +6,8 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-157-orange)
-![Status](https://img.shields.io/badge/status-beta-yellow)
+![Rules](https://img.shields.io/badge/rules-154-orange)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
 
@@ -521,7 +521,7 @@ FastSSV implements intelligent error deduplication to prevent the same underlyin
 
 | Document | Contents |
 |----------|----------|
-| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 157 rules with intent, detection logic, examples, and suggested fixes |
+| [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) | Comprehensive documentation for all 154 rules with intent, detection logic, examples, and suggested fixes |
 | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) | Developer guide for extending semantic rules |
 | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) | Plugin system design and adding new rules |
 | [docs/architecture.md](docs/architecture.md) | Source structure and component overview |

@@ -32,7 +32,7 @@ fastssv serve --prod --workers 4    # tune worker count
 
 Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
-rule registry once at startup (~157 rules, sub-second).
+rule registry once at startup (~154 rules, sub-second).
 
 ### `docker compose up` — containerized
 
@@ -169,7 +169,7 @@ metadata, filter by category, etc.
 **Response (200):**
 ```json
 {
-  "total": 157,
+  "total": 154,
   "rules": [
     {
       "rule_id": "anti_patterns.ambiguous_column_reference",
@@ -191,7 +191,7 @@ Liveness probe. Always `200 OK` unless the process cannot service requests.
 {
   "status": "ok",
   "version": "0.2.0",
-  "rules_loaded": 157
+  "rules_loaded": 154
 }
 ```
 

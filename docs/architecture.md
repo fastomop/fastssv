@@ -168,7 +168,7 @@ To add a new validation rule:
 - `joins`: 36 rules
 - `temporal`: 10 rules
 
-**Total: 157 rules**
+**Total: 154 rules**
 
 > The category `schema` also exists as a Python package but contains the
 > single fundamental-correctness rule `data_quality.schema_validation`;
