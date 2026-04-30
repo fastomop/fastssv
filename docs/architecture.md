@@ -161,10 +161,10 @@ To add a new validation rule:
 
 ### Category Summary
 
-- `anti_patterns`: 24 rules
+- `anti_patterns`: 20 rules
 - `concept_standardization`: 18 rules
-- `data_quality`: 27 rules
-- `domain_specific`: 42 rules
+- `data_quality`: 22 rules
+- `domain_specific`: 48 rules
 - `joins`: 36 rules
 - `temporal`: 10 rules
 

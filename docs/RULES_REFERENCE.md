@@ -55,20 +55,20 @@ For each rule you will find:
 
 | Rule ID | Name | Severity | Category |
 |---------|------|----------|----------|
-| `concept_standardization.concept_ancestor_cross_domain` | [Concept Ancestor Cross-Domain Validation](#concept-standardization-concept-ancestor-cross-domain) | WARNING | concept_standardization |
-| `concept_standardization.concept_ancestor_max_levels_misuse` | [Concept Ancestor Max Levels Misuse](#concept-standardization-concept-ancestor-max-levels-misuse) | WARNING | concept_standardization |
+| `concept_standardization.concept_ancestor_cross_domain` | [Concept Ancestor Cross-Domain Validation](#concept-standardization-concept-ancestor-cross-domain) | ERROR | concept_standardization |
+| `concept_standardization.concept_ancestor_max_levels_misuse` | [Concept Ancestor Max Levels Misuse](#concept-standardization-concept-ancestor-max-levels-misuse) | ERROR | concept_standardization |
 | `concept_standardization.concept_ancestor_rollup_direction` | [Concept Ancestor Rollup Direction](#concept-standardization-concept-ancestor-rollup-direction) | ERROR | concept_standardization |
 | `concept_standardization.concept_ancestor_self_include_redundancy` | [Concept Ancestor Self-Include Redundancy](#concept-standardization-concept-ancestor-self-include-redundancy) | WARNING | concept_standardization |
 | `concept_standardization.concept_class_id_ingredient_for_drug_grouping` | [Concept Class ID Ingredient for Drug Grouping](#concept-standardization-concept-class-id-ingredient-for-drug-grouping) | WARNING | concept_standardization |
-| `concept_standardization.concept_domain_validation` | [Concept Domain ID Matches Target Table](#concept-standardization-concept-domain-validation) | ERROR | concept_standardization |
+| `concept_standardization.concept_domain_validation` | [Concept Domain ID Matches Target Table](#concept-standardization-concept-domain-validation) | WARNING | concept_standardization |
 | `concept_standardization.concept_synonym_language_concept_id` | [Concept Synonym Language Concept ID](#concept-standardization-concept-synonym-language-concept-id) | WARNING | concept_standardization |
 | `concept_standardization.domain_vocabulary_validation` | [Domain Vocabulary Validation (VOCAB_022-025)](#concept-standardization-domain-vocabulary-validation) | WARNING | concept_standardization |
 | `concept_standardization.era_table_standard_concepts` | [Era Tables Use Standard Concepts Only](#concept-standardization-era-table-standard-concepts) | ERROR | concept_standardization |
-| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement](#concept-standardization-invalid-reason-enforcement) | WARNING (strict-mode-only) | concept_standardization |
-| `concept_standardization.maps_to_target_standard_validation` | [Maps To Target Standard Validation](#concept-standardization-maps-to-target-standard-validation) | ERROR | concept_standardization |
+| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement (strict mode)](#concept-standardization-invalid-reason-enforcement) | WARNING (strict-mode-only) | concept_standardization |
+| `concept_standardization.maps_to_target_standard_validation` | [Maps To Target Standard Validation](#concept-standardization-maps-to-target-standard-validation) | WARNING | concept_standardization |
 | `concept_standardization.multiple_maps_to_targets` | [Multiple Maps To Targets Not Handled](#concept-standardization-multiple-maps-to-targets) | WARNING | concept_standardization |
-| `concept_standardization.source_concept_id_warning` | [Source Concept ID Not For Analytical Filtering](#concept-standardization-source-concept-id-warning) | WARNING | concept_standardization |
 | `concept_standardization.source_concept_id_standard_filter` | [Source Concept ID Should Not Filter Standard Concepts](#concept-standardization-source-concept-id-standard-filter) | WARNING | concept_standardization |
+| `concept_standardization.source_concept_id_warning` | [Source Concept ID Not For Analytical Filtering](#concept-standardization-source-concept-id-warning) | WARNING | concept_standardization |
 | `concept_standardization.source_to_concept_map_validation` | [Source to Concept Map Validation](#concept-standardization-source-to-concept-map-validation) | WARNING | concept_standardization |
 | `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | WARNING | concept_standardization |
 | `concept_standardization.standard_concept_value_validation` | [Standard Concept Value Validation](#concept-standardization-standard-concept-value-validation) | ERROR | concept_standardization |
@@ -76,21 +76,21 @@ For each rule you will find:
 | `joins.care_site_id_join_validation` | [Care Site ID Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
 | `joins.care_site_join_validation` | [Care Site Join Path Validation](#joins-care-site-join-validation) | WARNING | joins |
 | `joins.care_site_location_join_validation` | [Care Site to Location Join Validation](#joins-care-site-location-join-validation) | ERROR | joins |
-| `joins.clinical_pk_cross_join_validation` | [Clinical Primary Key Join Validation](#joins-clinical-pk-cross-join-validation) | ERROR | joins |
 | `joins.clinical_person_id_linkage_validation` | [Clinical Tables Require Person ID Linkage](#joins-clinical-person-id-linkage-validation) | ERROR | joins |
+| `joins.clinical_pk_cross_join_validation` | [Clinical Primary Key Join Validation](#joins-clinical-pk-cross-join-validation) | ERROR | joins |
 | `joins.clinical_visit_detail_join_validation` | [Clinical to Visit Detail Join Validation](#joins-clinical-visit-detail-join-validation) | ERROR | joins |
 | `joins.cohort_clinical_join_validation` | [Cohort to Clinical Table Join Validation](#joins-cohort-clinical-join-validation) | ERROR | joins |
 | `joins.concept_alias_reuse_validation` | [Concept Alias Reuse Validation](#joins-concept-alias-reuse-validation) | ERROR | joins |
 | `joins.concept_ancestor_name_resolution` | [Concept Ancestor Name Resolution Validation](#joins-concept-ancestor-name-resolution) | ERROR | joins |
-| `joins.concept_join_validation` | [Concept Join Validation](#joins-concept-join-validation) | ERROR | joins |
-| `joins.concept_relationship_requires_relationship_id` | [Concept Relationship Requires Relationship ID Filter](#joins-concept-relationship-requires-relationship-id) | ERROR | joins |
-| `joins.concept_relationship_concept_join_validation` | [Concept Relationship to Concept Join Validation](#joins-concept-relationship-concept-join-validation) | ERROR | joins |
-| `joins.concept_relationship_relationship_join_validation` | [Concept Relationship to Relationship Join Validation](#joins-concept-relationship-relationship-join-validation) | ERROR | joins |
-| `joins.concept_synonym_join_validation` | [Concept Synonym Join Validation](#joins-concept-synonym-join-validation) | ERROR | joins |
 | `joins.concept_concept_class_join_validation` | [Concept to Concept Class Join Validation](#joins-concept-concept-class-join-validation) | ERROR | joins |
 | `joins.concept_domain_join_validation` | [Concept to Domain Join Validation](#joins-concept-domain-join-validation) | ERROR | joins |
+| `joins.concept_join_validation` | [Concept Join Validation](#joins-concept-join-validation) | ERROR | joins |
+| `joins.concept_relationship_concept_join_validation` | [Concept Relationship to Concept Join Validation](#joins-concept-relationship-concept-join-validation) | ERROR | joins |
+| `joins.concept_relationship_relationship_join_validation` | [Concept Relationship to Relationship Join Validation](#joins-concept-relationship-relationship-join-validation) | ERROR | joins |
+| `joins.concept_relationship_requires_relationship_id` | [Concept Relationship Requires Relationship ID Filter](#joins-concept-relationship-requires-relationship-id) | WARNING | joins |
+| `joins.concept_synonym_join_validation` | [Concept Synonym Join Validation](#joins-concept-synonym-join-validation) | ERROR | joins |
 | `joins.concept_vocabulary_join_validation` | [Concept to Vocabulary Join Validation](#joins-concept-vocabulary-join-validation) | ERROR | joins |
-| `joins.cost_table_domain_validation` | [Cost Table Domain Validation](#joins-cost-table-domain-validation) | ERROR | joins |
+| `joins.cost_table_domain_validation` | [Cost Table Domain Validation](#joins-cost-table-domain-validation) | WARNING | joins |
 | `joins.death_visit_occurrence_join_validation` | [Death to Visit Occurrence Join Validation](#joins-death-visit-occurrence-join-validation) | ERROR | joins |
 | `joins.drug_exposure_drug_strength_join_validation` | [Drug Exposure to Drug Strength Join Validation](#joins-drug-exposure-drug-strength-join-validation) | ERROR | joins |
 | `joins.era_forbidden_join_validation` | [Era Table Forbidden Join Validation](#joins-era-forbidden-join-validation) | ERROR | joins |
@@ -99,16 +99,16 @@ For each rule you will find:
 | `joins.left_join_then_where_on_right_table` | [Left Join Then Where On Right Table](#joins-left-join-then-where-on-right-table) | WARNING | joins |
 | `joins.maps_to_direction` | [Maps To Direction](#joins-maps-to-direction) | WARNING | joins |
 | `joins.note_nlp_note_join_validation` | [Note NLP to Note Join Validation](#joins-note-nlp-note-join-validation) | ERROR | joins |
+| `joins.observation_period_join_validation`{ #joins-observation-period-join-validation } | [Observation Period Join Requires Date Overlap](#joins-observation-period-join-validation) | WARNING | joins |
 | `joins.payer_plan_period_join_validation` | [Payer Plan Period Join Validation](#joins-payer-plan-period-join-validation) | WARNING | joins |
 | `joins.person_id_join_validation` | [Person ID Join Validation](#joins-person-id-join-validation) | ERROR | joins |
 | `joins.person_location_join_validation` | [Person to Location Join Validation](#joins-person-location-join-validation) | ERROR | joins |
 | `joins.preceding_visit_occurrence_validation` | [Preceding Visit Occurrence Validation](#joins-preceding-visit-occurrence-validation) | ERROR | joins |
-| `joins.provider_join_validation` | [Provider Join Validation](#joins-provider-join-validation) | ERROR | joins |
 | `joins.provider_care_site_join_validation` | [Provider to Care Site Join Validation](#joins-provider-care-site-join-validation) | ERROR | joins |
+| `joins.provider_join_validation` | [Provider Join Validation](#joins-provider-join-validation) | ERROR | joins |
 | `joins.visit_detail_join_validation` | [Visit Detail Join Validation](#joins-visit-detail-join-validation) | WARNING | joins |
 | `joins.visit_occurrence_id_join_validation` | [Visit Occurrence ID Join Validation](#joins-visit-occurrence-id-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_inner_join_validation` | [Visit Occurrence INNER JOIN Validation](#joins-visit-occurrence-inner-join-validation) | WARNING | joins |
-| `joins.observation_period_join_validation`{ #joins-observation-period-join-validation } | [Observation Period Join Validation](#joins-observation-period-join-validation) | WARNING | joins |
 | `temporal.clinical_event_date_in_future_validation` | [Clinical Event Date Should Not Be In Future](#temporal-clinical-event-date-in-future-validation) | WARNING | temporal |
 | `temporal.datetime_between_date_literal` | [Datetime BETWEEN with Date Literal](#temporal-datetime-between-date-literal) | WARNING | temporal |
 | `temporal.death_date_before_birth_validation` | [Death Date Before Birth Validation](#temporal-death-date-before-birth-validation) | ERROR | temporal |
@@ -116,56 +116,62 @@ For each rule you will find:
 | `temporal.end_before_start_validation` | [End Before Start Validation](#temporal-end-before-start-validation) | ERROR | temporal |
 | `temporal.future_information_leakage` | [Unbounded Follow-up Window (Future Information Leakage)](#temporal-future-information-leakage) | WARNING | temporal |
 | `temporal.nullable_end_date_null_handling` | [Nullable End Date NULL Handling](#temporal-nullable-end-date-null-handling) | WARNING | temporal |
-| `temporal.observation_period_anchoring` | [Observation Period Anchoring](#temporal-observation-period-anchoring) | ERROR | temporal |
+| `temporal.observation_period_anchoring` | [Observation Period Anchoring](#temporal-observation-period-anchoring) | WARNING | temporal |
 | `temporal.observation_period_date_range_logic` | [Observation Period Date Range Logic](#temporal-observation-period-date-range-logic) | ERROR | temporal |
 | `temporal.required_date_column_validation` | [Required Date Column Validation](#temporal-required-date-column-validation) | WARNING | temporal |
-| `data_quality.clinical_event_date_before_1900_validation` | [Clinical Event Date Should Not Be Before 1900](#data-quality-clinical-event-date-before-1900-validation) | WARNING | data_quality |
 | `data_quality.canonical_string_value_validation`{ #data-quality-canonical-string-value-validation } | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
-| `data_quality.column_type_validation` | [Column Type Validation](#data-quality-column-type-validation) | ERROR | data_quality |
+| `data_quality.clinical_event_date_before_1900_validation` | [Clinical Event Date Should Not Be Before 1900](#data-quality-clinical-event-date-before-1900-validation) | WARNING | data_quality |
+| `data_quality.column_type_validation` | [Column Type Validation (SCHEMA Layer)](#data-quality-column-type-validation) | ERROR | data_quality |
 | `data_quality.concept_id_string_comparison` | [Concept ID String Comparison](#data-quality-concept-id-string-comparison) | WARNING | data_quality |
 | `data_quality.concept_name_whitespace` | [Concept Name Whitespace](#data-quality-concept-name-whitespace) | WARNING | data_quality |
-| `data_quality.episode_requires_concept_filter` | [Episode Requires Concept Filter](#data-quality-episode-requires-concept-filter) | WARNING | data_quality |
+| `data_quality.episode_requires_concept_filter` | [Episode Requires Concept Filter](#data-quality-episode-requires-concept-filter) | ERROR | data_quality |
 | `data_quality.fact_relationship_no_self_reference` | [Fact Relationship No Self-Reference](#data-quality-fact-relationship-no-self-reference) | WARNING | data_quality |
 | `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | ERROR | data_quality |
 | `data_quality.fact_relationship_valid_concepts` | [Fact Relationship Valid Concepts](#data-quality-fact-relationship-valid-concepts) | WARNING | data_quality |
 | `data_quality.free_text_column_misuse`{ #data-quality-free-text-column-misuse } | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | ERROR | data_quality |
+| `data_quality.incorrect_percentile_calculation`{ #data-quality-incorrect-percentile-calculation } | [Incorrect Percentile Calculation](#data-quality-incorrect-percentile-calculation) | ERROR | data_quality |
 | `data_quality.negative_concept_id_validation` | [Negative Concept ID Validation](#data-quality-negative-concept-id-validation) | ERROR | data_quality |
-| `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
+| `data_quality.non_standard_date_literal_format`{ #data-quality-non-standard-date-literal-format } | [Non-Standard Date Literal Format](#data-quality-non-standard-date-literal-format) | WARNING | data_quality |
 | `data_quality.note_nlp_nlp_date_for_temporal_filtering` | [Note NLP nlp_date for Temporal Filtering](#data-quality-note-nlp-nlp-date-for-temporal-filtering) | WARNING | data_quality |
-| `data_quality.schema_validation` | [Schema Validation](#data-quality-schema-validation) | ERROR | data_quality |
+| `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
+| `data_quality.schema_validation` | [OMOP Schema Validation](#data-quality-schema-validation) | ERROR | data_quality |
+| `data_quality.source_value_field_usage`{ #data-quality-source-value-field-usage } | [Source Value Field Usage](#data-quality-source-value-field-usage) | WARNING | data_quality |
 | `data_quality.standard_concept_null_handling` | [Standard Concept NULL Handling](#data-quality-standard-concept-null-handling) | WARNING | data_quality |
-| `data_quality.union_vs_union_all_clinical_events` | [UNION vs UNION ALL for Clinical Events](#data-quality-union-vs-union-all-clinical-events) | WARNING | data_quality |
 | `data_quality.union_concept_id_domain_indicator` | [Union Concept ID Domain Indicator](#data-quality-union-concept-id-domain-indicator) | WARNING | data_quality |
+| `data_quality.union_vs_union_all_clinical_events` | [UNION vs UNION ALL for Clinical Events](#data-quality-union-vs-union-all-clinical-events) | WARNING | data_quality |
 | `data_quality.unmapped_concept_handling` | [Unmapped Concept Handling](#data-quality-unmapped-concept-handling) | WARNING | data_quality |
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
 | `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | WARNING | anti_patterns |
 | `anti_patterns.attribute_definition_invalid_join` | [Attribute Definition Invalid Join](#anti-patterns-attribute-definition-invalid-join) | ERROR | anti_patterns |
-| `anti_patterns.singleton_metadata_clinical_join`{ #anti-patterns-singleton-metadata-clinical-join } | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
 | `anti_patterns.comma_separated_cross_join` | [Comma-Separated Cross Join](#anti-patterns-comma-separated-cross-join) | ERROR | anti_patterns |
 | `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly` | [Concept Ancestor Mixed with Concept Relationship Redundantly](#anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly) | WARNING | anti_patterns |
-| `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | ERROR | anti_patterns |
+| `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | WARNING | anti_patterns |
 | `anti_patterns.concept_name_lookup` | [Concept Name Lookup Anti-pattern](#anti-patterns-concept-name-lookup) | WARNING | anti_patterns |
 | `anti_patterns.concept_relationship_transitive_misuse` | [Concept Relationship Transitive Misuse](#anti-patterns-concept-relationship-transitive-misuse) | WARNING | anti_patterns |
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
+| `anti_patterns.duplicate_column_alias`{ #anti-patterns-duplicate-column-alias } | [Duplicate Column Alias](#anti-patterns-duplicate-column-alias) | WARNING | anti_patterns |
 | `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
 | `anti_patterns.limit_without_order_by`{ #anti-patterns-limit-without-order-by } | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
 | `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | ERROR | anti_patterns |
+| `anti_patterns.null_comparison_operator`{ #anti-patterns-null-comparison-operator } | [NULL Comparison Must Use IS NULL / IS NOT NULL](#anti-patterns-null-comparison-operator) | ERROR | anti_patterns |
+| `anti_patterns.singleton_metadata_clinical_join` | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
 | `anti_patterns.standard_concept_or_with_classification` | [Standard Concept OR with Classification](#anti-patterns-standard-concept-or-with-classification) | WARNING | anti_patterns |
+| `anti_patterns.top_as_synthetic_data`{ #anti-patterns-top-as-synthetic-data } | [TOP/LIMIT for Synthetic Data Generation](#anti-patterns-top-as-synthetic-data) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_domain_filter` | [Type Concept ID Domain Filter](#anti-patterns-type-concept-id-domain-filter) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_misuse` | [Type Concept ID Not For Clinical Filtering](#anti-patterns-type-concept-id-misuse) | ERROR | anti_patterns |
+| `domain_specific.cdm_v53_to_v54_column_renames`{ #domain-specific-cdm-v53-to-v54-column-renames } | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
 | `domain_specific.cohort_definition_syntax_not_executable_sql` | [Cohort Definition Syntax Not Executable SQL](#domain-specific-cohort-definition-syntax-not-executable-sql) | ERROR | domain_specific |
 | `domain_specific.condition_occurrence_cardinality_validation` | [Condition Occurrence Cardinality Risk](#domain-specific-condition-occurrence-cardinality-validation) | WARNING | domain_specific |
 | `domain_specific.condition_visit_hierarchy_validation` | [Condition Occurrence Visit Hierarchy Validation](#domain-specific-condition-visit-hierarchy-validation) | ERROR | domain_specific |
-| `domain_specific.condition_start_date_temporal_validation` | [Condition Temporal Column Validation](#domain-specific-condition-start-date-temporal-validation) | WARNING | domain_specific |
+| `domain_specific.cost_currency_concept_id`{ #domain-specific-cost-currency-concept-id } | [Cost Currency Concept ID For Multi-Currency](#domain-specific-cost-currency-concept-id) | WARNING | domain_specific |
 | `domain_specific.cost_event_id_polymorphic_resolution`{ #domain-specific-cost-event-id-polymorphic-resolution } | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
+| `domain_specific.cost_paid_ingredient_cost_drug_specific`{ #domain-specific-cost-paid-ingredient-cost-drug-specific } | [Cost Drug-Specific Columns Require Domain Filter](#domain-specific-cost-paid-ingredient-cost-drug-specific) | WARNING | domain_specific |
 | `domain_specific.cost_payer_plan_period_id_join` | [Cost Payer Plan Period ID Join](#domain-specific-cost-payer-plan-period-id-join) | ERROR | domain_specific |
-| `domain_specific.dose_era_cross_unit_comparison`{ #domain-specific-dose-era-cross-unit-comparison } | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
-| `domain_specific.event_cardinality_validation`{ #domain-specific-event-cardinality-validation } | [Event Cardinality Risk (observation, device_exposure, visit_detail)](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
-| `domain_specific.event_field_polymorphic_resolution`{ #domain-specific-event-field-polymorphic-resolution } | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.death_cause_source_concept_validation` | [Death Cause Source Concept Not For Analytical Filtering](#domain-specific-death-cause-source-concept-validation) | ERROR | domain_specific |
 | `domain_specific.death_join_to_person_not_to_clinical_event` | [Death Join to Person Not to Clinical Event](#domain-specific-death-join-to-person-not-to-clinical-event) | ERROR | domain_specific |
+| `domain_specific.dose_era_cross_unit_comparison`{ #domain-specific-dose-era-cross-unit-comparison } | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
 | `domain_specific.drug_days_supply_validation` | [Drug Days Supply Validation](#domain-specific-drug-days-supply-validation) | WARNING | domain_specific |
 | `domain_specific.drug_era_concept_class_validation` | [Drug Era Concept Class Validation](#domain-specific-drug-era-concept-class-validation) | ERROR | domain_specific |
 | `domain_specific.drug_exposure_cardinality_validation` | [Drug Exposure Cardinality Awareness](#domain-specific-drug-exposure-cardinality-validation) | WARNING | domain_specific |
@@ -176,31 +182,33 @@ For each rule you will find:
 | `domain_specific.drug_strength_validity_filter` | [Drug Strength Validity Filter](#domain-specific-drug-strength-validity-filter) | WARNING | domain_specific |
 | `domain_specific.episode_event_no_person_id` | [Episode Event No Person ID](#domain-specific-episode-event-no-person-id) | ERROR | domain_specific |
 | `domain_specific.episode_parent_id_self_join` | [Episode Parent ID Self Join](#domain-specific-episode-parent-id-self-join) | ERROR | domain_specific |
+| `domain_specific.event_cardinality_validation`{ #domain-specific-event-cardinality-validation } | [Event Cardinality Risk](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
+| `domain_specific.event_date_column_correctness`{ #domain-specific-event-date-column-correctness } | [Event Date Column Correctness](#domain-specific-event-date-column-correctness) | ERROR | domain_specific |
+| `domain_specific.event_field_polymorphic_resolution`{ #domain-specific-event-field-polymorphic-resolution } | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.location_history_entity_id_requires_domain_id` | [Location History Entity ID Requires Domain ID](#domain-specific-location-history-entity-id-requires-domain-id) | ERROR | domain_specific |
 | `domain_specific.measurement_cross_unit_comparison` | [Measurement Cross-Unit Comparison](#domain-specific-measurement-cross-unit-comparison) | WARNING | domain_specific |
 | `domain_specific.measurement_duplicate_detection` | [Measurement Duplicate Detection](#domain-specific-measurement-duplicate-detection) | WARNING | domain_specific |
 | `domain_specific.measurement_operator_concept_validation` | [Measurement Operator Concept Validation](#domain-specific-measurement-operator-concept-validation) | ERROR | domain_specific |
 | `domain_specific.measurement_range_low_high_validation` | [Measurement Range Low/High Validation](#domain-specific-measurement-range-low-high-validation) | ERROR | domain_specific |
 | `domain_specific.measurement_unit_validation` | [Measurement Unit Validation](#domain-specific-measurement-unit-validation) | WARNING | domain_specific |
-| `domain_specific.measurement_value_as_number_and_concept_validation` | [Measurement Value Representation Consistency](#domain-specific-measurement-value-as-number-and-concept-validation) | WARNING | domain_specific |
+| `domain_specific.measurement_value_as_number_and_concept_validation` | [Measurement Value Representation Consistency](#domain-specific-measurement-value-as-number-and-concept-validation) | ERROR | domain_specific |
 | `domain_specific.note.note_nlp_snippet_misuse` | [Note NLP Snippet Misuse](#domain-specific-note-note-nlp-snippet-misuse) | WARNING | domain_specific |
 | `domain_specific.observation_value_as_columns_mutually_contextual` | [Observation Value As Columns Mutually Contextual](#domain-specific-observation-value-as-columns-mutually-contextual) | WARNING | domain_specific |
 | `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | ERROR | domain_specific |
 | `domain_specific.observation_value_as_string_numeric_comparison` | [Observation Value As String Numeric Comparison](#domain-specific-observation-value-as-string-numeric-comparison) | ERROR | domain_specific |
 | `domain_specific.person_birth_field_validation` | [Person Birth Field Validation](#domain-specific-person-birth-field-validation) | ERROR | domain_specific |
-| `domain_specific.year_of_birth_age_arithmetic`{ #domain-specific-year-of-birth-age-arithmetic } | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
-| `domain_specific.visit_length_of_stay_arithmetic`{ #domain-specific-visit-length-of-stay-arithmetic } | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
-| `domain_specific.procedure_date_not_procedure_start_date` | [Procedure Date Not Procedure Start Date](#domain-specific-procedure-date-not-procedure-start-date) | ERROR | domain_specific |
 | `domain_specific.procedure_occurrence_quantity_semantics` | [Procedure Occurrence Quantity Semantics](#domain-specific-procedure-occurrence-quantity-semantics) | WARNING | domain_specific |
-| `domain_specific.vocabulary.relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
 | `domain_specific.specimen_source_id_not_specimen_id` | [Specimen Source ID Not Specimen ID](#domain-specific-specimen-source-id-not-specimen-id) | ERROR | domain_specific |
 | `domain_specific.visit_detail_admitted_discharged_domain` | [Visit Detail Admitted/Discharged Domain Validation](#domain-specific-visit-detail-admitted-discharged-domain) | WARNING | domain_specific |
 | `domain_specific.visit_detail_dates_within_parent_visit` | [Visit Detail Dates Within Parent Visit](#domain-specific-visit-detail-dates-within-parent-visit) | WARNING | domain_specific |
 | `domain_specific.visit_detail_has_no_preceding_visit_occurrence_id` | [Visit Detail Has No Preceding Visit Occurrence ID](#domain-specific-visit-detail-has-no-preceding-visit-occurrence-id) | ERROR | domain_specific |
-| `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Reference](#domain-specific-visit-detail-visit-occurrence-reference) | WARNING | domain_specific |
+| `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Reference](#domain-specific-visit-detail-visit-occurrence-reference) | ERROR | domain_specific |
 | `domain_specific.visit_event_temporal_validation` | [Visit Event Temporal Validation](#domain-specific-visit-event-temporal-validation) | WARNING | domain_specific |
+| `domain_specific.visit_length_of_stay_arithmetic`{ #domain-specific-visit-length-of-stay-arithmetic } | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
+| `domain_specific.visit_occurrence_type_domain`{ #domain-specific-visit-occurrence-type-domain } | [Visit Occurrence Type Concept Domain Validation](#domain-specific-visit-occurrence-type-domain) | ERROR | domain_specific |
 | `domain_specific.visit_outpatient_same_day_validation` | [Visit Outpatient Same-Day Validation](#domain-specific-visit-outpatient-same-day-validation) | WARNING | domain_specific |
-| `domain_specific.cdm_v53_to_v54_column_renames`{ #domain-specific-cdm-v53-to-v54-column-renames } | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
+| `domain_specific.vocabulary.relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
+| `domain_specific.year_of_birth_age_arithmetic`{ #domain-specific-year-of-birth-age-arithmetic } | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
 
 
 ---
@@ -3393,56 +3401,6 @@ Ensure column types are compatible. Use proper literals or CAST explicitly if ne
 
 ---
 
-### 3. Concept Class ID Case Sensitivity
-
-**Rule ID:** `data_quality.concept_class_id_case_sensitivity`
-**Severity:** ERROR
-
-#### Intent
-
-OMOP concept_class_id values have specific canonical casing:
-    - 'Ingredient' (not 'ingredient', 'INGREDIENT')
-    - 'Clinical Drug' (not 'clinical drug', 'CLINICAL DRUG')
-    - 'Branded Drug' (not 'branded drug', 'BRANDED DRUG')
-    - 'Clinical Finding' (not 'clinical finding', 'CLINICAL FINDING')
-    - 'Procedure' (not 'procedure', 'PROCEDURE')
-    - 'Lab Test' (not 'lab test', 'LAB TEST')
-
-    String comparisons are case-sensitive, so using wrong casing
-    will cause the query to return zero results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept class id case sensitivity patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept
-    WHERE concept_class_id = 'ingredient'  -- WRONG: should be 'Ingredient'
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept
-    WHERE concept_class_id = 'Ingredient'  -- Correct casing
-```
-
-#### Common scenarios
-
-- 'ingredient' instead of 'Ingredient'
-- 'CLINICAL DRUG' instead of 'Clinical Drug'
-- 'branded drug' instead of 'Branded Drug'
-
-#### Suggested fix
-
-Use canonical OMOP concept_class_id values.
-
----
-
 ### 4. Concept ID String Comparison { #data-quality-concept-id-string-comparison }
 
 **Rule ID:** `data_quality.concept_id_string_comparison`
@@ -3550,166 +3508,6 @@ SELECT concept_id
 #### Suggested fix
 
 Use TRIM(concept_name) = 'value' or RTRIM(concept_name) = 'value', or use LIKE for safer matching.
-
----
-
-### 6. Condition Occurrence Stop Reason Is Free Text
-
-**Rule ID:** `data_quality.condition_occurrence_stop_reason_is_free_text`
-**Severity:** ERROR
-
-#### Intent
-
-The condition_occurrence table has a stop_reason column that stores free-text
-    explanations for why a condition ended:
-    - stop_reason: VARCHAR field (e.g., 'Patient Improved', 'Treatment Completed')
-
-    Developers might mistakenly:
-    1. Join stop_reason to the concept table as if it were a concept_id
-    2. Use numeric comparisons with stop_reason (treating it like an integer)
-
-    Both patterns are incorrect and will produce unexpected results or errors.
-
-#### How it works
-
-This rule analyzes the SQL query to identify condition occurrence stop reason is free text patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM condition_occurrence co
-    JOIN concept c ON co.stop_reason = c.concept_id;
-```
-
-```sql
-SELECT * FROM condition_occurrence co
-    JOIN concept c ON co.stop_reason = c.concept_code;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM condition_occurrence
-    WHERE stop_reason = 'Patient Improved';
-```
-
-```sql
-SELECT * FROM condition_occurrence
-    WHERE stop_reason LIKE '%Improved%';
-```
-
-#### Suggested fix
-
-Remove joins between condition_occurrence.stop_reason and concept table. Avoid numeric comparisons with stop_reason. Treat stop_reason as a free-text field.
-
----
-
-### 7. Domain ID Case Sensitivity
-
-**Rule ID:** `data_quality.domain_id_case_sensitivity`
-**Severity:** ERROR
-
-#### Intent
-
-OMOP domain_id values have specific canonical casing (typically Title Case):
-    - 'Condition' (not 'condition', 'CONDITION', or 'Conditions')
-    - 'Drug' (not 'drug' or 'DRUG')
-    - 'Procedure' (not 'procedure' or 'PROCEDURE')
-    - 'Measurement' (not 'measurement' or 'MEASUREMENT')
-    - 'Observation' (not 'observation' or 'OBSERVATION')
-    - 'Device' (not 'device' or 'DEVICE')
-    - 'Spec Anatomic Site' (mixed case with space)
-    - 'Meas Value' (mixed case with space)
-    - 'Type Concept' (mixed case with space)
-
-    String comparisons are case-sensitive, so using wrong casing
-    will cause the query to return zero results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify domain id case sensitivity patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept
-    WHERE domain_id = 'condition'  -- WRONG: should be 'Condition'
-    AND standard_concept = 'S'
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept
-    WHERE domain_id = 'Condition'  -- Correct casing
-```
-
-#### Common scenarios
-
-- 'condition' instead of 'Condition'
-- 'DRUG' instead of 'Drug'
-- 'procedure' instead of 'Procedure'
-
-#### Suggested fix
-
-Use canonical OMOP domain_id values with correct casing.
-
----
-
-### 8. Drug Exposure Lot Number Is Free Text
-
-**Rule ID:** `data_quality.drug_exposure_lot_number_is_free_text`
-**Severity:** ERROR
-
-#### Intent
-
-The drug_exposure table has a lot_number column that stores free-text
-    manufacturing lot identifiers:
-    - lot_number: VARCHAR field (e.g., 'LOT2024A', 'BATCH-5678')
-
-    Developers might mistakenly:
-    1. Join lot_number to the concept table as if it were a concept_id
-    2. Use numeric comparisons or arithmetic with lot_number (treating it like an integer)
-
-    Both patterns are incorrect and will produce unexpected results or errors.
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug exposure lot number is free text patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM drug_exposure de
-    JOIN concept c ON de.lot_number = c.concept_id;
-```
-
-```sql
-SELECT * FROM drug_exposure de
-    JOIN concept c ON de.lot_number = c.concept_code;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM drug_exposure
-    WHERE lot_number = 'LOT2024A';
-```
-
-```sql
-SELECT * FROM drug_exposure
-    WHERE lot_number LIKE 'BATCH-%';
-```
-
-#### Suggested fix
-
-Remove joins between drug_exposure.lot_number and concept table. Avoid numeric comparisons with lot_number. Treat lot_number as a free-text field.
 
 ---
 
@@ -3967,58 +3765,6 @@ Add '<alias>.invalid_reason IS NULL' for each concept join to ensure only valid 
 
 ---
 
-### 13. Location State/Zip Not Joined to Concept
-
-**Rule ID:** `data_quality.location_state_zip_not_joined_to_concept`
-**Severity:** ERROR
-
-#### Intent
-
-The location table contains both free-text fields and concept_id references:
-    - state: VARCHAR field (e.g., 'CA', 'New York')
-    - zip: VARCHAR field (e.g., '90210', '10001')
-    - country_concept_id: INTEGER foreign key to concept.concept_id
-
-    Developers might mistakenly try to join the free-text fields to the concept
-    table, treating them as if they were concept references. This is incorrect
-    and will produce unexpected results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify location state/zip not joined to concept patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM location l
-    JOIN concept c ON l.state = c.concept_code;
-```
-
-```sql
-SELECT * FROM location l
-    JOIN concept c ON l.zip = c.concept_id;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM location WHERE state = 'CA';
-```
-
-```sql
-SELECT * FROM location l
-    JOIN concept c ON l.country_concept_id = c.concept_id
-    WHERE c.domain_id = 'Geography';
-```
-
-#### Suggested fix
-
-Remove comparisons between location.state/zip and concept table. Use location.country_concept_id for joins, and treat state/zip as free-text fields.
-
----
-
 ### 14. Negative Concept ID Validation { #data-quality-negative-concept-id-validation }
 
 **Rule ID:** `data_quality.negative_concept_id_validation`
@@ -4108,56 +3854,6 @@ SELECT *
 #### Suggested fix
 
 Use CAST(offset AS INT) or CONVERT(INT, offset) for numeric usage. Avoid using offset in JOIN conditions.
-
----
-
-### 16. Note NLP Term Modifiers is Free Text
-
-**Rule ID:** `data_quality.note_nlp_term_modifiers_is_free_text`
-**Severity:** ERROR
-
-#### Intent
-
-The note_nlp.term_modifiers column stores unstructured key-value pairs as
-    free text, not concept IDs or structured data. Developers might mistakenly:
-    1. Join it to concept.concept_id (treating it as a foreign key)
-    2. Cast it to integer (treating it as numeric)
-    3. Use it in equality joins expecting structured data
-
-    This is semantically incorrect because term_modifiers contains unparsed
-    text annotations, not standardized concept identifiers.
-
-#### How it works
-
-This rule analyzes the SQL query to identify note nlp term modifiers is free text patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-    FROM note_nlp nn
-    JOIN concept c ON nn.term_modifiers = c.concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT *
-    FROM note_nlp
-    WHERE term_modifiers LIKE '%certainty=positive%'
-```
-
-#### Common scenarios
-
-- JOIN to concept: JOIN concept c ON nn.term_modifiers = c.concept_id
-- CAST to integer: CAST(term_modifiers AS INT)
-- General JOINs: JOIN other_table ON nn.term_modifiers = ...
-
-#### Suggested fix
-
-Use LIKE or full-text search. Do not JOIN or CAST term_modifiers.
 
 ---
 
@@ -4470,27 +4166,6 @@ Add: column > 0 to explicitly exclude unmapped, or handle them separately
 
 ---
 
-### 23. Vocabulary ID Validation
-
-**Rule ID:** `data_quality.vocabulary_id_validation`
-**Severity:** ERROR
-
-#### Intent
-
-Ensures vocabulary_id values use correct canonical casing and are hyphen-free. Incorrect values may return zero results due to case sensitivity.
-
-#### How it works
-
-This rule analyzes the SQL query to identify vocabulary id validation patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Use canonical OMOP vocabulary_id values.
-
----
-
 ### 24. Vocabulary Table Protection { #data-quality-vocabulary-table-protection }
 
 **Rule ID:** `data_quality.vocabulary_table_protection`
@@ -4661,54 +4336,6 @@ Query attribute_definition standalone, or remove it from the query. This table h
 
 ---
 
-### 3. CDM Source Clinical Join
-
-**Rule ID:** `anti_patterns.cdm_source_clinical_join`
-**Severity:** ERROR
-
-#### Intent
-
-The cdm_source table is a metadata table with no primary key containing
-    a single row that describes the CDM instance (version, vocabulary version,
-    source name, etc.). It has no relationship to clinical data.
-
-    Joining cdm_source to clinical tables (person, condition_occurrence, etc.)
-    creates a cartesian product that appends the same metadata row to every
-    clinical record, which is analytically meaningless.
-
-#### How it works
-
-This rule analyzes the SQL query to identify cdm source clinical join patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM condition_occurrence JOIN cdm_source ON 1=1
-```
-
-```sql
-with metadata table
-```
-
-**Correct patterns:**
-
-```sql
-SELECT cdm_source_name, vocabulary_version FROM cdm_source
-```
-
-```sql
-SELECT cdm_source_name, vocabulary_version FROM cdm_source
-    WHERE cdm_version = '5.4'
-```
-
-#### Suggested fix
-
-Remove the JOIN to cdm_source. Query it separately or use a scalar subquery, e.g. (SELECT cdm_version FROM cdm_source).
-
----
-
 ### 4. Comma-Separated Cross Join { #anti-patterns-comma-separated-cross-join }
 
 **Rule ID:** `anti_patterns.comma_separated_cross_join`
@@ -4862,66 +4489,6 @@ Use concept_ancestor alone for hierarchical traversal. Only use concept_relation
 
 ---
 
-### 6. Concept Class Table Join Uses Concept Class ID
-
-**Rule ID:** `anti_patterns.concept_class_table_join_uses_concept_class_id`
-**Severity:** ERROR
-
-#### Intent
-
-The concept_class table has two important columns:
-    - concept_class_id (VARCHAR): The unique identifier/code for the concept class
-      (e.g., "Clinical Drug", "Ingredient", "Procedure", "Clinical Finding")
-    - concept_class_concept_id (INTEGER): A concept_id that represents the concept class
-      as a concept in the OMOP vocabulary
-
-    When joining concept to concept_class, you must use the VARCHAR concept_class_id column,
-    NOT the INTEGER concept_class_concept_id.
-
-Why this is wrong:
-    - Type mismatch: concept_class_id is VARCHAR, concept_class_concept_id is INTEGER
-    - Semantic error: concept_class_concept_id represents the concept class as a concept,
-      not as a foreign key relationship
-    - The correct join key is concept_class_id (string to string)
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept class table join uses concept class id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id
-```
-
-```sql
-SELECT c.concept_name, cc.concept_class_name
-    FROM concept c
-    INNER JOIN concept_class cc ON c.concept_class_id = cc.concept_class_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
-```
-
-```sql
-SELECT c.concept_name, cc.concept_class_name
-    FROM concept c
-    INNER JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
-```
-
-#### Suggested fix
-
-Change JOIN condition to: concept.concept_class_id = concept_class.concept_class_id
-
----
-
 ### 7. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
 
 **Rule ID:** `anti_patterns.concept_code_requires_vocabulary_id`
@@ -4940,27 +4507,6 @@ This rule analyzes the SQL query to identify concept code requires vocabulary id
 #### Suggested fix
 
 Add a vocabulary_id filter alongside concept_code
-
----
-
-### 8. Concept Lookup Context
-
-**Rule ID:** `anti_patterns.concept_lookup_context`
-**Severity:** ERROR
-
-#### Intent
-
-OMOP vocabulary rule: String filtering on concept table columns (concept_name, concept_code, etc.) is allowed ONLY when used inside a concept_id lookup context (subquery or CTE that outputs concept_id).
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept lookup context patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ...)
 
 ---
 
@@ -5108,66 +4654,6 @@ Use SELECT for analysis. Perform data modifications only via controlled ETL pipe
 
 ---
 
-### 13. Domain Table Join Uses Domain ID
-
-**Rule ID:** `anti_patterns.domain_table_join_uses_domain_id`
-**Severity:** ERROR
-
-#### Intent
-
-The domain table has two important columns:
-    - domain_id (VARCHAR): The unique identifier/code for the domain
-      (e.g., "Condition", "Drug", "Procedure", "Measurement")
-    - domain_concept_id (INTEGER): A concept_id that represents the domain
-      as a concept in the OMOP vocabulary
-
-    When joining concept to domain, you must use the VARCHAR domain_id column,
-    NOT the INTEGER domain_concept_id.
-
-Why this is wrong:
-    - Type mismatch: domain_id is VARCHAR, domain_concept_id is INTEGER
-    - Semantic error: domain_concept_id represents the domain as a concept,
-      not as a foreign key relationship
-    - The correct join key is domain_id (string to string)
-
-#### How it works
-
-This rule analyzes the SQL query to identify domain table join uses domain id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN domain d ON c.domain_id = d.domain_concept_id
-```
-
-```sql
-SELECT c.concept_name, d.domain_name
-    FROM concept c
-    INNER JOIN domain d ON c.domain_id = d.domain_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN domain d ON c.domain_id = d.domain_id
-```
-
-```sql
-SELECT c.concept_name, d.domain_name
-    FROM concept c
-    INNER JOIN domain d ON c.domain_id = d.domain_id
-```
-
-#### Suggested fix
-
-Change JOIN condition to: concept.domain_id = domain.domain_id
-
----
-
 ### 14. Having Without Group By { #anti-patterns-having-without-group-by }
 
 **Rule ID:** `anti_patterns.having_without_group_by`
@@ -5280,9 +4766,9 @@ Ensure JOIN conditions use correct foreign key relationships. For OMOP: person_i
 
 ---
 
-### 16. Metadata Clinical Join
+### 16. Singleton Metadata Joined to Clinical Table { #anti-patterns-singleton-metadata-clinical-join }
 
-**Rule ID:** `anti_patterns.metadata_clinical_join`
+**Rule ID:** `anti_patterns.singleton_metadata_clinical_join`
 **Severity:** ERROR
 
 #### Intent
@@ -5551,66 +5037,6 @@ Use the primary concept_id column (e.g., condition_concept_id) for clinical filt
 
 ---
 
-### 22. Vocabulary Table Join Uses Vocabulary ID String
-
-**Rule ID:** `anti_patterns.vocabulary_table_join_uses_vocabulary_id_string`
-**Severity:** ERROR
-
-#### Intent
-
-The vocabulary table has two important columns:
-    - vocabulary_id (VARCHAR): The unique identifier/code for the vocabulary
-      (e.g., "SNOMED", "LOINC", "RxNorm")
-    - vocabulary_concept_id (INTEGER): A concept_id that represents the vocabulary
-      as a concept in the OMOP vocabulary
-
-    When joining concept to vocabulary, you must use the VARCHAR vocabulary_id column,
-    NOT the INTEGER vocabulary_concept_id.
-
-Why this is wrong:
-    - Type mismatch: vocabulary_id is VARCHAR, vocabulary_concept_id is INTEGER
-    - Semantic error: vocabulary_concept_id represents the vocabulary as a concept,
-      not as a foreign key relationship
-    - The correct join key is vocabulary_id (string to string)
-
-#### How it works
-
-This rule analyzes the SQL query to identify vocabulary table join uses vocabulary id string patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id
-```
-
-```sql
-SELECT c.concept_name, v.vocabulary_name
-    FROM concept c
-    INNER JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
-```
-
-```sql
-SELECT c.concept_name, v.vocabulary_name
-    FROM concept c
-    INNER JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
-```
-
-#### Suggested fix
-
-Change JOIN condition to: concept.vocabulary_id = vocabulary.vocabulary_id
-
----
-
 ## Domain-Specific Rules
 
 These rules validate domain-specific constraints for individual OMOP CDM tables and clinical domains.
@@ -5786,44 +5212,6 @@ SELECT co.*, vo.visit_start_date
 #### Suggested fix
 
 Add: JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-
----
-
-### 3. Condition Temporal Column Validation { #domain-specific-condition-start-date-temporal-validation }
-
-**Rule ID:** `domain_specific.condition_start_date_temporal_validation`
-**Severity:** WARNING
-
-#### Intent
-
-condition_occurrence has three temporal columns:
-    - condition_start_date: Required, NOT NULL (always populated)
-    - condition_start_datetime: Optional, may be NULL
-    - condition_end_date: Optional, may be NULL (ongoing conditions)
-
-    Using nullable columns for temporal filtering can silently exclude records
-    where those columns are NULL, leading to incomplete result sets.
-
-Example impact:
-    -- BAD: Uses nullable column
-    SELECT COUNT(*) FROM condition_occurrence
-    WHERE condition_start_datetime BETWEEN '2023-01-01' AND '2023-12-31'
-    -- May exclude records where datetime is NULL but date is populated
-
-    -- GOOD: Uses required column
-    SELECT COUNT(*) FROM condition_occurrence
-    WHERE condition_start_date BETWEEN '2023-01-01' AND '2023-12-31'
-    -- Includes all records (start_date is always populated)
-
-#### How it works
-
-This rule analyzes the SQL query to identify condition temporal column validation patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Use condition_start_date or COALESCE(nullable_column, condition_start_date)
 
 ---
 
@@ -7218,67 +6606,6 @@ Use valid birth field values within plausible ranges
 ---
 
 ### PROCEDURE Domain
-
-### 1. Procedure Date Not Procedure Start Date { #domain-specific-procedure-date-not-procedure-start-date }
-
-**Rule ID:** `domain_specific.procedure_date_not_procedure_start_date`
-**Severity:** ERROR
-
-#### Intent
-
-The OMOP CDM has inconsistent naming patterns across clinical event tables:
-
-    - condition_occurrence: condition_start_date, condition_end_date
-    - drug_exposure: drug_exposure_start_date, drug_exposure_end_date
-    - procedure_occurrence: procedure_date, procedure_end_date (NO "start")
-
-    The procedure_occurrence table schema is:
-    - procedure_date: Date of the procedure (not procedure_start_date)
-    - procedure_datetime: Timestamp of the procedure
-    - procedure_end_date: End date (for procedures spanning multiple days)
-
-    The procedure_occurrence table does NOT have a procedure_start_date column.
-
-    Developers familiar with condition_occurrence or drug_exposure naturally expect
-    procedure_start_date to exist, but it doesn't. The correct column is procedure_date.
-
-#### How it works
-
-This rule analyzes the SQL query to identify procedure date not procedure start date patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT procedure_start_date FROM procedure_occurrence
-```
-
-```sql
-SELECT po.procedure_start_date FROM procedure_occurrence po
-```
-
-**Correct patterns:**
-
-```sql
-SELECT procedure_date FROM procedure_occurrence
-```
-
-```sql
-SELECT procedure_datetime FROM procedure_occurrence
-```
-
-#### Common scenarios
-
-- Referencing procedure_occurrence.procedure_start_date (column doesn't exist)
-- Using procedure_start_date in WHERE/SELECT/JOIN/ORDER BY
-- Copying query patterns from condition_occurrence without adapting column names
-
-#### Suggested fix
-
-Use procedure_date for date or procedure_datetime for timestamp. procedure_end_date is available for end dates.
-
----
 
 ### 2. Procedure Occurrence Quantity Semantics { #domain-specific-procedure-occurrence-quantity-semantics }
 

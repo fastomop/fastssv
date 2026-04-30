@@ -127,7 +127,7 @@ See [docs/API.md](docs/API.md) for the full API reference, configuration, and de
 
 ## What FastSSV Catches
 
-FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
+FastSSV ships with 154 validation rules across 6 categories covering OMOP CDM v5.4 semantic correctness.
 
 ### Core Categories
 
@@ -276,7 +276,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Clinical event date before 1900** (`data_quality.clinical_event_date_before_1900_validation`, WARNING) - Warns about suspiciously old dates (before year 1900) in clinical tables, which often indicate missing data coded as `1900-01-01` or data quality issues.
 
-**Case-sensitivity validations** (`data_quality.concept_class_id_case_sensitivity`, `data_quality.domain_id_case_sensitivity`, `data_quality.vocabulary_id_validation`, WARNING/ERROR) - Detects case mismatches in canonical vocabulary literals such as `domain_id`, `concept_class_id`, and `vocabulary_id` that silently produce empty results.
+**Canonical string value validation** (`data_quality.canonical_string_value_validation`, WARNING/ERROR) - Detects case mismatches and other deviations from canonical vocabulary literals (e.g., `domain_id`, `concept_class_id`, `vocabulary_id`, `standard_concept`) that silently produce empty results.
 
 **Concept name whitespace** (`data_quality.concept_name_whitespace`, WARNING) - Flags leading or trailing whitespace in `concept_name` equality comparisons, which often indicates accidental copy/paste errors.
 

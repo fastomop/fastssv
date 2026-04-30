@@ -58,7 +58,7 @@ FastSSV rules validate OMOP CDM analytical constraints that go beyond SQL syntax
 
 ### Current Concept Standardization Rules
 
-FastSSV currently includes **19 concept standardization rules**. The examples below highlight a representative subset of the most important patterns, not every rule in the category.
+FastSSV currently includes **18 concept standardization rules**. The examples below highlight a representative subset of the most important patterns, not every rule in the category.
 
 #### 1. Standard Concept Enforcement (`concept_standardization.standard_concept_enforcement`)
 **Severity:** ERROR
