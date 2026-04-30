@@ -12,7 +12,7 @@ This document provides comprehensive documentation for FastSSV's validation rule
 - **temporal**: 10 rules
 
 > **Note:** The prose descriptions below reflect the stable rule set. Rule
-> removals and rule renames are tracked in [CHANGELOG.md](../CHANGELOG.md).
+> removals and rule renames are tracked in [CHANGELOG.md](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md).
 > If a rule listed here is no longer in the registry, check the CHANGELOG
 > for the removal rationale. If a rule appears in the registry but not
 > below, it was added after this document's last full pass — the rule's
@@ -108,7 +108,7 @@ For each rule you will find:
 | `joins.visit_detail_join_validation` | [Visit Detail Join Validation](#joins-visit-detail-join-validation) | WARNING | joins |
 | `joins.visit_occurrence_id_join_validation` | [Visit Occurrence ID Join Validation](#joins-visit-occurrence-id-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_inner_join_validation` | [Visit Occurrence INNER JOIN Validation](#joins-visit-occurrence-inner-join-validation) | WARNING | joins |
-| `joins.observation_period_join_validation` | [Observation Period Join Validation](#joins-observation-period-join-validation) | WARNING | joins |
+| `joins.observation_period_join_validation`{ #joins-observation-period-join-validation } | [Observation Period Join Validation](#joins-observation-period-join-validation) | WARNING | joins |
 | `temporal.clinical_event_date_in_future_validation` | [Clinical Event Date Should Not Be In Future](#temporal-clinical-event-date-in-future-validation) | WARNING | temporal |
 | `temporal.datetime_between_date_literal` | [Datetime BETWEEN with Date Literal](#temporal-datetime-between-date-literal) | WARNING | temporal |
 | `temporal.death_date_before_birth_validation` | [Death Date Before Birth Validation](#temporal-death-date-before-birth-validation) | ERROR | temporal |
@@ -120,7 +120,7 @@ For each rule you will find:
 | `temporal.observation_period_date_range_logic` | [Observation Period Date Range Logic](#temporal-observation-period-date-range-logic) | ERROR | temporal |
 | `temporal.required_date_column_validation` | [Required Date Column Validation](#temporal-required-date-column-validation) | WARNING | temporal |
 | `data_quality.clinical_event_date_before_1900_validation` | [Clinical Event Date Should Not Be Before 1900](#data-quality-clinical-event-date-before-1900-validation) | WARNING | data_quality |
-| `data_quality.canonical_string_value_validation` | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
+| `data_quality.canonical_string_value_validation`{ #data-quality-canonical-string-value-validation } | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
 | `data_quality.column_type_validation` | [Column Type Validation](#data-quality-column-type-validation) | ERROR | data_quality |
 | `data_quality.concept_id_string_comparison` | [Concept ID String Comparison](#data-quality-concept-id-string-comparison) | WARNING | data_quality |
 | `data_quality.concept_name_whitespace` | [Concept Name Whitespace](#data-quality-concept-name-whitespace) | WARNING | data_quality |
@@ -128,7 +128,7 @@ For each rule you will find:
 | `data_quality.fact_relationship_no_self_reference` | [Fact Relationship No Self-Reference](#data-quality-fact-relationship-no-self-reference) | WARNING | data_quality |
 | `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | ERROR | data_quality |
 | `data_quality.fact_relationship_valid_concepts` | [Fact Relationship Valid Concepts](#data-quality-fact-relationship-valid-concepts) | WARNING | data_quality |
-| `data_quality.free_text_column_misuse` | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | ERROR | data_quality |
+| `data_quality.free_text_column_misuse`{ #data-quality-free-text-column-misuse } | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | ERROR | data_quality |
 | `data_quality.negative_concept_id_validation` | [Negative Concept ID Validation](#data-quality-negative-concept-id-validation) | ERROR | data_quality |
 | `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
 | `data_quality.note_nlp_nlp_date_for_temporal_filtering` | [Note NLP nlp_date for Temporal Filtering](#data-quality-note-nlp-nlp-date-for-temporal-filtering) | WARNING | data_quality |
@@ -140,7 +140,7 @@ For each rule you will find:
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
 | `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | WARNING | anti_patterns |
 | `anti_patterns.attribute_definition_invalid_join` | [Attribute Definition Invalid Join](#anti-patterns-attribute-definition-invalid-join) | ERROR | anti_patterns |
-| `anti_patterns.singleton_metadata_clinical_join` | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
+| `anti_patterns.singleton_metadata_clinical_join`{ #anti-patterns-singleton-metadata-clinical-join } | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
 | `anti_patterns.comma_separated_cross_join` | [Comma-Separated Cross Join](#anti-patterns-comma-separated-cross-join) | ERROR | anti_patterns |
 | `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly` | [Concept Ancestor Mixed with Concept Relationship Redundantly](#anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly) | WARNING | anti_patterns |
 | `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | ERROR | anti_patterns |
@@ -149,7 +149,7 @@ For each rule you will find:
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
 | `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
-| `anti_patterns.limit_without_order_by` | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
+| `anti_patterns.limit_without_order_by`{ #anti-patterns-limit-without-order-by } | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
 | `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | ERROR | anti_patterns |
 | `anti_patterns.standard_concept_or_with_classification` | [Standard Concept OR with Classification](#anti-patterns-standard-concept-or-with-classification) | WARNING | anti_patterns |
@@ -159,11 +159,11 @@ For each rule you will find:
 | `domain_specific.condition_occurrence_cardinality_validation` | [Condition Occurrence Cardinality Risk](#domain-specific-condition-occurrence-cardinality-validation) | WARNING | domain_specific |
 | `domain_specific.condition_visit_hierarchy_validation` | [Condition Occurrence Visit Hierarchy Validation](#domain-specific-condition-visit-hierarchy-validation) | ERROR | domain_specific |
 | `domain_specific.condition_start_date_temporal_validation` | [Condition Temporal Column Validation](#domain-specific-condition-start-date-temporal-validation) | WARNING | domain_specific |
-| `domain_specific.cost_event_id_polymorphic_resolution` | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
+| `domain_specific.cost_event_id_polymorphic_resolution`{ #domain-specific-cost-event-id-polymorphic-resolution } | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.cost_payer_plan_period_id_join` | [Cost Payer Plan Period ID Join](#domain-specific-cost-payer-plan-period-id-join) | ERROR | domain_specific |
-| `domain_specific.dose_era_cross_unit_comparison` | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
-| `domain_specific.event_cardinality_validation` | [Event Cardinality Risk (observation, device_exposure, visit_detail)](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
-| `domain_specific.event_field_polymorphic_resolution` | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
+| `domain_specific.dose_era_cross_unit_comparison`{ #domain-specific-dose-era-cross-unit-comparison } | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
+| `domain_specific.event_cardinality_validation`{ #domain-specific-event-cardinality-validation } | [Event Cardinality Risk (observation, device_exposure, visit_detail)](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
+| `domain_specific.event_field_polymorphic_resolution`{ #domain-specific-event-field-polymorphic-resolution } | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.death_cause_source_concept_validation` | [Death Cause Source Concept Not For Analytical Filtering](#domain-specific-death-cause-source-concept-validation) | ERROR | domain_specific |
 | `domain_specific.death_join_to_person_not_to_clinical_event` | [Death Join to Person Not to Clinical Event](#domain-specific-death-join-to-person-not-to-clinical-event) | ERROR | domain_specific |
 | `domain_specific.drug_days_supply_validation` | [Drug Days Supply Validation](#domain-specific-drug-days-supply-validation) | WARNING | domain_specific |
@@ -188,8 +188,8 @@ For each rule you will find:
 | `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | ERROR | domain_specific |
 | `domain_specific.observation_value_as_string_numeric_comparison` | [Observation Value As String Numeric Comparison](#domain-specific-observation-value-as-string-numeric-comparison) | ERROR | domain_specific |
 | `domain_specific.person_birth_field_validation` | [Person Birth Field Validation](#domain-specific-person-birth-field-validation) | ERROR | domain_specific |
-| `domain_specific.year_of_birth_age_arithmetic` | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
-| `domain_specific.visit_length_of_stay_arithmetic` | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
+| `domain_specific.year_of_birth_age_arithmetic`{ #domain-specific-year-of-birth-age-arithmetic } | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
+| `domain_specific.visit_length_of_stay_arithmetic`{ #domain-specific-visit-length-of-stay-arithmetic } | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
 | `domain_specific.procedure_date_not_procedure_start_date` | [Procedure Date Not Procedure Start Date](#domain-specific-procedure-date-not-procedure-start-date) | ERROR | domain_specific |
 | `domain_specific.procedure_occurrence_quantity_semantics` | [Procedure Occurrence Quantity Semantics](#domain-specific-procedure-occurrence-quantity-semantics) | WARNING | domain_specific |
 | `domain_specific.vocabulary.relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
@@ -200,7 +200,7 @@ For each rule you will find:
 | `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Reference](#domain-specific-visit-detail-visit-occurrence-reference) | WARNING | domain_specific |
 | `domain_specific.visit_event_temporal_validation` | [Visit Event Temporal Validation](#domain-specific-visit-event-temporal-validation) | WARNING | domain_specific |
 | `domain_specific.visit_outpatient_same_day_validation` | [Visit Outpatient Same-Day Validation](#domain-specific-visit-outpatient-same-day-validation) | WARNING | domain_specific |
-| `domain_specific.cdm_v53_to_v54_column_renames` | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
+| `domain_specific.cdm_v53_to_v54_column_renames`{ #domain-specific-cdm-v53-to-v54-column-renames } | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
 
 
 ---
@@ -219,7 +219,7 @@ These rules validate whether SQL queries correctly use OMOP standard concepts, v
 
 ---
 
-### 1. Concept Ancestor Cross-Domain Validation
+### 1. Concept Ancestor Cross-Domain Validation { #concept-standardization-concept-ancestor-cross-domain }
 
 **Rule ID:** `concept_standardization.concept_ancestor_cross_domain`
 **Severity:** WARNING
@@ -277,7 +277,7 @@ Match descendant domain_id to the ancestor's domain, or use concept_relationship
 
 ---
 
-### 2. Concept Ancestor Max Levels Misuse
+### 2. Concept Ancestor Max Levels Misuse { #concept-standardization-concept-ancestor-max-levels-misuse }
 
 **Rule ID:** `concept_standardization.concept_ancestor_max_levels_misuse`
 **Severity:** WARNING
@@ -343,7 +343,7 @@ Use min_levels_of_separation = 1 for direct relationships, or max_levels_of_sepa
 
 ---
 
-### 3. Concept Ancestor Rollup Direction
+### 3. Concept Ancestor Rollup Direction { #concept-standardization-concept-ancestor-rollup-direction }
 
 **Rule ID:** `concept_standardization.concept_ancestor_rollup_direction`
 **Severity:** ERROR
@@ -398,7 +398,7 @@ Join clinical concept_id to concept_ancestor.descendant_concept_id and filter on
 
 ---
 
-### 4. Concept Ancestor Self-Include Redundancy
+### 4. Concept Ancestor Self-Include Redundancy { #concept-standardization-concept-ancestor-self-include-redundancy }
 
 **Rule ID:** `concept_standardization.concept_ancestor_self_include_redundancy`
 **Severity:** WARNING
@@ -469,7 +469,7 @@ Use concept_ancestor alone, or filter with min_levels_of_separation > 0.
 
 ---
 
-### 5. Concept Class ID Ingredient for Drug Grouping
+### 5. Concept Class ID Ingredient for Drug Grouping { #concept-standardization-concept-class-id-ingredient-for-drug-grouping }
 
 **Rule ID:** `concept_standardization.concept_class_id_ingredient_for_drug_grouping`
 **Severity:** WARNING
@@ -556,7 +556,7 @@ Use concept_class_id = 'Ingredient' or use concept_ancestor to roll up drug prod
 
 ---
 
-### 6. Concept Domain ID Matches Target Table
+### 6. Concept Domain ID Matches Target Table { #concept-standardization-concept-domain-validation }
 
 **Rule ID:** `concept_standardization.concept_domain_validation`
 **Severity:** ERROR
@@ -578,7 +578,7 @@ Add or correct concept.domain_id filter to match expected domain.
 ---
 
 
-### 8. Concept Synonym Language Concept ID
+### 8. Concept Synonym Language Concept ID { #concept-standardization-concept-synonym-language-concept-id }
 
 **Rule ID:** `concept_standardization.concept_synonym_language_concept_id`
 **Severity:** WARNING
@@ -635,7 +635,7 @@ Add: AND language_concept_id = 4180186 (English), unless multilingual results ar
 
 ---
 
-### 9. Domain Vocabulary Validation (VOCAB_022-025)
+### 9. Domain Vocabulary Validation (VOCAB_022-025) { #concept-standardization-domain-vocabulary-validation }
 
 **Rule ID:** `concept_standardization.domain_vocabulary_validation`
 **Severity:** WARNING
@@ -704,7 +704,7 @@ Use the correct standard vocabulary for the domain, or use *_source_concept_id f
 
 ---
 
-### 10. Era Tables Use Standard Concepts Only
+### 10. Era Tables Use Standard Concepts Only { #concept-standardization-era-table-standard-concepts }
 
 **Rule ID:** `concept_standardization.era_table_standard_concepts`
 **Severity:** ERROR
@@ -726,7 +726,7 @@ Remove filters for non-standard concepts. Era tables only contain standard conce
 ---
 
 
-### 12. Invalid Reason Enforcement
+### 12. Invalid Reason Enforcement { #concept-standardization-invalid-reason-enforcement }
 
 **Rule ID:** `concept_standardization.invalid_reason_enforcement`
 **Severity:** WARNING (strict-mode-only — silent in default mode)
@@ -814,7 +814,7 @@ SELECT concept_id FROM concept WHERE vocabulary_id = 'SNOMED' AND standard_conce
 
 ---
 
-### 13. Maps To Target Standard Validation
+### 13. Maps To Target Standard Validation { #concept-standardization-maps-to-target-standard-validation }
 
 **Rule ID:** `concept_standardization.maps_to_target_standard_validation`
 **Severity:** ERROR
@@ -865,7 +865,7 @@ Join concept_relationship.concept_id_2 to concept.concept_id and add filter: con
 
 ---
 
-### 14. Multiple Maps To Targets Not Handled
+### 14. Multiple Maps To Targets Not Handled { #concept-standardization-multiple-maps-to-targets }
 
 **Rule ID:** `concept_standardization.multiple_maps_to_targets`
 **Severity:** WARNING
@@ -936,7 +936,7 @@ Use DISTINCT, GROUP BY with aggregation (e.g., ARRAY_AGG), or explicitly handle 
 
 ---
 
-### 15. Source Concept ID Not For Analytical Filtering
+### 15. Source Concept ID Not For Analytical Filtering { #concept-standardization-source-concept-id-warning }
 
 **Rule ID:** `concept_standardization.source_concept_id_warning`
 **Severity:** WARNING
@@ -967,7 +967,7 @@ Replace *_source_concept_id with corresponding standard *_concept_id column. If 
 
 ---
 
-### 16. Source Concept ID Should Not Filter Standard Concepts
+### 16. Source Concept ID Should Not Filter Standard Concepts { #concept-standardization-source-concept-id-standard-filter }
 
 **Rule ID:** `concept_standardization.source_concept_id_standard_filter`
 **Severity:** WARNING
@@ -1041,7 +1041,7 @@ Remove standard_concept = 'S' filter when joining source concept IDs, or use the
 
 ---
 
-### 17. Source to Concept Map Validation
+### 17. Source to Concept Map Validation { #concept-standardization-source-to-concept-map-validation }
 
 **Rule ID:** `concept_standardization.source_to_concept_map_validation`
 **Severity:** WARNING
@@ -1092,7 +1092,7 @@ Add source_vocabulary_id filter alongside source_code.
 
 ---
 
-### 18. Standard Concept Enforcement
+### 18. Standard Concept Enforcement { #concept-standardization-standard-concept-enforcement }
 
 **Rule ID:** `concept_standardization.standard_concept_enforcement`
 **Severity:** WARNING (escalates to ERROR in strict mode)
@@ -1187,7 +1187,7 @@ WHERE condition_concept_id IN (201826, 201820);
 
 ---
 
-### 19. Standard Concept Value Validation
+### 19. Standard Concept Value Validation { #concept-standardization-standard-concept-value-validation }
 
 **Rule ID:** `concept_standardization.standard_concept_value_validation`
 **Severity:** ERROR
@@ -1208,7 +1208,7 @@ Use 'S' for standard, 'C' for classification, or NULL for non-standard concepts.
 
 ---
 
-### 20. Unit Vocabulary Validation
+### 20. Unit Vocabulary Validation { #concept-standardization-unit-vocabulary-validation }
 
 **Rule ID:** `concept_standardization.unit_vocabulary_validation`
 **Severity:** WARNING
@@ -1285,7 +1285,7 @@ These rules validate that table joins follow the OMOP CDM schema foreign key rel
 
 ---
 
-### 1. Care Site ID Join Validation
+### 1. Care Site ID Join Validation { #joins-care-site-id-join-validation }
 
 **Rule ID:** `joins.care_site_id_join_validation`
 **Severity:** ERROR
@@ -1322,7 +1322,7 @@ Join using care_site_id on both sides: table.care_site_id = care_site.care_site_
 
 ---
 
-### 2. Care Site Join Path Validation
+### 2. Care Site Join Path Validation { #joins-care-site-join-validation }
 
 **Rule ID:** `joins.care_site_join_validation`
 **Severity:** WARNING
@@ -1362,7 +1362,7 @@ Use: clinical → care_site → location join path.
 
 ---
 
-### 3. Care Site to Location Join Validation
+### 3. Care Site to Location Join Validation { #joins-care-site-location-join-validation }
 
 **Rule ID:** `joins.care_site_location_join_validation`
 **Severity:** ERROR
@@ -1399,7 +1399,7 @@ Join care_site to location using location_id: care_site.location_id = location.l
 
 ---
 
-### 4. Clinical Primary Key Join Validation
+### 4. Clinical Primary Key Join Validation { #joins-clinical-pk-cross-join-validation }
 
 **Rule ID:** `joins.clinical_pk_cross_join_validation`
 **Severity:** ERROR
@@ -1445,7 +1445,7 @@ Do not join clinical event primary keys. Use shared foreign keys such as person_
 
 ---
 
-### 5. Clinical Tables Require Person ID Linkage
+### 5. Clinical Tables Require Person ID Linkage { #joins-clinical-person-id-linkage-validation }
 
 **Rule ID:** `joins.clinical_person_id_linkage_validation`
 **Severity:** ERROR
@@ -1507,7 +1507,7 @@ Add joins on person_id between clinical tables.
 
 ---
 
-### 6. Clinical to Visit Detail Join Validation
+### 6. Clinical to Visit Detail Join Validation { #joins-clinical-visit-detail-join-validation }
 
 **Rule ID:** `joins.clinical_visit_detail_join_validation`
 **Severity:** ERROR
@@ -1549,7 +1549,7 @@ None
 
 ---
 
-### 7. Cohort to Clinical Table Join Validation
+### 7. Cohort to Clinical Table Join Validation { #joins-cohort-clinical-join-validation }
 
 **Rule ID:** `joins.cohort_clinical_join_validation`
 **Severity:** ERROR
@@ -1604,7 +1604,7 @@ Use: cohort.subject_id = clinical.person_id or cohort.subject_id = person.person
 
 ---
 
-### 8. Concept Alias Reuse Validation
+### 8. Concept Alias Reuse Validation { #joins-concept-alias-reuse-validation }
 
 **Rule ID:** `joins.concept_alias_reuse_validation`
 **Severity:** ERROR
@@ -1650,7 +1650,7 @@ None
 
 ---
 
-### 9. Concept Ancestor Name Resolution Validation
+### 9. Concept Ancestor Name Resolution Validation { #joins-concept-ancestor-name-resolution }
 
 **Rule ID:** `joins.concept_ancestor_name_resolution`
 **Severity:** ERROR
@@ -1699,7 +1699,7 @@ Use descendant_concept_id for descendant values and ancestor_concept_id for ance
 
 ---
 
-### 10. Concept Join Validation
+### 10. Concept Join Validation { #joins-concept-join-validation }
 
 **Rule ID:** `joins.concept_join_validation`
 **Severity:** ERROR
@@ -1742,7 +1742,7 @@ None
 ---
 
 
-### 12. Concept Relationship Requires Relationship ID Filter
+### 12. Concept Relationship Requires Relationship ID Filter { #joins-concept-relationship-requires-relationship-id }
 
 **Rule ID:** `joins.concept_relationship_requires_relationship_id`
 **Severity:** ERROR
@@ -1763,7 +1763,7 @@ Add a filter on relationship_id for each concept_relationship alias. Example: cr
 
 ---
 
-### 13. Concept Relationship to Concept Join Validation
+### 13. Concept Relationship to Concept Join Validation { #joins-concept-relationship-concept-join-validation }
 
 **Rule ID:** `joins.concept_relationship_concept_join_validation`
 **Severity:** ERROR
@@ -1820,7 +1820,7 @@ Use concept_id_1 for source concepts and concept_id_2 for target concepts.
 
 ---
 
-### 14. Concept Relationship to Relationship Join Validation
+### 14. Concept Relationship to Relationship Join Validation { #joins-concept-relationship-relationship-join-validation }
 
 **Rule ID:** `joins.concept_relationship_relationship_join_validation`
 **Severity:** ERROR
@@ -1864,7 +1864,7 @@ Use: concept_relationship.relationship_id = relationship.relationship_id
 
 ---
 
-### 15. Concept Synonym Join Validation
+### 15. Concept Synonym Join Validation { #joins-concept-synonym-join-validation }
 
 **Rule ID:** `joins.concept_synonym_join_validation`
 **Severity:** ERROR
@@ -1907,7 +1907,7 @@ Join concept_synonym to concept using concept_id: concept_synonym.concept_id = c
 
 ---
 
-### 16. Concept to Concept Class Join Validation
+### 16. Concept to Concept Class Join Validation { #joins-concept-concept-class-join-validation }
 
 **Rule ID:** `joins.concept_concept_class_join_validation`
 **Severity:** ERROR
@@ -1951,7 +1951,7 @@ None
 
 ---
 
-### 17. Concept to Domain Join Validation
+### 17. Concept to Domain Join Validation { #joins-concept-domain-join-validation }
 
 **Rule ID:** `joins.concept_domain_join_validation`
 **Severity:** ERROR
@@ -1994,7 +1994,7 @@ None
 
 ---
 
-### 18. Concept to Vocabulary Join Validation
+### 18. Concept to Vocabulary Join Validation { #joins-concept-vocabulary-join-validation }
 
 **Rule ID:** `joins.concept_vocabulary_join_validation`
 **Severity:** ERROR
@@ -2037,7 +2037,7 @@ None
 
 ---
 
-### 19. Cost Table Domain Validation
+### 19. Cost Table Domain Validation { #joins-cost-table-domain-validation }
 
 **Rule ID:** `joins.cost_table_domain_validation`
 **Severity:** ERROR
@@ -2077,7 +2077,7 @@ Add cost.cost_domain_id = '<domain>' matching the joined clinical table.
 
 ---
 
-### 20. Death to Visit Occurrence Join Validation
+### 20. Death to Visit Occurrence Join Validation { #joins-death-visit-occurrence-join-validation }
 
 **Rule ID:** `joins.death_visit_occurrence_join_validation`
 **Severity:** ERROR
@@ -2130,7 +2130,7 @@ Use: death.person_id = visit_occurrence.person_id
 
 ---
 
-### 21. Drug Exposure to Drug Strength Join Validation
+### 21. Drug Exposure to Drug Strength Join Validation { #joins-drug-exposure-drug-strength-join-validation }
 
 **Rule ID:** `joins.drug_exposure_drug_strength_join_validation`
 **Severity:** ERROR
@@ -2182,7 +2182,7 @@ Use: drug_exposure.drug_concept_id = drug_strength.drug_concept_id
 
 ---
 
-### 22. Era Table Forbidden Join Validation
+### 22. Era Table Forbidden Join Validation { #joins-era-forbidden-join-validation }
 
 **Rule ID:** `joins.era_forbidden_join_validation`
 **Severity:** ERROR
@@ -2238,7 +2238,7 @@ Do not join era tables with visit/provider/care_site. Use event tables (conditio
 
 ---
 
-### 23. Fact Relationship Polymorphic Join Validation
+### 23. Fact Relationship Polymorphic Join Validation { #joins-fact-relationship-join-validation }
 
 **Rule ID:** `joins.fact_relationship_join_validation`
 **Severity:** ERROR
@@ -2280,7 +2280,7 @@ Add domain filter matching the clinical table, e.g.: WHERE domain_concept_id_1 =
 
 ---
 
-### 24. Join Path Validation
+### 24. Join Path Validation { #joins-join-path-validation }
 
 **Rule ID:** `joins.join_path_validation`
 **Severity:** WARNING
@@ -2340,7 +2340,7 @@ JOIN concept c ON co.condition_concept_id = c.concept_id;
 
 ---
 
-### 25. Left Join Then Where On Right Table
+### 25. Left Join Then Where On Right Table { #joins-left-join-then-where-on-right-table }
 
 **Rule ID:** `joins.left_join_then_where_on_right_table`
 **Severity:** WARNING
@@ -2406,7 +2406,7 @@ Use INNER JOIN or move filter into JOIN ON clause.
 
 ---
 
-### 26. Maps To Direction
+### 26. Maps To Direction { #joins-maps-to-direction }
 
 **Rule ID:** `joins.maps_to_direction`
 **Severity:** WARNING
@@ -2427,7 +2427,7 @@ Use concept_id_1 for source, concept_id_2 for standard concept
 
 ---
 
-### 27. Note NLP to Note Join Validation
+### 27. Note NLP to Note Join Validation { #joins-note-nlp-note-join-validation }
 
 **Rule ID:** `joins.note_nlp_note_join_validation`
 **Severity:** ERROR
@@ -2480,7 +2480,7 @@ Use: note_nlp.note_id = note.note_id
 
 ---
 
-### 28. Payer Plan Period Join Validation
+### 28. Payer Plan Period Join Validation { #joins-payer-plan-period-join-validation }
 
 **Rule ID:** `joins.payer_plan_period_join_validation`
 **Severity:** WARNING
@@ -2524,7 +2524,7 @@ Add temporal overlap: clinical_date BETWEEN payer_plan_period_start_date AND pay
 
 ---
 
-### 29. Person ID Join Validation
+### 29. Person ID Join Validation { #joins-person-id-join-validation }
 
 **Rule ID:** `joins.person_id_join_validation`
 **Severity:** ERROR
@@ -2564,7 +2564,7 @@ Join person_id only with person_id. If linking tables, use the correct foreign k
 
 ---
 
-### 30. Person to Location Join Validation
+### 30. Person to Location Join Validation { #joins-person-location-join-validation }
 
 **Rule ID:** `joins.person_location_join_validation`
 **Severity:** ERROR
@@ -2601,7 +2601,7 @@ Join person to location using location_id: person.location_id = location.locatio
 
 ---
 
-### 31. Preceding Visit Occurrence Validation
+### 31. Preceding Visit Occurrence Validation { #joins-preceding-visit-occurrence-validation }
 
 **Rule ID:** `joins.preceding_visit_occurrence_validation`
 **Severity:** ERROR
@@ -2654,7 +2654,7 @@ Join visit_occurrence to itself using preceding_visit_occurrence_id = visit_occu
 
 ---
 
-### 32. Provider Join Validation
+### 32. Provider Join Validation { #joins-provider-join-validation }
 
 **Rule ID:** `joins.provider_join_validation`
 **Severity:** ERROR
@@ -2691,7 +2691,7 @@ Join clinical tables to provider using provider_id: clinical_table.provider_id =
 
 ---
 
-### 33. Provider to Care Site Join Validation
+### 33. Provider to Care Site Join Validation { #joins-provider-care-site-join-validation }
 
 **Rule ID:** `joins.provider_care_site_join_validation`
 **Severity:** ERROR
@@ -2728,7 +2728,7 @@ Join provider to care_site using care_site_id: provider.care_site_id = care_site
 
 ---
 
-### 34. Visit Detail Join Validation
+### 34. Visit Detail Join Validation { #joins-visit-detail-join-validation }
 
 **Rule ID:** `joins.visit_detail_join_validation`
 **Severity:** WARNING
@@ -2761,7 +2761,7 @@ Join using: vd.visit_occurrence_id = vo.visit_occurrence_id
 
 ---
 
-### 35. Visit Occurrence ID Join Validation
+### 35. Visit Occurrence ID Join Validation { #joins-visit-occurrence-id-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_id_join_validation`
 **Severity:** ERROR
@@ -2801,7 +2801,7 @@ Join visit_occurrence_id only with visit_occurrence_id. If linking across domain
 
 ---
 
-### 36. Visit Occurrence INNER JOIN Validation
+### 36. Visit Occurrence INNER JOIN Validation { #joins-visit-occurrence-inner-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_inner_join_validation`
 **Severity:** WARNING
@@ -2850,7 +2850,7 @@ These rules validate temporal logic, date handling, and observation period ancho
 
 ---
 
-### 1. Clinical Event Date Should Not Be In Future
+### 1. Clinical Event Date Should Not Be In Future { #temporal-clinical-event-date-in-future-validation }
 
 **Rule ID:** `temporal.clinical_event_date_in_future_validation`
 **Severity:** WARNING
@@ -2871,7 +2871,7 @@ Use date filters consistent with past or present events. Avoid filtering for fut
 
 ---
 
-### 2. Datetime BETWEEN with Date Literal
+### 2. Datetime BETWEEN with Date Literal { #temporal-datetime-between-date-literal }
 
 **Rule ID:** `temporal.datetime_between_date_literal`
 **Severity:** WARNING
@@ -2918,7 +2918,7 @@ Use >= start AND < next_day, or include time in end literal, or use *_date colum
 
 ---
 
-### 3. Death Date Before Birth Validation
+### 3. Death Date Before Birth Validation { #temporal-death-date-before-birth-validation }
 
 **Rule ID:** `temporal.death_date_before_birth_validation`
 **Severity:** ERROR
@@ -2970,7 +2970,7 @@ Ensure death_date >= birth_datetime
 
 ---
 
-### 4. Death Date In Future Validation
+### 4. Death Date In Future Validation { #temporal-death-date-in-future-validation }
 
 **Rule ID:** `temporal.death_date_in_future_validation`
 **Severity:** WARNING
@@ -3014,7 +3014,7 @@ Ensure death_date <= CURRENT_DATE
 
 ---
 
-### 5. End Before Start Validation
+### 5. End Before Start Validation { #temporal-end-before-start-validation }
 
 **Rule ID:** `temporal.end_before_start_validation`
 **Severity:** ERROR
@@ -3084,7 +3084,7 @@ Ensure start_date <= end_date in filters
 
 ---
 
-### 6. Unbounded Follow-up Window (Future Information Leakage)
+### 6. Unbounded Follow-up Window (Future Information Leakage) { #temporal-future-information-leakage }
 
 **Rule ID:** `temporal.future_information_leakage`
 **Severity:** WARNING
@@ -3145,7 +3145,7 @@ WHERE co.condition_start_date > de.drug_exposure_start_date
 
 ---
 
-### 7. Nullable End Date NULL Handling
+### 7. Nullable End Date NULL Handling { #temporal-nullable-end-date-null-handling }
 
 **Rule ID:** `temporal.nullable_end_date_null_handling`
 **Severity:** WARNING
@@ -3200,7 +3200,7 @@ Use COALESCE(end_date, fallback) or filter IS NOT NULL
 
 ---
 
-### 8. Observation Period Anchoring
+### 8. Observation Period Anchoring { #temporal-observation-period-anchoring }
 
 **Rule ID:** `temporal.observation_period_anchoring`
 **Severity:** ERROR
@@ -3221,7 +3221,7 @@ JOIN observation_period op ON clinical_table.person_id = op.person_id AND clinic
 
 ---
 
-### 9. Observation Period Date Range Logic
+### 9. Observation Period Date Range Logic { #temporal-observation-period-date-range-logic }
 
 **Rule ID:** `temporal.observation_period_date_range_logic`
 **Severity:** ERROR
@@ -3242,7 +3242,7 @@ Use: event_date BETWEEN op.observation_period_start_date AND op.observation_peri
 
 ---
 
-### 10. Required Date Column Validation
+### 10. Required Date Column Validation { #temporal-required-date-column-validation }
 
 **Rule ID:** `temporal.required_date_column_validation`
 **Severity:** WARNING
@@ -3317,7 +3317,7 @@ These rules validate data quality, schema compliance, and proper handling of edg
 
 ---
 
-### 1. Clinical Event Date Should Not Be Before 1900
+### 1. Clinical Event Date Should Not Be Before 1900 { #data-quality-clinical-event-date-before-1900-validation }
 
 **Rule ID:** `data_quality.clinical_event_date_before_1900_validation`
 **Severity:** WARNING
@@ -3372,7 +3372,7 @@ Use realistic date ranges (>= 1900-01-01) unless intentionally analyzing histori
 
 ---
 
-### 2. Column Type Validation
+### 2. Column Type Validation { #data-quality-column-type-validation }
 
 **Rule ID:** `data_quality.column_type_validation`
 **Severity:** ERROR
@@ -3443,7 +3443,7 @@ Use canonical OMOP concept_class_id values.
 
 ---
 
-### 4. Concept ID String Comparison
+### 4. Concept ID String Comparison { #data-quality-concept-id-string-comparison }
 
 **Rule ID:** `data_quality.concept_id_string_comparison`
 **Severity:** WARNING
@@ -3491,7 +3491,7 @@ Replace string literals with integer literals: concept_id = 201826 instead of co
 
 ---
 
-### 5. Concept Name Whitespace
+### 5. Concept Name Whitespace { #data-quality-concept-name-whitespace }
 
 **Rule ID:** `data_quality.concept_name_whitespace`
 **Severity:** WARNING
@@ -3713,7 +3713,7 @@ Remove joins between drug_exposure.lot_number and concept table. Avoid numeric c
 
 ---
 
-### 9. Episode Requires Concept Filter
+### 9. Episode Requires Concept Filter { #data-quality-episode-requires-concept-filter }
 
 **Rule ID:** `data_quality.episode_requires_concept_filter`
 **Severity:** WARNING
@@ -3778,7 +3778,7 @@ Add a filter on episode_concept_id (e.g., WHERE episode_concept_id = <id>) or jo
 
 ---
 
-### 10. Fact Relationship No Self-Reference
+### 10. Fact Relationship No Self-Reference { #data-quality-fact-relationship-no-self-reference }
 
 **Rule ID:** `data_quality.fact_relationship_no_self_reference`
 **Severity:** WARNING
@@ -3841,7 +3841,7 @@ Remove self-referential filters (fact_id_1 = fact_id_2). If intentional, verify 
 
 ---
 
-### 11. Fact Relationship Requires Relationship Concept Filter
+### 11. Fact Relationship Requires Relationship Concept Filter { #data-quality-fact-relationship-requires-relationship-concept-filter }
 
 **Rule ID:** `data_quality.fact_relationship_requires_relationship_concept_filter`
 **Severity:** ERROR
@@ -3901,7 +3901,7 @@ Add a filter on relationship_concept_id (e.g., WHERE relationship_concept_id = <
 
 ---
 
-### 12. Fact Relationship Valid Concepts
+### 12. Fact Relationship Valid Concepts { #data-quality-fact-relationship-valid-concepts }
 
 **Rule ID:** `data_quality.fact_relationship_valid_concepts`
 **Severity:** WARNING
@@ -4019,7 +4019,7 @@ Remove comparisons between location.state/zip and concept table. Use location.co
 
 ---
 
-### 14. Negative Concept ID Validation
+### 14. Negative Concept ID Validation { #data-quality-negative-concept-id-validation }
 
 **Rule ID:** `data_quality.negative_concept_id_validation`
 **Severity:** ERROR
@@ -4059,7 +4059,7 @@ Use valid non-negative concept_id values. Use 0 for unmapped.
 
 ---
 
-### 15. Note NLP Offset is Character Position
+### 15. Note NLP Offset is Character Position { #data-quality-note-nlp-offset-is-character-position }
 
 **Rule ID:** `data_quality.note_nlp_offset_is_character_position`
 **Severity:** WARNING
@@ -4161,7 +4161,7 @@ Use LIKE or full-text search. Do not JOIN or CAST term_modifiers.
 
 ---
 
-### 17. Note NLP nlp_date for Temporal Filtering
+### 17. Note NLP nlp_date for Temporal Filtering { #data-quality-note-nlp-nlp-date-for-temporal-filtering }
 
 **Rule ID:** `data_quality.note_nlp_nlp_date_for_temporal_filtering`
 **Severity:** WARNING
@@ -4225,7 +4225,7 @@ Join to note table and filter using note.note_date instead.
 
 ---
 
-### 18. Schema Validation
+### 18. Schema Validation { #data-quality-schema-validation }
 
 **Rule ID:** `data_quality.schema_validation`
 **Severity:** ERROR
@@ -4246,7 +4246,7 @@ Check OMOP CDM documentation for correct column names
 
 ---
 
-### 19. Standard Concept NULL Handling
+### 19. Standard Concept NULL Handling { #data-quality-standard-concept-null-handling }
 
 **Rule ID:** `data_quality.standard_concept_null_handling`
 **Severity:** WARNING
@@ -4300,7 +4300,7 @@ Use IS NULL for non-standard concepts, IS NOT NULL for standard/classification, 
 
 ---
 
-### 20. UNION vs UNION ALL for Clinical Events
+### 20. UNION vs UNION ALL for Clinical Events { #data-quality-union-vs-union-all-clinical-events }
 
 **Rule ID:** `data_quality.union_vs_union_all_clinical_events`
 **Severity:** WARNING
@@ -4380,7 +4380,7 @@ Replace UNION with UNION ALL to preserve all clinical events. If deduplication i
 
 ---
 
-### 21. Union Concept ID Domain Indicator
+### 21. Union Concept ID Domain Indicator { #data-quality-union-concept-id-domain-indicator }
 
 **Rule ID:** `data_quality.union_concept_id_domain_indicator`
 **Severity:** WARNING
@@ -4449,7 +4449,7 @@ Add a domain indicator column to each SELECT, e.g.: SELECT 'Condition' AS domain
 
 ---
 
-### 22. Unmapped Concept Handling
+### 22. Unmapped Concept Handling { #data-quality-unmapped-concept-handling }
 
 **Rule ID:** `data_quality.unmapped_concept_handling`
 **Severity:** WARNING
@@ -4491,7 +4491,7 @@ Use canonical OMOP vocabulary_id values.
 
 ---
 
-### 24. Vocabulary Table Protection
+### 24. Vocabulary Table Protection { #data-quality-vocabulary-table-protection }
 
 **Rule ID:** `data_quality.vocabulary_table_protection`
 **Severity:** ERROR
@@ -4528,7 +4528,7 @@ These rules detect common SQL anti-patterns and mistakes when working with OMOP 
 
 ---
 
-### 1. Ambiguous Column Reference
+### 1. Ambiguous Column Reference { #anti-patterns-ambiguous-column-reference }
 
 **Rule ID:** `anti_patterns.ambiguous_column_reference`
 **Severity:** WARNING
@@ -4602,7 +4602,7 @@ Qualify the column with a table name or alias (e.g., co.person_id). Always use e
 
 ---
 
-### 2. Attribute Definition Invalid Join
+### 2. Attribute Definition Invalid Join { #anti-patterns-attribute-definition-invalid-join }
 
 **Rule ID:** `anti_patterns.attribute_definition_invalid_join`
 **Severity:** ERROR
@@ -4709,7 +4709,7 @@ Remove the JOIN to cdm_source. Query it separately or use a scalar subquery, e.g
 
 ---
 
-### 4. Comma-Separated Cross Join
+### 4. Comma-Separated Cross Join { #anti-patterns-comma-separated-cross-join }
 
 **Rule ID:** `anti_patterns.comma_separated_cross_join`
 **Severity:** ERROR
@@ -4787,7 +4787,7 @@ Use explicit JOIN...ON syntax, or add a WHERE clause with column-to-column equal
 
 ---
 
-### 5. Concept Ancestor Mixed with Concept Relationship Redundantly
+### 5. Concept Ancestor Mixed with Concept Relationship Redundantly { #anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly }
 
 **Rule ID:** `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly`
 **Severity:** WARNING
@@ -4922,7 +4922,7 @@ Change JOIN condition to: concept.concept_class_id = concept_class.concept_class
 
 ---
 
-### 7. Concept Code Requires Vocabulary ID
+### 7. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
 
 **Rule ID:** `anti_patterns.concept_code_requires_vocabulary_id`
 **Severity:** ERROR
@@ -4964,7 +4964,7 @@ Wrap in subquery: WHERE *_concept_id IN (SELECT concept_id FROM concept WHERE ..
 
 ---
 
-### 9. Concept Name Lookup Anti-pattern
+### 9. Concept Name Lookup Anti-pattern { #anti-patterns-concept-name-lookup }
 
 **Rule ID:** `anti_patterns.concept_name_lookup`
 **Severity:** WARNING
@@ -4986,7 +4986,7 @@ Use concept_code + vocabulary_id instead: WHERE c.concept_code = '...' AND c.voc
 ---
 
 
-### 11. Concept Relationship Transitive Misuse
+### 11. Concept Relationship Transitive Misuse { #anti-patterns-concept-relationship-transitive-misuse }
 
 **Rule ID:** `anti_patterns.concept_relationship_transitive_misuse`
 **Severity:** WARNING
@@ -5053,7 +5053,7 @@ Use concept_ancestor table instead for transitive hierarchy traversal.
 
 ---
 
-### 12. Destructive Operations on Clinical Tables
+### 12. Destructive Operations on Clinical Tables { #anti-patterns-destructive-operations-on-clinical-tables }
 
 **Rule ID:** `anti_patterns.destructive_operations_on_clinical_tables`
 **Severity:** ERROR
@@ -5168,7 +5168,7 @@ Change JOIN condition to: concept.domain_id = domain.domain_id
 
 ---
 
-### 14. Having Without Group By
+### 14. Having Without Group By { #anti-patterns-having-without-group-by }
 
 **Rule ID:** `anti_patterns.having_without_group_by`
 **Severity:** ERROR
@@ -5225,7 +5225,7 @@ Add GROUP BY clause to aggregate data, or use WHERE clause for non-aggregated fi
 
 ---
 
-### 15. Join Key Validation
+### 15. Join Key Validation { #anti-patterns-join-key-validation }
 
 **Rule ID:** `anti_patterns.join_key_validation`
 **Severity:** ERROR
@@ -5342,7 +5342,7 @@ Query the metadata table standalone to retrieve CDM instance information. Do not
 
 ---
 
-### 17. No DISTINCT on Primary Key Column
+### 17. No DISTINCT on Primary Key Column { #anti-patterns-no-distinct-on-primary-key-column }
 
 **Rule ID:** `anti_patterns.no_distinct_on_primary_key_column`
 **Severity:** WARNING
@@ -5400,7 +5400,7 @@ Remove DISTINCT when selecting only primary key columns. If joins are present, r
 
 ---
 
-### 18. No String Identification
+### 18. No String Identification { #anti-patterns-no-string-identification }
 
 **Rule ID:** `anti_patterns.no_string_identification`
 **Severity:** ERROR
@@ -5421,7 +5421,7 @@ Use *_concept_id or *_source_concept_id instead of string matching
 
 ---
 
-### 19. Standard Concept OR with Classification
+### 19. Standard Concept OR with Classification { #anti-patterns-standard-concept-or-with-classification }
 
 **Rule ID:** `anti_patterns.standard_concept_or_with_classification`
 **Severity:** WARNING
@@ -5470,7 +5470,7 @@ Use standard_concept = 'S' for clinical queries. Use 'C' only for vocabulary hie
 
 ---
 
-### 20. Type Concept ID Domain Filter
+### 20. Type Concept ID Domain Filter { #anti-patterns-type-concept-id-domain-filter }
 
 **Rule ID:** `anti_patterns.type_concept_id_domain_filter`
 **Severity:** WARNING
@@ -5530,7 +5530,7 @@ Use domain_id = 'Type Concept' or remove the domain_id filter.
 
 ---
 
-### 21. Type Concept ID Not For Clinical Filtering
+### 21. Type Concept ID Not For Clinical Filtering { #anti-patterns-type-concept-id-misuse }
 
 **Rule ID:** `anti_patterns.type_concept_id_misuse`
 **Severity:** ERROR
@@ -5619,7 +5619,7 @@ These rules validate domain-specific constraints for individual OMOP CDM tables 
 
 ### COHORT Domain
 
-### 1. Cohort Definition Syntax Not Executable SQL
+### 1. Cohort Definition Syntax Not Executable SQL { #domain-specific-cohort-definition-syntax-not-executable-sql }
 
 **Rule ID:** `domain_specific.cohort_definition_syntax_not_executable_sql`
 **Severity:** ERROR
@@ -5679,7 +5679,7 @@ Use cohort_definition_name or cohort_definition_id for filtering. cohort_definit
 
 ### CONDITION Domain
 
-### 1. Condition Occurrence Cardinality Risk
+### 1. Condition Occurrence Cardinality Risk { #domain-specific-condition-occurrence-cardinality-validation }
 
 **Rule ID:** `domain_specific.condition_occurrence_cardinality_validation`
 **Severity:** WARNING
@@ -5740,7 +5740,7 @@ Use GROUP BY person_id, DISTINCT, or condition_era to avoid duplicate rows per p
 
 ---
 
-### 2. Condition Occurrence Visit Hierarchy Validation
+### 2. Condition Occurrence Visit Hierarchy Validation { #domain-specific-condition-visit-hierarchy-validation }
 
 **Rule ID:** `domain_specific.condition_visit_hierarchy_validation`
 **Severity:** ERROR
@@ -5789,7 +5789,7 @@ Add: JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
 
 ---
 
-### 3. Condition Temporal Column Validation
+### 3. Condition Temporal Column Validation { #domain-specific-condition-start-date-temporal-validation }
 
 **Rule ID:** `domain_specific.condition_start_date_temporal_validation`
 **Severity:** WARNING
@@ -5829,7 +5829,7 @@ Use condition_start_date or COALESCE(nullable_column, condition_start_date)
 
 ### COST Domain
 
-### 1. Cost Payer Plan Period ID Join
+### 1. Cost Payer Plan Period ID Join { #domain-specific-cost-payer-plan-period-id-join }
 
 **Rule ID:** `domain_specific.cost_payer_plan_period_id_join`
 **Severity:** ERROR
@@ -5885,7 +5885,7 @@ Use: cost.payer_plan_period_id = payer_plan_period.payer_plan_period_id
 
 ### DEATH Domain
 
-### 1. Death Cause Source Concept Not For Analytical Filtering
+### 1. Death Cause Source Concept Not For Analytical Filtering { #domain-specific-death-cause-source-concept-validation }
 
 **Rule ID:** `domain_specific.death_cause_source_concept_validation`
 **Severity:** ERROR
@@ -5930,7 +5930,7 @@ Replace with death.cause_concept_id
 
 ---
 
-### 2. Death Join to Person Not to Clinical Event
+### 2. Death Join to Person Not to Clinical Event { #domain-specific-death-join-to-person-not-to-clinical-event }
 
 **Rule ID:** `domain_specific.death_join_to_person_not_to_clinical_event`
 **Severity:** ERROR
@@ -6001,7 +6001,7 @@ Ensure JOIN includes: death.person_id = <clinical_table>.person_id
 
 ### DRUG Domain
 
-### 1. Drug Days Supply Validation
+### 1. Drug Days Supply Validation { #domain-specific-drug-days-supply-validation }
 
 **Rule ID:** `domain_specific.drug_days_supply_validation`
 **Severity:** WARNING
@@ -6047,7 +6047,7 @@ None
 
 ---
 
-### 2. Drug Era Concept Class Validation
+### 2. Drug Era Concept Class Validation { #domain-specific-drug-era-concept-class-validation }
 
 **Rule ID:** `domain_specific.drug_era_concept_class_validation`
 **Severity:** ERROR
@@ -6092,7 +6092,7 @@ Use concept_class_id = 'Ingredient' or remove the filter.
 
 ---
 
-### 3. Drug Exposure Cardinality Awareness
+### 3. Drug Exposure Cardinality Awareness { #domain-specific-drug-exposure-cardinality-validation }
 
 **Rule ID:** `domain_specific.drug_exposure_cardinality_validation`
 **Severity:** WARNING
@@ -6149,7 +6149,7 @@ Use COUNT(DISTINCT person_id) for patient counts or use drug_era for consolidate
 
 ---
 
-### 4. Drug Exposure Quantity Misuse
+### 4. Drug Exposure Quantity Misuse { #domain-specific-drug-exposure-quantity-misuse }
 
 **Rule ID:** `domain_specific.drug_exposure_quantity_misuse`
 **Severity:** WARNING
@@ -6191,7 +6191,7 @@ Use days_supply or date differences instead of quantity.
 
 ---
 
-### 5. Drug Exposure Sig Parsing
+### 5. Drug Exposure Sig Parsing { #domain-specific-drug-exposure-sig-parsing }
 
 **Rule ID:** `domain_specific.drug_exposure_sig_parsing`
 **Severity:** WARNING
@@ -6240,7 +6240,7 @@ Join drug_strength to obtain standardized dose fields (amount_value, numerator_v
 
 ---
 
-### 6. Drug Quantity Validation
+### 6. Drug Quantity Validation { #domain-specific-drug-quantity-validation }
 
 **Rule ID:** `domain_specific.drug_quantity_validation`
 **Severity:** WARNING
@@ -6286,7 +6286,7 @@ Ensure quantity >= 0
 
 ---
 
-### 7. Drug Strength Completeness (Amount vs Concentration)
+### 7. Drug Strength Completeness (Amount vs Concentration) { #domain-specific-drug-strength-numerator-denominator-for-concentration }
 
 **Rule ID:** `domain_specific.drug_strength_numerator_denominator_for_concentration`
 **Severity:** WARNING
@@ -6346,7 +6346,7 @@ Use COALESCE(amount_value, numerator_value) to include both formulations. Includ
 
 ---
 
-### 8. Drug Strength Validity Filter
+### 8. Drug Strength Validity Filter { #domain-specific-drug-strength-validity-filter }
 
 **Rule ID:** `domain_specific.drug_strength_validity_filter`
 **Severity:** WARNING
@@ -6390,7 +6390,7 @@ Add 'invalid_reason IS NULL' OR 'CURRENT_DATE BETWEEN valid_start_date AND valid
 
 ### EPISODE Domain
 
-### 1. Episode Parent ID Self Join
+### 1. Episode Parent ID Self Join { #domain-specific-episode-parent-id-self-join }
 
 **Rule ID:** `domain_specific.episode_parent_id_self_join`
 **Severity:** ERROR
@@ -6453,7 +6453,7 @@ Use: FROM episode child JOIN episode parent ON child.episode_parent_id = parent.
 
 ### LOCATION Domain
 
-### 1. Location History Entity ID Requires Domain ID
+### 1. Location History Entity ID Requires Domain ID { #domain-specific-location-history-entity-id-requires-domain-id }
 
 **Rule ID:** `domain_specific.location_history_entity_id_requires_domain_id`
 **Severity:** ERROR
@@ -6520,7 +6520,7 @@ Add WHERE location_history.domain_id = '<Domain>' matching the joined table.
 
 ### MEASUREMENT Domain
 
-### 1. Measurement Cross-Unit Comparison
+### 1. Measurement Cross-Unit Comparison { #domain-specific-measurement-cross-unit-comparison }
 
 **Rule ID:** `domain_specific.measurement_cross_unit_comparison`
 **Severity:** WARNING
@@ -6585,7 +6585,7 @@ Add unit_concept_id constraint (e.g., = <unit>) or group by unit. Alternatively,
 
 ---
 
-### 2. Measurement Duplicate Detection
+### 2. Measurement Duplicate Detection { #domain-specific-measurement-duplicate-detection }
 
 **Rule ID:** `domain_specific.measurement_duplicate_detection`
 **Severity:** WARNING
@@ -6678,7 +6678,7 @@ Group by natural key (person_id, measurement_concept_id, measurement_date), use 
 
 ---
 
-### 3. Measurement Operator Concept Validation
+### 3. Measurement Operator Concept Validation { #domain-specific-measurement-operator-concept-validation }
 
 **Rule ID:** `domain_specific.measurement_operator_concept_validation`
 **Severity:** ERROR
@@ -6726,7 +6726,7 @@ Use one of the valid operator concept_ids
 
 ---
 
-### 4. Measurement Range Low/High Validation
+### 4. Measurement Range Low/High Validation { #domain-specific-measurement-range-low-high-validation }
 
 **Rule ID:** `domain_specific.measurement_range_low_high_validation`
 **Severity:** ERROR
@@ -6784,7 +6784,7 @@ Ensure range_low <= range_high
 
 ---
 
-### 5. Measurement Unit Validation
+### 5. Measurement Unit Validation { #domain-specific-measurement-unit-validation }
 
 **Rule ID:** `domain_specific.measurement_unit_validation`
 **Severity:** WARNING
@@ -6805,7 +6805,7 @@ Add a unit_concept_id constraint alongside the numeric threshold: AND m.unit_con
 
 ---
 
-### 6. Measurement Value Representation Consistency
+### 6. Measurement Value Representation Consistency { #domain-specific-measurement-value-as-number-and-concept-validation }
 
 **Rule ID:** `domain_specific.measurement_value_as_number_and_concept_validation`
 **Severity:** WARNING
@@ -6866,7 +6866,7 @@ Use OR or separate logic depending on measurement type
 
 ### NOTE Domain
 
-### 1. Note NLP Snippet Misuse
+### 1. Note NLP Snippet Misuse { #domain-specific-note-note-nlp-snippet-misuse }
 
 **Rule ID:** `domain_specific.note.note_nlp_snippet_misuse`
 **Severity:** WARNING
@@ -6919,7 +6919,7 @@ Use note_nlp_concept_id instead of text matching.
 
 ### OBSERVATION Domain
 
-### 1. Observation Value As Columns Mutually Contextual
+### 1. Observation Value As Columns Mutually Contextual { #domain-specific-observation-value-as-columns-mutually-contextual }
 
 **Rule ID:** `domain_specific.observation_value_as_columns_mutually_contextual`
 **Severity:** WARNING
@@ -6980,7 +6980,7 @@ Use a single value_as_* column or OR conditions for alternatives.
 
 ---
 
-### 2. Observation Value As Concept Confusion
+### 2. Observation Value As Concept Confusion { #domain-specific-observation-value-as-concept-confusion }
 
 **Rule ID:** `domain_specific.observation_value_as_concept_confusion`
 **Severity:** ERROR
@@ -7040,7 +7040,7 @@ Use different concepts for observation_concept_id (question) and value_as_concep
 
 ---
 
-### 3. Observation Value As String Numeric Comparison
+### 3. Observation Value As String Numeric Comparison { #domain-specific-observation-value-as-string-numeric-comparison }
 
 **Rule ID:** `domain_specific.observation_value_as_string_numeric_comparison`
 **Severity:** ERROR
@@ -7099,7 +7099,7 @@ Replace with value_as_number or explicitly CAST(value_as_string AS NUMERIC).
 
 ### PERSON Domain
 
-### 1. Episode Event No Person ID
+### 1. Episode Event No Person ID { #domain-specific-episode-event-no-person-id }
 
 **Rule ID:** `domain_specific.episode_event_no_person_id`
 **Severity:** ERROR
@@ -7171,7 +7171,7 @@ Use: FROM episode_event ee JOIN episode e ON ee.episode_id = e.episode_id JOIN p
 
 ---
 
-### 2. Person Birth Field Validation
+### 2. Person Birth Field Validation { #domain-specific-person-birth-field-validation }
 
 **Rule ID:** `domain_specific.person_birth_field_validation`
 **Severity:** ERROR
@@ -7219,7 +7219,7 @@ Use valid birth field values within plausible ranges
 
 ### PROCEDURE Domain
 
-### 1. Procedure Date Not Procedure Start Date
+### 1. Procedure Date Not Procedure Start Date { #domain-specific-procedure-date-not-procedure-start-date }
 
 **Rule ID:** `domain_specific.procedure_date_not_procedure_start_date`
 **Severity:** ERROR
@@ -7280,7 +7280,7 @@ Use procedure_date for date or procedure_datetime for timestamp. procedure_end_d
 
 ---
 
-### 2. Procedure Occurrence Quantity Semantics
+### 2. Procedure Occurrence Quantity Semantics { #domain-specific-procedure-occurrence-quantity-semantics }
 
 **Rule ID:** `domain_specific.procedure_occurrence_quantity_semantics`
 **Severity:** WARNING
@@ -7338,7 +7338,7 @@ Use COUNT(*) to count records, or use clearer aliases like 'total_units'
 
 ### SPECIMEN Domain
 
-### 1. Specimen Source ID Not Specimen ID
+### 1. Specimen Source ID Not Specimen ID { #domain-specific-specimen-source-id-not-specimen-id }
 
 **Rule ID:** `domain_specific.specimen_source_id_not_specimen_id`
 **Severity:** ERROR
@@ -7398,7 +7398,7 @@ Replace specimen_source_id with specimen.specimen_id in JOIN conditions. Use spe
 
 ### VISIT Domain
 
-### 1. Visit Detail Admitted/Discharged Domain Validation
+### 1. Visit Detail Admitted/Discharged Domain Validation { #domain-specific-visit-detail-admitted-discharged-domain }
 
 **Rule ID:** `domain_specific.visit_detail_admitted_discharged_domain`
 **Severity:** WARNING
@@ -7468,7 +7468,7 @@ Join to the concept table and add: c.domain_id IN ('Visit', 'Place of Service').
 
 ---
 
-### 2. Visit Detail Dates Within Parent Visit
+### 2. Visit Detail Dates Within Parent Visit { #domain-specific-visit-detail-dates-within-parent-visit }
 
 **Rule ID:** `domain_specific.visit_detail_dates_within_parent_visit`
 **Severity:** WARNING
@@ -7523,7 +7523,7 @@ Ensure visit_detail dates are within visit_start_date and visit_end_date
 
 ---
 
-### 3. Visit Detail Has No Preceding Visit Occurrence ID
+### 3. Visit Detail Has No Preceding Visit Occurrence ID { #domain-specific-visit-detail-has-no-preceding-visit-occurrence-id }
 
 **Rule ID:** `domain_specific.visit_detail_has_no_preceding_visit_occurrence_id`
 **Severity:** ERROR
@@ -7582,7 +7582,7 @@ Use preceding_visit_detail_id for visit_detail temporal chain. Use preceding_vis
 
 ---
 
-### 4. Visit Detail Visit Occurrence Reference
+### 4. Visit Detail Visit Occurrence Reference { #domain-specific-visit-detail-visit-occurrence-reference }
 
 **Rule ID:** `domain_specific.visit_detail_visit_occurrence_reference`
 **Severity:** WARNING
@@ -7636,7 +7636,7 @@ Ensure visit_detail is correctly linked to visit_occurrence via visit_occurrence
 
 ---
 
-### 5. Visit Event Temporal Validation
+### 5. Visit Event Temporal Validation { #domain-specific-visit-event-temporal-validation }
 
 **Rule ID:** `domain_specific.visit_event_temporal_validation`
 **Severity:** WARNING
@@ -7687,7 +7687,7 @@ Use event_date >= visit_start_date or review join logic
 
 ---
 
-### 6. Visit Outpatient Same-Day Validation
+### 6. Visit Outpatient Same-Day Validation { #domain-specific-visit-outpatient-same-day-validation }
 
 **Rule ID:** `domain_specific.visit_outpatient_same_day_validation`
 **Severity:** WARNING
@@ -7735,7 +7735,7 @@ Use visit_concept_id = 9201 (inpatient) for multi-day stays, or adjust date rang
 
 ### VOCABULARY Domain
 
-### 1. Relationship Boolean Comparison
+### 1. Relationship Boolean Comparison { #domain-specific-vocabulary-relationship-boolean-comparison }
 
 **Rule ID:** `domain_specific.vocabulary.relationship_boolean_comparison`
 **Severity:** ERROR

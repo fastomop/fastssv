@@ -51,6 +51,10 @@ langfuse = [
 	"dotenv>=0.9.9",
 	"langfuse>=3.12.1",
 ]
+docs = [
+	"mkdocs-material>=9.5",
+	"pymdown-extensions>=10.7",
+]
 api = [
 	"fastapi>=0.115",
 	"uvicorn[standard]>=0.30",

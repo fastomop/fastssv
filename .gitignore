@@ -61,3 +61,6 @@ tasks/
 
 # Local utility scripts (not distributed)
 scripts/
+
+# MkDocs build output
+site/

@@ -357,7 +357,7 @@ fastssv query.sql --log-format json | \
   done
 ```
 
-### 5. Performance Monitoring
+### 5. Performance Monitoring { #performance-tracking }
 
 The CLI emits `duration_ms` as a structured field on validation-complete
 and per-rule log records (see ``log_validation_complete`` /
@@ -462,7 +462,7 @@ cat logs/fastssv.json | \
 
 ## Related Documentation
 
-- [CLI Usage](../README.md#quick-start)
-- [Python API](../README.md#python-api)
-- [Configuration](.env.example)
-- [Contributing](../README.md#contributing)
+- [CLI Usage](https://github.com/fastomop/fastSSV#quick-start)
+- [Python API](https://github.com/fastomop/fastSSV#python-api)
+- [Configuration](https://github.com/fastomop/fastSSV/blob/main/.env.example)
+- [Contributing](https://github.com/fastomop/fastSSV#contributing)

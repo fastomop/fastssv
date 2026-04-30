@@ -122,7 +122,7 @@ WHERE ca.ancestor_concept_id = 1234;
 > previously fired on any specific-concept filter (e.g. `drug_concept_id = 1234`)
 > that did not go through `concept_ancestor`. It was removed in 0.2.0 because
 > specific-concept filters are legitimate in many contexts (e.g. single-drug
-> exposure checks, denominator definitions). See [CHANGELOG.md](../CHANGELOG.md).
+> exposure checks, denominator definitions). See [CHANGELOG.md](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md).
 
 #### 4. Observation Period Anchoring (`temporal.observation_period_anchoring`)
 **Severity:** ERROR
