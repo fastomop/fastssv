@@ -17,7 +17,6 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
-    extract_join_conditions,
     is_in_where_or_join_clause,
     normalize_name,
     parse_sql,

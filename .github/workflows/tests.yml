@@ -23,6 +23,10 @@ jobs:
         # fastapi.testclient; pure [dev] would fail collection there.
         run: pip install -e ".[dev,api]"
       - name: Run tests
+        env:
+          # Skip the docker-compose smoke test in unit-test CI; it has its own
+          # workflow that exercises the deploy bundle end-to-end.
+          FASTSSV_SKIP_DOCKER_TESTS: "1"
         run: pytest tests/ -v
 
   lint:
@@ -47,6 +51,8 @@ jobs:
       - name: Install with dev + api extras
         run: pip install -e ".[dev,api]"
       - name: Run tests with coverage
+        env:
+          FASTSSV_SKIP_DOCKER_TESTS: "1"
         run: pytest tests/ --cov --cov-report=term-missing --cov-report=xml
       - name: Upload coverage report
         if: always()
