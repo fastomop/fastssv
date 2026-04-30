@@ -9,6 +9,8 @@ between minor versions.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-30
+
 ### Fixed
 
 - **`joins.join_path_validation` false positive on subquery-only `concept`
@@ -582,7 +584,7 @@ output should map both old IDs to
   `fact_relationship_valid_concepts`, leftover regex variables in
   `fixer.py`).
 
-## [0.2.0]
+### Earlier in this release — rule calibration pass
 
 This release is the result of a calibration pass against real OHDSI/Achilles
 workloads that reduced false positives from ~200 across 8 sampled corpora to
@@ -662,7 +664,7 @@ single digits, with all real bugs still caught. See the "Removed rules" and
 ### Rule count
 
 - Before this release: 168 rules across 8 categories (concept_standardization, temporal, joins, data_quality, domain_specific, anti_patterns, performance, analytics).
-- After this release: 157 rules across 6 categories (performance and analytics categories removed entirely).
+- After this release: **154 rules across 6 categories** (performance and analytics categories removed entirely; see "Removed rules" sections above for the full list).
 
 ---
 

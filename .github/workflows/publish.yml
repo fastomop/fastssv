@@ -1,0 +1,49 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(uv run --no-project --with tomli -- python -c \
+            "import tomli; print(tomli.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "tag=$tag pyproject=$pkg"
+          [ "$tag" = "$pkg" ] || { echo "::error::tag $tag != pyproject version $pkg"; exit 1; }
+
+      - name: Build
+        run: uv build
+
+      - name: Smoke test (wheel)
+        run: |
+          uv run --isolated --no-project --with dist/*.whl -- \
+            python -c "from fastssv import get_all_rules; n = len(get_all_rules()); assert n == 154, n; print(f'fastssv wheel OK — {n} rules')"
+
+      - name: Smoke test (source distribution)
+        run: |
+          uv run --isolated --no-project --with dist/*.tar.gz -- \
+            python -c "from fastssv import get_all_rules; n = len(get_all_rules()); assert n == 154, n; print(f'fastssv sdist OK — {n} rules')"
+
+      - name: Publish to PyPI
+        run: uv publish
