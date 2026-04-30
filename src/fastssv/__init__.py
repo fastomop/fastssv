@@ -83,7 +83,7 @@ def validate_sql(
     if parse_error:
         results["parse_error"] = parse_error
         results["all_errors"].append(f"Parse error: {parse_error}")
-        results["violations"].append(_make_parse_error_violation(parse_error))
+        results["violations"].append(_make_parse_error_violation(parse_error, sql))
         return results
 
     # Determine which rules to run
@@ -136,16 +136,45 @@ def validate_sql(
 
 
 PARSE_ERROR_RULE_ID = "parse.syntax_error"
+NOT_SQL_RULE_ID = "parse.not_sql_input"
 
 
-def _make_parse_error_violation(error_message: str) -> RuleViolation:
+def _make_parse_error_violation(error_message: str, sql: str = "") -> RuleViolation:
     """Build a RuleViolation representing a parse failure.
 
     Parse errors prevent any rule from running meaningfully, so we surface
     them as a single ERROR-severity violation. Callers can distinguish a
     genuinely-clean query (empty list) from an unparseable one (single
-    violation with rule_id == PARSE_ERROR_RULE_ID).
+    violation with rule_id in {PARSE_ERROR_RULE_ID, NOT_SQL_RULE_ID}).
+
+    When the input looks like natural-language prose (e.g. an LLM refusal
+    or explanation passed through to the validator by mistake), emit a
+    distinct `parse.not_sql_input` violation. The dialect-retry suggestion
+    that fits a real syntax error is actively misleading for prose input —
+    upstream agent loops would otherwise burn turns retrying with `tsql`,
+    `postgres`, etc. when the actual problem is "this isn't SQL at all."
     """
+    from fastssv.core.helpers import looks_like_prose
+
+    if sql and looks_like_prose(sql):
+        preview = sql.strip().splitlines()[0][:120] if sql.strip() else ""
+        return RuleViolation(
+            rule_id=NOT_SQL_RULE_ID,
+            severity=Severity.ERROR,
+            message=(
+                "Input does not appear to be a SQL query — looks like "
+                "natural-language text (e.g. an explanation or model "
+                "refusal). No validation was performed."
+            ),
+            suggested_fix=(
+                "Submit a SQL statement (SELECT / WITH / INSERT / UPDATE "
+                "/ DELETE / MERGE / DDL). If this came from an LLM, "
+                "re-prompt for SQL — do not retry with a different "
+                "dialect; the input is not SQL."
+            ),
+            details={"error": error_message, "input_preview": preview},
+        )
+
     return RuleViolation(
         rule_id=PARSE_ERROR_RULE_ID,
         severity=Severity.ERROR,
@@ -196,7 +225,7 @@ def validate_sql_structured(
     _, parse_error = parse_sql(sql, dialect)
     if parse_error:
         _logger.warning(f"Parse error (dialect={dialect!r}): {parse_error}")
-        return [_make_parse_error_violation(parse_error)]
+        return [_make_parse_error_violation(parse_error, sql)]
 
     # Determine which rules to run
     if rule_ids:
@@ -252,6 +281,7 @@ __all__ = [
     "validate_sql",
     "validate_sql_structured",
     "PARSE_ERROR_RULE_ID",
+    "NOT_SQL_RULE_ID",
 
     # Core classes
     "Rule",

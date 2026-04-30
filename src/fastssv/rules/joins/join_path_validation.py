@@ -41,6 +41,49 @@ def _extract_concept_references(
     return refs
 
 
+def _vocab_table_used_only_in_subquery(
+    tree: exp.Expression,
+    table_name: str,
+) -> bool:
+    """True if every reference to ``table_name`` is nested inside a
+    ``Subquery`` node — i.e. used as a scalar / IN / EXISTS lookup rather
+    than joined to anything in the outer query.
+
+    The join-path check's intent is "is concept properly linked to the
+    clinical fact tables?" That intent doesn't apply when the user has
+    chosen a subquery-based lookup pattern such as
+    ``WHERE p.gender_concept_id = (SELECT concept_id FROM concept WHERE …)``
+    or ``WHERE drug_concept_id IN (SELECT concept_id FROM concept WHERE …)``.
+    In those shapes there's no JOIN to validate; the relevant data-quality
+    concerns (deprecated concepts, trailing whitespace, ambiguous lookup
+    results) are covered by ``invalid_reason_enforcement``,
+    ``concept_name_whitespace``, and ``standard_concept_enforcement``. We
+    suppress here to avoid issuing a join-shaped warning on a non-join
+    query, which has historically confused users and LLM agents into
+    applying the wrong fix (a JOIN to clinical) when the right fix is to
+    tighten the inner lookup.
+    """
+    found_in_subquery = False
+    found_outside_subquery = False
+
+    for t in tree.find_all(exp.Table):
+        if normalize_name(t.name) != table_name:
+            continue
+        ancestor = t.parent
+        in_subquery = False
+        while ancestor is not None:
+            if isinstance(ancestor, exp.Subquery):
+                in_subquery = True
+                break
+            ancestor = ancestor.parent
+        if in_subquery:
+            found_in_subquery = True
+        else:
+            found_outside_subquery = True
+
+    return found_in_subquery and not found_outside_subquery
+
+
 def _verify_concept_join_path(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -54,6 +97,16 @@ def _verify_concept_join_path(
 
     if not uses_concept and not uses_concept_rel:
         return []  # No vocabulary tables used, nothing to verify
+
+    # Suppress when vocabulary tables only appear inside subqueries — there's
+    # no JOIN path to validate in that shape, and other rules cover the
+    # relevant concerns (deprecated concepts, lookup ambiguity, etc.).
+    if uses_concept and _vocab_table_used_only_in_subquery(tree, "concept"):
+        uses_concept = False
+    if uses_concept_rel and _vocab_table_used_only_in_subquery(tree, "concept_relationship"):
+        uses_concept_rel = False
+    if not uses_concept and not uses_concept_rel:
+        return []
 
     # Check if CTEs are used - if vocabulary tables are accessed via CTEs,
     # the join path is likely valid but indirect

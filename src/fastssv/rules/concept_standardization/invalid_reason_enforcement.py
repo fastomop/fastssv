@@ -17,6 +17,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
+    extract_join_conditions,
     is_in_where_or_join_clause,
     normalize_name,
     parse_sql,
@@ -102,6 +103,80 @@ def _derived_table_in_from(tree: exp.Expression, table_name: str) -> bool:
         for tbl in from_node.find_all(exp.Table):
             if normalize_name(tbl.name) == table_name:
                 return True
+    return False
+
+
+def _concept_ancestor_filtered_by_hierarchy_literal(
+    tree: exp.Expression,
+    aliases: dict,
+) -> bool:
+    """True if concept_ancestor's hierarchy is being filtered by a literal,
+    indicating cohort-source usage (regardless of whether concept_ancestor
+    is in primary FROM, a direct JOIN, or a chained JOIN through `concept`).
+
+    Patterns recognized — all source-join cohort idioms:
+
+        -- Direct JOIN
+        FROM drug_exposure de
+        JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 43027253
+
+        -- Chained JOIN through concept (when projecting concept's columns)
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 320128
+
+        -- Multi-ancestor IN-list
+        WHERE ca.ancestor_concept_id IN (974166, 1115008, 1308216)
+
+    Why this signal is the right one: `_derived_table_in_from` only catches
+    primary-FROM usage; the previous "JOIN counterparty is non-vocab"
+    heuristic missed the chained form (counterparty is `concept`, a vocab
+    table — but the JOIN through concept is a relay, not a lookup). The
+    distinguishing question is "is the user filtering by the hierarchy?",
+    which is answered by a literal predicate on `concept_ancestor.{ancestor,
+    descendant}_concept_id`.
+
+    Lookup-shape JOINs (e.g. `FROM concept c JOIN concept_ancestor ca ON
+    ca.ancestor_concept_id = c.concept_id WHERE c.concept_id = 192671`) have
+    no literal filter on concept_ancestor's own hierarchy columns and
+    correctly stay silent.
+    """
+    target_cols = {"ancestor_concept_id", "descendant_concept_id"}
+
+    for eq in tree.find_all(exp.EQ):
+        if not is_in_where_or_join_clause(eq):
+            continue
+        for col_node, val_node in (
+            (eq.left, eq.right),
+            (eq.right, eq.left),
+        ):
+            if not isinstance(col_node, exp.Column):
+                continue
+            table, col_name = resolve_table_col(col_node, aliases)
+            if normalize_name(table) != "concept_ancestor":
+                continue
+            if normalize_name(col_name) not in target_cols:
+                continue
+            if isinstance(val_node, exp.Literal):
+                return True
+
+    for in_expr in tree.find_all(exp.In):
+        if not is_in_where_or_join_clause(in_expr):
+            continue
+        col = in_expr.this
+        if not isinstance(col, exp.Column):
+            continue
+        table, col_name = resolve_table_col(col, aliases)
+        if normalize_name(table) != "concept_ancestor":
+            continue
+        if normalize_name(col_name) not in target_cols:
+            continue
+        expressions = in_expr.expressions or []
+        if expressions and all(isinstance(v, exp.Literal) for v in expressions):
+            return True
+
     return False
 
 
@@ -398,10 +473,23 @@ class InvalidReasonEnforcementRule(Rule):
             # — here concept_synonym is a lookup to fetch synonyms for a
             # specific concept, not a source to filter against, so demanding
             # invalid_reason would exclude legitimate historical results.
+            aliases = extract_aliases(tree)
             derived_tables_as_source = {
                 t for t in derived_tables
                 if _derived_table_in_from(tree, t)
             }
+            # Restore symmetry across all source-usage shapes: direct JOIN,
+            # chained JOIN through `concept`, multi-ancestor IN-lists, etc.
+            # `_derived_table_in_from` only catches primary-FROM usage; this
+            # branch catches any query where concept_ancestor's hierarchy is
+            # filtered by a literal (the defining feature of "source usage"
+            # vs "lookup decoration").
+            if (
+                "concept_ancestor" in derived_tables
+                and "concept_ancestor" not in derived_tables_as_source
+                and _concept_ancestor_filtered_by_hierarchy_literal(tree, aliases)
+            ):
+                derived_tables_as_source.add("concept_ancestor")
             if derived_tables_as_source:
                 # Check if they JOIN to concept with invalid_reason filter OR date validity
                 has_concept_join_with_invalid_reason_filter = _has_concept_join_with_invalid_reason_filter(tree)

@@ -3,13 +3,19 @@
 OMOP semantic rule:
 When a query compares dates across two different clinical event tables
 (e.g. co.condition_start_date > de.drug_exposure_start_date), it must also
-bound the future event against observation_period_end_date.
+bound the later event against observation_period_end_date.
 
-Without this bound, the query implicitly uses information from beyond the
-patient's observable follow-up window, introducing temporal bias. In
-cohort studies this manifests as immortal time bias or future information
-leakage: patients are selected or excluded based on what happens after
-the study period ends for them individually.
+Without this bound, the query implicitly reaches beyond the patient's
+observable follow-up window. In cohort studies this manifests as immortal
+time bias and similar follow-up-window errors.
+
+This rule is *complementary* to `temporal.observation_period_anchoring`:
+- If observation_period isn't joined at all, the anchoring rule already
+  fires with a coherent fix that introduces the join. This rule stays
+  silent in that case to avoid duplicate noise and to avoid emitting a
+  patch that references an alias the query doesn't have.
+- If observation_period IS joined but no upper bound is asserted, this
+  rule fires with a self-contained patch using the real alias.
 
 Correct pattern:
     co.condition_start_date > de.drug_exposure_start_date
@@ -104,6 +110,26 @@ def _find_cross_table_date_comparisons(
     return results
 
 
+def _resolve_observation_period_alias(aliases: Dict[str, str]) -> str | None:
+    """Return the alias used for observation_period in this query, or None
+    if observation_period is not joined.
+
+    `extract_aliases` populates ``aliases[alias] = real_table`` and also
+    ``aliases[real_table] = real_table``. We prefer a non-self alias if one
+    exists (e.g. "op"), falling back to the table name itself when the
+    query joins observation_period without aliasing it.
+    """
+    op_aliases = [
+        alias for alias, real in aliases.items()
+        if real == "observation_period" and alias != "observation_period"
+    ]
+    if op_aliases:
+        return op_aliases[0]
+    if aliases.get("observation_period") == "observation_period":
+        return "observation_period"
+    return None
+
+
 def _has_observation_period_end_bound(tree: exp.Expression) -> bool:
     """Check if the query has an actual upper-bound predicate using observation_period_end_date.
 
@@ -140,16 +166,18 @@ class FutureInformationLeakageRule(Rule):
     """Detects cross-table date comparisons not bounded by observation_period_end_date."""
 
     rule_id = "temporal.future_information_leakage"
-    name = "Future Information Leakage"
+    name = "Unbounded Follow-up Window (Future Information Leakage)"
     description = (
         "Detects queries that compare dates across different clinical event tables "
         "(e.g. condition_start_date > drug_exposure_start_date) without bounding the "
-        "future event against observation_period_end_date. This introduces temporal "
-        "bias: patients are implicitly selected based on events beyond their "
-        "individual follow-up window."
+        "later event against observation_period_end_date. The later event can fall "
+        "outside the patient's observed follow-up window, introducing immortal-time "
+        "bias and similar follow-up-window errors. Suppressed when observation_period "
+        "is not joined at all — the observation_period_anchoring rule covers that case "
+        "with a coherent fix."
     )
     severity = Severity.WARNING
-    suggested_fix = "ADD: `AND <future_event_date> <= op.observation_period_end_date` (or <= cohort_end_date) when comparing dates across event tables. Bound future events against the observation_period to prevent look-ahead leakage in cohort analyses."
+    suggested_fix = "ADD: `AND <future_event_date> <= <op_alias>.observation_period_end_date` to bound the later event by the patient's follow-up window."
     long_description = (
         "When a query compares event dates across two clinical tables (e.g. "
         "'condition started before first drug exposure'), the future-facing "
@@ -196,6 +224,17 @@ class FutureInformationLeakageRule(Rule):
             if _has_observation_period_end_bound(tree):
                 continue
 
+            # Suppress when observation_period isn't joined at all. In that
+            # case `temporal.observation_period_anchoring` already fires for
+            # the same root cause and provides a coherent fix that introduces
+            # the JOIN. Emitting our own violation here would (a) double-count
+            # the same issue and (b) ship a patch referencing an `<op>` alias
+            # the query doesn't define — actively misleading for autonomous
+            # agents that apply patches one at a time.
+            op_alias = _resolve_observation_period_alias(aliases)
+            if op_alias is None:
+                continue
+
             for (
                 later_table,
                 later_col,
@@ -205,32 +244,38 @@ class FutureInformationLeakageRule(Rule):
                 later_qual,
             ) in cross_comparisons:
                 # Structured patch: ADD an `AND <later_qual>.<later_col> <=
-                # <op>.observation_period_end_date` immediately after the
-                # offending comparison. The observation_period alias is left
-                # as a `<op>` placeholder for the outer correction loop to
-                # resolve. If the comparison isn't uniquely locatable, fall
-                # back to FREEFORM via auto-default.
+                # <op_alias>.observation_period_end_date` immediately after
+                # the offending comparison. We resolve the real alias from
+                # the query's FROM/JOIN list so the patch is directly
+                # applyable without coordination with another rule's fix.
                 patch = None
                 span = locate(sql, comparison_sql)
                 if span is not None:
                     insert_text = (
                         f" AND {later_qual}.{later_col} "
-                        f"<= <op>.observation_period_end_date"
+                        f"<= {op_alias}.observation_period_end_date"
                     )
                     patch = patch_add(span[1], insert_text)
 
                 violations.append(self.create_violation(
                     message=(
                         f"Query compares {later_table}.{later_col} against "
-                        f"{earlier_table}.{earlier_col} without bounding the later event "
-                        f"by observation_period_end_date. This uses future information "
-                        f"beyond the patient's observable follow-up window, introducing "
-                        f"temporal bias."
+                        f"{earlier_table}.{earlier_col} without bounding the later "
+                        f"event by observation_period_end_date. The later event can "
+                        f"fall outside the patient's observed follow-up window, "
+                        f"producing immortal-time bias or similar follow-up-window "
+                        f"errors in cohort analyses."
+                    ),
+                    suggested_fix=(
+                        f"ADD: `AND {later_qual}.{later_col} "
+                        f"<= {op_alias}.observation_period_end_date` to bound the "
+                        f"later event by the patient's observed follow-up window."
                     ),
                     suggested_fix_patch=patch,
                     details={
                         "later_event": f"{later_table}.{later_col}",
                         "index_event": f"{earlier_table}.{earlier_col}",
+                        "observation_period_alias": op_alias,
                         "missing": "observation_period_end_date upper bound",
                     },
                 ))

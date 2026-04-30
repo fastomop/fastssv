@@ -24,6 +24,60 @@ _TSQL_INDICATORS = [
 ]
 
 
+# First-token whitelist for `looks_like_prose`. Anything that can legally
+# begin a SQL statement across the dialects we accept goes here.
+_SQL_STATEMENT_STARTERS: frozenset = frozenset({
+    "select", "with", "insert", "update", "delete", "merge",
+    "create", "drop", "alter", "truncate", "rename",
+    "explain", "describe", "desc",
+    "use", "set", "show", "pragma", "values", "table",
+    "begin", "commit", "rollback", "savepoint",
+    "grant", "revoke",
+    "call", "execute", "exec", "declare",
+    "refresh", "analyze", "analyse", "vacuum", "copy",
+    "if",  # T-SQL `IF EXISTS ...`
+})
+
+
+def _strip_leading_comments_and_ws(sql: str) -> str:
+    """Strip leading whitespace, line comments, and block comments. Iterative
+    so a chain like `   -- a\n /* b */ SELECT ...` collapses to `SELECT ...`."""
+    s = sql
+    while True:
+        stripped = s.lstrip()
+        if stripped.startswith("--"):
+            nl = stripped.find("\n")
+            s = stripped[nl + 1:] if nl >= 0 else ""
+        elif stripped.startswith("/*"):
+            end = stripped.find("*/")
+            s = stripped[end + 2:] if end >= 0 else ""
+        else:
+            return stripped
+
+
+def looks_like_prose(sql: str) -> bool:
+    """Heuristic: input is natural-language text rather than a SQL query.
+
+    Triggered when the first identifier-like token (after stripping leading
+    whitespace, comments, and any leading parens for subqueries) is alphabetic
+    but not in `_SQL_STATEMENT_STARTERS`. This catches LLM refusals/explanations
+    like "It appears that..." that sqlglot's parser also rejects, but lets the
+    caller emit a more actionable diagnostic than a generic syntax error.
+    """
+    s = _strip_leading_comments_and_ws(sql)
+    if not s:
+        return False
+    # Subqueries can begin with '(' — peek past one or more.
+    while s.startswith("("):
+        s = s[1:].lstrip()
+        if not s:
+            return False
+    m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", s)
+    if not m:
+        return False
+    return m.group(0).lower() not in _SQL_STATEMENT_STARTERS
+
+
 def split_sql_statements(sql: str) -> List[str]:
     """Split a SQL string into individual statements by top-level ``;``.
 
@@ -451,6 +505,7 @@ def extract_join_conditions(tree: exp.Expression, aliases: Dict[str, str]) -> Li
 __all__ = [
     "split_sql_statements",
     "detect_dialect",
+    "looks_like_prose",
     "normalize_name",
     "parse_sql",
     "extract_aliases",

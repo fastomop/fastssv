@@ -9,8 +9,107 @@ between minor versions.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`joins.join_path_validation` false positive on subquery-only `concept`
+  usage.** The rule fired with a join-shaped message ("concept may not be
+  properly joined to the clinical tables via standard concept fields") on
+  queries that didn't JOIN concept at all — they used it as a scalar
+  lookup (`WHERE p.gender_concept_id = (SELECT concept_id FROM concept …)`)
+  or an IN-subquery filter. The message and its suggested fix were framed
+  for the JOIN shape and didn't apply, which historically confused users
+  and LLM agents into adding a JOIN to clinical (the wrong fix) when the
+  right concern was tightening the inner lookup. Added
+  `_vocab_table_used_only_in_subquery`: when every reference to `concept`
+  (or `concept_relationship`) is nested inside a `Subquery` node, the rule
+  now suppresses — the relevant data-quality concerns (deprecated
+  concepts, whitespace mismatches, ambiguous lookups) are already covered
+  by `invalid_reason_enforcement`, `concept_name_whitespace`, and
+  `standard_concept_enforcement`. Actual JOINs with bad linkage shapes
+  still fire.
+
+- **`concept_standardization.invalid_reason_enforcement` asymmetry on the
+  `concept_ancestor` cohort idiom — now fires on all three forms.** The
+  rule originally only detected primary-FROM usage of derived vocabulary
+  tables; the IN-subquery form happened to work because the inner SELECT
+  has `concept_ancestor` in its FROM, but direct-JOIN and chained-JOIN
+  forms slid past silently. Replaced the JOIN-form heuristic with a
+  cleaner one: `_concept_ancestor_filtered_by_hierarchy_literal` checks
+  for a literal predicate (`=` or `IN (…)` of literals) on
+  `concept_ancestor.{ancestor,descendant}_concept_id` in WHERE / JOIN-ON.
+  That signal is form-agnostic and reliably distinguishes cohort-source
+  usage from lookup-decoration:
+  - **Source** (rule fires): a literal hierarchy filter is the cohort
+    selector. Caught by the new check whether concept_ancestor lives in
+    primary FROM, a direct JOIN, or a chained JOIN through `concept`.
+  - **Lookup** (rule stays silent): no literal filter on concept_ancestor's
+    own hierarchy columns; the table is just decoration. Existing tests
+    covering this shape (e.g. `FROM concept c JOIN concept_ancestor ca ON
+    ca.ancestor_concept_id = c.concept_id WHERE c.concept_id = <literal>`)
+    continue to pass.
+
+  Previously the chained-JOIN form failed two ways at once: the
+  `standard_concept_enforcement` rule false-positively required
+  `standard_concept = 'S'` on a query that already guaranteed standardness,
+  while `invalid_reason_enforcement` false-negatively missed the genuine
+  deprecated-concept concern. Both gaps now closed.
+
+- **`concept_standardization.standard_concept_enforcement` false positives on
+  the `concept_ancestor` cohort idiom — three forms now suppressed.** The
+  rule recognizes three semantically equivalent patterns as adequate
+  standard-concept enforcement:
+  1. **IN-subquery:** `<col> IN (SELECT descendant_concept_id FROM concept_ancestor [WHERE …])`
+     and the inverse `ancestor_concept_id` form.
+  2. **Direct JOIN:** `JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id`
+     (or `ca.ancestor_concept_id`) — the more common idiom in OHDSI cohort SQL.
+  3. **Chained JOIN via `concept`:** `JOIN concept c ON <clinical>.<concept_id_col> = c.concept_id`
+     followed by `JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id`
+     (or `ca.ancestor_concept_id`). Users adopt this shape when they also
+     want to project columns from `concept` (e.g. `concept_name`) in the
+     SELECT list. The intermediate `concept` join is a relay; the
+     standard-concept guarantee is transitive through the chain.
+
+  concept_ancestor is, by OMOP CDM definition, a hierarchy over Standard
+  Concepts only — both `ancestor_concept_id` and `descendant_concept_id` are
+  guaranteed-standard, so feeding rows from concept_ancestor into a
+  `*_concept_id` slot (whether via subquery, direct JOIN, or chained JOIN
+  through concept) transitively guarantees the standard-concept property
+  and an additional `standard_concept = 'S'` filter would be redundant.
+  Previously produced spurious warnings (and ERROR-level violations under
+  strict mode) on every cohort query using these idioms. Suppression is
+  scope-limited to direct references; CTE-indirected patterns still fire
+  (existing behavior preserved).
+
+### Changed
+
+- **`temporal.future_information_leakage` rework.** The rule now defers to
+  `temporal.observation_period_anchoring` when `observation_period` is not
+  joined at all. Previously both rules fired on the same root cause,
+  doubling the violation count, and the leakage rule shipped a patch
+  referencing an `<op>.observation_period_end_date` placeholder alias that
+  the query never defined — un-applyable without coordination with the
+  other rule's JOIN-introducing fix. When `observation_period` IS joined
+  but no upper bound is asserted, the rule still fires and now resolves
+  the query's actual alias (e.g. `op`, or the bare table name when no
+  alias is used) and substitutes it directly into the `ADD` patch and the
+  per-violation suggested fix. Message text reframed: this is a follow-up-
+  window / immortal-time-bias check, not ML-style look-ahead leakage.
+  `rule_id` unchanged for backward compatibility.
+
 ### Added
 
+- **`parse.not_sql_input` parse-error variant.** When the input is natural-
+  language prose rather than SQL (e.g. an LLM refusal or explanation passed
+  through to the validator by mistake), the parse-error path now emits a
+  distinct `parse.not_sql_input` violation instead of `parse.syntax_error`.
+  The suggested fix explicitly tells callers *not* to retry with a different
+  dialect — the previous default `Try dialect='tsql' …` hint was actively
+  misleading for non-SQL input and could send autonomous agent loops into
+  pointless dialect-retry cycles. Detection is a small heuristic in
+  `core/helpers.looks_like_prose`: if the first identifier-like token (after
+  stripping leading whitespace, comments, and parens) is alphabetic but not
+  a known SQL statement starter, the input is classified as prose. The new
+  rule_id is exported as `fastssv.NOT_SQL_RULE_ID`.
 - **HTTP API** (`fastssv.api`). Optional FastAPI service exposing the
   validator over HTTP. Installed via `pip install "fastssv[api]"`.
   Endpoints: `POST /v1/validate`, `GET /v1/rules`, `GET /v1/health`,

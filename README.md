@@ -84,8 +84,22 @@ fastssv serve --prod --workers 4    # prod: gunicorn + uvicorn workers
 
 **Containerized:**
 ```bash
+# production stack (gunicorn + uvicorn workers, hardened)
 docker compose -f deploy/docker-compose.yml up --build
+
+# tunable via env vars — see deploy/.env.example for the full list
+cp deploy/.env.example deploy/.env  # then edit
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build
 ```
+
+For local development iteration, prefer `fastssv serve --reload` (above) over
+Docker — it's faster and skips the rebuild loop. Use Docker when you want to
+verify the production deploy bundle itself.
+
+A Docker-based smoke test (`tests/api/test_docker_smoke.py`) builds the
+image, brings the stack up, and curls `/v1/health`, `/v1/rules`, and
+`/v1/validate` to verify the deploy bundle actually produces a working app.
+It auto-skips when Docker isn't available.
 
 Endpoints:
 
@@ -145,11 +159,11 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 ### Key Concept Standardization Rules (18 rules)
 
-**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, WARNING) - Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) should be constrained to `concept.standard_concept = 'S'` or resolved via a `'Maps to'` relationship. This is a best practice to ensure vocabulary hygiene, though queries may execute without it depending on data quality.
+**Standard concept enforcement** (`concept_standardization.standard_concept_enforcement`, WARNING) - Every standard concept field (`condition_concept_id`, `drug_concept_id`, etc.) should be constrained to `concept.standard_concept = 'S'`, resolved via a `'Maps to'` relationship, restricted to specific concept IDs, or filtered through a direct `concept_ancestor` reference. Three concept_ancestor forms are recognized as equivalent: the IN-subquery (`IN (SELECT descendant_concept_id FROM concept_ancestor …)`), the direct JOIN (`JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id`), and the chained JOIN through concept (`JOIN concept c ON <clinical>.<concept_id_col> = c.concept_id JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id`). concept_ancestor is by CDM definition a hierarchy over Standard Concepts, so all three forms transitively guarantee standardness without a redundant `standard_concept = 'S'` filter. This is a best practice to ensure vocabulary hygiene, though queries may execute without it depending on data quality.
 
 **Concept ancestor rollup direction** (`concept_standardization.concept_ancestor_rollup_direction`, ERROR) - When joining `concept_ancestor` to roll up to ancestor concepts, the join direction must match the intent. Confusing `ancestor_concept_id` and `descendant_concept_id` silently returns the wrong concept set.
 
-**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, WARNING — *strict-mode-only*) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` may return retired concept IDs. Gated behind `--strict` (CLI) / `strict=True` (API) because the filter is missing from most realistic queries; the rule is silent in default mode and fires as a warning in strict mode.
+**Invalid reason enforcement** (`concept_standardization.invalid_reason_enforcement`, WARNING — *strict-mode-only*) - Vocabulary tables contain deprecated and superseded concepts marked with non-null `invalid_reason`. Querying `concept` or `concept_relationship` without `invalid_reason IS NULL` may return retired concept IDs. Also fires on the `concept_ancestor` cohort-selection idiom across all forms — IN-subquery, direct JOIN, chained JOIN through `concept`, and multi-ancestor IN-lists — detected uniformly by a literal predicate on `concept_ancestor.{ancestor,descendant}_concept_id`. Lookup-shape joins (no literal hierarchy filter) correctly stay silent. Gated behind `--strict` (CLI) / `strict=True` (API) because the filter is missing from most realistic queries; the rule is silent in default mode and fires as a warning in strict mode.
 
 **Concept domain validation** (`concept_standardization.concept_domain_validation`, WARNING for missing filter, ERROR for wrong filter) - Each CDM table is designed for one domain: `condition_occurrence` for Condition concepts, `drug_exposure` for Drug concepts. Missing a `domain_id` filter is a best practice warning. Using the **wrong** `domain_id` is always an ERROR as it will return zero rows.
 
@@ -240,7 +254,7 @@ FastSSV ships with 157 validation rules across 6 categories covering OMOP CDM v5
 
 **Clinical event date in future** (`temporal.clinical_event_date_in_future_validation`, WARNING) - Warns about clinical event dates (condition_start_date, drug_exposure_start_date, etc.) dated in the future, indicating possible data entry errors or scheduled procedures.
 
-**Future information leakage** (`temporal.future_information_leakage`, WARNING) - Detects cross-table date comparisons (e.g., condition_start_date > drug_exposure_start_date) without bounding the future event against observation_period_end_date, which introduces temporal bias.
+**Future information leakage** (`temporal.future_information_leakage`, WARNING) - Detects cross-table date comparisons (e.g., condition_start_date > drug_exposure_start_date) where the later event is not bounded by `observation_period_end_date`, producing immortal-time bias and similar follow-up-window errors. Suppressed when `observation_period` is not joined at all — `temporal.observation_period_anchoring` covers that case with a coherent end-to-end fix; firing both would duplicate the diagnosis. When `observation_period` IS joined, the suggested-fix patch substitutes the query's actual alias so it can be applied directly.
 
 **Nullable end date NULL handling** (`temporal.nullable_end_date_null_handling`, WARNING) - Ensures nullable end_date columns are properly handled when used in functions, arithmetic, or comparisons to avoid NULL propagation issues.
 
@@ -669,7 +683,10 @@ During the current pre-1.0 phase (`0.x.y`), the following stability contract app
   `get_rules_by_category()`.
 - The `rule_id` field format: `<category>.<rule_name>` strings are treated as
   API. Rules that are renamed will keep an alias for one minor version.
-- The `parse.syntax_error` rule_id for parse failures.
+- The `parse.syntax_error` and `parse.not_sql_input` rule_ids for parse
+  failures. (`parse.not_sql_input` fires when the input is natural-language
+  prose rather than SQL — e.g. an LLM refusal — and ships a non-misleading
+  fix that does not advise a dialect retry.)
 - The `RuleViolation` schema (rule_id, severity, message, suggested_fix,
   details, location fields).
 

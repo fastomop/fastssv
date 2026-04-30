@@ -143,6 +143,173 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert errors == []
 
+    def test_direct_concept_ancestor_descendant_subquery_suppresses(self) -> None:
+        """`<col> IN (SELECT descendant_concept_id FROM concept_ancestor WHERE …)`
+        is the canonical OHDSI pattern for "find all members of a drug/condition
+        class." concept_ancestor is, by CDM definition, a hierarchy over
+        Standard Concepts only — every descendant returned is guaranteed
+        standard. The rule must not require a redundant `standard_concept = 'S'`
+        filter on top of this idiom.
+        """
+        sql = """
+        SELECT EXTRACT(YEAR FROM de.drug_exposure_start_date) AS yr,
+               COUNT(DISTINCT de.person_id) AS pts
+        FROM drug_exposure de
+        JOIN observation_period op
+          ON op.person_id = de.person_id
+         AND de.drug_exposure_start_date BETWEEN op.observation_period_start_date
+                                             AND op.observation_period_end_date
+        WHERE de.drug_concept_id IN (
+            SELECT descendant_concept_id
+            FROM concept_ancestor
+            WHERE ancestor_concept_id = 35416207
+        )
+        GROUP BY yr
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_direct_concept_ancestor_ancestor_subquery_suppresses(self) -> None:
+        """Inverse pattern: `<col> IN (SELECT ancestor_concept_id FROM
+        concept_ancestor WHERE …)`. Same standard-only guarantee."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            SELECT ancestor_concept_id
+            FROM concept_ancestor
+            WHERE descendant_concept_id = 201826
+        )
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_subquery_from_unrelated_table_still_fires(self) -> None:
+        """Suppression must be specific to concept_ancestor, not any subquery.
+        `<col> IN (SELECT some_id FROM some_other_table)` carries no standard-
+        concept guarantee."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            SELECT concept_id FROM custom_lookup_table
+        )
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
+    def test_inline_join_to_concept_ancestor_descendant_suppresses(self) -> None:
+        """The JOIN form of the cohort idiom — equally idiomatic in OHDSI:
+
+            FROM drug_exposure de
+            JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+            WHERE ca.ancestor_concept_id = <id>
+
+        carries the same standard-concept guarantee as the IN-subquery form
+        (concept_ancestor is a hierarchy over Standard Concepts only). The
+        rule must not require a redundant `standard_concept = 'S'` filter on
+        top of this pattern.
+        """
+        sql = """
+        SELECT EXTRACT(YEAR FROM de.drug_exposure_start_date) AS yr,
+               COUNT(DISTINCT de.person_id) AS pts
+        FROM drug_exposure de
+        JOIN concept_ancestor ca
+          ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 43027253
+        GROUP BY yr
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_inline_join_to_concept_ancestor_ancestor_suppresses(self) -> None:
+        """Inverse direction: clinical column joined to ancestor_concept_id."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept_ancestor ca
+          ON co.condition_concept_id = ca.ancestor_concept_id
+        WHERE ca.descendant_concept_id = 201826
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_inline_join_to_concept_ancestor_unrelated_column_still_fires(self) -> None:
+        """A JOIN to concept_ancestor that doesn't connect a clinical *_concept_id
+        column to descendant/ancestor_concept_id provides no standard-concept
+        guarantee for the clinical column. Defensive case: don't suppress just
+        because concept_ancestor appears in the FROM list."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept_ancestor ca ON ca.min_levels_of_separation = 0
+        WHERE co.condition_concept_id = ca.descendant_concept_id - 1
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
+    def test_chained_join_clinical_concept_concept_ancestor_suppresses(self) -> None:
+        """The chained-JOIN form of the cohort idiom — clinical fact table
+        joined to concept, and concept joined to concept_ancestor — has the
+        same standard-concept guarantee as the direct-JOIN and IN-subquery
+        forms (concept_ancestor descendants are standard by CDM definition).
+        Users adopt this shape when they also want concept's columns in the
+        SELECT list. The rule must not require a redundant
+        `concept.standard_concept = 'S'` filter on top.
+        """
+        sql = """
+        SELECT COUNT(DISTINCT person.person_id)
+        FROM condition_occurrence
+        INNER JOIN person ON condition_occurrence.person_id = person.person_id
+        INNER JOIN concept ON condition_occurrence.condition_concept_id = concept.concept_id
+        INNER JOIN concept_ancestor ON concept.concept_id = concept_ancestor.descendant_concept_id
+        WHERE concept_ancestor.ancestor_concept_id = 320128
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_chained_join_via_ancestor_direction_suppresses(self) -> None:
+        """Inverse direction of the chain — concept.concept_id joined to
+        concept_ancestor.ancestor_concept_id."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept_ancestor ca ON c.concept_id = ca.ancestor_concept_id
+        WHERE ca.descendant_concept_id = 201826
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_broken_chain_concept_to_concept_ancestor_unrelated_column_still_fires(self) -> None:
+        """Defensive: if the chain is broken — e.g. concept→concept_ancestor on
+        a column other than descendant/ancestor_concept_id — the standard-
+        concept guarantee no longer holds and the rule must still fire."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept_ancestor ca ON ca.min_levels_of_separation = c.concept_id
+        WHERE ca.ancestor_concept_id = 320128
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
+    def test_subquery_selecting_non_id_column_from_concept_ancestor_still_fires(self) -> None:
+        """Defensive: if the subquery selects something that's *not*
+        descendant_concept_id / ancestor_concept_id from concept_ancestor (e.g.
+        min_levels_of_separation), don't suppress — the standard-concept
+        guarantee comes from the id columns, not arbitrary projections."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            SELECT min_levels_of_separation FROM concept_ancestor
+        )
+        """
+        errors = validate_standard_concept_mapping(sql)
+        assert any("STANDARD concept fields" in e for e in errors)
+
     def test_unqualified_column_in_single_table_still_fires(self) -> None:
         """The homepage 'Missing standard concept' example uses an unqualified
         ``condition_concept_id`` reference. Detector must attribute unqualified
@@ -162,6 +329,77 @@ class TestStandardConceptMapping:
         """
         errors = validate_standard_concept_mapping(sql)
         assert any("STANDARD concept fields" in e for e in errors)
+
+
+class TestJoinPathValidation:
+    """Tests for the join-path validation rule, specifically the
+    scalar/IN-subquery suppression added to avoid join-shaped warnings on
+    queries that don't actually JOIN concept to clinical tables."""
+
+    def _run_rule(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("joins.join_path_validation")()
+        return rule.validate(sql)
+
+    def test_concept_in_scalar_subquery_does_not_fire(self) -> None:
+        """`WHERE p.gender_concept_id = (SELECT concept_id FROM concept WHERE …)`
+        is a value-lookup pattern, not a JOIN. The rule's intent ("concept
+        properly linked to clinical via concept_id") doesn't apply — there's
+        no JOIN to validate. The relevant concerns (deprecated concepts,
+        whitespace, lookup ambiguity) are covered by other rules.
+        """
+        sql = """
+        SELECT COUNT(DISTINCT co.person_id)
+        FROM condition_occurrence co
+        JOIN person p ON p.person_id = co.person_id
+        WHERE co.condition_concept_id = 320128
+          AND p.gender_concept_id = (
+              SELECT concept_id
+              FROM concept
+              WHERE concept_name = 'Female'
+                AND domain_id = 'Gender'
+          )
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_concept_in_in_subquery_does_not_fire(self) -> None:
+        """Same suppression for IN-subquery shape."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        WHERE de.drug_concept_id IN (
+            SELECT concept_id FROM concept
+            WHERE vocabulary_id = 'RxNorm' AND standard_concept = 'S'
+        )
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_concept_joined_to_clinical_with_proper_concept_id_link_passes(self) -> None:
+        """Sanity: when concept IS joined to a clinical table on concept_id,
+        the rule (correctly) doesn't fire — the join path is valid."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.standard_concept = 'S'
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_concept_joined_outside_subquery_still_fires(self) -> None:
+        """When concept is joined to a clinical table but on the wrong column
+        (no concept_id linkage), the rule must still fire. The suppression
+        only applies to subquery-only usage, not to actual JOINs."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.domain_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) > 0
+        assert any("concept" in v.message for v in violations)
 
 
 class TestUnmappedConceptHandling:
@@ -545,6 +783,112 @@ class TestInvalidReasonEnforcement:
         """
         errors = self._run_invalid_reason_rule(sql)
         assert errors == []
+
+    def test_concept_ancestor_inline_join_to_clinical_warns(self) -> None:
+        """The JOIN form of the cohort idiom — concept_ancestor JOINed against
+        a clinical fact table on its descendant_concept_id — must trigger the
+        rule. Semantically equivalent to the IN-subquery form, but previously
+        slid past `_derived_table_in_from` because sqlglot stores joined
+        tables under `select.args['joins']`, not under the From node.
+        """
+        sql = """
+        SELECT EXTRACT(YEAR FROM de.drug_exposure_start_date) AS yr,
+               COUNT(DISTINCT de.person_id) AS pts
+        FROM drug_exposure de
+        JOIN concept_ancestor ca
+          ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 43027253
+        GROUP BY yr
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
+
+    def test_concept_ancestor_inline_join_with_concept_invalid_reason_passes(self) -> None:
+        """Same JOIN-form cohort idiom, but with concept joined and
+        invalid_reason filtered — should pass."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        JOIN concept_ancestor ca
+          ON de.drug_concept_id = ca.descendant_concept_id
+        JOIN concept c
+          ON c.concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 43027253
+          AND c.invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert errors == []
+
+    def test_concept_ancestor_chained_join_through_concept_warns(self) -> None:
+        """The chained-JOIN form of the cohort idiom — clinical fact table
+        joined to concept, and concept joined to concept_ancestor — must
+        trigger the rule. Symmetric to the IN-subquery and direct-JOIN
+        forms. The previous "JOIN counterparty must be non-vocabulary"
+        heuristic incorrectly classified this as a lookup join because the
+        counterparty was `concept`; the new "literal filter on concept_
+        ancestor's hierarchy" heuristic gets it right.
+        """
+        sql = """
+        SELECT COUNT(DISTINCT person.person_id)
+        FROM condition_occurrence
+        INNER JOIN concept ON condition_occurrence.condition_concept_id = concept.concept_id
+        INNER JOIN concept_ancestor ON concept.concept_id = concept_ancestor.descendant_concept_id
+        WHERE concept_ancestor.ancestor_concept_id = 320128
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
+
+    def test_concept_ancestor_chained_join_with_invalid_reason_passes(self) -> None:
+        """Same chained-JOIN cohort idiom, but with concept's invalid_reason
+        filtered — should pass. The whole-tree walk for
+        `_has_concept_join_with_invalid_reason_filter` correctly suppresses
+        when the filter is present anywhere in the query, not just at the
+        outer level."""
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 320128
+          AND c.invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert errors == []
+
+    def test_concept_ancestor_multi_ancestor_in_list_warns(self) -> None:
+        """`WHERE ca.ancestor_concept_id IN (a, b, c, d)` is also a source
+        signal — the user is selecting via the hierarchy, just from multiple
+        ancestor entry points."""
+        sql = """
+        SELECT de.person_id
+        FROM drug_exposure de
+        JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id IN (974166, 1115008, 1308216)
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        assert len(errors) > 0
+        assert any("concept_ancestor" in e for e in errors)
+
+    def test_concept_ancestor_lookup_join_to_concept_does_not_fire(self) -> None:
+        """When concept_ancestor is joined against another vocabulary table
+        (concept→concept_ancestor lookup), the join is decorative, not a
+        cohort source. The existing rule already handles this correctly via
+        primary-FROM detection; verifying the new branch doesn't regress it.
+        """
+        sql = """
+        SELECT c.concept_name, ca.descendant_concept_id
+        FROM concept c
+        JOIN concept_ancestor ca ON ca.ancestor_concept_id = c.concept_id
+        WHERE c.concept_id = 192671
+          AND c.invalid_reason IS NULL
+        """
+        errors = self._run_invalid_reason_rule(sql)
+        # No concept_ancestor warning — concept_ancestor is a lookup here, not
+        # a source. The concept-table side has invalid_reason filtered, so no
+        # other warning should fire either.
+        assert all("concept_ancestor" not in e for e in errors)
 
     def test_concept_synonym_without_concept_join(self) -> None:
         """Query on concept_synonym without concept join should WARN."""
@@ -1207,8 +1551,12 @@ class TestFutureInformationLeakage:
         rule = get_rule("temporal.future_information_leakage")()
         return rule.validate(sql, dialect)
 
-    def test_cross_table_date_comparison_without_bound_fires(self) -> None:
-        """Cross-table date comparison without observation_period_end_date -> violation."""
+    def test_cross_table_date_comparison_without_op_join_suppressed(self) -> None:
+        """When observation_period isn't joined at all, this rule defers to
+        observation_period_anchoring (which fires for the same root cause and
+        ships a coherent fix that introduces the JOIN). Firing here too would
+        double-count and emit an unapplyable patch referencing an alias the
+        query doesn't define."""
         sql = """
         SELECT co.person_id
         FROM condition_occurrence co
@@ -1216,8 +1564,45 @@ class TestFutureInformationLeakage:
         WHERE co.condition_start_date > de.drug_exposure_start_date
         """
         violations = self._run_rule(sql)
-        assert len(violations) > 0
-        assert violations[0].rule_id == "temporal.future_information_leakage"
+        assert violations == []
+
+    def test_cross_table_date_comparison_with_op_join_no_bound_fires(self) -> None:
+        """observation_period IS joined but no upper bound asserted -> violation
+        with a self-contained patch using the real alias."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period op ON co.person_id = op.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        v = violations[0]
+        assert v.rule_id == "temporal.future_information_leakage"
+        # Patch must reference the real alias, not a `<op>` placeholder.
+        assert v.suggested_fix_patch is not None
+        patch_text = v.suggested_fix_patch["text"]
+        assert "<op>" not in patch_text
+        assert "op.observation_period_end_date" in patch_text
+        assert v.details.get("observation_period_alias") == "op"
+
+    def test_cross_table_date_comparison_with_unaliased_op_uses_table_name(self) -> None:
+        """Query joins observation_period without an alias — the patch should
+        use the table name itself rather than emitting a `<op>` placeholder."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN drug_exposure de ON co.person_id = de.person_id
+        JOIN observation_period ON co.person_id = observation_period.person_id
+        WHERE co.condition_start_date > de.drug_exposure_start_date
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        v = violations[0]
+        patch_text = v.suggested_fix_patch["text"]
+        assert "<op>" not in patch_text
+        assert "observation_period.observation_period_end_date" in patch_text
 
     def test_cross_table_date_comparison_with_bound_passes(self) -> None:
         """Cross-table date comparison WITH observation_period_end_date bound -> no violation."""
@@ -1253,12 +1638,14 @@ class TestFutureInformationLeakage:
         violations = self._run_rule(sql)
         assert violations == []
 
-    def test_gte_comparison_without_bound_fires(self) -> None:
-        """GTE (>=) cross-table date comparison also triggers the rule."""
+    def test_gte_comparison_with_op_join_fires(self) -> None:
+        """GTE (>=) cross-table date comparison triggers the rule when
+        observation_period is joined but no upper bound is asserted."""
         sql = """
         SELECT de.person_id
         FROM drug_exposure de
         JOIN visit_occurrence vo ON de.person_id = vo.person_id
+        JOIN observation_period op ON de.person_id = op.person_id
         WHERE de.drug_exposure_start_date >= vo.visit_start_date
         """
         violations = self._run_rule(sql)
@@ -1275,11 +1662,13 @@ class TestFutureInformationLeakage:
         assert violations == []
 
     def test_lt_direction_fires(self) -> None:
-        """LT (a < b) is semantically equivalent to GT (b > a) and must also trigger."""
+        """LT (a < b) is semantically equivalent to GT (b > a) and must also
+        trigger when observation_period is joined but unbounded."""
         sql = """
         SELECT de.person_id
         FROM drug_exposure de
         JOIN condition_occurrence co ON de.person_id = co.person_id
+        JOIN observation_period op ON de.person_id = op.person_id
         WHERE de.drug_exposure_start_date < co.condition_start_date
         """
         violations = self._run_rule(sql)

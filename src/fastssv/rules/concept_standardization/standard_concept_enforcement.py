@@ -15,6 +15,7 @@ from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     has_condition,
     extract_aliases,
+    extract_join_conditions,
     normalize_name,
     parse_sql,
     resolve_table_col,
@@ -120,6 +121,183 @@ def _has_specific_concept_id_filter(
                 if is_numeric_literal(val) and not is_numeric_literal(val, 0):
                     return True
 
+    return False
+
+
+def _filters_via_concept_ancestor(
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+    standard_fields: Set[Tuple[str, str]],
+) -> bool:
+    """True if the query restricts a STANDARD concept_id column via
+    concept_ancestor's hierarchy.
+
+    Pattern:
+        ``<standard_concept_id_col> IN (SELECT descendant_concept_id
+                                        FROM concept_ancestor [WHERE ...])``
+        ``<standard_concept_id_col> IN (SELECT ancestor_concept_id
+                                        FROM concept_ancestor [WHERE ...])``
+
+    By OMOP CDM definition, concept_ancestor is a hierarchy over Standard
+    Concepts only — both ancestor_concept_id and descendant_concept_id are
+    guaranteed-standard. Feeding rows from concept_ancestor into a
+    *_concept_id slot transitively guarantees the standard-concept property,
+    so an additional ``standard_concept = 'S'`` filter would be redundant.
+
+    Scope-limited to the *direct* subquery form. CTE-indirected patterns
+    (``WITH cte AS (SELECT descendant_concept_id FROM concept_ancestor ...)
+    SELECT ... WHERE col IN (SELECT concept_id FROM cte)``) are not traced
+    here — they're handled by existing rule behavior, where the literal-vs-
+    standard distinction is harder to verify safely without inlining the CTE.
+    """
+    tables_in_scope = {normalize_name(t) for t in aliases.values() if t}
+
+    for node in tree.find_all(exp.In):
+        # Subquery form only — IN (1, 2, 3) has node.expressions populated.
+        if node.expressions:
+            continue
+
+        if not isinstance(node.this, exp.Column):
+            continue
+
+        table_resolved, col_name = resolve_table_col(node.this, aliases)
+        if not col_name:
+            continue
+        col_norm = normalize_name(col_name)
+
+        if table_resolved:
+            table_norm = normalize_name(table_resolved)
+        else:
+            candidates = [
+                t for t in tables_in_scope if (t, col_norm) in standard_fields
+            ]
+            if len(candidates) != 1:
+                continue
+            table_norm = candidates[0]
+
+        if (table_norm, col_norm) not in standard_fields:
+            continue
+
+        if _in_subquery_selects_concept_ancestor_id(node):
+            return True
+
+    return False
+
+
+def _has_chained_join_to_concept_ancestor_via_concept(
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+    standard_fields: Set[Tuple[str, str]],
+) -> bool:
+    """True if a clinical *_concept_id is constrained to standard concepts via
+    a two-hop JOIN chain through `concept.concept_id` to
+    `concept_ancestor.descendant_concept_id` (or `ancestor_concept_id`).
+
+    Pattern (semantically identical to the direct-JOIN and IN-subquery forms
+    handled elsewhere; users adopt this shape when they also want to project
+    columns from the concept table, e.g. `concept_name`):
+
+        FROM <clinical>
+        JOIN concept c ON <clinical>.<concept_id_col> = c.concept_id
+        JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = <id>
+
+    The chain transitively constrains `<clinical>.<concept_id_col>` to
+    `concept_ancestor.descendant_concept_id`, which is guaranteed-standard
+    by OMOP CDM definition. The intermediate `concept` join is just a
+    relay — it doesn't restrict standardness further or undo it. An
+    additional `concept.standard_concept = 'S'` filter would be redundant.
+
+    The two hops can appear in either order in the query, and either side
+    of each EQ; this helper checks both orientations.
+    """
+    target_cols = {"descendant_concept_id", "ancestor_concept_id"}
+    join_conditions = extract_join_conditions(tree, aliases)
+
+    has_clinical_to_concept = False
+    has_concept_to_concept_ancestor = False
+
+    for lt, lc, rt, rc in join_conditions:
+        for s1_t, s1_c, s2_t, s2_c in ((lt, lc, rt, rc), (rt, rc, lt, lc)):
+            # Hop 1: clinical fact table . *_concept_id = concept.concept_id
+            if (
+                normalize_name(s2_t) == "concept"
+                and normalize_name(s2_c) == "concept_id"
+            ):
+                key = (normalize_name(s1_t), normalize_name(s1_c))
+                if key in standard_fields:
+                    has_clinical_to_concept = True
+            # Hop 2: concept.concept_id = concept_ancestor.{ancestor,descendant}_concept_id
+            if (
+                normalize_name(s1_t) == "concept"
+                and normalize_name(s1_c) == "concept_id"
+                and normalize_name(s2_t) == "concept_ancestor"
+                and normalize_name(s2_c) in target_cols
+            ):
+                has_concept_to_concept_ancestor = True
+
+    return has_clinical_to_concept and has_concept_to_concept_ancestor
+
+
+def _has_clinical_join_to_concept_ancestor(
+    tree: exp.Expression,
+    aliases: Dict[str, str],
+    standard_fields: Set[Tuple[str, str]],
+) -> bool:
+    """True if the query joins a clinical fact table directly to
+    concept_ancestor on its descendant_concept_id or ancestor_concept_id,
+    constraining the clinical *_concept_id slot to standard concepts.
+
+    Pattern (semantically identical to the IN-subquery form handled by
+    `_filters_via_concept_ancestor`):
+
+        FROM drug_exposure de
+        JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = <id>
+
+    Every `de.drug_concept_id` that survives the join is by construction a
+    `concept_ancestor.descendant_concept_id`, which is guaranteed-standard
+    by OMOP CDM definition (concept_ancestor is a hierarchy over Standard
+    Concepts only). An additional `standard_concept = 'S'` filter would be
+    redundant. The JOIN form is the more common idiom in OHDSI cohort SQL
+    because it avoids a correlated subquery.
+    """
+    target_cols = {"descendant_concept_id", "ancestor_concept_id"}
+
+    for lt, lc, rt, rc in extract_join_conditions(tree, aliases):
+        # Check both join directions: clinical=ca, ca=clinical.
+        for side1_table, side1_col, side2_table, side2_col in (
+            (lt, lc, rt, rc),
+            (rt, rc, lt, lc),
+        ):
+            if side2_table != "concept_ancestor":
+                continue
+            if normalize_name(side2_col) not in target_cols:
+                continue
+            key = (normalize_name(side1_table), normalize_name(side1_col))
+            if key in standard_fields:
+                return True
+    return False
+
+
+def _in_subquery_selects_concept_ancestor_id(in_node: exp.In) -> bool:
+    """True if the IN's subquery selects descendant_concept_id or
+    ancestor_concept_id directly from concept_ancestor."""
+    selects = list(in_node.find_all(exp.Select))
+    if not selects:
+        return False
+
+    select = selects[0]
+
+    if not has_table_reference(select, "concept_ancestor"):
+        return False
+
+    target_cols = {"descendant_concept_id", "ancestor_concept_id"}
+    for proj in select.expressions or []:
+        underlying = proj.this if isinstance(proj, exp.Alias) else proj
+        if isinstance(underlying, exp.Column):
+            if normalize_name(underlying.name) in target_cols:
+                return True
     return False
 
 
@@ -241,9 +419,25 @@ class StandardConceptEnforcementRule(Rule):
             has_standard_enforcement = _enforces_standard_concept(tree)
             has_maps_to = _uses_maps_to_relationship(tree)
             has_specific_filter = _has_specific_concept_id_filter(tree, aliases, standard_fields)
+            has_concept_ancestor_filter = _filters_via_concept_ancestor(
+                tree, aliases, standard_fields
+            )
+            has_concept_ancestor_join = _has_clinical_join_to_concept_ancestor(
+                tree, aliases, standard_fields
+            )
+            has_concept_ancestor_chain = _has_chained_join_to_concept_ancestor_via_concept(
+                tree, aliases, standard_fields
+            )
 
             # If no enforcement mechanism is present, warn
-            if not has_standard_enforcement and not has_maps_to and not has_specific_filter:
+            if (
+                not has_standard_enforcement
+                and not has_maps_to
+                and not has_specific_filter
+                and not has_concept_ancestor_filter
+                and not has_concept_ancestor_join
+                and not has_concept_ancestor_chain
+            ):
                 # Check strict mode for severity escalation
                 from fastssv.core.validation_context import get_validation_context
                 ctx = get_validation_context()

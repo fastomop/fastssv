@@ -64,13 +64,13 @@ For each rule you will find:
 | `concept_standardization.concept_synonym_language_concept_id` | [Concept Synonym Language Concept ID](#concept-standardization-concept-synonym-language-concept-id) | WARNING | concept_standardization |
 | `concept_standardization.domain_vocabulary_validation` | [Domain Vocabulary Validation (VOCAB_022-025)](#concept-standardization-domain-vocabulary-validation) | WARNING | concept_standardization |
 | `concept_standardization.era_table_standard_concepts` | [Era Tables Use Standard Concepts Only](#concept-standardization-era-table-standard-concepts) | ERROR | concept_standardization |
-| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement](#concept-standardization-invalid-reason-enforcement) | ERROR | concept_standardization |
+| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement](#concept-standardization-invalid-reason-enforcement) | WARNING (strict-mode-only) | concept_standardization |
 | `concept_standardization.maps_to_target_standard_validation` | [Maps To Target Standard Validation](#concept-standardization-maps-to-target-standard-validation) | ERROR | concept_standardization |
 | `concept_standardization.multiple_maps_to_targets` | [Multiple Maps To Targets Not Handled](#concept-standardization-multiple-maps-to-targets) | WARNING | concept_standardization |
 | `concept_standardization.source_concept_id_warning` | [Source Concept ID Not For Analytical Filtering](#concept-standardization-source-concept-id-warning) | WARNING | concept_standardization |
 | `concept_standardization.source_concept_id_standard_filter` | [Source Concept ID Should Not Filter Standard Concepts](#concept-standardization-source-concept-id-standard-filter) | WARNING | concept_standardization |
 | `concept_standardization.source_to_concept_map_validation` | [Source to Concept Map Validation](#concept-standardization-source-to-concept-map-validation) | WARNING | concept_standardization |
-| `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | ERROR | concept_standardization |
+| `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | WARNING | concept_standardization |
 | `concept_standardization.standard_concept_value_validation` | [Standard Concept Value Validation](#concept-standardization-standard-concept-value-validation) | ERROR | concept_standardization |
 | `concept_standardization.unit_vocabulary_validation` | [Unit Vocabulary Validation](#concept-standardization-unit-vocabulary-validation) | WARNING | concept_standardization |
 | `joins.care_site_id_join_validation` | [Care Site ID Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
@@ -114,7 +114,7 @@ For each rule you will find:
 | `temporal.death_date_before_birth_validation` | [Death Date Before Birth Validation](#temporal-death-date-before-birth-validation) | ERROR | temporal |
 | `temporal.death_date_in_future_validation` | [Death Date In Future Validation](#temporal-death-date-in-future-validation) | WARNING | temporal |
 | `temporal.end_before_start_validation` | [End Before Start Validation](#temporal-end-before-start-validation) | ERROR | temporal |
-| `temporal.future_information_leakage` | [Future Information Leakage](#temporal-future-information-leakage) | WARNING | temporal |
+| `temporal.future_information_leakage` | [Unbounded Follow-up Window (Future Information Leakage)](#temporal-future-information-leakage) | WARNING | temporal |
 | `temporal.nullable_end_date_null_handling` | [Nullable End Date NULL Handling](#temporal-nullable-end-date-null-handling) | WARNING | temporal |
 | `temporal.observation_period_anchoring` | [Observation Period Anchoring](#temporal-observation-period-anchoring) | ERROR | temporal |
 | `temporal.observation_period_date_range_logic` | [Observation Period Date Range Logic](#temporal-observation-period-date-range-logic) | ERROR | temporal |
@@ -729,21 +729,88 @@ Remove filters for non-standard concepts. Era tables only contain standard conce
 ### 12. Invalid Reason Enforcement
 
 **Rule ID:** `concept_standardization.invalid_reason_enforcement`
-**Severity:** ERROR
+**Severity:** WARNING (strict-mode-only — silent in default mode)
 
 #### Intent
 
-OMOP semantic rule: When querying vocabulary/concept tables (concept, concept_relationship, concept_ancestor, etc.), queries must filter by invalid_reason to ensure only valid concepts are used, or explicitly handle invalid concepts.
+Vocabulary tables (`concept`, `concept_relationship`) carry an `invalid_reason` column that marks retired/superseded entries (`'D'` = deprecated, `'U'` = upgraded, `NULL` = currently valid). Derived vocabulary tables (`concept_ancestor`, `concept_synonym`, `drug_strength`, `source_to_concept_map`) reference concept IDs but lack their own `invalid_reason` column. Queries that omit `invalid_reason` filtering can silently include retired concepts in cohort definitions or analytic outputs.
+
+This rule is **gated behind strict mode**: silent in default mode, fires as WARNING under `--strict` (CLI) or `strict=True` (API). Real-world OMOP queries on the concept table almost always omit this filter, so firing in default mode would dilute every other rule.
 
 #### How it works
 
-This rule analyzes the SQL query to identify invalid reason enforcement patterns.
+The rule fires when:
+
+- A vocabulary table with `invalid_reason` (`concept`, `concept_relationship`) appears in scope, is being used as a *source* (filtered by `vocabulary_id` / `domain_id` / `relationship_id` / `standard_concept` / `concept_name` / `concept_code` / `concept_class_id`), and no `invalid_reason` predicate is asserted; OR
+- A derived vocabulary table is used as a source for cohort selection. Source-usage detection (for `concept_ancestor` specifically) recognizes any of:
+  - **Primary FROM:** `FROM concept_ancestor WHERE …`.
+  - **Direct JOIN:** `JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id` (or `ca.ancestor_concept_id`).
+  - **Chained JOIN through `concept`:** `JOIN concept c ON … JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id` (or `ca.ancestor_concept_id`).
+  - **Multi-ancestor IN-list:** `WHERE ca.ancestor_concept_id IN (a, b, c, …)` of literals.
+
+  All four are detected by a single signal: a literal predicate (`=` or `IN (…)` of literals) on `concept_ancestor.{ancestor,descendant}_concept_id` in WHERE / JOIN-ON. That signal is form-agnostic and reliably distinguishes cohort-source usage from lookup-decoration. Lookup-shape JOINs (e.g. `FROM concept c JOIN concept_ancestor ca ON ca.ancestor_concept_id = c.concept_id WHERE c.concept_id = 192671` — concept_ancestor's hierarchy columns are equated against another column rather than a literal) correctly stay silent.
+
+The rule is suppressed when any of the following is asserted in the query:
+- `invalid_reason IS NULL` / `IS NOT NULL` / `= '...'` / `IN (...)` / `NOT IN (...)`.
+- A date-validity check using both `valid_start_date` and `valid_end_date`.
+- `standard_concept = 'S'` (or `IN ('S', …)`) — standard concepts are nearly always valid, so the additional `invalid_reason` check would be belt-and-suspenders noise.
+- Lookup-join shape: vocabulary table is joined to another vocabulary table and pinned by specific `concept_id` literals.
 
 #### Examples
 
+**Violation patterns** (strict mode):
+
+```sql
+-- Primary FROM on derived vocabulary table
+SELECT descendant_concept_id FROM concept_ancestor WHERE ancestor_concept_id = 201826;
+```
+
+```sql
+-- Direct-JOIN cohort idiom: clinical fact table JOIN concept_ancestor on concept_id linkage
+SELECT de.person_id
+FROM drug_exposure de
+JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 43027253;
+```
+
+```sql
+-- Chained-JOIN cohort idiom (clinical → concept → concept_ancestor)
+SELECT co.person_id, c.concept_name
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 320128;
+```
+
+```sql
+-- IN-subquery cohort idiom (semantically equivalent to the JOIN forms)
+SELECT de.person_id
+FROM drug_exposure de
+WHERE de.drug_concept_id IN (
+    SELECT descendant_concept_id FROM concept_ancestor WHERE ancestor_concept_id = 43027253
+);
+```
+
+**Correct patterns:**
+
+```sql
+-- JOIN concept and filter invalid_reason
+SELECT de.person_id
+FROM drug_exposure de
+JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+JOIN concept c ON c.concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 43027253
+  AND c.invalid_reason IS NULL;
+```
+
+```sql
+-- standard_concept = 'S' is sufficient — standard concepts are nearly always valid
+SELECT concept_id FROM concept WHERE vocabulary_id = 'SNOMED' AND standard_concept = 'S';
+```
+
 #### Suggested fix
 
-Add 'WHERE invalid_reason IS NULL' to ensure only valid concepts are used, or explicitly handle invalid concepts if needed
+`ADD: JOIN concept c ON c.concept_id = <table>.<concept_id_col>` and `WHERE c.invalid_reason IS NULL` to exclude deprecated concepts. For queries on `concept` / `concept_relationship` directly, just add `AND invalid_reason IS NULL` to the WHERE clause.
 
 ---
 
@@ -1028,21 +1095,95 @@ Add source_vocabulary_id filter alongside source_code.
 ### 18. Standard Concept Enforcement
 
 **Rule ID:** `concept_standardization.standard_concept_enforcement`
-**Severity:** ERROR
+**Severity:** WARNING (escalates to ERROR in strict mode)
 
 #### Intent
 
-OMOP semantic rule: If query uses a STANDARD OMOP concept field, it must either: - enforce concept.standard_concept = 'S' OR - use mapping via concept_relationship relationship_id = 'Maps to'
+When a query reads from a STANDARD OMOP concept field (e.g. `condition_concept_id`, `drug_concept_id`), it must establish that the concept IDs in scope are actually standard concepts. Standard fields *can* hold non-standard values when ETL assumptions break, so cohort definitions without standard-concept enforcement risk silently mixing in classification-only concepts (`'C'`), invalid entries, or legacy mappings.
 
 #### How it works
 
-This rule analyzes the SQL query to identify standard concept enforcement patterns.
+The rule fires when a query references a known-standard concept field and *none* of the following enforcement signals are present:
+
+1. **Explicit standard-concept filter.** A predicate of the form `concept.standard_concept = 'S'` (or `IN ('S')`) is asserted in `WHERE` or `JOIN ON`.
+2. **`Maps to` resolution.** The query joins `concept_relationship` with `relationship_id = 'Maps to'`, indicating the user is resolving source concepts to standard concepts at query time.
+3. **Specific concept-id literal filter.** The query restricts the standard field to specific concept IDs via `= <id>` or `IN (<id>, …)` — the user has chosen specific concepts, presumably with knowledge of their standardness.
+4. **Hierarchy-based filter via `concept_ancestor`.** The query restricts the standard field via a direct reference to `concept_ancestor`'s hierarchy. Three equivalent forms are recognized:
+   - **Subquery form:** `<col> IN (SELECT descendant_concept_id FROM concept_ancestor [WHERE …])` (or `ancestor_concept_id`).
+   - **Direct JOIN:** `JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id` (or `ca.ancestor_concept_id`). The more common idiom in OHDSI cohort SQL — avoids a correlated subquery and produces better optimizer plans.
+   - **Chained JOIN via `concept`:** `JOIN concept c ON <clinical>.<concept_id_col> = c.concept_id JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id` (or `ca.ancestor_concept_id`). Users adopt this shape when they also want to project columns from `concept` (e.g. `concept_name`) in the SELECT list. The intermediate `concept` JOIN is a relay; the standard-concept guarantee is transitive through the chain.
+
+   By OMOP CDM definition, `concept_ancestor` is a hierarchy over Standard Concepts only — both `ancestor_concept_id` and `descendant_concept_id` are guaranteed-standard. Feeding rows from `concept_ancestor` into a `*_concept_id` slot (via any of the three forms above) transitively guarantees the standard-concept property, so an additional `standard_concept = 'S'` filter would be redundant.
+
+The `concept_ancestor` suppression is **scope-limited to direct references**. CTE-indirected patterns (`WITH cte AS (SELECT descendant_concept_id FROM concept_ancestor …) SELECT … WHERE col IN (SELECT concept_id FROM cte)`) still fire, because the rule does not currently inline CTEs to verify the indirected guarantee.
 
 #### Examples
 
+**Violation patterns:**
+
+```sql
+-- No enforcement of any kind
+SELECT condition_concept_id FROM condition_occurrence;
+```
+
+```sql
+-- Joins concept but does not filter standard_concept
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'SNOMED';
+```
+
+**Correct patterns:**
+
+```sql
+-- Explicit standard_concept = 'S' filter
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'SNOMED'
+  AND c.standard_concept = 'S';
+```
+
+```sql
+-- Hierarchy-based filter via concept_ancestor — subquery form
+SELECT de.person_id
+FROM drug_exposure de
+WHERE de.drug_concept_id IN (
+    SELECT descendant_concept_id
+    FROM concept_ancestor
+    WHERE ancestor_concept_id = 35416207
+);
+```
+
+```sql
+-- Hierarchy-based filter via concept_ancestor — direct JOIN form
+SELECT de.person_id
+FROM drug_exposure de
+JOIN concept_ancestor ca
+  ON de.drug_concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 35416207;
+```
+
+```sql
+-- Hierarchy-based filter via concept_ancestor — chained JOIN through concept
+-- (when also projecting concept's columns in SELECT)
+SELECT co.person_id, c.concept_name
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 320128;
+```
+
+```sql
+-- Specific concept ID literals
+SELECT * FROM condition_occurrence
+WHERE condition_concept_id IN (201826, 201820);
+```
+
 #### Suggested fix
 
-JOIN concept table and add: WHERE concept.standard_concept = 'S'
+`ADD: \`JOIN concept c ON c.concept_id = <table>.<concept_id_col>\` AND \`WHERE c.standard_concept = 'S'\`` to filter to standard concepts. (Skip if the query already restricts via `concept_ancestor` or specific concept IDs — the rule should not fire in those cases.)
 
 ---
 
@@ -2146,17 +2287,56 @@ Add domain filter matching the clinical table, e.g.: WHERE domain_concept_id_1 =
 
 #### Intent
 
-OMOP semantic rule: Verify that concept or concept_relationship tables are properly joined to the clinical tables (condition_ocurrence, condition_era, drug_exposure, drug_era, measurement, observation, visit_occurrence, person, death, observation_period) using the standard concept fields. In a nutshell: This rule checks "Did you forget to write the JOIN condition?"
+When a query JOINs `concept` (or `concept_relationship`) to a clinical fact table, the join's ON-clause must connect them via `concept_id` (not `domain_id`, `vocabulary_id`, or any other column). A wrong-key join produces an implicit cross-join or silently empty results with no database error.
 
 #### How it works
 
-In a nutshell: This rule checks "Did you forget to write the JOIN condition?"
+The rule fires when:
+
+1. The query references a clinical fact table's standard concept field (`condition_concept_id`, `drug_concept_id`, etc.), AND
+2. The query references `concept` or `concept_relationship`, AND
+3. None of the recognized linkage patterns are present:
+   - Direct JOIN: `clinical.<x>_concept_id = concept.concept_id`.
+   - Implicit (comma) join with the same equality in WHERE.
+   - Indirect bridge through a CTE that selects a `concept_id` column from a vocabulary source.
+   - JOIN with unqualified `concept_id` in the ON clause (when concept is the join target).
+
+**Suppression for subquery-only usage.** When `concept` (or `concept_relationship`) appears *only* inside a `Subquery` node — never in the outer query's FROM/JOIN list — the rule suppresses. Examples of suppressed shapes:
+
+```sql
+-- Scalar lookup
+WHERE p.gender_concept_id = (SELECT concept_id FROM concept WHERE concept_name = 'Female' AND domain_id = 'Gender')
+
+-- IN-subquery filter
+WHERE de.drug_concept_id IN (SELECT concept_id FROM concept WHERE vocabulary_id = 'RxNorm' AND standard_concept = 'S')
+
+-- EXISTS subquery
+WHERE EXISTS (SELECT 1 FROM concept c WHERE c.concept_id = p.gender_concept_id)
+```
+
+In these shapes there's no JOIN to validate; the relevant data-quality concerns (deprecated concepts, trailing whitespace in `concept_name`, ambiguous multi-row lookups) are covered by other rules: `invalid_reason_enforcement`, `concept_name_whitespace`, and `standard_concept_enforcement`. Suppressing here avoids issuing a join-shaped warning on a non-join query.
 
 #### Examples
 
+**Violation pattern** (wrong join key):
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.domain_id;  -- wrong: should be c.concept_id
+```
+
+**Correct pattern:**
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id;
+```
+
 #### Suggested fix
 
-JOIN concept ON clinical_table.*_concept_id = concept.concept_id
+`JOIN concept ON <clinical_table>.<x>_concept_id = concept.concept_id` — connect the clinical fact's concept_id slot to `concept.concept_id` directly.
 
 ---
 
@@ -2904,24 +3084,64 @@ Ensure start_date <= end_date in filters
 
 ---
 
-### 6. Future Information Leakage
+### 6. Unbounded Follow-up Window (Future Information Leakage)
 
 **Rule ID:** `temporal.future_information_leakage`
 **Severity:** WARNING
 
 #### Intent
 
-OMOP semantic rule: When a query compares dates across two different clinical event tables (e.g. co.condition_start_date > de.drug_exposure_start_date), it must also bound the future event against observation_period_end_date.
+When a query compares date columns across two different clinical event tables (e.g. `co.condition_start_date > de.drug_exposure_start_date`), the *later* event must be bounded by `observation_period_end_date`. Without that bound, the comparison reaches beyond the patient's observed follow-up window — producing immortal-time bias and similar follow-up-window errors in cohort analyses.
+
+The rule is named "future information leakage" for historical reasons; the underlying problem is a missing right-censoring/follow-up-window bound, not ML-style look-ahead leakage.
 
 #### How it works
 
-This rule analyzes the SQL query to identify future information leakage patterns.
+The rule looks for inequality comparisons (`<`, `<=`, `>`, `>=`) in `WHERE` / `JOIN ON` clauses where:
+
+1. Both sides are columns from clinical fact tables (different tables on each side).
+2. Both columns are date or datetime columns.
+3. No upper-bound predicate against `observation_period_end_date` exists anywhere in the same query (BETWEEN ... AND `observation_period_end_date` also satisfies the bound).
+
+**Suppression contract.** If `observation_period` is *not joined at all*, this rule stays silent and defers to `temporal.observation_period_anchoring`. The anchoring rule already fires for the same root cause and ships a coherent fix that introduces the JOIN. Firing both would double-count and would emit a patch referencing an `op.` alias the query never defines.
+
+When `observation_period` IS joined but no upper bound is asserted, this rule fires with a self-contained patch: it resolves the actual alias the query uses for `observation_period` (e.g. `op`, or the bare table name when no alias is given) and substitutes it directly into the `ADD` patch — no `<op>` placeholder.
 
 #### Examples
 
+**Violation pattern** (`observation_period` joined, no upper bound):
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN drug_exposure de ON co.person_id = de.person_id
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date > de.drug_exposure_start_date
+```
+
+**Correct pattern** (later event bounded by follow-up window):
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN drug_exposure de ON co.person_id = de.person_id
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date > de.drug_exposure_start_date
+  AND co.condition_start_date <= op.observation_period_end_date
+```
+
+**Suppressed pattern** (`observation_period` not joined — handled by `observation_period_anchoring` instead, no duplicate violation here):
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN drug_exposure de ON co.person_id = de.person_id
+WHERE co.condition_start_date > de.drug_exposure_start_date
+```
+
 #### Suggested fix
 
-Add an upper bound using observation_period_end_date: AND future_event.date <= op.observation_period_end_date, where op is joined via JOIN observation_period op ON table.person_id = op.person_id
+`ADD: AND <later_qual>.<later_col> <= <op_alias>.observation_period_end_date` — bounds the later event by the patient's observed follow-up window. The rule resolves `<op_alias>` from the query's actual JOIN list, so the emitted patch is directly applyable.
 
 ---
 

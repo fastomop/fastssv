@@ -102,13 +102,18 @@ class TestParseErrorSurface:
 
     def test_validate_sql_surfaces_parse_error_field(self) -> None:
         """Dict-returning validate_sql() exposes parse_error field when input is unparseable."""
-        from fastssv import validate_sql
+        from fastssv import validate_sql, NOT_SQL_RULE_ID, PARSE_ERROR_RULE_ID
         results = validate_sql("totally not SQL !!!", validators="all")
         # Either the garbage parses as something trivial or fails — but if it
         # fails, parse_error must be set and violations must include the marker.
+        # Prose-like garbage routes to NOT_SQL_RULE_ID; malformed-but-SQL-shaped
+        # input routes to PARSE_ERROR_RULE_ID.
         if results["parse_error"] is not None:
             assert any("Parse error" in e for e in results["all_errors"])
-            assert any(v.rule_id == "parse.syntax_error" for v in results["violations"])
+            assert any(
+                v.rule_id in {PARSE_ERROR_RULE_ID, NOT_SQL_RULE_ID}
+                for v in results["violations"]
+            )
 
     def test_validate_sql_parse_error_field_defaults_to_none(self) -> None:
         """parse_error field is None for cleanly-parsing SQL."""
