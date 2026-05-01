@@ -3,27 +3,20 @@ name = "fastssv"
 version = "0.2.0"
 description = "FastOMOP Semantic Static Validator - A semantic validation framework for OMOP CDM SQL queries"
 readme = "README.md"
-license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
-authors = [
-	{name = "FastSSV contributors"},
-]
+license = { text = "Apache-2.0" }
+requires-python = ">=3.13"
+authors = [{ name = "FastSSV contributors" }]
 keywords = ["omop", "sql", "validation", "static-analysis", "cdm"]
 classifiers = [
 	"Development Status :: 4 - Beta",
 	"Intended Audience :: Developers",
 	"License :: OSI Approved :: Apache Software License",
 	"Programming Language :: Python :: 3",
-	"Programming Language :: Python :: 3.10",
-	"Programming Language :: Python :: 3.11",
-	"Programming Language :: Python :: 3.12",
 	"Programming Language :: Python :: 3.13",
 	"Topic :: Database",
 	"Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = [
-	"sqlglot>=24.6.0",
-]
+dependencies = ["sqlglot>=24.6.0"]
 
 [project.urls]
 Homepage = "https://github.com/fastomop/fastSSV"
@@ -34,27 +27,11 @@ Issues = "https://github.com/fastomop/fastSSV/issues"
 fastssv = "fastssv.cli:main"
 
 [project.optional-dependencies]
-dev = [
-	"pytest>=9.0.3",
-	"pytest-cov>=6.0",
-	"httpx>=0.27",
-]
-build = [
-	"build>=1.4.2",
-	"twine>=6.2.0",
-]
-viz = [
-	"matplotlib>=3.10.8",
-	"networkx>=3.6.1",
-]
-langfuse = [
-	"dotenv>=0.9.9",
-	"langfuse>=3.12.1",
-]
-docs = [
-	"mkdocs-material>=9.5",
-	"pymdown-extensions>=10.7",
-]
+dev = ["pytest>=9.0.3", "pytest-cov>=6.0", "httpx>=0.27"]
+build = ["build>=1.4.2", "twine>=6.2.0"]
+viz = ["matplotlib>=3.10.8", "networkx>=3.6.1"]
+langfuse = ["dotenv>=0.9.9", "langfuse>=3.12.1"]
+docs = ["mkdocs-material>=9.5", "pymdown-extensions>=10.7"]
 api = [
 	"fastapi>=0.115",
 	"uvicorn[standard]>=0.30",
@@ -70,7 +47,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -86,10 +63,7 @@ testpaths = ["tests"]
 # to both layouts; `branch = true` measures branch coverage on top of lines.
 source_pkgs = ["fastssv"]
 branch = true
-omit = [
-	"*/__pycache__/*",
-	"tests/*",
-]
+omit = ["*/__pycache__/*", "tests/*"]
 
 [tool.coverage.report]
 # Lines that genuinely can't be exercised at runtime — don't count them.
@@ -117,12 +91,12 @@ extend-exclude = ["build", "dist", ".venv", "tests/test_rules.py"]
 # unused imports. Expand after the codebase is clean.
 select = ["E", "F", "W"]
 ignore = [
-	"E501",  # line-too-long (we set line-length but many existing lines exceed)
-	"E741",  # ambiguous variable name 'l', 'I' — existing style
-	"E402",  # module-level import not at top — intentional in __init__.py
-	         # and category modules to avoid circular imports
-	"F841",  # unused local variable — some rules build WIP regex/match
-	         # variables that are not yet wired up; kept for future work
+	"E501", # line-too-long (we set line-length but many existing lines exceed)
+	"E741", # ambiguous variable name 'l', 'I' — existing style
+	"E402", # module-level import not at top — intentional in __init__.py
+	# and category modules to avoid circular imports
+	"F841", # unused local variable — some rules build WIP regex/match
+	# variables that are not yet wired up; kept for future work
 ]
 
 [tool.ruff.lint.per-file-ignores]
