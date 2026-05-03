@@ -1,6 +1,6 @@
-# Working with Core Validation Rules
+# Semantic Rules Guide
 
-This guide explains how to work with and extend FastSSV rules that validate OMOP CDM concept usage, joins, and temporal logic.
+This guide walks through the core OMOP CDM patterns FastSSV's semantic rules enforce, with a representative example for each. For the exhaustive per-rule catalog see [Rules reference](rules_reference.md); for the rule-author tutorial see [Plugin system](plugin_architecture.md).
 
 ## Quick Start
 
@@ -61,7 +61,7 @@ FastSSV rules validate OMOP CDM analytical constraints that go beyond SQL syntax
 FastSSV currently includes **18 concept standardization rules**. The examples below highlight a representative subset of the most important patterns, not every rule in the category.
 
 #### 1. Standard Concept Enforcement (`concept_standardization.standard_concept_enforcement`)
-**Severity:** ERROR
+**Severity:** WARNING
 
 Ensures queries using STANDARD concept fields enforce `concept.standard_concept = 'S'` or use `concept_relationship` with `'Maps to'`.
 
@@ -125,7 +125,7 @@ WHERE ca.ancestor_concept_id = 1234;
 > exposure checks, denominator definitions). See [CHANGELOG.md](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md).
 
 #### 4. Observation Period Anchoring (`temporal.observation_period_anchoring`)
-**Severity:** ERROR
+**Severity:** WARNING
 
 Validates that temporal constraints join to `observation_period` on `person_id` to ensure events fall within valid observation windows.
 
@@ -144,7 +144,7 @@ WHERE co.condition_start_date > '2020-01-01'
 ```
 
 #### 5. Maps-to Direction (`joins.maps_to_direction`)
-**Severity:** ERROR
+**Severity:** WARNING
 
 Validates `concept_relationship` 'Maps to' direction (source → standard, not reversed).
 
@@ -217,20 +217,7 @@ STANDARD_CONCEPT_FIELDS = {
 }
 ```
 
-#### SOURCE Concept Fields
-
-Fields that can contain **source** vocabularies (ICD10CM, CPT4, NDC, etc.):
-
-```python
-SOURCE_CONCEPT_FIELDS = {
-    ("condition_occurrence", "condition_source_concept_id"),
-    ("drug_exposure", "drug_source_concept_id"),
-    ("procedure_occurrence", "procedure_source_concept_id"),
-    ("measurement", "measurement_source_concept_id"),
-    ("observation", "observation_source_concept_id"),
-    # ... 30+ fields total
-}
-```
+> **Note.** A previous `SOURCE_CONCEPT_FIELDS` set was removed in 0.2.0 — it had drifted from the v5.4 spec and no rule consumed it. Source-concept handling now flows through individual rules (e.g. `concept_standardization.invalid_reason_enforcement`, `data_quality.source_value_field_usage`) rather than a shared classification map.
 
 ## Extending Semantic Validation
 
@@ -268,7 +255,7 @@ class DomainValidationRule(Rule):
     rule_id = "concept_standardization.concept_domain_validation"
     name = "Concept Domain Validation"
     description = "Validates concept domains match table expectations"
-    severity = Severity.ERROR
+    severity = Severity.WARNING
     suggested_fix = "Filter by concept.domain_id or use proper vocabulary mapping"
 
     def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
@@ -364,28 +351,18 @@ class TestDomainValidation:
         assert violations[0].rule_id == "concept_standardization.concept_domain_validation"
 ```
 
-## Current Implementation Status
+## Coverage status
 
-### Implemented Rules
+The seven examples above are a sampling, not the full rule set. The current registry has **154 rules across 6 categories** (`anti_patterns`, `concept_standardization`, `data_quality`, `domain_specific`, `joins`, `temporal`) — see [Rules reference](rules_reference.md) for the per-rule catalog with severities, examples, and suggested fixes.
 
-✅ **Standard Concept Enforcement** - Validates standard_concept = 'S' usage
-✅ **Join Path Validation** - Validates OMOP CDM schema joins
-✅ **Hierarchy Expansion** - Ensures concept_ancestor usage for hierarchies
-✅ **Observation Period Anchoring** - Validates temporal constraint anchoring
-✅ **Maps-to Direction** - Validates concept_relationship direction
-✅ **Unmapped Concept Handling** - Warns about concept_id = 0 handling
-✅ **Invalid Reason Enforcement** - Validates invalid_reason IS NULL filtering
+For the live registered set at any moment:
 
-### Extension Opportunities
-
-The following validation opportunities remain:
-
-✅ **Concept Domain Validation** - Ensures concepts match table domains
-🔲 **Vocabulary-Specific Rules** - Deep validation for specific vocabularies (ICD10CM format, CPT4 ranges)
-🔲 **Unit Validation** - Check measurement.unit_concept_id matches measurement_concept_id
-🔲 **Visit Context Validation** - Ensure visit_occurrence_id foreign keys are used correctly
-🔲 **Temporal Information Leakage** - Detect future information leakage in time-to-event analyses
-🔲 **Cohort Logic Preservation** - Validate inclusion/exclusion criteria through CTEs
+```python
+from fastssv import get_all_rules
+for rule_cls in get_all_rules():
+    rule = rule_cls()
+    print(rule.rule_id, rule.severity.name)
+```
 
 ## File Locations
 
@@ -409,103 +386,11 @@ The following validation opportunities remain:
 
 ## Adding New Semantic Rules
 
-### Step 1: Define the Rule
+The full rule-author walkthrough — `Rule` subclass, `@register` decorator, category `__init__.py` wiring, and the test class added to `tests/test_rules.py` — lives in [Plugin system](plugin_architecture.md#creating-a-new-rule). Semantic rules use the same scaffolding as any other rule; pick `concept_standardization`, `joins`, or `temporal` as the category and follow the four-step recipe there.
 
-Create a new file in the appropriate implementation package:
+### Modifying field classifications
 
-```python
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.registry import register
-from fastssv.core.helpers import parse_sql
-
-@register
-class MyNewRule(Rule):
-    """Detailed documentation of the OMOP CDM constraint being validated."""
-
-    rule_id = "concept_standardization.my_new_rule"
-    name = "My New Rule"
-    description = "Detailed description"
-    severity = Severity.ERROR  # or Severity.WARNING
-    suggested_fix = "Default fix suggestion"
-
-    def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
-        violations = []
-        trees, parse_error = parse_sql(sql, dialect)
-
-        if parse_error:
-            return violations
-
-        # Validation logic here
-
-        return violations
-```
-
-### Step 2: Register the Rule
-
-Import it from the relevant package `__init__.py`:
-
-```python
-from .my_new_rule import MyNewRule
-```
-
-### Step 3: Add Tests
-
-Create `tests/test_my_new_rule.py`:
-
-```python
-import pytest
-from fastssv.rules.concept_standardization.my_new_rule import MyNewRule
-
-class TestMyNewRule:
-    @pytest.fixture
-    def rule(self):
-        return MyNewRule()
-
-    def test_valid_case(self, rule):
-        sql = "SELECT * FROM person"
-        violations = rule.validate(sql)
-        assert len(violations) == 0
-
-    def test_invalid_case(self, rule):
-        sql = "SELECT * FROM invalid_pattern"
-        violations = rule.validate(sql)
-        assert len(violations) > 0
-```
-
-### Step 4: Run Tests
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run specific test class
-pytest tests/test_rules.py::TestMyNewRule -v
-
-# Run specific test
-pytest tests/test_rules.py::TestMyNewRule::test_my_specific_case -v
-```
-
-## Modifying Field Classifications
-
-To add new concept field classifications:
-
-### Edit Schema Definition
-
-`src/fastssv/schemas/semantic_schema.py`:
-
-```python
-STANDARD_CONCEPT_FIELDS = {
-    # ... existing fields ...
-    ("new_table", "new_concept_id"),  # Add here
-}
-
-SOURCE_CONCEPT_FIELDS = {
-    # ... existing fields ...
-    ("new_table", "new_source_concept_id"),  # Add here
-}
-```
-
-Tests automatically pick up schema changes - no test modifications needed.
+If your new rule needs to distinguish standard- vs source-concept-id columns, add the `(table, column)` pair to `STANDARD_CONCEPT_FIELDS` in `src/fastssv/schemas/semantic_schema.py`. The schema-consistency suite at `tests/test_schema_consistency.py` will fail at import if the entry references a column that doesn't exist in `CDM_COLUMN_TYPES`, so spec drift is caught immediately.
 
 ## Best Practices
 
@@ -613,16 +498,7 @@ if not error:
 
 FastSSV's semantic validation system provides:
 
-- **7 production-ready rules** validating OMOP CDM constraints
-- **Plugin architecture** for easy extension
-- **Schema-driven validation** using OMOP CDM v5.4 definitions
-- **Comprehensive field classifications** (50+ STANDARD, 30+ SOURCE fields)
-- **Flexible API** supporting rule filtering and categorization
-
-To add new rules:
-1. Create rule class with `@register` decorator
-2. Import in `__init__.py`
-3. Add tests
-4. Rule is automatically available system-wide
-
-For questions or contributions, refer to `PLUGIN_ARCHITECTURE.md` for general plugin development patterns.
+- **154 registered rules across 6 categories** validating OMOP CDM v5.4 constraints
+- **Plugin architecture** for easy extension — see [Plugin system](plugin_architecture.md)
+- **Schema-driven validation** anchored in `schemas/cdm_column_types.py` (table → {column → type}) and `schemas/semantic_schema.py` (`STANDARD_CONCEPT_FIELDS`)
+- **Flexible API** supporting filtering by `categories=[...]` or `rule_ids=[...]`

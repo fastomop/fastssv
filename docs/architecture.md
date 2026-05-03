@@ -20,13 +20,13 @@ src/fastssv/
 │   └── domain_specific/
 └── schemas/
     ├── __init__.py
-    ├── cdm_schema.py            # OMOP CDM v5.4 schema definition
-    └── semantic_schema.py       # Vocabulary field classifications (STANDARD vs SOURCE)
+    ├── cdm_column_types.py      # OMOP CDM v5.4 table → {column → type} map (single source of truth)
+    └── semantic_schema.py       # STANDARD_CONCEPT_FIELDS — table/column pairs that must hold standard concept ids
 ```
 
 ## Architecture Overview
 
-FastSSV uses a **plugin-based architecture** where validation rules are automatically discovered and registered at import time.
+FastSSV uses a **plugin-based architecture** where validation rules are automatically discovered and registered at import time. For a step-by-step walkthrough of writing a new rule, see [Plugin system](plugin_architecture.md) — this page focuses on the conceptual layout.
 
 ### Separation of Concerns
 
@@ -116,46 +116,7 @@ class RuleViolation:
 
 ## Adding New Rules
 
-To add a new validation rule:
-
-1. Create a new rule file in the appropriate implementation directory:
-   - Concept logic: `src/fastssv/rules/concept_standardization/my_rule.py`
-   - Join logic: `src/fastssv/rules/joins/my_rule.py`
-   - Temporal logic: `src/fastssv/rules/temporal/my_rule.py`
-   - Table-family logic: `src/fastssv/rules/domain_specific/<family>/my_rule.py`
-
-2. Implement the rule class:
-   ```python
-   from fastssv.core.base import Rule, RuleViolation, Severity
-   from fastssv.core.registry import register
-
-   @register
-   class MyRule(Rule):
-       """Detailed documentation of the rule."""
-
-       rule_id = "category.my_rule"
-       name = "My Rule"
-       description = "Brief description of what this rule checks"
-       severity = Severity.ERROR
-
-       def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
-           violations = []
-           # Validation logic here
-           return violations
-   ```
-
-3. Import in the package's `__init__.py`:
-   ```python
-   # In src/fastssv/rules/<package>/__init__.py
-   from . import my_rule  # This triggers registration
-   ```
-
-4. Add tests in `tests/test_my_rule.py`
-
-**That's it!** The rule is automatically discovered and available via:
-- `validate_sql_structured(sql, categories=["category"])`
-- `validate_sql_structured(sql, rule_ids=["category.my_rule"])`
-- CLI: `fastssv query.sql --rules category.my_rule`
+The full step-by-step walkthrough lives in [Plugin system](plugin_architecture.md#creating-a-new-rule) — pick a category under `src/fastssv/rules/`, write a `Rule` subclass with `@register`, wire it into the category's `__init__.py`, and add a test to `tests/test_rules.py`. Once registered the rule is reachable via `validate_sql_structured(sql, categories=[...])` / `rule_ids=[...]` and the CLI's `--categories` / `--rules` flags.
 
 ## Current Rules
 
@@ -181,7 +142,7 @@ To add a new validation rule:
    - Validates table joins against the OMOP CDM v5.4 schema graph
 
 2. **standard_concept** (`concept_standardization.standard_concept_enforcement`)
-   - **Severity:** ERROR
+   - **Severity:** WARNING
    - Ensures STANDARD concept fields enforce `concept.standard_concept = 'S'`
 
 3. **concept_ancestor_rollup_direction** (`concept_standardization.concept_ancestor_rollup_direction`)
@@ -189,7 +150,7 @@ To add a new validation rule:
    - Validates the ancestor/descendant direction of `concept_ancestor` rollups
 
 4. **observation_period_anchoring** (`temporal.observation_period_anchoring`)
-   - **Severity:** ERROR
+   - **Severity:** WARNING
    - Anchors temporal logic to `observation_period`
 
 5. **maps_to_direction** (`joins.maps_to_direction`)

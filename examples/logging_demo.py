@@ -94,5 +94,5 @@ if __name__ == "__main__":
     demo_file_logging()
 
     print("=" * 60)
-    print("Demo complete! See docs/LOGGING.md for more details.")
+    print("Demo complete! See docs/logging.md for more details.")
     print("=" * 60)

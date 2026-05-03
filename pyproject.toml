@@ -48,7 +48,7 @@ langfuse = [
 	"langfuse>=3.12.1",
 ]
 docs = [
-	"mkdocs-material>=9.5",
+	"zensical>=0.0.39",
 	"pymdown-extensions>=10.7",
 ]
 api = [

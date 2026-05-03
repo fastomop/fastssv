@@ -39,37 +39,56 @@ class Rule(ABC):
 Violations are returned as structured objects:
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 class Severity(Enum):
     """Severity level for rule violations."""
-    ERROR = "error"      # Blocks validation
-    WARNING = "warning"  # Informational only
+    ERROR = "error"      # Blocks validation (gates the CLI exit code)
+    WARNING = "warning"  # Best-practice issue; escalated under --strict
 
 @dataclass
 class RuleViolation:
     rule_id: str                    # e.g., "concept_standardization.standard_concept_enforcement"
     severity: Severity              # ERROR or WARNING
-    message: str                    # Human-readable error message
-    suggested_fix: str              # Recommendation for fixing the violation
-    location: Optional[str] = None  # Optional: location info
-    details: dict = field(default_factory=dict)  # Additional structured metadata
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
-        result = {
-            "rule_id": self.rule_id,
-            "severity": self.severity.value,
-            "issue": self.message,
-            "suggested_fix": self.suggested_fix,
-        }
-        if self.location:
-            result["location"] = self.location
-        if self.details:
-            result["details"] = self.details
-        return result
+    message: str                    # Human-readable issue description
+    suggested_fix: str              # Prose fix recommendation
+    location: Optional[str] = None  # Optional location info (table.column or SQL fragment)
+    details: dict = field(default_factory=dict)  # In-process metadata; not serialised
+    suggested_fix_patch: Optional[dict] = None   # Mechanical patch (REPLACE/ADD/REMOVE) when applicable
 ```
+
+In-process consumers (Python API users, rule authors writing tests) interact with these fields directly. The JSON serialisation differs:
+
+```python
+def to_dict(self) -> dict:
+    """Serialise for the CLI report and the HTTP API.
+
+    The single ``fix`` field unifies prose and mechanical patches:
+    - For FREEFORM patches (the default for ~60% of rules), ``fix`` is the
+      prose ``suggested_fix`` string.
+    - For REPLACE/ADD/REMOVE patches (~40%), ``fix`` is a patch dict
+      ``{"action": ..., "span": [s, e] | "at": pos, "text": ...}``.
+    Consumers switch on ``isinstance(fix, str)`` vs ``dict``.
+
+    ``details`` stays on the dataclass for tests and rule-side
+    diagnostics but is intentionally excluded from the wire format —
+    the keys vary too much across rules to be programmatically useful.
+    """
+    result = {
+        "rule_id": self.rule_id,
+        "severity": self.severity.value,   # "error" | "warning"
+        "issue": self.message,
+    }
+    fix = self._serialised_fix()           # prose string OR patch dict
+    if fix is not None:
+        result["fix"] = fix
+    if self.location:
+        result["location"] = self.location
+    return result
+```
+
+So the wire shape for a single violation is `{rule_id, severity, issue, fix?, location?}`. See [JSON output](json_output.md) for the full CLI report shape (which wraps these in `errors[]` and `warnings[]` arrays) and [HTTP API](api.md) for the same shape on the API surface.
 
 ### 3. Registry System (`core/registry.py`)
 
@@ -195,10 +214,10 @@ from .my_new_rule import MyNewRule
 
 ### Step 4: Add Tests
 
-Create a test file:
+Add a test class to `tests/test_rules.py` — the canonical file for rule tests. New test files are not picked up by the existing `extend-exclude` ruff config and would diverge from project convention.
 
 ```python
-# tests/test_my_new_rule.py
+# tests/test_rules.py — append a new class
 
 import pytest
 from fastssv.rules.joins.my_new_rule import MyNewRule
@@ -268,7 +287,7 @@ for v in violations:
 
 ### Core Categories
 
-Current registered category counts (see [RULES_REFERENCE.md](RULES_REFERENCE.md)
+Current registered category counts (see [rules_reference.md](rules_reference.md)
 for the full list):
 
 - `anti_patterns`: 20
@@ -319,8 +338,8 @@ To add a new category:
 
 Good violation messages follow this pattern:
 
-**Message field**: [What's wrong] + [Why it matters]
-**Suggested_fix field**: [How to fix it]
+**Message field**: \[What's wrong\] + \[Why it matters\]
+**Suggested_fix field**: \[How to fix it\]
 
 Example:
 ```python
@@ -400,35 +419,6 @@ if where:
 4. **Clean Separation**: Each rule is independent
 5. **Testability**: Rules can be tested in isolation
 6. **Maintainability**: Changes to one rule don't affect others
-
-## Migration from Older Patterns
-
-An older validator function style looked like this:
-
-```python
-# OLD (deprecated)
-def validate_join(sql, dialect):
-    errors = []
-    # validation logic
-    return errors
-```
-
-The rule-class pattern used throughout the project looks like this:
-
-```python
-# NEW (current)
-@register
-class JoinPathRule(Rule):
-    rule_id = "joins.join_path_validation"
-    name = "Join Path Validation"
-    description = "..."
-    severity = Severity.WARNING
-
-    def validate(self, sql, dialect):
-        violations = []
-        # validation logic
-        return violations
-```
 
 ## Summary
 

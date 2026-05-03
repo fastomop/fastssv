@@ -19,25 +19,30 @@ any SQL linter and fail any replication attempt.
 
     How FastSSV is laid out, the rule engine, and the plugin registry.
 
--   :material-puzzle: **[Plugin system](PLUGIN_ARCHITECTURE.md)**
+-   :material-puzzle: **[Plugin system](plugin_architecture.md)**
 
     Add your own rules without modifying core code.
 
--   :material-book-open-variant: **[Semantic rules guide](SEMANTIC_RULES_GUIDE.md)**
+-   :material-book-open-variant: **[Semantic rules guide](semantic_rules_guide.md)**
 
     The reasoning behind each rule category and when violations matter.
 
--   :material-format-list-checks: **[Rules reference](RULES_REFERENCE.md)**
+-   :material-format-list-checks: **[Rules reference](rules_reference.md)**
 
     Every built-in rule with its ID, severity, and example violation.
 
--   :material-api: **[HTTP API](API.md)**
+-   :material-api: **[HTTP API](api.md)**
 
     Run FastSSV as a FastAPI service with an HTMX web UI.
 
--   :material-code-json: **[JSON output](JSON_OUTPUT.md)**
+-   :material-code-json: **[JSON output](json_output.md)**
 
     The structured report format for CI integration.
+
+-   :material-text-box-outline: **[Logging](logging.md)**
+
+    Configure log level, file destination, and JSON-structured output for
+    log aggregators.
 
 </div>
 
