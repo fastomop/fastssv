@@ -1,6 +1,6 @@
 # Welcome to FastSSV Documentation
 
-**FastSSV** (FastOMOP Semantic Static Validator) is a semantic validation
+**FastSSV** (Fast Semantic Static Validator) is a semantic validation
 framework for OMOP CDM SQL queries. It catches the silent failures that pass
 any SQL linter and fail any replication attempt.
 

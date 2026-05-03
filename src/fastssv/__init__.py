@@ -1,4 +1,4 @@
-"""FastSSV core package - FastOMOP Semantic Static Validator.
+"""FastSSV core package - Fast Semantic Static Validator.
 
 A plugin-based semantic validation framework for OMOP CDM SQL queries.
 """

@@ -1,5 +1,5 @@
 site_name: FastSSV Documentation
-site_description: FastOMOP Semantic Static Validator — semantic validation framework for OMOP CDM SQL queries
+site_description: Fast Semantic Static Validator — semantic validation framework for OMOP CDM SQL queries
 site_url: https://fastomop.github.io/fastSSV/
 repo_name: fastomop/fastSSV
 repo_url: https://github.com/fastomop/fastSSV
