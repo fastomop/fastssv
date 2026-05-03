@@ -462,7 +462,6 @@ cat logs/fastssv.json | \
 
 ## Related Documentation
 
-- [CLI Usage](https://github.com/fastomop/fastSSV#quick-start)
-- [Python API](https://github.com/fastomop/fastSSV#python-api)
-- [Configuration](https://github.com/fastomop/fastSSV/blob/main/.env.example)
-- [Contributing](https://github.com/fastomop/fastSSV#contributing)
+- [HTTP API](API.md) — the FastAPI service uses the same logging stack and emits `sql_hash` (never the SQL body) per validation
+- [JSON output](JSON_OUTPUT.md) — the CLI's structured report format, distinct from the log stream
+- [Plugin system](PLUGIN_ARCHITECTURE.md) — how to add log calls inside a custom rule

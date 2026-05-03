@@ -9,6 +9,87 @@ between minor versions.
 
 ## [Unreleased]
 
+### Changed
+
+- **README slimmed from 733 lines to ~110 lines.** The README had grown into
+  a near-duplicate of the docs site — duplicate "Why FastSSV", per-category
+  rule walkthroughs (~140 lines of "Key X Rules" subsections that drifted
+  from the registry), Validation Architecture / Layer documentation, full
+  schema-coverage tables, and a Project Structure tree referencing modules
+  that no longer exist (`core/omop_schema.py`, `core/rule_layer.py`,
+  `schemas/cdm_schema.py`, `rules/schema/`). The new README is a landing
+  page: install + quick CLI/Python use + the canonical "what it catches"
+  example + the OHDSI positioning + a docs table. Everything else lives in
+  `docs/` and is linked from the table. Also fixed a stale Python import
+  example that referenced a nonexistent `validate_anti_patterns` symbol.
+
+### Fixed
+
+- **Documentation correctness pass.** Multiple doc pages had drifted from the
+  registry and the API surface; fixes applied across `docs/`:
+  - **Severities corrected** for `concept_standardization.standard_concept_enforcement`,
+    `temporal.observation_period_anchoring`, `joins.maps_to_direction`, and
+    `concept_standardization.concept_domain_validation` — all four are
+    `Severity.WARNING` in the registry but were variously documented as ERROR
+    across `architecture.md`, `SEMANTIC_RULES_GUIDE.md`, and the per-rule entry
+    in `RULES_REFERENCE.md` (which contradicted its own quick-reference table).
+  - **Removed-symbol references retired.** `SEMANTIC_RULES_GUIDE.md` no longer
+    documents `SOURCE_CONCEPT_FIELDS` as a live symbol or
+    `hierarchy_expansion_required` as an implemented rule — both were removed
+    in 0.2.0. Short historical notes explain why.
+  - **Stale rule count fixed**: `SEMANTIC_RULES_GUIDE.md` claimed "7
+    production-ready rules"; the registry has 154. Replaced with a
+    pointer to `RULES_REFERENCE.md` and a `get_all_rules()` snippet for the
+    live count.
+  - **`API.md` violation shape** now matches `fastssv/api/models.py:Violation`
+    — `suggested_fix` renamed to `fix`, `details` removed (the field is not
+    on the wire). The dialect enum is expanded from `auto|postgres|tsql` to
+    the full nine values the model actually accepts.
+  - **`JSON_OUTPUT.md` `validate_sql()` schema** now lists the `parse_error`
+    and `dialect` keys returned by the function. The invalid `--dialect mysql`
+    example replaced with a real choice.
+  - **Architecture directory tree** now references `schemas/cdm_column_types.py`
+    (the actual file post-0.2.0); the deleted `schemas/cdm_schema.py` no
+    longer appears.
+  - **De-duplicated the rule-author walkthrough.** `architecture.md` and
+    `SEMANTIC_RULES_GUIDE.md` no longer paraphrase the four-step rule
+    creation recipe; both now link to the canonical version in
+    `PLUGIN_ARCHITECTURE.md`. The walkthrough also points at
+    `tests/test_rules.py` (the real canonical test file per `AGENTS.md`)
+    instead of the previously-shown `tests/test_my_new_rule.py`.
+  - **`PLUGIN_ARCHITECTURE.md`**: dropped the "Migration from Older Patterns"
+    section — the deprecated function-style API it referenced was never in
+    the public registry.
+  - **Index page** now includes a Logging card alongside the other landing
+    cards (it had a nav slot but no entry on the home grid).
+  - **`LOGGING.md` Related Documentation** section now links to the in-site
+    pages (`API.md`, `JSON_OUTPUT.md`, `PLUGIN_ARCHITECTURE.md`) instead of
+    GitHub README anchors.
+
+### Changed
+
+- **Documentation site moved from MkDocs + Material for MkDocs to
+  [Zensical](https://zensical.org/).** Zensical is the next-generation static
+  site generator from the Material for MkDocs team. The site itself is
+  visually unchanged (same nav, same orange palette, same dark-mode toggle,
+  same `docs/` content tree), but the build pipeline is now native to
+  Zensical: the `[docs]` extra in `pyproject.toml` pulls `zensical` instead
+  of `mkdocs-material`, the `Docs` GitHub Actions workflow runs
+  `zensical build --strict`, and the contributor commands are now
+  `zensical serve` / `zensical build` instead of `mkdocs serve` /
+  `mkdocs build`. Configuration moved from `mkdocs.yml` (YAML) to
+  `zensical.toml` (TOML) at the repo root — Zensical's native format, so the
+  old `pymdownx.emoji` `!!python/name:` tag hack is gone (`emoji_index` and
+  `emoji_generator` are now plain string references to
+  `zensical.extensions.emoji.*`), and the `nav` block is expressed as TOML
+  inline tables. Three template-style bracketed placeholders in
+  `docs/PLUGIN_ARCHITECTURE.md` (`[What's wrong]`, `[Why it matters]`,
+  `[How to fix it]`) were backslash-escaped — Zensical's stricter
+  link-reference parser was treating them as broken links under `--strict`.
+  Motivation: MkDocs has been unmaintained since August 2024; Zensical is
+  the upstream-recommended replacement and produces a noticeably faster
+  rebuild loop during local docs work.
+
 ## [0.2.0] - 2026-04-30
 
 ### Fixed

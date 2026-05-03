@@ -109,7 +109,7 @@ Validate a single SQL query.
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `sql` | string | yes | Non-empty. Subject to `MAX_SQL_BYTES`. |
-| `dialect` | `"auto" \| "postgres" \| "tsql"` | no | Default `"auto"`. |
+| `dialect` | enum | no | Default `"auto"`. One of: `"auto"`, `"postgres"`, `"tsql"`, `"oracle"`, `"redshift"`, `"bigquery"`, `"snowflake"`, `"databricks"`, `"duckdb"`. |
 | `strict` | boolean | no | Default `false`. When `true`, best-practice warnings escalate to errors. Same semantics as the CLI `--strict` flag. |
 
 **Response (200):**
@@ -123,9 +123,8 @@ Validate a single SQL query.
       "rule_id": "data_quality.schema_validation",
       "severity": "error",
       "issue": "Table 'no_such_table' does not exist in OMOP CDM 5.4 schema.",
-      "suggested_fix": "Ensure all table and column names match the OMOP CDM 5.4 schema",
-      "location": null,
-      "details": {"layer": "schema", "type": "invalid_table", "table": "no_such_table"}
+      "fix": "Ensure all table and column names match the OMOP CDM 5.4 schema",
+      "location": null
     }
   ],
   "warnings": [],
@@ -146,6 +145,8 @@ Validate a single SQL query.
   "strict": false
 }
 ```
+
+The `Violation` shape is `{ rule_id, severity, issue, fix, location }`. `fix` is heterogeneous: a prose string for free-form patches, or a structured patch object (`{"action": "REPLACE"|"ADD"|"REMOVE", "span": [s,e]|"at": pos, "text": ...}`) for mechanical ones — clients should switch on `typeof fix === "string"` vs object. The CLI JSON report uses a different field name (`suggested_fix`) and exposes a `details` map; see [JSON output](JSON_OUTPUT.md) for that shape.
 
 **Multi-statement input.** If `sql` contains multiple `;`-separated
 statements, the service splits them (comment- and quote-aware) and

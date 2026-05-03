@@ -39,6 +39,11 @@ any SQL linter and fail any replication attempt.
 
     The structured report format for CI integration.
 
+-   :material-text-box-outline: **[Logging](LOGGING.md)**
+
+    Configure log level, file destination, and JSON-structured output for
+    log aggregators.
+
 </div>
 
 ## Quick start

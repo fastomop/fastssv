@@ -195,10 +195,10 @@ from .my_new_rule import MyNewRule
 
 ### Step 4: Add Tests
 
-Create a test file:
+Add a test class to `tests/test_rules.py` — the canonical file for rule tests. New test files are not picked up by the existing `extend-exclude` ruff config and would diverge from project convention.
 
 ```python
-# tests/test_my_new_rule.py
+# tests/test_rules.py — append a new class
 
 import pytest
 from fastssv.rules.joins.my_new_rule import MyNewRule
@@ -319,8 +319,8 @@ To add a new category:
 
 Good violation messages follow this pattern:
 
-**Message field**: [What's wrong] + [Why it matters]
-**Suggested_fix field**: [How to fix it]
+**Message field**: \[What's wrong\] + \[Why it matters\]
+**Suggested_fix field**: \[How to fix it\]
 
 Example:
 ```python
@@ -400,35 +400,6 @@ if where:
 4. **Clean Separation**: Each rule is independent
 5. **Testability**: Rules can be tested in isolation
 6. **Maintainability**: Changes to one rule don't affect others
-
-## Migration from Older Patterns
-
-An older validator function style looked like this:
-
-```python
-# OLD (deprecated)
-def validate_join(sql, dialect):
-    errors = []
-    # validation logic
-    return errors
-```
-
-The rule-class pattern used throughout the project looks like this:
-
-```python
-# NEW (current)
-@register
-class JoinPathRule(Rule):
-    rule_id = "joins.join_path_validation"
-    name = "Join Path Validation"
-    description = "..."
-    severity = Severity.WARNING
-
-    def validate(self, sql, dialect):
-        violations = []
-        # validation logic
-        return violations
-```
 
 ## Summary
 

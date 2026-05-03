@@ -11,7 +11,7 @@ fastssv query.sql
 fastssv query.sql --output my_report.json
 
 # With other options
-fastssv query.sql --dialect mysql --categories joins
+fastssv query.sql --dialect bigquery --categories joins
 ```
 
 ### Exit Codes
@@ -26,7 +26,7 @@ Note: WARNING-level violations do not affect exit code.
 | Field | Type | Description |
 |-------|------|-------------|
 | `query` | string | Normalized SQL query (whitespace collapsed) |
-| `dialect` | string | SQL dialect (postgres, mysql, duckdb, etc.) |
+| `dialect` | string | SQL dialect (`auto`, `postgres`, `tsql`, `oracle`, `redshift`, `bigquery`, `snowflake`, `databricks`, `duckdb`) |
 | `is_valid` | boolean | true if no ERROR-level violations |
 | `error_count` | number | Count of ERROR-level violations |
 | `warning_count` | number | Count of WARNING-level violations |
@@ -496,7 +496,9 @@ The `validate_sql()` helper returns grouped messages rather than the CLI JSON re
     joins: string[],
     temporal: string[]
   },
-  all_errors: string[]
+  all_errors: string[],
+  parse_error: string | null,   // Set when SQL couldn't be parsed; null otherwise
+  dialect: string               // The dialect actually used (after auto-detection)
 }
 ```
 

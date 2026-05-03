@@ -28,9 +28,10 @@ uv sync --frozen --extra docs               # if working on the docs site
 | Lint                | `uvx ruff check src/ tests/`                                  |
 | Auto-format         | `uvx ruff format src/ tests/`                                 |
 | Build sdist + wheel | `uv build`                                                    |
-| Serve docs locally  | `uv run --frozen --no-sync mkdocs serve`                      |
+| Serve docs locally  | `uv run --frozen --no-sync zensical serve`                    |
 | Build container     | `docker compose -f deploy/docker-compose.yml build`           |
 | Run container       | `docker compose -f deploy/docker-compose.yml up`              |
+| Run pre-commit hooks | `uvx pre-commit run --all-files`                             |
 
 The `--no-sync` flag on `uv run` skips re-validating the lock on every invocation; `uv sync --frozen` (above) already established the env.
 
@@ -41,7 +42,7 @@ src/fastssv/          package source
   api/                optional FastAPI service ([api] extra)
   rules/              validation rules; one per file, self-registering
 tests/                pytest suite (unit + api integration)
-docs/                 mkdocs source
+docs/                 zensical source (configured by zensical.toml at repo root)
 deploy/               Dockerfile + docker-compose for the API service
 .github/workflows/    CI: tests.yml, docs.yml, publish.yml
 ```
@@ -74,6 +75,13 @@ Categories live under `src/fastssv/rules/`: `anti_patterns/`, `concept_standardi
 `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses semver from 1.0.0 onward. **Update it for every user-visible change** — new rules, rule behaviour changes, CLI/API surface changes, build/dependency changes, removed features, bug fixes — under the `## [Unreleased]` section, in the appropriate `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security` subsection. Skip purely internal changes (refactors, comment-only edits, test reshuffles) unless they alter observable behaviour.
 
 Match the existing entry style: a bold-prefixed lead-in summarising what changed, followed by a short paragraph explaining the context, the previous behaviour, the new behaviour, and any user impact.
+
+## After making changes
+
+Before reporting a task complete — for **every** kind of change, including code changes, not just docs/config:
+
+1. **Sweep the repo for stale references — code, docs, config, CI, and Docker alike.** Whenever you rename or remove anything that other code or text might still mention — a public function, class, module, parameter, `rule_id`, severity, exception type, CLI flag, command, dependency, config key, file, or feature — grep the whole tree for the old name and update every surviving hit. Don't stop when your direct edit compiles or your immediate test passes; actively review the existing code and prose for downstream effects. Cover the call sites and tests in `src/` and `tests/`, scripts under `scripts/` and snippets under `examples/`, prose and code blocks under `docs/`, the `README.md`, the `## [Unreleased]` block in `CHANGELOG.md`, `AGENTS.md` (and its `CLAUDE.md` symlink), the GitHub Actions workflows under `.github/workflows/`, and `deploy/Dockerfile` + `deploy/docker-compose.yml`. The same applies to behaviour changes that don't rename anything: if you change a function's contract, default, or returned shape, walk every caller and update assumptions, comments, docstrings, and tests that still describe the old shape. Stale references rot silently — they look correct until the next reader follows a dead link, copies a command that no longer exists, or imports a symbol that has moved.
+2. **Run the pre-commit hooks** with `uvx pre-commit run --all-files` (or `uvx pre-commit run` to scope to staged files only). The hooks defined in `.pre-commit-config.yaml` cover trailing whitespace, end-of-file fixers, YAML/TOML validity, merge-conflict markers, large-file guards, and `ruff check --fix` + `ruff format`. Fix anything they flag before handing the change back.
 
 ## Conventions
 

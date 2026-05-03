@@ -33,27 +33,21 @@ class TestCorsOriginsValidator:
         assert settings.cors_origins == ["http://localhost:3000"]
 
     def test_multiple_origins_comma_separated(self):
-        settings = _make_settings(
-            cors_origins="http://localhost:3000,http://localhost:8000"
-        )
+        settings = _make_settings(cors_origins="http://localhost:3000,http://localhost:8000")
         assert settings.cors_origins == [
             "http://localhost:3000",
             "http://localhost:8000",
         ]
 
     def test_comma_separated_with_extra_spaces(self):
-        settings = _make_settings(
-            cors_origins=" http://a.example.com , http://b.example.com "
-        )
+        settings = _make_settings(cors_origins=" http://a.example.com , http://b.example.com ")
         assert settings.cors_origins == [
             "http://a.example.com",
             "http://b.example.com",
         ]
 
     def test_json_list_string(self):
-        settings = _make_settings(
-            cors_origins='["http://localhost:3000", "http://localhost:8000"]'
-        )
+        settings = _make_settings(cors_origins='["http://localhost:3000", "http://localhost:8000"]')
         assert settings.cors_origins == [
             "http://localhost:3000",
             "http://localhost:8000",

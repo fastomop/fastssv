@@ -567,7 +567,7 @@ Use concept_class_id = 'Ingredient' or use concept_ancestor to roll up drug prod
 ### 6. Concept Domain ID Matches Target Table { #concept-standardization-concept-domain-validation }
 
 **Rule ID:** `concept_standardization.concept_domain_validation`
-**Severity:** ERROR
+**Severity:** WARNING
 
 #### Intent
 
