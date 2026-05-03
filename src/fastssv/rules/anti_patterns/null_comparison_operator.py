@@ -75,9 +75,12 @@ def _find_null_comparisons(tree: exp.Expression) -> List[tuple]:
 
             if is_left_null or is_right_null:
                 # Get operator name
+                # sqlglot canonicalizes '!=' to '<>' on parse, so the
+                # real operator the user wrote is recovered later in
+                # validate() from the source-SQL span.
                 op_name = {
                     exp.EQ: "=",
-                    exp.NEQ: "<>" or "!=",
+                    exp.NEQ: "<>",
                     exp.GT: ">",
                     exp.GTE: ">=",
                     exp.LT: "<",
@@ -162,6 +165,21 @@ class NullComparisonOperatorRule(Rule):
             null_comparisons = _find_null_comparisons(tree)
 
             for operator, context, sql_fragment, node_type, non_null_sql in null_comparisons:
+                # sqlglot renders NEQ as '<>' regardless of source. If
+                # the user wrote '!=', `locate` won't find the rendered
+                # fragment in the original SQL — retry with '!=' so the
+                # patch path keeps working for both spellings.
+                span = locate(sql, sql_fragment)
+                if span is None and node_type is exp.NEQ:
+                    span = locate(sql, sql_fragment.replace("<>", "!="))
+
+                # Recover the operator the user actually typed so the
+                # diagnostic doesn't claim '<>' when they wrote '!='.
+                if span and node_type is exp.NEQ:
+                    source = sql[span[0] : span[1]]
+                    if "!=" in source and "<>" not in source:
+                        operator = "!="
+
                 message = (
                     f"Incorrect NULL comparison using '{operator}' operator in {context}. "
                     f"NULL comparisons with =, <>, !=, >, <, >=, <= always return UNKNOWN (neither true nor false), "
@@ -173,7 +191,6 @@ class NullComparisonOperatorRule(Rule):
                 # against NULL are nonsense; emit FREEFORM since the user's
                 # intent isn't recoverable.
                 patch = None
-                span = locate(sql, sql_fragment)
                 if span and non_null_sql:
                     if node_type is exp.EQ:
                         patch = replace(span, f"{non_null_sql} IS NULL")
