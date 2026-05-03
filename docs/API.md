@@ -140,13 +140,15 @@ Validate a single SQL query.
       "warnings": []
     }
   ],
-  "dialect": "postgres",
+  "dialect": "auto",
   "duration_ms": 8.7,
   "strict": false
 }
 ```
 
 The `Violation` shape is `{ rule_id, severity, issue, fix, location }`. `fix` is heterogeneous: a prose string for free-form patches, or a structured patch object (`{"action": "REPLACE"|"ADD"|"REMOVE", "span": [s,e]|"at": pos, "text": ...}`) for mechanical ones — clients should switch on `typeof fix === "string"` vs object. The CLI JSON report uses the same `fix` field naming; see [JSON output](JSON_OUTPUT.md) for the CLI report shape.
+
+**Note on `dialect` in the response.** The service echoes `req.dialect` as-is — if you submit `"dialect": "auto"`, the response also reads `"dialect": "auto"`, not the dialect that auto-detection resolved to. To learn which dialect was actually used for parsing, call `fastssv.core.helpers.detect_dialect(sql)` client-side or pass an explicit dialect on the request.
 
 **Multi-statement input.** If `sql` contains multiple `;`-separated
 statements, the service splits them (comment- and quote-aware) and
