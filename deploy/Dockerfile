@@ -2,27 +2,29 @@
 
 FROM python:3.12-slim AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+COPY --from=ghcr.io/astral-sh/uv:0.9.15 /uv /uvx /bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 
-RUN pip install --prefix=/install ".[api]"
+# Use `uv pip install` (not `uv sync`) so only the [api] extras are
+# resolved — the [viz] extras have a requires-python conflict that
+# would break a full workspace resolve.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --prefix=/install ".[api]"
 
 
 FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PORT=8000 \
     FASTSSV_API_LOG_LEVEL=INFO
 
