@@ -146,7 +146,7 @@ Validate a single SQL query.
 }
 ```
 
-The `Violation` shape is `{ rule_id, severity, issue, fix, location }`. `fix` is heterogeneous: a prose string for free-form patches, or a structured patch object (`{"action": "REPLACE"|"ADD"|"REMOVE", "span": [s,e]|"at": pos, "text": ...}`) for mechanical ones — clients should switch on `typeof fix === "string"` vs object. The CLI JSON report uses a different field name (`suggested_fix`) and exposes a `details` map; see [JSON output](JSON_OUTPUT.md) for that shape.
+The `Violation` shape is `{ rule_id, severity, issue, fix, location }`. `fix` is heterogeneous: a prose string for free-form patches, or a structured patch object (`{"action": "REPLACE"|"ADD"|"REMOVE", "span": [s,e]|"at": pos, "text": ...}`) for mechanical ones — clients should switch on `typeof fix === "string"` vs object. The CLI JSON report uses the same `fix` field naming; see [JSON output](JSON_OUTPUT.md) for the CLI report shape.
 
 **Multi-statement input.** If `sql` contains multiple `;`-separated
 statements, the service splits them (comment- and quote-aware) and
