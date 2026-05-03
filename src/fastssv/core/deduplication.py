@@ -71,7 +71,11 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     # Identity-keyed index map: lets us tiebreak/preserve original order
     # in O(1) without `list.index`, and avoids value-equality collisions
     # between distinct RuleViolation dataclasses with identical fields.
-    original_index = {id(v): i for i, v in enumerate(violations)}
+    # `setdefault` keeps the first index if the same instance appears
+    # twice — matching `list.index(v)` semantics.
+    original_index: dict[int, int] = {}
+    for i, v in enumerate(violations):
+        original_index.setdefault(id(v), i)
 
     # Group violations by normalized issue
     issue_groups: dict = {}
