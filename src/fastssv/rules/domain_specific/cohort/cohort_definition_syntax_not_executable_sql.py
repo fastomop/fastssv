@@ -73,20 +73,49 @@ COHORT_DEFINITION = "cohort_definition"
 COHORT_DEFINITION_SYNTAX = "cohort_definition_syntax"
 
 SQL_KEYWORDS: Set[str] = {
-    "select", "insert", "update", "delete", "from", "join", "where",
-    "having", "group by", "order by", "union", "intersect", "except",
+    "select",
+    "insert",
+    "update",
+    "delete",
+    "from",
+    "join",
+    "where",
+    "having",
+    "group by",
+    "order by",
+    "union",
+    "intersect",
+    "except",
 }
 
 OMOP_TABLES: Set[str] = {
-    "person", "observation_period", "visit_occurrence", "visit_detail",
-    "condition_occurrence", "drug_exposure", "procedure_occurrence",
-    "device_exposure", "measurement", "observation", "death", "note",
-    "specimen", "fact_relationship", "location", "care_site", "provider",
-    "payer_plan_period", "cost", "drug_era", "dose_era", "condition_era",
+    "person",
+    "observation_period",
+    "visit_occurrence",
+    "visit_detail",
+    "condition_occurrence",
+    "drug_exposure",
+    "procedure_occurrence",
+    "device_exposure",
+    "measurement",
+    "observation",
+    "death",
+    "note",
+    "specimen",
+    "fact_relationship",
+    "location",
+    "care_site",
+    "provider",
+    "payer_plan_period",
+    "cost",
+    "drug_era",
+    "dose_era",
+    "condition_era",
 }
 
 
 # --- Helpers -----------------------------------------------------------------
+
 
 def _extract_string_literal(expr: exp.Expression) -> str:
     """
@@ -121,10 +150,7 @@ def _is_target_column(table: str, column: str, aliases: dict) -> bool:
         return normalize_name(table) == COHORT_DEFINITION
 
     # Unqualified column: allow only if cohort_definition is present
-    return any(
-        normalize_name(t) == COHORT_DEFINITION
-        for t in aliases.values()
-    )
+    return any(normalize_name(t) == COHORT_DEFINITION for t in aliases.values())
 
 
 def _analyze_like_node(node: exp.Expression, aliases: dict) -> str:
@@ -196,6 +222,7 @@ def _find_violations(tree: exp.Expression, aliases: dict) -> List[str]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class CohortDefinitionSyntaxNotExecutableSqlRule(Rule):
     """
@@ -213,14 +240,8 @@ class CohortDefinitionSyntaxNotExecutableSqlRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REMOVE: text predicates on cohort_definition.cohort_definition_syntax (it stores JSON/OHDSI metadata, not executable SQL). Filter on cohort_definition_id or cohort_definition_name instead."
-    example_bad = (
-        "SELECT cohort_definition_id FROM cohort_definition\n"
-        "WHERE cohort_definition_syntax LIKE '%SELECT%';"
-    )
-    example_good = (
-        "SELECT cohort_definition_id, cohort_definition_syntax\n"
-        "FROM cohort_definition;"
-    )
+    example_bad = "SELECT cohort_definition_id FROM cohort_definition\nWHERE cohort_definition_syntax LIKE '%SELECT%';"
+    example_good = "SELECT cohort_definition_id, cohort_definition_syntax\nFROM cohort_definition;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

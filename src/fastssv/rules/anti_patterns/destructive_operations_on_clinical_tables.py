@@ -86,6 +86,7 @@ DESTRUCTIVE_STATEMENT_TYPES = (
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -121,7 +122,7 @@ def _extract_target_tables(statement: exp.Expression) -> Set[str]:
     elif isinstance(statement, exp.Insert):
         # INSERT INTO table
         # statement.this is a Schema, Schema.this is the Table
-        if statement.this and hasattr(statement.this, 'this'):
+        if statement.this and hasattr(statement.this, "this"):
             table_expr = statement.this.this
             if isinstance(table_expr, exp.Table):
                 tables.add(table_expr.name)
@@ -157,6 +158,7 @@ def _get_statement_type(statement: exp.Expression) -> str:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DestructiveOperationsOnClinicalTablesRule(Rule):
     """Prevent destructive operations on clinical event tables."""
@@ -181,15 +183,8 @@ class DestructiveOperationsOnClinicalTablesRule(Rule):
         "belongs in a governed ETL pipeline, not in a cohort-exploration "
         "query."
     )
-    example_bad = (
-        "DELETE FROM condition_occurrence\n"
-        "WHERE person_id = 1;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE person_id = 1;"
-    )
+    example_bad = "DELETE FROM condition_occurrence\nWHERE person_id = 1;"
+    example_good = "SELECT *\nFROM condition_occurrence\nWHERE person_id = 1;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
@@ -213,9 +208,7 @@ class DestructiveOperationsOnClinicalTablesRule(Rule):
             for stmt in statements:
                 target_tables = _extract_target_tables(stmt)
 
-                protected = {
-                    t for t in target_tables if _is_protected_table(t)
-                }
+                protected = {t for t in target_tables if _is_protected_table(t)}
 
                 if not protected:
                     continue

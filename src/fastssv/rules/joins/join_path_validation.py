@@ -23,9 +23,7 @@ from fastssv.core.registry import register
 from fastssv.schemas import STANDARD_CONCEPT_FIELDS
 
 
-def _extract_concept_references(
-    tree: exp.Expression, aliases: Dict[str, str]
-) -> List[Tuple[str, str]]:
+def _extract_concept_references(tree: exp.Expression, aliases: Dict[str, str]) -> List[Tuple[str, str]]:
     """Extract all resolved (table, column) references for concept fields."""
     refs: List[Tuple[str, str]] = []
 
@@ -85,9 +83,7 @@ def _vocab_table_used_only_in_subquery(
 
 
 def _verify_concept_join_path(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    used_standard_fields: Set[Tuple[str, str]]
+    tree: exp.Expression, aliases: Dict[str, str], used_standard_fields: Set[Tuple[str, str]]
 ) -> List[str]:
     """Verify that vocabulary tables are properly joined to clinical tables."""
     warnings: List[str] = []
@@ -126,8 +122,15 @@ def _verify_concept_join_path(
         cte_uses_vocab = False
         for t in cte.find_all(exp.Table):
             table_name = normalize_name(t.name)
-            if table_name in {"concept", "concept_relationship", "concept_ancestor",
-                              "concept_synonym", "vocabulary", "domain", "concept_class"}:
+            if table_name in {
+                "concept",
+                "concept_relationship",
+                "concept_ancestor",
+                "concept_synonym",
+                "vocabulary",
+                "domain",
+                "concept_class",
+            }:
                 cte_uses_vocab = True
                 break
 
@@ -150,8 +153,12 @@ def _verify_concept_join_path(
                 elif isinstance(proj, exp.Column):
                     col_name = normalize_name(proj.name)
 
-                if (col_name == "concept_id" or col_name.endswith("_concept_id") or
-                    alias_name == "concept_id" or alias_name.endswith("_concept_id")):
+                if (
+                    col_name == "concept_id"
+                    or col_name.endswith("_concept_id")
+                    or alias_name == "concept_id"
+                    or alias_name.endswith("_concept_id")
+                ):
                     ctes_with_vocab_and_concept_id.add(cte_name)
                     break
 
@@ -203,10 +210,7 @@ def _verify_concept_join_path(
     # their ON clauses for an appropriate join-key column.
     if uses_concept and not linked_to_concept:
         for join in tree.find_all(exp.Join):
-            target_tables = [
-                normalize_name(t.name)
-                for t in join.find_all(exp.Table)
-            ]
+            target_tables = [normalize_name(t.name) for t in join.find_all(exp.Table)]
             if "concept" not in target_tables:
                 continue
             on_clause = join.args.get("on")
@@ -221,10 +225,7 @@ def _verify_concept_join_path(
 
     if uses_concept_rel and not linked_to_concept_rel:
         for join in tree.find_all(exp.Join):
-            target_tables = [
-                normalize_name(t.name)
-                for t in join.find_all(exp.Table)
-            ]
+            target_tables = [normalize_name(t.name) for t in join.find_all(exp.Table)]
             if "concept_relationship" not in target_tables:
                 continue
             on_clause = join.args.get("on")
@@ -248,9 +249,7 @@ def _verify_concept_join_path(
             from_node = select.args.get("from_") or select.args.get("from")
             if from_node is None:
                 continue
-            from_table_names = {
-                normalize_name(t.name) for t in from_node.find_all(exp.Table)
-            }
+            from_table_names = {normalize_name(t.name) for t in from_node.find_all(exp.Table)}
             if "concept" not in from_table_names:
                 continue
             where_clause = select.args.get("where")
@@ -268,9 +267,7 @@ def _verify_concept_join_path(
             from_node = select.args.get("from_") or select.args.get("from")
             if from_node is None:
                 continue
-            from_table_names = {
-                normalize_name(t.name) for t in from_node.find_all(exp.Table)
-            }
+            from_table_names = {normalize_name(t.name) for t in from_node.find_all(exp.Table)}
             if "concept_relationship" not in from_table_names:
                 continue
             where_clause = select.args.get("where")
@@ -291,8 +288,7 @@ def _verify_concept_join_path(
 
     if uses_concept_rel and not linked_to_concept_rel:
         warnings.append(
-            "Query uses 'concept_relationship' table but it may not be properly joined "
-            "to the clinical tables."
+            "Query uses 'concept_relationship' table but it may not be properly joined to the clinical tables."
         )
 
     return warnings
@@ -311,12 +307,10 @@ class JoinPathValidationRule(Rule):
     severity = Severity.WARNING
     suggested_fix = "ADD: `AND c.standard_concept = 'S'` (or `AND c.invalid_reason IS NULL`) when joining the concept table to clinical tables, OR use concept_relationship 'Maps to' to resolve to standard concepts."
     example_bad = (
-        "SELECT co.person_id FROM condition_occurrence co\n"
-        "JOIN concept c ON co.condition_concept_id = c.domain_id;"
+        "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.domain_id;"
     )
     example_good = (
-        "SELECT co.person_id FROM condition_occurrence co\n"
-        "JOIN concept c ON co.condition_concept_id = c.concept_id;"
+        "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -348,9 +342,11 @@ class JoinPathValidationRule(Rule):
             warnings = _verify_concept_join_path(tree, aliases, used_standard)
 
             for warning in warnings:
-                violations.append(self.create_violation(
-                    message=warning,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=warning,
+                    )
+                )
 
         return violations
 

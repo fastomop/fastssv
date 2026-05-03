@@ -70,6 +70,7 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -116,6 +117,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect(
     tree: exp.Expression,
@@ -209,6 +211,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class EraForbiddenJoinValidationRule(Rule):
     """
@@ -228,13 +231,8 @@ class EraForbiddenJoinValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REMOVE: any JOIN from era tables (condition_era, drug_era, dose_era) to visit_occurrence / visit_detail / provider / care_site. Era tables are time-aggregated and have no link to visit-level entities."
-    example_bad = (
-        "SELECT * FROM drug_era de\n"
-        "JOIN visit_occurrence vo ON de.person_id = vo.person_id;"
-    )
-    example_good = (
-        "SELECT * FROM drug_era de;"
-    )
+    example_bad = "SELECT * FROM drug_era de\nJOIN visit_occurrence vo ON de.person_id = vo.person_id;"
+    example_good = "SELECT * FROM drug_era de;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -254,7 +252,6 @@ class EraForbiddenJoinValidationRule(Rule):
             detected = _detect(tree, aliases)
 
             for era, era_col, forbidden, forbidden_col in detected:
-
                 if era_col == "PATH":
                     msg = (
                         f"Invalid indirect join: {era} is connected to {forbidden} via intermediate tables. "

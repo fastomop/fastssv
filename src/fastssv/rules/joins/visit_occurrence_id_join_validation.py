@@ -46,6 +46,7 @@ VISIT_OCCURRENCE_ID = "visit_occurrence_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -100,6 +101,7 @@ def _extract_using_columns(tree: exp.Expression) -> Set[str]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect(
     tree: exp.Expression,
@@ -162,6 +164,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class VisitOccurrenceIdJoinValidationRule(Rule):
     """
@@ -208,7 +211,6 @@ class VisitOccurrenceIdJoinValidationRule(Rule):
             detected = _detect(tree, aliases)
 
             for lt, lc, rt, rc in detected:
-
                 lt_disp = lt if lt and lt != "unknown" else ""
                 rt_disp = rt if rt and rt != "unknown" else ""
 
@@ -234,8 +236,13 @@ class VisitOccurrenceIdJoinValidationRule(Rule):
                         f"WITH `{lt_disp}.visit_occurrence_id = {rt_disp}.visit_occurrence_id`."
                     )
                     patch = build_join_replace_patch(
-                        sql, lt, lc, rt, rc,
-                        VISIT_OCCURRENCE_ID, VISIT_OCCURRENCE_ID,
+                        sql,
+                        lt,
+                        lc,
+                        rt,
+                        rc,
+                        VISIT_OCCURRENCE_ID,
+                        VISIT_OCCURRENCE_ID,
                         fix_text,
                         aliases=aliases,
                     )

@@ -35,6 +35,7 @@ from typing import Optional, Tuple
 
 # --- Construction ----------------------------------------------------------
 
+
 def replace(span: Tuple[int, int], text: str) -> dict:
     return {"action": "REPLACE", "span": list(span), "text": text}
 
@@ -144,6 +145,7 @@ def _denormalise_span(original: str, norm_span: Tuple[int, int]) -> Optional[Tup
 
 
 # --- Applier ---------------------------------------------------------------
+
 
 class PatchError(ValueError):
     """Raised when a patch cannot be applied to the given SQL."""

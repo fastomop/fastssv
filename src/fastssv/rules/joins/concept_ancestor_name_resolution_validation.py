@@ -66,6 +66,7 @@ TARGET_COLUMNS = {"concept_name", "concept_code", "vocabulary_id", "domain_id"}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -167,6 +168,7 @@ def _extract_ca_concept_joins(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -183,7 +185,6 @@ def _detect(
 
         # Find relevant SELECT
         for select in tree.find_all(exp.Select):
-
             column_refs = _extract_all_column_refs(select)
 
             for table, col, alias in column_refs:
@@ -219,6 +220,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptAncestorNameResolutionValidationRule(Rule):
     """Validate concept_ancestor joins match semantic intent."""
@@ -234,6 +236,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: join on `concept_ancestor.ancestor_concept_id` WHERE the alias suggests descendant intent (or vice versa) WITH the matching column. Use descendant_concept_id when reading descendants, ancestor_concept_id when reading ancestors."
+
     def validate(self, sql: str, dialect: str = "postgres"):
         violations = []
 
@@ -257,11 +260,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
             errors, _ = _detect(tree, aliases)
 
             for concept_alias, col, join_col in errors:
-                expected = (
-                    DESCENDANT_CONCEPT_ID
-                    if join_col == ANCESTOR_CONCEPT_ID
-                    else ANCESTOR_CONCEPT_ID
-                )
+                expected = DESCENDANT_CONCEPT_ID if join_col == ANCESTOR_CONCEPT_ID else ANCESTOR_CONCEPT_ID
 
                 fix_text = (
                     f"REPLACE: `concept_ancestor.{join_col} = concept.concept_id` "
@@ -269,9 +268,12 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
                 )
                 patch = build_join_replace_patch(
                     sql,
-                    CONCEPT_ANCESTOR, join_col,
-                    CONCEPT, CONCEPT_ID,
-                    expected, CONCEPT_ID,
+                    CONCEPT_ANCESTOR,
+                    join_col,
+                    CONCEPT,
+                    CONCEPT_ID,
+                    expected,
+                    CONCEPT_ID,
                     fix_text,
                     aliases=aliases,
                 )
@@ -282,9 +284,7 @@ class ConceptAncestorNameResolutionValidationRule(Rule):
                             f"Semantic mismatch: alias implies opposite hierarchy direction. "
                             f"Using {join_col} but intent suggests {expected}."
                         ),
-                        suggested_fix=(
-                            f"Use concept_ancestor.{expected} = concept.concept_id"
-                        ),
+                        suggested_fix=(f"Use concept_ancestor.{expected} = concept.concept_id"),
                         suggested_fix_patch=patch,
                         details={
                             "type": "semantic_mismatch",

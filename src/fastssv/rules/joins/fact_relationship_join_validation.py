@@ -86,6 +86,7 @@ CLINICAL_TABLE_PK: Dict[str, str] = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -111,6 +112,7 @@ def _extract_literal(node: exp.Expression) -> Optional[int]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect_fact_joins(tree: exp.Expression, aliases: Dict[str, str]):
     """
@@ -227,11 +229,8 @@ def _detect(tree: exp.Expression, aliases: Dict[str, str]):
     filters = _collect_domain_filters(tree, aliases)
 
     for table, fact_id_col, expected_domain in fact_joins:
-
         # Map correct domain column
-        domain_col = (
-            DOMAIN_CONCEPT_ID_1 if fact_id_col == FACT_ID_1 else DOMAIN_CONCEPT_ID_2
-        )
+        domain_col = DOMAIN_CONCEPT_ID_1 if fact_id_col == FACT_ID_1 else DOMAIN_CONCEPT_ID_2
 
         values = filters.get(domain_col, set())
 
@@ -250,6 +249,7 @@ def _detect(tree: exp.Expression, aliases: Dict[str, str]):
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class FactRelationshipJoinValidationRule(Rule):
@@ -296,12 +296,7 @@ class FactRelationshipJoinValidationRule(Rule):
             detected = _detect(tree, aliases)
 
             for table, fact_id_col, expected_domain in detected:
-
-                domain_col = (
-                    DOMAIN_CONCEPT_ID_1
-                    if fact_id_col == FACT_ID_1
-                    else DOMAIN_CONCEPT_ID_2
-                )
+                domain_col = DOMAIN_CONCEPT_ID_1 if fact_id_col == FACT_ID_1 else DOMAIN_CONCEPT_ID_2
 
                 msg = (
                     f"Invalid join: fact_relationship.{fact_id_col} → {table}. "

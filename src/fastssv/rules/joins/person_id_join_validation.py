@@ -47,6 +47,7 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _normalize_optional(x: Optional[str]) -> Optional[str]:
     """Normalize column/table name, returning None if input is None."""
     return normalize_name(x) if x else None
@@ -101,6 +102,7 @@ def _extract_using_columns(tree: exp.Expression) -> Set[str]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect_invalid_person_id_joins(
     tree: exp.Expression,
@@ -158,6 +160,7 @@ def _detect_invalid_person_id_joins(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class PersonIdJoinValidationRule(Rule):
     """
@@ -176,14 +179,8 @@ class PersonIdJoinValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: `<table>.person_id = <other_table>.<non_person_id_col>` WITH `<table>.person_id = <other_table>.person_id`. person_id joins only to person_id, never to a non-person_id PK."
-    example_bad = (
-        "SELECT * FROM person p\n"
-        "JOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id;"
-    )
-    example_good = (
-        "SELECT * FROM person p\n"
-        "JOIN visit_occurrence vo ON p.person_id = vo.person_id;"
-    )
+    example_bad = "SELECT * FROM person p\nJOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id;"
+    example_good = "SELECT * FROM person p\nJOIN visit_occurrence vo ON p.person_id = vo.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -203,7 +200,6 @@ class PersonIdJoinValidationRule(Rule):
             detected = _detect_invalid_person_id_joins(tree, aliases)
 
             for lt, lc, rt, rc in detected:
-
                 lt_disp = lt if lt and lt != "unknown" else ""
                 rt_disp = rt if rt and rt != "unknown" else ""
 
@@ -226,12 +222,16 @@ class PersonIdJoinValidationRule(Rule):
                 patch = None
                 if lt and rt and lt != "unknown" and rt != "unknown":
                     fix_text = (
-                        f"REPLACE: `{lt_disp}.{lc} = {rt_disp}.{rc}` "
-                        f"WITH `{lt_disp}.person_id = {rt_disp}.person_id`."
+                        f"REPLACE: `{lt_disp}.{lc} = {rt_disp}.{rc}` WITH `{lt_disp}.person_id = {rt_disp}.person_id`."
                     )
                     patch = build_join_replace_patch(
-                        sql, lt, lc, rt, rc,
-                        PERSON_ID, PERSON_ID,
+                        sql,
+                        lt,
+                        lc,
+                        rt,
+                        rc,
+                        PERSON_ID,
+                        PERSON_ID,
                         fix_text,
                         aliases=aliases,
                     )

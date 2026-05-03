@@ -21,6 +21,7 @@ from fastssv.schemas import CDM_COLUMN_TYPES, get_table_columns
 # Schema predicates derived from CDM_COLUMN_TYPES. Inlining them as small
 # helpers keeps the validation logic below readable.
 
+
 def _is_valid_table(table_name: str) -> bool:
     return bool(table_name) and table_name.lower() in CDM_COLUMN_TYPES
 
@@ -115,11 +116,7 @@ class ComprehensiveSchemaValidationRule(Rule):
         "expressions are deliberately ignored so compound queries don't "
         "raise false positives."
     )
-    example_bad = (
-        "SELECT person_id, cohort_start_date\n"
-        "FROM cohort_result\n"
-        "WHERE cohort_definition_id = 1;"
-    )
+    example_bad = "SELECT person_id, cohort_start_date\nFROM cohort_result\nWHERE cohort_definition_id = 1;"
     example_good = (
         "SELECT condition_occurrence_id, person_id, condition_start_date\n"
         "FROM condition_occurrence\n"
@@ -187,17 +184,19 @@ class ComprehensiveSchemaValidationRule(Rule):
                         if span is not None:
                             patch = patch_replace(span, similar[0])
 
-                    violations.append(self.create_violation(
-                        message=f"Table '{table_name}' does not exist in OMOP CDM 5.4 schema.",
-                        severity=Severity.ERROR,
-                        suggested_fix_patch=patch,
-                        details={
-                            "layer": "schema",
-                            "type": "invalid_table",
-                            "table": table_name,
-                            "similar_tables": similar[:3] if similar else [],
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=f"Table '{table_name}' does not exist in OMOP CDM 5.4 schema.",
+                            severity=Severity.ERROR,
+                            suggested_fix_patch=patch,
+                            details={
+                                "layer": "schema",
+                                "type": "invalid_table",
+                                "table": table_name,
+                                "similar_tables": similar[:3] if similar else [],
+                            },
+                        )
+                    )
                     reported_tables.add(table_key)
 
             # Validate all column references (only from physical tables)
@@ -270,18 +269,20 @@ class ComprehensiveSchemaValidationRule(Rule):
                         if span is not None:
                             patch = patch_replace(span, similar[0])
 
-                    violations.append(self.create_violation(
-                        message=f"Column '{col_name}' does not exist in table '{resolved_table}'.",
-                        severity=Severity.ERROR,
-                        suggested_fix_patch=patch,
-                        details={
-                            "layer": "schema",
-                            "type": "invalid_column",
-                            "table": resolved_table,
-                            "column": col_name,
-                            "similar_columns": similar[:3] if similar else [],
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=f"Column '{col_name}' does not exist in table '{resolved_table}'.",
+                            severity=Severity.ERROR,
+                            suggested_fix_patch=patch,
+                            details={
+                                "layer": "schema",
+                                "type": "invalid_column",
+                                "table": resolved_table,
+                                "column": col_name,
+                                "similar_columns": similar[:3] if similar else [],
+                            },
+                        )
+                    )
                     reported_columns.add(column_key)
 
         return violations

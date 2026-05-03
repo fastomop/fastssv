@@ -58,6 +58,7 @@ VALID_CLASS = "ingredient"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -77,6 +78,7 @@ def _extract_literal(node: exp.Expression) -> Optional[str]:
 
 
 # --- Join Detection --------------------------------------------------------
+
 
 def _find_valid_concept_aliases(tree: exp.Expression, aliases: Dict[str, str]) -> Set[str]:
     """
@@ -119,14 +121,11 @@ def _is_valid_concept_class_column(
 ) -> bool:
     table, column = resolve_table_col(col, aliases)
 
-    return (
-        _is_concept(table)
-        and _is_concept_class(column)
-        and (_norm(str(col.table)) in valid_aliases)
-    )
+    return _is_concept(table) and _is_concept_class(column) and (_norm(str(col.table)) in valid_aliases)
 
 
 # --- Core Detection --------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -174,29 +173,29 @@ def _find_violations(
                 seen.add(key)
 
                 if isinstance(node, exp.EQ) and value != VALID_CLASS:
-                    issues.append((
-                        f"Invalid filter: concept_class_id = '{value.title()}'. "
-                        f"drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
-                        val_node,
-                    ))
+                    issues.append(
+                        (
+                            f"Invalid filter: concept_class_id = '{value.title()}'. "
+                            f"drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
+                            val_node,
+                        )
+                    )
 
                 elif isinstance(node, exp.NEQ) and value == VALID_CLASS:
                     # NEQ to 'Ingredient' means "exclude all" — the right
                     # fix depends on user intent (drop the predicate or
                     # invert it). Leave as FREEFORM.
-                    issues.append((
-                        "Invalid filter: concept_class_id != 'Ingredient'. "
-                        "drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
-                        None,
-                    ))
+                    issues.append(
+                        (
+                            "Invalid filter: concept_class_id != 'Ingredient'. "
+                            "drug_era only contains 'Ingredient' concepts. Query will return 0 rows.",
+                            None,
+                        )
+                    )
 
             # --- IN clause ---
             elif isinstance(node, exp.In):
-                values = {
-                    _extract_literal(v)
-                    for v in node.expressions or []
-                    if _extract_literal(v)
-                }
+                values = {_extract_literal(v) for v in node.expressions or [] if _extract_literal(v)}
 
                 if not values:
                     continue
@@ -213,16 +212,19 @@ def _find_violations(
                     # Display values in title case for readability
                     display_values = [v.title() for v in sorted(values)]
                     # IN-list rewrites are multi-value; drop to FREEFORM.
-                    issues.append((
-                        f"Invalid IN filter on concept_class_id: {display_values}. "
-                        f"drug_era only contains 'Ingredient' concepts.",
-                        None,
-                    ))
+                    issues.append(
+                        (
+                            f"Invalid IN filter on concept_class_id: {display_values}. "
+                            f"drug_era only contains 'Ingredient' concepts.",
+                            None,
+                        )
+                    )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class DrugEraConceptClassValidationRule(Rule):
@@ -230,9 +232,7 @@ class DrugEraConceptClassValidationRule(Rule):
 
     rule_id = "domain_specific.drug_era_concept_class_validation"
     name = "Drug Era Concept Class Validation"
-    description = (
-        "Ensures drug_era is filtered only on Ingredient-level concepts."
-    )
+    description = "Ensures drug_era is filtered only on Ingredient-level concepts."
     severity = Severity.ERROR
     suggested_fix = "ADD: `AND c.concept_class_id = 'Ingredient'` when joining drug_era to concept. drug_era rolls up to ingredient-level; product-class filters never match."
     example_bad = (
@@ -279,9 +279,7 @@ class DrugEraConceptClassValidationRule(Rule):
                             patch = patch_replace(span, "'Ingredient'")
                             break
 
-                violations.append(
-                    self.create_violation(message=msg, suggested_fix_patch=patch)
-                )
+                violations.append(self.create_violation(message=msg, suggested_fix_patch=patch))
 
         return violations
 

@@ -62,6 +62,7 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -111,6 +112,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -144,8 +146,10 @@ def _detect(
         rt_norm = _normalize_table(rt)
 
         # Only consider death ↔ visit_occurrence
-        if not ((_is_death(lt_norm) and _is_visit_occurrence(rt_norm)) or
-                (_is_death(rt_norm) and _is_visit_occurrence(lt_norm))):
+        if not (
+            (_is_death(lt_norm) and _is_visit_occurrence(rt_norm))
+            or (_is_death(rt_norm) and _is_visit_occurrence(lt_norm))
+        ):
             continue
 
         found_any_relation = True
@@ -190,6 +194,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DeathVisitOccurrenceJoinValidationRule(Rule):
     """Validate death ↔ visit_occurrence joins via person_id."""
@@ -197,22 +202,13 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
     rule_id = "joins.death_visit_occurrence_join_validation"
     name = "Death to Visit Occurrence Join Validation"
 
-    description = (
-        "Ensures death joins to visit_occurrence using person_id. "
-        "Flags missing or invalid joins."
-    )
+    description = "Ensures death joins to visit_occurrence using person_id. Flags missing or invalid joins."
 
     severity = Severity.ERROR
 
     suggested_fix = "ADD: `death.person_id = visit_occurrence.person_id` to the join condition. death has no FK to visit_occurrence directly; the link goes through person_id."
-    example_bad = (
-        "SELECT * FROM death d\n"
-        "JOIN visit_occurrence vo ON d.death_date = vo.visit_start_date;"
-    )
-    example_good = (
-        "SELECT * FROM death d\n"
-        "JOIN visit_occurrence vo ON d.person_id = vo.person_id;"
-    )
+    example_bad = "SELECT * FROM death d\nJOIN visit_occurrence vo ON d.death_date = vo.visit_start_date;"
+    example_good = "SELECT * FROM death d\nJOIN visit_occurrence vo ON d.person_id = vo.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -238,15 +234,9 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
             for death, death_col, vo, vo_col in errors:
                 patch = None
                 if death_col == "NONE":
-                    msg = (
-                        "death and visit_occurrence are used but not joined. "
-                        "Missing join condition."
-                    )
+                    msg = "death and visit_occurrence are used but not joined. Missing join condition."
                 elif death_col == "INVALID":
-                    msg = (
-                        "Invalid join between death and visit_occurrence. "
-                        "Expected person_id = person_id."
-                    )
+                    msg = "Invalid join between death and visit_occurrence. Expected person_id = person_id."
                 else:
                     msg = (
                         f"Invalid FK join between death and visit_occurrence: "
@@ -254,12 +244,16 @@ class DeathVisitOccurrenceJoinValidationRule(Rule):
                         f"Expected person_id = person_id."
                     )
                     fix_text = (
-                        f"REPLACE: `{death}.{death_col} = {vo}.{vo_col}` "
-                        f"WITH `{death}.person_id = {vo}.person_id`."
+                        f"REPLACE: `{death}.{death_col} = {vo}.{vo_col}` WITH `{death}.person_id = {vo}.person_id`."
                     )
                     patch = build_join_replace_patch(
-                        sql, death, death_col, vo, vo_col,
-                        PERSON_ID, PERSON_ID,
+                        sql,
+                        death,
+                        death_col,
+                        vo,
+                        vo_col,
+                        PERSON_ID,
+                        PERSON_ID,
                         fix_text,
                         aliases=aliases,
                     )

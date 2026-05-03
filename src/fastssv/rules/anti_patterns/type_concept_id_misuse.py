@@ -83,7 +83,7 @@ def _is_join_to_concept_for_labeling(node: exp.Expression, col: exp.Column, alia
     This is almost always for labeling (getting human-readable type names), not filtering.
     """
     # Check if the other side of the equality is concept_id
-    right = node.expression if hasattr(node, 'expression') else None
+    right = node.expression if hasattr(node, "expression") else None
     if isinstance(right, exp.Column):
         _, right_col = resolve_table_col(right, aliases)
         if normalize_name(right_col) == "concept_id":
@@ -94,8 +94,7 @@ def _is_join_to_concept_for_labeling(node: exp.Expression, col: exp.Column, alia
 
 
 def _find_type_concept_id_misuse(
-    tree: exp.Expression,
-    aliases: Dict[str, str]
+    tree: exp.Expression, aliases: Dict[str, str]
 ) -> List[Tuple[str, str, str, str, exp.Column]]:
     """Find misuse of type_concept_id columns.
 
@@ -106,7 +105,7 @@ def _find_type_concept_id_misuse(
 
     for node in tree.walk():
         if isinstance(node, (exp.EQ, exp.In, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.NEQ)):
-            left = node.this if hasattr(node, 'this') else None
+            left = node.this if hasattr(node, "this") else None
 
             if isinstance(left, exp.Column):
                 table, col = resolve_table_col(left, aliases)
@@ -130,7 +129,7 @@ def _find_type_concept_id_misuse(
                             context = "HAVING clause"
                             severity = "error"
                             break
-                        parent = parent.parent if hasattr(parent, 'parent') else None
+                        parent = parent.parent if hasattr(parent, "parent") else None
 
                     if severity != "skip":
                         violations.append((table, normalized_col, context, severity, left))
@@ -164,16 +163,8 @@ class TypeConceptIdMisuseRule(Rule):
         "column; keep `*_type_concept_id` for data-quality and "
         "provenance audits."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_type_concept_id = 32020;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_concept_id = 201820;"
-    )
+    example_bad = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_type_concept_id = 32020;"
+    example_good = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
@@ -210,18 +201,18 @@ class TypeConceptIdMisuseRule(Rule):
                 primary_col = TYPE_TO_PRIMARY_FIELD.get(col)
                 if primary_col is not None:
                     qualifier = col_node.table
-                    new_col_sql = (
-                        f"{qualifier}.{primary_col}" if qualifier else primary_col
-                    )
+                    new_col_sql = f"{qualifier}.{primary_col}" if qualifier else primary_col
                     span = locate(sql, col_node.sql())
                     if span is not None:
                         patch = replace(span, new_col_sql)
 
-                violations.append(self.create_violation(
-                    message=message,
-                    severity=Severity.ERROR if severity == "error" else Severity.WARNING,
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=message,
+                        severity=Severity.ERROR if severity == "error" else Severity.WARNING,
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

@@ -82,6 +82,7 @@ AGGREGATION_TYPES = (exp.Sum, exp.Avg, exp.Min, exp.Max)
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -159,9 +160,7 @@ def _select_has_currency_filter(
     for node in where.find_all((exp.EQ, exp.In)):
         if isinstance(node, exp.EQ):
             for side in (node.this, node.expression):
-                if isinstance(side, exp.Column) and _is_cost_column(
-                    side, aliases, CURRENCY_COLUMN
-                ):
+                if isinstance(side, exp.Column) and _is_cost_column(side, aliases, CURRENCY_COLUMN):
                     return True  # any equality to a single value is fine
 
         elif isinstance(node, exp.In):
@@ -171,9 +170,7 @@ def _select_has_currency_filter(
             if not _is_cost_column(col, aliases, CURRENCY_COLUMN):
                 continue
             # Only safe if exactly one literal value
-            literals = [
-                v for v in (node.expressions or []) if isinstance(v, exp.Literal)
-            ]
+            literals = [v for v in (node.expressions or []) if isinstance(v, exp.Literal)]
             if len(literals) == 1:
                 return True
             # Multiple values → not safe (falls through to violation)
@@ -276,6 +273,7 @@ def _subquery_uses_cost_columns(subquery: exp.Subquery, aliases: Dict[str, str])
     """Check if a subquery references cost table amount columns."""
     # Extract aliases from within the subquery
     from fastssv.core.helpers import extract_aliases
+
     subquery_aliases = extract_aliases(subquery)
 
     for col in subquery.find_all(exp.Column):
@@ -292,6 +290,7 @@ def _subquery_uses_cost_columns(subquery: exp.Subquery, aliases: Dict[str, str])
 
 
 # --- Rule --------------------------------------------------------------------
+
 
 @register
 class CostCurrencyConceptIdRule(Rule):
@@ -321,14 +320,9 @@ class CostCurrencyConceptIdRule(Rule):
         "currency, or aggregate per currency so downstream code can convert "
         "before rolling the figures up further."
     )
-    example_bad = (
-        "SELECT SUM(total_paid) AS paid_total\n"
-        "FROM cost;"
-    )
+    example_bad = "SELECT SUM(total_paid) AS paid_total\nFROM cost;"
     example_good = (
-        "SELECT SUM(total_paid) AS paid_total\n"
-        "FROM cost\n"
-        "WHERE currency_concept_id = 44818668;  -- US Dollar"
+        "SELECT SUM(total_paid) AS paid_total\nFROM cost\nWHERE currency_concept_id = 44818668;  -- US Dollar"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

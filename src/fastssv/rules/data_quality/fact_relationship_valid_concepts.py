@@ -83,6 +83,7 @@ CONCEPT_ID = "concept_id"
 
 # --- Normalized Constants --------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -96,6 +97,7 @@ NORM_FR_CONCEPT_COLUMNS = {_norm(c) for c in FACT_RELATIONSHIP_CONCEPT_COLUMNS}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _normalize_aliases(aliases: Dict[str, str]) -> Dict[str, str]:
     return {_norm(k): _norm(v) for k, v in aliases.items()}
@@ -237,11 +239,7 @@ def _collect_invalid_reason_filters(
 
         table, col_name = resolve_table_col(col, aliases)
 
-        if (
-            _norm(col_name) != NORM_INVALID_REASON
-            or not table
-            or not _is_concept_table(table, aliases)
-        ):
+        if _norm(col_name) != NORM_INVALID_REASON or not table or not _is_concept_table(table, aliases):
             continue
 
         col_alias = _norm(col.table) if col.table else None
@@ -274,6 +272,7 @@ def _find_unfiltered_concept_aliases(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class FactRelationshipValidConceptsRule(Rule):
     """Ensures concept joins from fact_relationship filter by invalid_reason."""
@@ -300,9 +299,7 @@ class FactRelationshipValidConceptsRule(Rule):
         "deprecated concepts are excluded."
     )
     example_bad = (
-        "SELECT fr.fact_id_1\n"
-        "FROM fact_relationship fr\n"
-        "JOIN concept c ON fr.relationship_concept_id = c.concept_id;"
+        "SELECT fr.fact_id_1\nFROM fact_relationship fr\nJOIN concept c ON fr.relationship_concept_id = c.concept_id;"
     )
     example_good = (
         "SELECT fr.fact_id_1\n"
@@ -353,9 +350,7 @@ class FactRelationshipValidConceptsRule(Rule):
                         suggested_fix=self.suggested_fix,
                         details={
                             "concept_aliases": sorted(unfiltered),
-                            "recommendation": (
-                                "Add condition per alias: <alias>.invalid_reason IS NULL"
-                            ),
+                            "recommendation": ("Add condition per alias: <alias>.invalid_reason IS NULL"),
                         },
                     )
                 )

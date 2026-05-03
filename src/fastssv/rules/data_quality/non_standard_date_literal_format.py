@@ -71,14 +71,14 @@ def _try_canonicalize_to_iso(literal: str) -> Optional[str]:
 
 # Patterns for non-standard date formats
 NON_STANDARD_DATE_PATTERNS = [
-    (r'\d{2}-[a-zA-Z]{3}-\d{4}', 'DD-MMM-YYYY (e.g., 01-jan-2011)'),  # 01-jan-2011
-    (r'\d{2}-[a-zA-Z]{3}-\d{2}', 'DD-MMM-YY (e.g., 01-jan-11)'),      # 01-jan-11
-    (r'\d{1,2}/\d{1,2}/\d{2,4}', 'M/D/YYYY or D/M/YYYY (ambiguous)'),  # 01/15/2020 or 15/01/2020
-    (r'\d{8}', 'YYYYMMDD (no separators)'),                            # 20110101
+    (r"\d{2}-[a-zA-Z]{3}-\d{4}", "DD-MMM-YYYY (e.g., 01-jan-2011)"),  # 01-jan-2011
+    (r"\d{2}-[a-zA-Z]{3}-\d{2}", "DD-MMM-YY (e.g., 01-jan-11)"),  # 01-jan-11
+    (r"\d{1,2}/\d{1,2}/\d{2,4}", "M/D/YYYY or D/M/YYYY (ambiguous)"),  # 01/15/2020 or 15/01/2020
+    (r"\d{8}", "YYYYMMDD (no separators)"),  # 20110101
 ]
 
 # ISO 8601 pattern (YYYY-MM-DD)
-ISO_DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+ISO_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _is_non_standard_date_literal(literal_str: str) -> tuple:
@@ -105,9 +105,16 @@ def _is_date_column(col_name: str) -> bool:
     col_lower = normalize_name(col_name)
     # Common date column patterns in OMOP and general SQL
     date_indicators = [
-        '_date', '_datetime', '_time',
-        'date_', 'datetime_', 'time_',
-        'start_date', 'end_date', 'birth_date', 'death_date'
+        "_date",
+        "_datetime",
+        "_time",
+        "date_",
+        "datetime_",
+        "time_",
+        "start_date",
+        "end_date",
+        "birth_date",
+        "death_date",
     ]
     return any(indicator in col_lower for indicator in date_indicators)
 
@@ -173,16 +180,8 @@ class NonStandardDateLiteralFormatRule(Rule):
         "supported dialect. Rewrite literals to the ISO form, optionally "
         "wrapping in DATE '...' to make the type explicit."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_start_date = '01/31/2020';"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_start_date = DATE '2020-01-31';"
-    )
+    example_bad = "SELECT *\nFROM condition_occurrence\nWHERE condition_start_date = '01/31/2020';"
+    example_good = "SELECT *\nFROM condition_occurrence\nWHERE condition_start_date = DATE '2020-01-31';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
@@ -215,18 +214,20 @@ class NonStandardDateLiteralFormatRule(Rule):
                             patch = patch_replace(span, good_lit)
                             break
 
-                violations.append(self.create_violation(
-                    message=(
-                        f"Non-standard date literal format detected: '{literal_value}' ({format_desc}). "
-                        f"Use ISO 8601 format (YYYY-MM-DD) for portability and clarity."
-                    ),
-                    suggested_fix_patch=patch,
-                    details={
-                        "literal": literal_value,
-                        "format": format_desc,
-                        "recommendation": "Use ISO 8601 format: YYYY-MM-DD"
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Non-standard date literal format detected: '{literal_value}' ({format_desc}). "
+                            f"Use ISO 8601 format (YYYY-MM-DD) for portability and clarity."
+                        ),
+                        suggested_fix_patch=patch,
+                        details={
+                            "literal": literal_value,
+                            "format": format_desc,
+                            "recommendation": "Use ISO 8601 format: YYYY-MM-DD",
+                        },
+                    )
+                )
 
         return violations
 

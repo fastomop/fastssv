@@ -74,6 +74,7 @@ CONCEPT_ID_SUFFIX = "_concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -119,15 +120,20 @@ def _is_predicate(node: exp.Expression) -> bool:
     return isinstance(
         node,
         (
-            exp.EQ, exp.NEQ,
-            exp.GT, exp.GTE,
-            exp.LT, exp.LTE,
-            exp.In, exp.Between,
+            exp.EQ,
+            exp.NEQ,
+            exp.GT,
+            exp.GTE,
+            exp.LT,
+            exp.LTE,
+            exp.In,
+            exp.Between,
         ),
     )
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _analyze_concept_ancestor_usage(
     tree: exp.Expression,
@@ -240,19 +246,22 @@ def _detect_violations(
         # Only flag when joined to ancestor_concept_id AND filtering on descendant_concept_id
         # This is the classic reversed join pattern
         if ANCESTOR_CONCEPT_ID in joined_to and DESCENDANT_CONCEPT_ID in filters:
-            violations.append({
-                "alias": ca_alias,
-                "joined_to": ANCESTOR_CONCEPT_ID,
-                "expected": DESCENDANT_CONCEPT_ID,
-                "clinical_table": clinical_table,
-                "clinical_column": clinical_column,
-                "type": "reversed_hierarchy",
-            })
+            violations.append(
+                {
+                    "alias": ca_alias,
+                    "joined_to": ANCESTOR_CONCEPT_ID,
+                    "expected": DESCENDANT_CONCEPT_ID,
+                    "clinical_table": clinical_table,
+                    "clinical_column": clinical_column,
+                    "type": "reversed_hierarchy",
+                }
+            )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptAncestorRollupDirectionRule(Rule):

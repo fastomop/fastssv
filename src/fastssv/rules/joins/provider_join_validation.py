@@ -55,6 +55,7 @@ CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -80,6 +81,7 @@ def _extract_join_conditions(join: exp.Join) -> List[exp.Expression]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _check_provider_join(
     tree: exp.Expression,
@@ -113,7 +115,7 @@ def _check_provider_join(
                 continue
 
             # Check both directions
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
@@ -135,6 +137,7 @@ def _check_provider_join(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ProviderJoinValidationRule(Rule):
     """Validate that clinical tables join to provider via provider_id."""
@@ -150,14 +153,8 @@ class ProviderJoinValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join target WITH `<clinical>.provider_id = provider.provider_id`. Clinical event tables join to provider only via provider_id."
-    example_bad = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN provider p ON co.person_id = p.provider_id;"
-    )
-    example_good = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN provider p ON co.provider_id = p.provider_id;"
-    )
+    example_bad = "SELECT * FROM condition_occurrence co\nJOIN provider p ON co.person_id = p.provider_id;"
+    example_good = "SELECT * FROM condition_occurrence co\nJOIN provider p ON co.provider_id = p.provider_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -194,9 +191,13 @@ class ProviderJoinValidationRule(Rule):
                         ),
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, clinical_table, clinical_col,
-                            provider_table, provider_col,
-                            PROVIDER_ID, PROVIDER_ID,
+                            sql,
+                            clinical_table,
+                            clinical_col,
+                            provider_table,
+                            provider_col,
+                            PROVIDER_ID,
+                            PROVIDER_ID,
                             fix_text,
                             aliases=aliases,
                         ),

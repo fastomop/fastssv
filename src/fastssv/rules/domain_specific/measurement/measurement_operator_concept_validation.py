@@ -75,6 +75,7 @@ OPERATOR_NAMES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -112,12 +113,11 @@ def _extract_int(node: exp.Expression) -> Optional[int]:
 
 
 def _get_valid_operators_string() -> str:
-    return ", ".join(
-        f"{cid} ({OPERATOR_NAMES[cid]})" for cid in sorted(VALID_OPERATORS)
-    )
+    return ", ".join(f"{cid} ({OPERATOR_NAMES[cid]})" for cid in sorted(VALID_OPERATORS))
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -151,11 +151,13 @@ def _find_violations(
 
                 if concept_id not in VALID_OPERATORS:
                     seen.add(key)
-                    issues.append((
-                        concept_id,
-                        f"operator_concept_id compared to invalid value {concept_id}. "
-                        f"Valid operators are: {_get_valid_operators_string()}."
-                    ))
+                    issues.append(
+                        (
+                            concept_id,
+                            f"operator_concept_id compared to invalid value {concept_id}. "
+                            f"Valid operators are: {_get_valid_operators_string()}.",
+                        )
+                    )
 
         # --- IN ---
         elif isinstance(node, exp.In):
@@ -179,16 +181,19 @@ def _find_violations(
                     invalid_values.append(concept_id)
 
             if invalid_values:
-                issues.append((
-                    -1,
-                    f"operator_concept_id IN clause contains invalid values: {invalid_values}. "
-                    f"Valid operators are: {_get_valid_operators_string()}."
-                ))
+                issues.append(
+                    (
+                        -1,
+                        f"operator_concept_id IN clause contains invalid values: {invalid_values}. "
+                        f"Valid operators are: {_get_valid_operators_string()}.",
+                    )
+                )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class MeasurementOperatorConceptValidationRule(Rule):
@@ -197,19 +202,13 @@ class MeasurementOperatorConceptValidationRule(Rule):
     rule_id = "domain_specific.measurement_operator_concept_validation"
     name = "Measurement Operator Concept Validation"
 
-    description = (
-        "Ensures measurement.operator_concept_id uses only valid operator concepts."
-    )
+    description = "Ensures measurement.operator_concept_id uses only valid operator concepts."
 
     severity = Severity.ERROR
     suggested_fix = "REPLACE: the invalid operator concept_id WITH one of: 4172703 (>=), 4172704 (>), 4171754 (<=), 4171755 (=), 4171756 (<). These are the only valid measurement operator concepts in OMOP."
-    example_bad = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE operator_concept_id = 99999;"
-    )
+    example_bad = "SELECT person_id FROM measurement\nWHERE operator_concept_id = 99999;"
     example_good = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE operator_concept_id IN (4172703, 4172704, 4171756, 4171754, 4171755);"
+        "SELECT person_id FROM measurement\nWHERE operator_concept_id IN (4172703, 4172704, 4171756, 4171754, 4171755);"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

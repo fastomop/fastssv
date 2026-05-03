@@ -55,6 +55,7 @@ SOURCE_VOCABULARY_ID = "source_vocabulary_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -181,9 +182,8 @@ def _extract_filter_columns(
 
 # --- Detection -------------------------------------------------------------
 
-def _find_source_code_predicate(
-    tree: exp.Expression, aliases: Dict[str, str]
-) -> Optional[tuple]:
+
+def _find_source_code_predicate(tree: exp.Expression, aliases: Dict[str, str]) -> Optional[tuple]:
     """Return (predicate_sql, qualifier) for the first source_code filter
     on source_to_concept_map. Qualifier is the alias/table prefix (or None
     when unqualified).
@@ -222,9 +222,7 @@ def _find_source_code_predicate(
     return None
 
 
-def _find_violations(
-    sql: str, tree: exp.Expression, aliases: Dict[str, str]
-) -> List[tuple]:
+def _find_violations(sql: str, tree: exp.Expression, aliases: Dict[str, str]) -> List[tuple]:
     """Return list of (message, patch_or_none) tuples."""
     issues: List[tuple] = []
     seen: Set[str] = set()
@@ -274,16 +272,14 @@ def _find_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class SourceToConceptMapValidationRule(Rule):
     """Ensures proper filtering of source_to_concept_map."""
 
     rule_id = "concept_standardization.source_to_concept_map_validation"
     name = "Source to Concept Map Validation"
-    description = (
-        "Requires source_vocabulary_id when filtering source_code "
-        "to avoid ambiguity across vocabularies."
-    )
+    description = "Requires source_vocabulary_id when filtering source_code to avoid ambiguity across vocabularies."
     severity = Severity.WARNING
     suggested_fix = "ADD: `AND source_vocabulary_id = '<vocab>'` alongside any source_code filter. source_code is unique only within a source_vocabulary_id."
     long_description = (
@@ -295,11 +291,7 @@ class SourceToConceptMapValidationRule(Rule):
         "incorrect target_concept_ids. Always pair source_code with "
         "source_vocabulary_id so the match is unambiguous."
     )
-    example_bad = (
-        "SELECT target_concept_id\n"
-        "FROM source_to_concept_map\n"
-        "WHERE source_code = 'R51';"
-    )
+    example_bad = "SELECT target_concept_id\nFROM source_to_concept_map\nWHERE source_code = 'R51';"
     example_good = (
         "SELECT target_concept_id\n"
         "FROM source_to_concept_map\n"

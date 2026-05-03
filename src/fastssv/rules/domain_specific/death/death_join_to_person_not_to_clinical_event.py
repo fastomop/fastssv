@@ -105,6 +105,7 @@ CLINICAL_EVENT_TABLES: Set[str] = {
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _normalize_table_col(table: str, col: str):
     """Normalize table and column names safely."""
     if not table or not col:
@@ -114,17 +115,13 @@ def _normalize_table_col(table: str, col: str):
 
 def _is_death_to_clinical_join(t1: str, t2: str) -> bool:
     """Check if join is between death and a clinical event table."""
-    return (
-        (t1 == DEATH_TABLE and t2 in CLINICAL_EVENT_TABLES)
-        or (t2 == DEATH_TABLE and t1 in CLINICAL_EVENT_TABLES)
-    )
+    return (t1 == DEATH_TABLE and t2 in CLINICAL_EVENT_TABLES) or (t2 == DEATH_TABLE and t1 in CLINICAL_EVENT_TABLES)
 
 
 def _is_valid_person_join(t1: str, c1: str, t2: str, c2: str) -> bool:
     """Check if join includes death.person_id = clinical.person_id."""
-    return (
-        (t1 == DEATH_TABLE and c1 == PERSON_ID_COL and t2 in CLINICAL_EVENT_TABLES and c2 == PERSON_ID_COL)
-        or (t2 == DEATH_TABLE and c2 == PERSON_ID_COL and t1 in CLINICAL_EVENT_TABLES and c1 == PERSON_ID_COL)
+    return (t1 == DEATH_TABLE and c1 == PERSON_ID_COL and t2 in CLINICAL_EVENT_TABLES and c2 == PERSON_ID_COL) or (
+        t2 == DEATH_TABLE and c2 == PERSON_ID_COL and t1 in CLINICAL_EVENT_TABLES and c1 == PERSON_ID_COL
     )
 
 
@@ -178,6 +175,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class DeathJoinToPersonNotToClinicalEventRule(Rule):
     """
@@ -196,13 +194,9 @@ class DeathJoinToPersonNotToClinicalEventRule(Rule):
 
     suggested_fix = "REPLACE: any join on `death.<column>` to a clinical event table WITH `death.person_id = <clinical>.person_id`. death has no FK to clinical events."
     example_bad = (
-        "SELECT d.person_id FROM death d\n"
-        "JOIN condition_occurrence co ON d.death_date = co.condition_start_date;"
+        "SELECT d.person_id FROM death d\nJOIN condition_occurrence co ON d.death_date = co.condition_start_date;"
     )
-    example_good = (
-        "SELECT d.person_id FROM death d\n"
-        "JOIN condition_occurrence co ON d.person_id = co.person_id;"
-    )
+    example_good = "SELECT d.person_id FROM death d\nJOIN condition_occurrence co ON d.person_id = co.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

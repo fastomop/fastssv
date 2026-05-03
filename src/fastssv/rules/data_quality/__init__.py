@@ -20,7 +20,9 @@ from .note_nlp_offset_is_character_position import NoteNlpOffsetIsCharacterPosit
 from .note_nlp_nlp_date_for_temporal_filtering import NoteNlpNlpDateForTemporalFilteringRule
 from .union_vs_union_all_clinical_events import UnionVsUnionAllClinicalEventsRule
 from .episode_requires_concept_filter import EpisodeRequiresConceptFilterRule
-from .fact_relationship_requires_relationship_concept_filter import FactRelationshipRequiresRelationshipConceptFilterRule
+from .fact_relationship_requires_relationship_concept_filter import (
+    FactRelationshipRequiresRelationshipConceptFilterRule,
+)
 from .fact_relationship_valid_concepts import FactRelationshipValidConceptsRule
 from .fact_relationship_no_self_reference import FactRelationshipNoSelfReferenceRule
 from .free_text_column_misuse import FreeTextColumnMisuseRule
@@ -51,4 +53,3 @@ __all__ = [
     "IncorrectPercentileCalculationRule",
     "NonStandardDateLiteralFormatRule",
 ]
-

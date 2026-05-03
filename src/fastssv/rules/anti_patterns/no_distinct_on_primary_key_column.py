@@ -87,16 +87,16 @@ PRIMARY_KEY_COLUMNS: Dict[str, str] = {
 
 # --- Normalized Constants --------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
-NORM_PRIMARY_KEY_COLUMNS = {
-    _norm(k): _norm(v) for k, v in PRIMARY_KEY_COLUMNS.items()
-}
+NORM_PRIMARY_KEY_COLUMNS = {_norm(k): _norm(v) for k, v in PRIMARY_KEY_COLUMNS.items()}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _normalize_aliases(aliases: Dict[str, str]) -> Dict[str, str]:
     return {_norm(k): _norm(v) for k, v in aliases.items()}
@@ -176,6 +176,7 @@ def _analyze_select_columns(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class NoDistinctOnPrimaryKeyColumnRule(Rule):
     """Detects redundant DISTINCT on primary key columns."""
@@ -202,14 +203,8 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
         "of fixing the join. Remove the DISTINCT and, if duplicates do "
         "appear, tighten the join predicate."
     )
-    example_bad = (
-        "SELECT DISTINCT person_id\n"
-        "FROM person;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM person;"
-    )
+    example_bad = "SELECT DISTINCT person_id\nFROM person;"
+    example_good = "SELECT person_id\nFROM person;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -246,9 +241,7 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
                             f"DISTINCT used on primary key column '{pk_col}' in a query with joins. "
                             f"Primary keys are unique by definition. This may indicate incorrect joins."
                         )
-                        suggestion = (
-                            "Review join conditions to ensure they do not introduce duplicates."
-                        )
+                        suggestion = "Review join conditions to ensure they do not introduce duplicates."
                         # When joins are present, the right fix is to repair
                         # the join predicate, not to strip DISTINCT — leave
                         # the patch on FREEFORM auto-default.
@@ -258,14 +251,13 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
                             f"Redundant DISTINCT used on primary key column '{pk_col}'. "
                             f"Primary keys are unique by definition."
                         )
-                        suggestion = (
-                            f"Remove DISTINCT when selecting '{pk_col}'."
-                        )
+                        suggestion = f"Remove DISTINCT when selecting '{pk_col}'."
                         # No joins: a clean REMOVE of `DISTINCT ` (with the
                         # trailing space). Locate is unique-match-only;
                         # ambiguous cases (multiple SELECT DISTINCT in the
                         # same SQL) fall back to FREEFORM via auto-default.
                         from fastssv.core.patch import locate, remove as patch_remove
+
                         span = locate(sql, "DISTINCT ")
                         patch = patch_remove(span) if span is not None else None
 
@@ -277,9 +269,7 @@ class NoDistinctOnPrimaryKeyColumnRule(Rule):
                             details={
                                 "column": pk_col,
                                 "has_joins": has_joins,
-                                "recommendation": (
-                                    "Primary keys are inherently unique; DISTINCT is unnecessary."
-                                ),
+                                "recommendation": ("Primary keys are inherently unique; DISTINCT is unnecessary."),
                             },
                         )
                     )

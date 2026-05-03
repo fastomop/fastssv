@@ -12,31 +12,60 @@ from sqlglot.errors import ParseError
 # These patterns catch syntax that sqlglot's postgres parser rejects
 # (DATEDIFF with a unit argument, GETDATE, TOP N, @variable prefix, etc.).
 _TSQL_INDICATORS = [
-    re.compile(r'@\w+\.'),              # @vocab., @cdm. (table variables)
-    re.compile(r'\bgetdate\s*\('),      # GETDATE()
-    re.compile(r'\bgetutcdate\s*\('),   # GETUTCDATE()
-    re.compile(r'\bdatediff\s*\('),     # DATEDIFF(day, ...)
-    re.compile(r'\bdateadd\s*\('),      # DATEADD(day, ...)
-    re.compile(r'\bisnull\s*\('),       # ISNULL(x, 0)
-    re.compile(r'\blen\s*\('),          # LEN(x) vs. LENGTH(x)
-    re.compile(r'\bcharindex\s*\('),    # CHARINDEX
-    re.compile(r'\btop\s+\d+\s+'),      # TOP N
+    re.compile(r"@\w+\."),  # @vocab., @cdm. (table variables)
+    re.compile(r"\bgetdate\s*\("),  # GETDATE()
+    re.compile(r"\bgetutcdate\s*\("),  # GETUTCDATE()
+    re.compile(r"\bdatediff\s*\("),  # DATEDIFF(day, ...)
+    re.compile(r"\bdateadd\s*\("),  # DATEADD(day, ...)
+    re.compile(r"\bisnull\s*\("),  # ISNULL(x, 0)
+    re.compile(r"\blen\s*\("),  # LEN(x) vs. LENGTH(x)
+    re.compile(r"\bcharindex\s*\("),  # CHARINDEX
+    re.compile(r"\btop\s+\d+\s+"),  # TOP N
 ]
 
 
 # First-token whitelist for `looks_like_prose`. Anything that can legally
 # begin a SQL statement across the dialects we accept goes here.
-_SQL_STATEMENT_STARTERS: frozenset = frozenset({
-    "select", "with", "insert", "update", "delete", "merge",
-    "create", "drop", "alter", "truncate", "rename",
-    "explain", "describe", "desc",
-    "use", "set", "show", "pragma", "values", "table",
-    "begin", "commit", "rollback", "savepoint",
-    "grant", "revoke",
-    "call", "execute", "exec", "declare",
-    "refresh", "analyze", "analyse", "vacuum", "copy",
-    "if",  # T-SQL `IF EXISTS ...`
-})
+_SQL_STATEMENT_STARTERS: frozenset = frozenset(
+    {
+        "select",
+        "with",
+        "insert",
+        "update",
+        "delete",
+        "merge",
+        "create",
+        "drop",
+        "alter",
+        "truncate",
+        "rename",
+        "explain",
+        "describe",
+        "desc",
+        "use",
+        "set",
+        "show",
+        "pragma",
+        "values",
+        "table",
+        "begin",
+        "commit",
+        "rollback",
+        "savepoint",
+        "grant",
+        "revoke",
+        "call",
+        "execute",
+        "exec",
+        "declare",
+        "refresh",
+        "analyze",
+        "analyse",
+        "vacuum",
+        "copy",
+        "if",  # T-SQL `IF EXISTS ...`
+    }
+)
 
 
 def _strip_leading_comments_and_ws(sql: str) -> str:
@@ -47,10 +76,10 @@ def _strip_leading_comments_and_ws(sql: str) -> str:
         stripped = s.lstrip()
         if stripped.startswith("--"):
             nl = stripped.find("\n")
-            s = stripped[nl + 1:] if nl >= 0 else ""
+            s = stripped[nl + 1 :] if nl >= 0 else ""
         elif stripped.startswith("/*"):
             end = stripped.find("*/")
-            s = stripped[end + 2:] if end >= 0 else ""
+            s = stripped[end + 2 :] if end >= 0 else ""
         else:
             return stripped
 
@@ -384,10 +413,7 @@ def is_in_where_or_join_clause(node: exp.Expression) -> bool:
 
 
 def _has_equality_condition(
-    tree: exp.Expression,
-    column_name: str,
-    expected_values: Set[str],
-    require_where_clause: bool = True
+    tree: exp.Expression, column_name: str, expected_values: Set[str], require_where_clause: bool = True
 ) -> bool:
     """Internal: True if there's an equality condition (col = 'value' or
     'value' = col) for ``column_name`` matching one of ``expected_values``.
@@ -414,10 +440,7 @@ def _has_equality_condition(
 
 
 def _has_in_condition(
-    tree: exp.Expression,
-    column_name: str,
-    expected_values: Set[str],
-    require_where_clause: bool = True
+    tree: exp.Expression, column_name: str, expected_values: Set[str], require_where_clause: bool = True
 ) -> bool:
     """Internal: True if there's an IN condition (col IN ('a','b',...)) for
     ``column_name`` matching one of ``expected_values``.
@@ -444,10 +467,7 @@ def _has_in_condition(
 
 
 def has_condition(
-    tree: exp.Expression,
-    column_name: str,
-    expected_values: Set[str],
-    require_where_clause: bool = True
+    tree: exp.Expression, column_name: str, expected_values: Set[str], require_where_clause: bool = True
 ) -> bool:
     """Check if there's a condition (equality or IN) for the given column.
 
@@ -460,9 +480,8 @@ def has_condition(
     Returns:
         True if a matching condition is found
     """
-    return (
-        _has_equality_condition(tree, column_name, expected_values, require_where_clause) or
-        _has_in_condition(tree, column_name, expected_values, require_where_clause)
+    return _has_equality_condition(tree, column_name, expected_values, require_where_clause) or _has_in_condition(
+        tree, column_name, expected_values, require_where_clause
     )
 
 

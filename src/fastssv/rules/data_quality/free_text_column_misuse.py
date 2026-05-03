@@ -43,10 +43,7 @@ from fastssv.core.registry import register
 # in the violation message and the recommended replacement (when relevant).
 FREE_TEXT_FIELDS: Dict[Tuple[str, str], Dict[str, object]] = {
     ("condition_occurrence", "stop_reason"): {
-        "description": (
-            "free-text explanation for why a condition ended "
-            "(e.g. 'Patient Improved')"
-        ),
+        "description": ("free-text explanation for why a condition ended (e.g. 'Patient Improved')"),
         "replacement": "condition_concept_id",
         "flag_any_join": False,
     },
@@ -80,12 +77,21 @@ CONCEPT_TABLE = "concept"
 # CAST(<col> AS <type>) targets that imply numeric semantics — flagged on
 # every registered free-text column.
 NUMERIC_CAST_TYPES = {
-    "INT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT",
-    "NUMERIC", "DECIMAL", "FLOAT", "DOUBLE", "REAL",
+    "INT",
+    "INTEGER",
+    "BIGINT",
+    "SMALLINT",
+    "TINYINT",
+    "NUMERIC",
+    "DECIMAL",
+    "FLOAT",
+    "DOUBLE",
+    "REAL",
 }
 
 
 # --- Helpers --------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -170,6 +176,7 @@ def _is_numeric_literal(node: exp.Expression) -> bool:
 
 
 # --- Detection ------------------------------------------------------------
+
 
 def _detect_concept_joins(
     select: exp.Select,
@@ -256,7 +263,11 @@ def _detect_numeric_casts(
         target_type = cast.args.get("to")
         if target_type is None:
             continue
-        type_name = (target_type.this.name if hasattr(target_type, "this") and hasattr(target_type.this, "name") else str(target_type)).upper()
+        type_name = (
+            target_type.this.name
+            if hasattr(target_type, "this") and hasattr(target_type.this, "name")
+            else str(target_type)
+        ).upper()
         # exp.DataType.Type members (e.g. "INT", "BIGINT")
         if type_name not in NUMERIC_CAST_TYPES:
             continue
@@ -310,6 +321,7 @@ def _detect_numeric_comparisons(
 
 # --- Rule -----------------------------------------------------------------
 
+
 @register
 class FreeTextColumnMisuseRule(Rule):
     """Free-text VARCHAR fields must not be joined to concept or compared numerically."""
@@ -340,14 +352,10 @@ class FreeTextColumnMisuseRule(Rule):
     )
 
     example_bad = (
-        "SELECT co.person_id\n"
-        "FROM condition_occurrence co\n"
-        "JOIN concept c ON co.stop_reason = c.concept_name;"
+        "SELECT co.person_id\nFROM condition_occurrence co\nJOIN concept c ON co.stop_reason = c.concept_name;"
     )
     example_good = (
-        "SELECT co.person_id\n"
-        "FROM condition_occurrence co\n"
-        "JOIN concept c ON co.condition_concept_id = c.concept_id;"
+        "SELECT co.person_id\nFROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -420,9 +428,7 @@ class FreeTextColumnMisuseRule(Rule):
                         )
 
                 # 2) Numeric comparison against free-text column
-                for table_norm, col_norm, literal in _detect_numeric_comparisons(
-                    select, aliases
-                ):
+                for table_norm, col_norm, literal in _detect_numeric_comparisons(select, aliases):
                     key = ("numeric", table_norm, col_norm, literal)
                     if key in seen:
                         continue

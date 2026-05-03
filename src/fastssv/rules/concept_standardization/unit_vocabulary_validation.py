@@ -94,6 +94,7 @@ VALID_UNIT_VOCABULARY_NORM = normalize_name(VALID_UNIT_VOCABULARY)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
 
@@ -130,6 +131,7 @@ def _is_vocabulary_id_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
 
 
 # --- Core detection --------------------------------------------------------
+
 
 def _is_exploratory_vocabulary_analysis(
     tree: exp.Expression,
@@ -233,10 +235,10 @@ def _find_vocabulary_filters(
     concept_alias_norm = _norm(concept_alias)
 
     target_nodes = (
-        list(tree.find_all(exp.EQ)) +
-        list(tree.find_all(exp.NEQ)) +
-        list(tree.find_all(exp.In)) +
-        list(tree.find_all(exp.Is))
+        list(tree.find_all(exp.EQ))
+        + list(tree.find_all(exp.NEQ))
+        + list(tree.find_all(exp.In))
+        + list(tree.find_all(exp.Is))
     )
 
     for node in target_nodes:
@@ -298,6 +300,7 @@ def _find_vocabulary_filters(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class UnitVocabularyValidationRule(Rule):
@@ -380,9 +383,7 @@ class UnitVocabularyValidationRule(Rule):
                             f"if used in production queries."
                         )
                         severity = Severity.WARNING
-                        suggested_fix = (
-                            f"For production queries, use vocabulary_id = '{VALID_UNIT_VOCABULARY}'"
-                        )
+                        suggested_fix = f"For production queries, use vocabulary_id = '{VALID_UNIT_VOCABULARY}'"
                     else:
                         # Production filtering - ERROR severity
                         message = (
@@ -392,9 +393,7 @@ class UnitVocabularyValidationRule(Rule):
                             f"don't belong to {vocab_value} vocabulary."
                         )
                         severity = Severity.ERROR
-                        suggested_fix = (
-                            f"Replace with vocabulary_id = '{VALID_UNIT_VOCABULARY}' or remove the filter"
-                        )
+                        suggested_fix = f"Replace with vocabulary_id = '{VALID_UNIT_VOCABULARY}' or remove the filter"
 
                     # Build a mechanical REPLACE patch swapping the bad
                     # vocab literal with 'UCUM' inside the offending

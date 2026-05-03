@@ -37,6 +37,7 @@ from fastssv.schemas import (
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _get_literal_type(node: exp.Expression) -> Optional[str]:
     if isinstance(node, exp.Literal):
         if node.is_int:
@@ -68,6 +69,7 @@ def _is_in_join(node: exp.Expression) -> bool:
 
 
 # --- JOIN VALIDATION -------------------------------------------------------
+
 
 def _find_join_type_mismatches(
     tree: exp.Expression,
@@ -118,6 +120,7 @@ def _find_join_type_mismatches(
 
 
 # --- WHERE VALIDATION ------------------------------------------------------
+
 
 def _collect_in_types(node: exp.In) -> Set[str]:
     types: Set[str] = set()
@@ -199,6 +202,7 @@ def _find_literal_type_mismatches(
 
 # --- RULE ------------------------------------------------------------------
 
+
 @register
 class ColumnTypeValidationRule(Rule):
     """Robust validation for column type compatibility.
@@ -226,16 +230,8 @@ class ColumnTypeValidationRule(Rule):
         "compatible columns or CAST explicitly when you need cross-type "
         "comparison."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM person p\n"
-        "JOIN condition_occurrence co ON p.person_id = co.condition_source_value;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM person p\n"
-        "JOIN condition_occurrence co ON p.person_id = co.person_id;"
-    )
+    example_bad = "SELECT *\nFROM person p\nJOIN condition_occurrence co ON p.person_id = co.condition_source_value;"
+    example_good = "SELECT *\nFROM person p\nJOIN condition_occurrence co ON p.person_id = co.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -252,28 +248,27 @@ class ColumnTypeValidationRule(Rule):
 
             # --- JOIN mismatches ---
             for lt, lc, ltype, rt, rc, rtype in _find_join_type_mismatches(tree, aliases):
-                violations.append(self.create_violation(
-                    message=(
-                        f"Type mismatch in JOIN: {lt}.{lc} ({ltype}) "
-                        f"vs {rt}.{rc} ({rtype})"
-                    ),
-                    severity=Severity.ERROR,
-                    suggested_fix=(
-                        "CAST: one side to match the other's type "
-                        "(`CAST(<col> AS <type>)`), OR REPLACE one side WITH a column "
-                        "of the matching type."
-                    ),
-                    details={
-                        "layer": "schema",
-                        "type": "type_mismatch",
-                        "left_table": lt,
-                        "left_column": lc,
-                        "left_type": ltype,
-                        "right_table": rt,
-                        "right_column": rc,
-                        "right_type": rtype,
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=(f"Type mismatch in JOIN: {lt}.{lc} ({ltype}) vs {rt}.{rc} ({rtype})"),
+                        severity=Severity.ERROR,
+                        suggested_fix=(
+                            "CAST: one side to match the other's type "
+                            "(`CAST(<col> AS <type>)`), OR REPLACE one side WITH a column "
+                            "of the matching type."
+                        ),
+                        details={
+                            "layer": "schema",
+                            "type": "type_mismatch",
+                            "left_table": lt,
+                            "left_column": lc,
+                            "left_type": ltype,
+                            "right_table": rt,
+                            "right_column": rc,
+                            "right_type": rtype,
+                        },
+                    )
+                )
 
             # --- WHERE mismatches ---
             for table, col, col_type, lit_type in _find_literal_type_mismatches(tree, aliases):
@@ -284,27 +279,27 @@ class ColumnTypeValidationRule(Rule):
                         f"column is filtered by incompatible value types."
                     )
                 else:
-                    message = (
-                        f"Type mismatch: {table}.{col} ({col_type}) vs {lit_type} literal."
-                    )
+                    message = f"Type mismatch: {table}.{col} ({col_type}) vs {lit_type} literal."
 
-                violations.append(self.create_violation(
-                    message=message,
-                    severity=Severity.ERROR,
-                    suggested_fix=(
-                        "CAST: the literal to the column's declared type, OR REPLACE WITH "
-                        "a literal of the matching type. Mixing literal types on the same "
-                        "column usually indicates a logic error."
-                    ),
-                    details={
-                        "layer": "schema",
-                        "type": "type_mismatch" if lit_type != "mixed" else "conflicting_filters",
-                        "table": table,
-                        "column": col,
-                        "column_type": col_type,
-                        "literal_type": lit_type,
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=message,
+                        severity=Severity.ERROR,
+                        suggested_fix=(
+                            "CAST: the literal to the column's declared type, OR REPLACE WITH "
+                            "a literal of the matching type. Mixing literal types on the same "
+                            "column usually indicates a logic error."
+                        ),
+                        details={
+                            "layer": "schema",
+                            "type": "type_mismatch" if lit_type != "mixed" else "conflicting_filters",
+                            "table": table,
+                            "column": col,
+                            "column_type": col_type,
+                            "literal_type": lit_type,
+                        },
+                    )
+                )
 
         return violations
 

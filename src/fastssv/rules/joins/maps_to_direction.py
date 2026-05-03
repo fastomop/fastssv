@@ -46,12 +46,7 @@ def _uses_maps_to_relationship(tree: exp.Expression) -> bool:
     if not has_table_reference(tree, "concept_relationship"):
         return False
 
-    return has_condition(
-        tree,
-        "relationship_id",
-        {normalize_name(MAPS_TO_RELATIONSHIP)},
-        require_where_clause=True
-    )
+    return has_condition(tree, "relationship_id", {normalize_name(MAPS_TO_RELATIONSHIP)}, require_where_clause=True)
 
 
 def _verify_maps_to_direction(tree: exp.Expression, aliases: Dict[str, str]):
@@ -76,20 +71,24 @@ def _verify_maps_to_direction(tree: exp.Expression, aliases: Dict[str, str]):
         # This would be incorrect - concept_id_1 should be the source
         if lt == "concept_relationship" and lc == "concept_id_1":
             if rc in standard_fields:
-                warnings.append((
-                    f"'Maps to' relationship may be used in reverse direction. "
-                    f"concept_relationship.concept_id_1 (source) is joined to {rt}.{rc} "
-                    f"which is a standard concept field. Consider using concept_id_2 instead.",
-                    (lt, lc, rt, rc),
-                ))
+                warnings.append(
+                    (
+                        f"'Maps to' relationship may be used in reverse direction. "
+                        f"concept_relationship.concept_id_1 (source) is joined to {rt}.{rc} "
+                        f"which is a standard concept field. Consider using concept_id_2 instead.",
+                        (lt, lc, rt, rc),
+                    )
+                )
         elif rt == "concept_relationship" and rc == "concept_id_1":
             if lc in standard_fields:
-                warnings.append((
-                    f"'Maps to' relationship may be used in reverse direction. "
-                    f"concept_relationship.concept_id_1 (source) is joined to {lt}.{lc} "
-                    f"which is a standard concept field. Consider using concept_id_2 instead.",
-                    (lt, lc, rt, rc),
-                ))
+                warnings.append(
+                    (
+                        f"'Maps to' relationship may be used in reverse direction. "
+                        f"concept_relationship.concept_id_1 (source) is joined to {lt}.{lc} "
+                        f"which is a standard concept field. Consider using concept_id_2 instead.",
+                        (lt, lc, rt, rc),
+                    )
+                )
 
     return warnings
 
@@ -106,6 +105,7 @@ class MapsToDirectionRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "REPLACE: the side that joins to a standard concept_id with `cr.concept_id_2`, and the side that joins to a source concept_id with `cr.concept_id_1`. concept_id_1 = source, concept_id_2 = standard. Reverse if you have them swapped."
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
@@ -123,33 +123,43 @@ class MapsToDirectionRule(Rule):
 
             for warning, (lt, lc, rt, rc) in warnings:
                 fix_text = (
-                    f"REPLACE: `{lt}.{lc} = {rt}.{rc}` WITH "
-                    f"`{lt}.concept_id_2 = {rt}.{rc}`."
-                ) if lt == "concept_relationship" else (
-                    f"REPLACE: `{lt}.{lc} = {rt}.{rc}` WITH "
-                    f"`{lt}.{lc} = {rt}.concept_id_2`."
+                    (f"REPLACE: `{lt}.{lc} = {rt}.{rc}` WITH `{lt}.concept_id_2 = {rt}.{rc}`.")
+                    if lt == "concept_relationship"
+                    else (f"REPLACE: `{lt}.{lc} = {rt}.{rc}` WITH `{lt}.{lc} = {rt}.concept_id_2`.")
                 )
                 # Replace `concept_id_1` with `concept_id_2` on the
                 # concept_relationship side, keeping the standard-field side.
                 if lt == "concept_relationship":
                     patch = build_join_replace_patch(
-                        sql, lt, lc, rt, rc,
-                        "concept_id_2", rc,
+                        sql,
+                        lt,
+                        lc,
+                        rt,
+                        rc,
+                        "concept_id_2",
+                        rc,
                         fix_text,
                         aliases=aliases,
                     )
                 else:
                     patch = build_join_replace_patch(
-                        sql, lt, lc, rt, rc,
-                        lc, "concept_id_2",
+                        sql,
+                        lt,
+                        lc,
+                        rt,
+                        rc,
+                        lc,
+                        "concept_id_2",
                         fix_text,
                         aliases=aliases,
                     )
 
-                violations.append(self.create_violation(
-                    message=warning,
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=warning,
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

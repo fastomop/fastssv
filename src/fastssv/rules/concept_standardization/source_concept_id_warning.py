@@ -134,10 +134,7 @@ def _is_source_exploration_query(tree: exp.Expression) -> bool:
         for col in expr.find_all(exp.Column):
             name = normalize_name(col.name)
 
-            if (
-                "source_value" in name
-                or name.endswith("_source_concept_id")
-            ):
+            if "source_value" in name or name.endswith("_source_concept_id"):
                 return True
 
     return False
@@ -165,16 +162,8 @@ class SourceConceptIdWarningRule(Rule):
         "source vocabulary. Use the paired *_concept_id (standard) column "
         "for any cohort or analytical query."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_source_concept_id = 44831230;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_concept_id = 201820;"
-    )
+    example_bad = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_source_concept_id = 44831230;"
+    example_good = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -208,6 +197,7 @@ class SourceConceptIdWarningRule(Rule):
                     # Replace case-insensitively while preserving the rest
                     # of the predicate text.
                     import re as _re
+
                     new_text = _re.sub(
                         _re.escape(source_col),
                         standard_col,

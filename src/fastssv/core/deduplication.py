@@ -27,6 +27,7 @@ def _normalize_issue(violation: RuleViolation) -> str:
     if "does not exist in table" in violation.message.lower():
         # Extract table and column from message
         import re
+
         match = re.search(r"column\s+'([^']+)'.*table\s+'([^']+)'", violation.message.lower())
         if match:
             column, table = match.groups()
@@ -93,8 +94,8 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
             key=lambda v: (
                 0 if v.severity.value == "error" else 1,  # ERROR first
                 -len(v.rule_id),  # Longer rule_id = more specific
-                violations.index(v)  # Original order
-            )
+                violations.index(v),  # Original order
+            ),
         )[0]
 
         deduplicated.append(best)

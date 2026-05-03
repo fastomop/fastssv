@@ -57,6 +57,7 @@ def _build_patch(sql: str, predicate_sql: str, col_qualified_sql: str, source_co
         f"{replacement_col} = <expected_concept_id>",
     )
 
+
 # Pairs of (table_name, column_name) for source value columns
 SOURCE_VALUE_COLUMNS = {
     # Clinical event tables
@@ -108,11 +109,7 @@ SOURCE_VALUE_COLUMNS = {
 STRING_MATCH_EXP_TYPES = (exp.Like, exp.ILike, exp.RegexpLike)
 
 
-def _check_string_match_violations(
-    sql: str,
-    tree: exp.Expression,
-    aliases: Dict[str, str]
-) -> List[RuleViolation]:
+def _check_string_match_violations(sql: str, tree: exp.Expression, aliases: Dict[str, str]) -> List[RuleViolation]:
     """Check for LIKE/ILIKE/REGEXP violations on source_value columns."""
     violations: List[RuleViolation] = []
 
@@ -141,7 +138,7 @@ def _check_string_match_violations(
         key = (table, col)
 
         not_prefix = "NOT " if is_not else ""
-        op_name = check_node.key.upper() if hasattr(check_node, 'key') else "LIKE"
+        op_name = check_node.key.upper() if hasattr(check_node, "key") else "LIKE"
 
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
@@ -150,23 +147,21 @@ def _check_string_match_violations(
             patch = None
             if not is_not and isinstance(check_node, (exp.Like, exp.ILike)):
                 patch = _build_patch(sql, check_node.sql(), left.sql(), col)
-            violations.append(RuleViolation(
-                rule_id="anti_patterns.no_string_identification",
-                severity=Severity.ERROR,
-                message=f"String matching on source value: {left.sql()} {not_prefix}{op_name} {right.sql()}",
-                suggested_fix="REPLACE: `<table>.<col>_source_value LIKE '<text>'` WITH `<table>.<col>_concept_id = <concept_id>` (or `<col>_source_concept_id = <concept_id>`). Don't string-match source values.",
-                details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}{op_name}"},
-                suggested_fix_patch=patch,
-            ))
+            violations.append(
+                RuleViolation(
+                    rule_id="anti_patterns.no_string_identification",
+                    severity=Severity.ERROR,
+                    message=f"String matching on source value: {left.sql()} {not_prefix}{op_name} {right.sql()}",
+                    suggested_fix="REPLACE: `<table>.<col>_source_value LIKE '<text>'` WITH `<table>.<col>_concept_id = <concept_id>` (or `<col>_source_concept_id = <concept_id>`). Don't string-match source values.",
+                    details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}{op_name}"},
+                    suggested_fix_patch=patch,
+                )
+            )
 
     return violations
 
 
-def _check_equality_violations(
-    sql: str,
-    tree: exp.Expression,
-    aliases: Dict[str, str]
-) -> List[RuleViolation]:
+def _check_equality_violations(sql: str, tree: exp.Expression, aliases: Dict[str, str]) -> List[RuleViolation]:
     """Check for equality comparison violations (col = 'string') on source_value columns."""
     violations: List[RuleViolation] = []
 
@@ -187,22 +182,21 @@ def _check_equality_violations(
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
             patch = _build_patch(sql, eq.sql(), left.sql(), col)
-            violations.append(RuleViolation(
-                rule_id="anti_patterns.no_string_identification",
-                severity=Severity.ERROR,
-                message=f"String equality on source value: {left.sql()} = {right.sql()}",
-                suggested_fix="REPLACE: `<table>.<col>_source_value = '<text>'` WITH `<table>.<col>_concept_id = <concept_id>`. Use the structured concept_id, not the raw source string.",
-                details={"column": f"{table}.{col}" if table else col, "operation": "="},
-                suggested_fix_patch=patch,
-            ))
+            violations.append(
+                RuleViolation(
+                    rule_id="anti_patterns.no_string_identification",
+                    severity=Severity.ERROR,
+                    message=f"String equality on source value: {left.sql()} = {right.sql()}",
+                    suggested_fix="REPLACE: `<table>.<col>_source_value = '<text>'` WITH `<table>.<col>_concept_id = <concept_id>`. Use the structured concept_id, not the raw source string.",
+                    details={"column": f"{table}.{col}" if table else col, "operation": "="},
+                    suggested_fix_patch=patch,
+                )
+            )
 
     return violations
 
 
-def _check_in_clause_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str]
-) -> List[RuleViolation]:
+def _check_in_clause_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[RuleViolation]:
     """Check for IN clause violations (col IN ('val1', 'val2')) on source_value columns."""
     violations: List[RuleViolation] = []
 
@@ -235,13 +229,15 @@ def _check_in_clause_violations(
 
         # Check if it's a source_value column
         if key in SOURCE_VALUE_COLUMNS or col.endswith("_source_value"):
-            violations.append(RuleViolation(
-                rule_id="anti_patterns.no_string_identification",
-                severity=Severity.ERROR,
-                message=f"String IN clause on source value: {col_expr.sql()} {not_prefix}IN ({values_str})",
-                suggested_fix="REPLACE: `<table>.<col>_source_value IN ('<text1>', '<text2>', ...)` WITH `<table>.<col>_concept_id IN (<concept_id1>, <concept_id2>, ...)`. Use the structured concept_id list, not raw source strings.",
-                details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}IN"},
-            ))
+            violations.append(
+                RuleViolation(
+                    rule_id="anti_patterns.no_string_identification",
+                    severity=Severity.ERROR,
+                    message=f"String IN clause on source value: {col_expr.sql()} {not_prefix}IN ({values_str})",
+                    suggested_fix="REPLACE: `<table>.<col>_source_value IN ('<text1>', '<text2>', ...)` WITH `<table>.<col>_concept_id IN (<concept_id1>, <concept_id2>, ...)`. Use the structured concept_id list, not raw source strings.",
+                    details={"column": f"{table}.{col}" if table else col, "operation": f"{not_prefix}IN"},
+                )
+            )
 
     return violations
 
@@ -267,16 +263,8 @@ class NoStringIdentificationRule(Rule):
         "*_concept_id (standard) or *_source_concept_id (source-mapped) "
         "column for all concept-level filtering."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_source_value LIKE '%diabetes%';"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_concept_id = 201820;"
-    )
+    example_bad = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_source_value LIKE '%diabetes%';"
+    example_good = "SELECT person_id\nFROM condition_occurrence\nWHERE condition_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""

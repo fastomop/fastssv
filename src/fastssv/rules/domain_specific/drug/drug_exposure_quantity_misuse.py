@@ -58,6 +58,7 @@ DATE_FUNCTIONS = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -126,6 +127,7 @@ def _get_function_name(func: exp.Expression) -> str:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
     issues = []
     seen: Set[str] = set()
@@ -160,7 +162,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
         while parent:
             if id(parent) in flagged_nodes:
                 break
-            parent = parent.parent if hasattr(parent, 'parent') else None
+            parent = parent.parent if hasattr(parent, "parent") else None
         else:
             # Not inside a flagged node, check it
             if _contains_quantity(node, aliases) and _contains_date_column(node, aliases):
@@ -180,7 +182,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
         while parent:
             if id(parent) in flagged_nodes:
                 break
-            parent = parent.parent if hasattr(parent, 'parent') else None
+            parent = parent.parent if hasattr(parent, "parent") else None
         else:
             # Not inside a flagged node, check it
             if _contains_quantity(interval, aliases):
@@ -188,8 +190,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                 if key not in seen:
                     seen.add(key)
                     issues.append(
-                        "drug_exposure.quantity used in INTERVAL expression. "
-                        "Quantity is not duration. Use days_supply."
+                        "drug_exposure.quantity used in INTERVAL expression. Quantity is not duration. Use days_supply."
                     )
 
     return issues
@@ -197,27 +198,18 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugExposureQuantityMisuseRule(Rule):
     """Detects misuse of quantity as duration."""
 
     rule_id = "domain_specific.drug_exposure_quantity_misuse"
     name = "Drug Exposure Quantity Misuse"
-    description = (
-        "Detects use of drug_exposure.quantity as duration in date logic."
-    )
+    description = "Detects use of drug_exposure.quantity as duration in date logic."
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `<start_date> + de.quantity` (or quantity-as-duration arithmetic) WITH `de.drug_exposure_start_date + de.days_supply`, OR use date_diff(de.drug_exposure_end_date, de.drug_exposure_start_date)."
-    example_bad = (
-        "SELECT person_id,\n"
-        "       drug_exposure_start_date + quantity AS end_date\n"
-        "FROM drug_exposure;"
-    )
-    example_good = (
-        "SELECT person_id,\n"
-        "       drug_exposure_start_date + days_supply AS end_date\n"
-        "FROM drug_exposure;"
-    )
+    example_bad = "SELECT person_id,\n       drug_exposure_start_date + quantity AS end_date\nFROM drug_exposure;"
+    example_good = "SELECT person_id,\n       drug_exposure_start_date + days_supply AS end_date\nFROM drug_exposure;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -80,6 +80,7 @@ CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -131,6 +132,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect(
     tree: exp.Expression,
@@ -212,9 +214,7 @@ def _detect(
 
         # --- cohort ↔ person -----------------------------------------------
         if (_is_cohort(lt) and _is_person(rt)) or (_is_cohort(rt) and _is_person(lt)):
-            if (lc == SUBJECT_ID and rc == PERSON_ID) or (
-                rc == SUBJECT_ID and lc == PERSON_ID
-            ):
+            if (lc == SUBJECT_ID and rc == PERSON_ID) or (rc == SUBJECT_ID and lc == PERSON_ID):
                 cohort_to_person = True
 
         # --- person ↔ clinical ---------------------------------------------
@@ -228,7 +228,6 @@ def _detect(
 
     # --- Final evaluation --------------------------------------------------
     for table, s in status.items():
-
         # valid via PERSON bridge
         if cohort_to_person and person_to_clinical.get(table):
             s["via_person_valid"] = True
@@ -256,6 +255,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class CohortClinicalJoinValidationRule(Rule):
     """
@@ -270,21 +270,14 @@ class CohortClinicalJoinValidationRule(Rule):
     name = "Cohort to Clinical Table Join Validation"
 
     description = (
-        "Ensures cohort joins to clinical tables using subject_id = person_id, "
-        "either directly or via person table."
+        "Ensures cohort joins to clinical tables using subject_id = person_id, either directly or via person table."
     )
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join target WITH `cohort.subject_id = <clinical>.person_id` (cohort.subject_id holds person_id values), OR go via person: `JOIN person p ON cohort.subject_id = p.person_id JOIN <clinical> c ON p.person_id = c.person_id`."
-    example_bad = (
-        "SELECT * FROM cohort c\n"
-        "JOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;"
-    )
-    example_good = (
-        "SELECT * FROM cohort c\n"
-        "JOIN condition_occurrence co ON c.subject_id = co.person_id;"
-    )
+    example_bad = "SELECT * FROM cohort c\nJOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;"
+    example_good = "SELECT * FROM cohort c\nJOIN condition_occurrence co ON c.subject_id = co.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -305,12 +298,8 @@ class CohortClinicalJoinValidationRule(Rule):
 
             for clinical_table, errors in errors_by_table.items():
                 for cohort_tbl, cohort_col, clin_tbl, clin_col in errors:
-
                     if cohort_col == "NONE":
-                        msg = (
-                            f"cohort and {clinical_table} are used but not joined. "
-                            f"Missing join condition."
-                        )
+                        msg = f"cohort and {clinical_table} are used but not joined. Missing join condition."
                     elif cohort_col == "INVALID":
                         msg = (
                             f"Invalid join between cohort and {clinical_table}. "

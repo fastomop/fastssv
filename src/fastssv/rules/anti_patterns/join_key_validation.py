@@ -100,11 +100,12 @@ INCOMPATIBLE_COLUMN_GROUPS: List[Set[str]] = [
     {"visit_occurrence_id", "concept_id"},
     {"provider_id", "concept_id"},
     {"care_site_id", "concept_id"},  # care_site is a physical entity, not a concept
-    {"location_id", "concept_id"},    # location is a physical entity, not a concept
+    {"location_id", "concept_id"},  # location is a physical entity, not a concept
 ]
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -158,6 +159,7 @@ def _is_suspicious(col1: str, col2: str) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _extract_join_conditions(tree: exp.Expression) -> List[Tuple[exp.Column, exp.Column, str]]:
     """Extract column = column join conditions."""
     joins = []
@@ -173,6 +175,7 @@ def _extract_join_conditions(tree: exp.Expression) -> List[Tuple[exp.Column, exp
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class JoinKeyValidationRule(Rule):
@@ -199,11 +202,7 @@ class JoinKeyValidationRule(Rule):
         "not a real relationship. The result is garbage rows. Pair keys "
         "with their canonical foreign-key counterparts."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM person p\n"
-        "JOIN concept c ON p.person_id = c.concept_id;"
-    )
+    example_bad = "SELECT *\nFROM person p\nJOIN concept c ON p.person_id = c.concept_id;"
     example_good = (
         "SELECT p.person_id, c.concept_name AS gender\n"
         "FROM person p\n"

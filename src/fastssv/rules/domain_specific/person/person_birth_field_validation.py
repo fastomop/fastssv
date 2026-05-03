@@ -51,6 +51,7 @@ from fastssv.core.registry import register
 
 # --- Field Configuration ---------------------------------------------------
 
+
 class FieldConfig:
     """Configuration for birth field validation."""
 
@@ -98,6 +99,7 @@ BIRTH_FIELD_CONFIGS = {
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -151,6 +153,7 @@ def _safe_sql(node: exp.Expression, max_len: int = 50) -> str:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -210,11 +213,13 @@ def _find_violations(
                 key = f"{field_name}|between_invalid_range|{low}|{high}"
                 if key not in seen:
                     seen.add(key)
-                    issues.append((
-                        field_name,
-                        f"{field_name} BETWEEN {low} AND {high} has invalid range (low > high)",
-                        config.severity,
-                    ))
+                    issues.append(
+                        (
+                            field_name,
+                            f"{field_name} BETWEEN {low} AND {high} has invalid range (low > high)",
+                            config.severity,
+                        )
+                    )
 
             for bound_val in [low, high]:
                 if bound_val is None:
@@ -269,8 +274,7 @@ def _find_violations(
                     parts.append(f"non-integer values: {non_int_values}")
 
                 error_msg = (
-                    f"{field_name} IN clause contains {', '.join(parts)}. "
-                    f"Valid range is {config.min_val} to {max_val}."
+                    f"{field_name} IN clause contains {', '.join(parts)}. Valid range is {config.min_val} to {max_val}."
                 )
 
                 issues.append((field_name, error_msg, config.severity))
@@ -279,6 +283,7 @@ def _find_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class PersonBirthFieldValidationRule(Rule):
@@ -295,14 +300,8 @@ class PersonBirthFieldValidationRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: implausible birth-field literals WITH valid ranges: year_of_birth BETWEEN 1900 AND <current_year>, month_of_birth BETWEEN 1 AND 12, day_of_birth BETWEEN 1 AND 31."
-    example_bad = (
-        "SELECT person_id FROM person\n"
-        "WHERE year_of_birth = 1800;"
-    )
-    example_good = (
-        "SELECT person_id FROM person\n"
-        "WHERE year_of_birth BETWEEN 1900 AND 2024;"
-    )
+    example_bad = "SELECT person_id FROM person\nWHERE year_of_birth = 1800;"
+    example_good = "SELECT person_id FROM person\nWHERE year_of_birth BETWEEN 1900 AND 2024;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

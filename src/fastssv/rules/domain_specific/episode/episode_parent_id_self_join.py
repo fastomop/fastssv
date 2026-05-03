@@ -99,6 +99,7 @@ EPISODE_ID_COL = "episode_id"
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -116,11 +117,7 @@ def _is_episode_id(col: Optional[str]) -> bool:
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -140,15 +137,13 @@ def _resolve_column(
 
 
 def _is_valid_self_join(
-    t1: str, c1: str,
-    t2: str, c2: str,
+    t1: str,
+    c1: str,
+    t2: str,
+    c2: str,
 ) -> bool:
-    return (
-        (_is_episode(t1) and _is_episode_parent_id(c1)
-         and _is_episode(t2) and _is_episode_id(c2))
-        or
-        (_is_episode(t1) and _is_episode_id(c1)
-         and _is_episode(t2) and _is_episode_parent_id(c2))
+    return (_is_episode(t1) and _is_episode_parent_id(c1) and _is_episode(t2) and _is_episode_id(c2)) or (
+        _is_episode(t1) and _is_episode_id(c1) and _is_episode(t2) and _is_episode_parent_id(c2)
     )
 
 
@@ -204,9 +199,7 @@ def _check_joins(tree: exp.Expression) -> List[str]:
         if not on_clause:
             continue
 
-        has_parent_id, has_valid, has_invalid = _analyze_conditions(
-            on_clause, aliases, cte_names
-        )
+        has_parent_id, has_valid, has_invalid = _analyze_conditions(on_clause, aliases, cte_names)
 
         if has_parent_id and (has_invalid or not has_valid):
             issues.append(
@@ -217,9 +210,7 @@ def _check_joins(tree: exp.Expression) -> List[str]:
 
     # --- Implicit JOINs via WHERE ---
     for where in tree.find_all(exp.Where):
-        has_parent_id, has_valid, has_invalid = _analyze_conditions(
-            where.this, aliases, cte_names
-        )
+        has_parent_id, has_valid, has_invalid = _analyze_conditions(where.this, aliases, cte_names)
 
         if has_parent_id and (has_invalid or not has_valid):
             issues.append(
@@ -232,6 +223,7 @@ def _check_joins(tree: exp.Expression) -> List[str]:
 
 
 # --- Rule --------------------------------------------------------------------
+
 
 @register
 class EpisodeParentIdSelfJoinRule(Rule):
@@ -250,14 +242,8 @@ class EpisodeParentIdSelfJoinRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join target WITH `episode.episode_id`. episode_parent_id is a self-FK to episode.episode_id (not person_id, not visit_occurrence_id)."
-    example_bad = (
-        "SELECT e.episode_id FROM episode e\n"
-        "JOIN episode parent ON e.episode_parent_id = parent.person_id;"
-    )
-    example_good = (
-        "SELECT e.episode_id FROM episode e\n"
-        "JOIN episode parent ON e.episode_parent_id = parent.episode_id;"
-    )
+    example_bad = "SELECT e.episode_id FROM episode e\nJOIN episode parent ON e.episode_parent_id = parent.person_id;"
+    example_good = "SELECT e.episode_id FROM episode e\nJOIN episode parent ON e.episode_parent_id = parent.episode_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

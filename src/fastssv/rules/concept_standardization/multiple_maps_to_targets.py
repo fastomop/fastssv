@@ -83,6 +83,7 @@ MAPS_TO_VALUES = {"maps to", "mapped from"}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -153,6 +154,7 @@ def _has_limit_one(tree: exp.Expression) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class MultipleMapsToTargetsRule(Rule):
     """Detect incorrect assumptions of 1:1 mapping in concept_relationship."""
@@ -180,9 +182,7 @@ class MultipleMapsToTargetsRule(Rule):
         "target per source."
     )
     example_bad = (
-        "SELECT cr.concept_id_1, cr.concept_id_2\n"
-        "FROM concept_relationship cr\n"
-        "WHERE cr.relationship_id = 'Maps to';"
+        "SELECT cr.concept_id_1, cr.concept_id_2\nFROM concept_relationship cr\nWHERE cr.relationship_id = 'Maps to';"
     )
     example_good = (
         "SELECT DISTINCT cr.concept_id_1, cr.concept_id_2\n"
@@ -292,8 +292,7 @@ class MultipleMapsToTargetsRule(Rule):
                     violations.append(
                         self.create_violation(
                             message=(
-                                "LIMIT 1 with 'Maps to' assumes a single mapping. "
-                                "This may return arbitrary results."
+                                "LIMIT 1 with 'Maps to' assumes a single mapping. This may return arbitrary results."
                             ),
                             severity=Severity.WARNING,
                             suggested_fix=(

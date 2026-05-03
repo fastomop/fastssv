@@ -93,16 +93,13 @@ TEXT_COLUMNS = {"snippet", "lexical_variant"}
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _collect_tables(tree: exp.Expression, cte_names: Set[str]) -> Set[str]:
@@ -209,9 +206,7 @@ def _check_comparison(
 
     # Check both sides for presence of target column
     for side, other in [(left, right), (right, left)]:
-        col_name = _expression_contains_target_column(
-            side, aliases, cte_names, tables_in_query
-        )
+        col_name = _expression_contains_target_column(side, aliases, cte_names, tables_in_query)
 
         if not col_name:
             continue
@@ -219,10 +214,7 @@ def _check_comparison(
         # If comparing to anything other than NULL → unsafe
         if not isinstance(other, exp.Null):
             if isinstance(other, exp.Column):
-                return (
-                    f"Column '{col_name}' is free text. "
-                    f"Join on note_nlp_concept_id instead of text columns."
-                )
+                return f"Column '{col_name}' is free text. Join on note_nlp_concept_id instead of text columns."
 
             return (
                 f"Column '{col_name}' is free text for context, not structured data. "
@@ -238,9 +230,7 @@ def _check_like_pattern(
     cte_names: Set[str],
     tables_in_query: Set[str],
 ) -> Optional[str]:
-    col_name = _expression_contains_target_column(
-        like_expr.this, aliases, cte_names, tables_in_query
-    )
+    col_name = _expression_contains_target_column(like_expr.this, aliases, cte_names, tables_in_query)
 
     if not col_name:
         return None
@@ -258,9 +248,7 @@ def _check_in_clause(
     cte_names: Set[str],
     tables_in_query: Set[str],
 ) -> Optional[str]:
-    col_name = _expression_contains_target_column(
-        in_expr.this, aliases, cte_names, tables_in_query
-    )
+    col_name = _expression_contains_target_column(in_expr.this, aliases, cte_names, tables_in_query)
 
     if not col_name:
         return None
@@ -304,6 +292,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class NoteNlpSnippetMisuseRule(Rule):
     """
@@ -321,14 +310,8 @@ class NoteNlpSnippetMisuseRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: text-pattern filters on note_nlp.snippet / note_nlp.lexical_variant WITH `WHERE note_nlp.note_nlp_concept_id = <id>` (or IN(...)). snippet and lexical_variant are free-text context, not structured identifiers."
-    example_bad = (
-        "SELECT note_nlp_id FROM note_nlp\n"
-        "WHERE snippet LIKE '%diabetes%';"
-    )
-    example_good = (
-        "SELECT note_nlp_id FROM note_nlp\n"
-        "WHERE note_nlp_concept_id = 201820;"
-    )
+    example_bad = "SELECT note_nlp_id FROM note_nlp\nWHERE snippet LIKE '%diabetes%';"
+    example_good = "SELECT note_nlp_id FROM note_nlp\nWHERE note_nlp_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

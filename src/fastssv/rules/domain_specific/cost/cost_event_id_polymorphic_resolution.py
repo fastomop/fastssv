@@ -56,9 +56,7 @@ def _is_cost_column(col: exp.Column, aliases: dict, target_col: str) -> bool:
     return real_tables == {COST} or COST in real_tables and len(real_tables) == 1
 
 
-def _references_cost_event_id_in_join_or_where(
-    tree: exp.Expression, aliases: dict
-) -> List[str]:
+def _references_cost_event_id_in_join_or_where(tree: exp.Expression, aliases: dict) -> List[str]:
     """Return SQL fragments where cost.cost_event_id is used in a JOIN or
     WHERE clause. Empty list means the column isn't being used to link or
     filter (and the rule shouldn't fire).
@@ -92,8 +90,7 @@ def _has_cost_domain_id_filter(tree: exp.Expression, aliases: dict) -> bool:
             if isinstance(right, exp.Literal) and right.is_string:
                 return True
         else:  # exp.In
-            if any(isinstance(v, exp.Literal) and v.is_string
-                   for v in (node.expressions or [])):
+            if any(isinstance(v, exp.Literal) and v.is_string for v in (node.expressions or [])):
                 return True
     return False
 

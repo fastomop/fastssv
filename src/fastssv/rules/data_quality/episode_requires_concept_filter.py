@@ -98,6 +98,7 @@ NORM_CONCEPT_ID = normalize_name(CONCEPT_ID)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -178,9 +179,8 @@ def _has_concept_filtered_join(tree: exp.Expression, aliases: Dict[str, str]) ->
             _, left_col = resolve_table_col(cols[0], aliases)
             _, right_col = resolve_table_col(cols[1], aliases)
 
-            if (
-                (_norm(left_col) == NORM_EPISODE_CONCEPT_ID and _norm(right_col) == NORM_CONCEPT_ID)
-                or (_norm(right_col) == NORM_EPISODE_CONCEPT_ID and _norm(left_col) == NORM_CONCEPT_ID)
+            if (_norm(left_col) == NORM_EPISODE_CONCEPT_ID and _norm(right_col) == NORM_CONCEPT_ID) or (
+                _norm(right_col) == NORM_EPISODE_CONCEPT_ID and _norm(left_col) == NORM_CONCEPT_ID
             ):
                 has_join = True
 
@@ -217,11 +217,7 @@ def _has_subquery_filter(tree: exp.Expression) -> bool:
 
 
 def _has_episode_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    return (
-        _has_direct_filter(tree, aliases)
-        or _has_concept_filtered_join(tree, aliases)
-        or _has_subquery_filter(tree)
-    )
+    return _has_direct_filter(tree, aliases) or _has_concept_filtered_join(tree, aliases) or _has_subquery_filter(tree)
 
 
 def _episode_event_has_valid_path(tree: exp.Expression) -> bool:
@@ -243,19 +239,21 @@ def _episode_event_has_valid_path(tree: exp.Expression) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class EpisodeRequiresConceptFilterRule(Rule):
     rule_id = "data_quality.episode_requires_concept_filter"
     name = "Episode Requires Concept Filter"
 
     description = (
-        "Episode queries should filter by episode_concept_id to ensure semantic "
-        "clarity and optimal query performance."
+        "Episode queries should filter by episode_concept_id to ensure semantic clarity and optimal query performance."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "ADD: `WHERE episode_concept_id = <id>` (or IN(...)) to scope the episode query to a specific clinical concept."
+    suggested_fix = (
+        "ADD: `WHERE episode_concept_id = <id>` (or IN(...)) to scope the episode query to a specific clinical concept."
+    )
     long_description = (
         "The episode table aggregates care over time (disease episodes, "
         "treatment episodes) across many episode types identified by "
@@ -264,15 +262,8 @@ class EpisodeRequiresConceptFilterRule(Rule):
         "the intent. Add an episode_concept_id predicate or join to "
         "concept with an explicit filter to select a single episode type."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM episode;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM episode\n"
-        "WHERE episode_concept_id = 32528;"
-    )
+    example_bad = "SELECT person_id\nFROM episode;"
+    example_good = "SELECT person_id\nFROM episode\nWHERE episode_concept_id = 32528;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()
@@ -307,12 +298,9 @@ class EpisodeRequiresConceptFilterRule(Rule):
                         seen.add(key)
                         violations.append(
                             self.create_violation(
-                                message=(
-                                    "episode_event used without a valid episode_concept_id filter path."
-                                ),
+                                message=("episode_event used without a valid episode_concept_id filter path."),
                                 suggested_fix=(
-                                    "JOIN episode e ON ee.episode_id = e.episode_id "
-                                    "AND filter e.episode_concept_id"
+                                    "JOIN episode e ON ee.episode_id = e.episode_id AND filter e.episode_concept_id"
                                 ),
                                 details={"table": "episode_event"},
                             )
@@ -324,9 +312,7 @@ class EpisodeRequiresConceptFilterRule(Rule):
                     seen.add(key)
                     violations.append(
                         self.create_violation(
-                            message=(
-                                "episode table used without filtering by episode_concept_id."
-                            ),
+                            message=("episode table used without filtering by episode_concept_id."),
                             suggested_fix=self.suggested_fix,
                             details={"table": "episode"},
                         )

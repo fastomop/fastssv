@@ -73,6 +73,7 @@ VALID_END_DATE = "valid_end_date"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -105,6 +106,7 @@ def _is_current_date(node: exp.Expression) -> bool:
 
 # --- Validity Patterns -----------------------------------------------------
 
+
 def _has_invalid_reason_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     """Detect any filter on invalid_reason (IS NULL, equality, etc)."""
     # Check for IS NULL
@@ -135,18 +137,12 @@ def _has_between_validity(tree: exp.Expression, aliases: Dict[str, str]) -> bool
             continue
 
         if isinstance(low, exp.Column) and isinstance(high, exp.Column):
-            if (
-                _is_ds_column(low, aliases, VALID_START_DATE)
-                and _is_ds_column(high, aliases, VALID_END_DATE)
-            ):
+            if _is_ds_column(low, aliases, VALID_START_DATE) and _is_ds_column(high, aliases, VALID_END_DATE):
                 return True
 
         # also allow reversed order
         if isinstance(low, exp.Column) and isinstance(high, exp.Column):
-            if (
-                _is_ds_column(low, aliases, VALID_END_DATE)
-                and _is_ds_column(high, aliases, VALID_START_DATE)
-            ):
+            if _is_ds_column(low, aliases, VALID_END_DATE) and _is_ds_column(high, aliases, VALID_START_DATE):
                 return True
 
     return False
@@ -162,7 +158,6 @@ def _has_date_validity(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     has_end = False
 
     for node in tree.walk():
-
         # valid_start_date <= CURRENT_DATE
         if isinstance(node, (exp.LTE, exp.LT)):
             left, right = node.this, node.expression
@@ -202,6 +197,7 @@ def _has_validity_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
     if not has_table_reference(tree, DRUG_STRENGTH):
         return []
@@ -218,20 +214,17 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugStrengthValidityFilterRule(Rule):
     """Production-grade validation of drug_strength temporal validity."""
 
     rule_id = "domain_specific.drug_strength_validity_filter"
     name = "Drug Strength Validity Filter"
-    description = (
-        "drug_strength is time-versioned. Queries must filter for currently valid records."
-    )
+    description = "drug_strength is time-versioned. Queries must filter for currently valid records."
     severity = Severity.WARNING
     suggested_fix = "ADD: `AND ds.invalid_reason IS NULL` (currently valid rows), OR `AND CURRENT_DATE BETWEEN ds.valid_start_date AND ds.valid_end_date` for time-windowed validity. drug_strength is time-versioned."
-    example_bad = (
-        "SELECT drug_concept_id, amount_value FROM drug_strength;"
-    )
+    example_bad = "SELECT drug_concept_id, amount_value FROM drug_strength;"
     example_good = (
         "SELECT drug_concept_id, amount_value FROM drug_strength\n"
         "WHERE invalid_reason IS NULL\n"

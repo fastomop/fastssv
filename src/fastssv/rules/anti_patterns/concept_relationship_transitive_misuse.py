@@ -75,12 +75,11 @@ HIERARCHICAL_RELATIONSHIPS = {
 
 MIN_CHAIN_LENGTH = 3
 
-HIERARCHICAL_RELATIONSHIPS_NORM = {
-    normalize_name(r) for r in HIERARCHICAL_RELATIONSHIPS
-}
+HIERARCHICAL_RELATIONSHIPS_NORM = {normalize_name(r) for r in HIERARCHICAL_RELATIONSHIPS}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
@@ -108,10 +107,8 @@ def _extract_concept_relationship_aliases(tree: exp.Expression) -> Set[str]:
 
 # --- Graph construction ----------------------------------------------------
 
-def _build_join_graph(
-    tree: exp.Expression,
-    cr_aliases: Set[str]
-) -> Dict[str, Set[str]]:
+
+def _build_join_graph(tree: exp.Expression, cr_aliases: Set[str]) -> Dict[str, Set[str]]:
     graph: Dict[str, Set[str]] = {alias: set() for alias in cr_aliases}
 
     for join in tree.find_all(exp.Join):
@@ -149,10 +146,8 @@ def _build_join_graph(
 
 # --- Chain detection -------------------------------------------------------
 
-def _find_chains(
-    graph: Dict[str, Set[str]],
-    max_depth: int = 10
-) -> List[List[str]]:
+
+def _find_chains(graph: Dict[str, Set[str]], max_depth: int = 10) -> List[List[str]]:
     all_chains: List[List[str]] = []
 
     def dfs(path: List[str], visited: Set[str]):
@@ -178,10 +173,8 @@ def _find_chains(
 
 # --- Relationship filtering ------------------------------------------------
 
-def _has_hierarchical_relationship_filter(
-    tree: exp.Expression,
-    alias: str
-) -> bool:
+
+def _has_hierarchical_relationship_filter(tree: exp.Expression, alias: str) -> bool:
     alias_norm = _norm(alias)
 
     # EQ filters
@@ -224,10 +217,7 @@ def _has_hierarchical_relationship_filter(
     return False
 
 
-def _chain_uses_hierarchical_relationships(
-    tree: exp.Expression,
-    chain: List[str]
-) -> bool:
+def _chain_uses_hierarchical_relationships(tree: exp.Expression, chain: List[str]) -> bool:
     """Check if any alias in the chain uses hierarchical relationships."""
     for alias in chain:
         if _has_hierarchical_relationship_filter(tree, alias):
@@ -236,6 +226,7 @@ def _chain_uses_hierarchical_relationships(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptRelationshipTransitiveMisuseRule(Rule):
@@ -274,9 +265,7 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
         "  AND cr3.relationship_id = 'Subsumes';"
     )
     example_good = (
-        "SELECT descendant_concept_id AS concept_id\n"
-        "FROM concept_ancestor\n"
-        "WHERE ancestor_concept_id = 201820;"
+        "SELECT descendant_concept_id AS concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -303,9 +292,9 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
             chains = _find_chains(graph)
 
             valid_chains = [
-                chain for chain in chains
-                if len(chain) >= MIN_CHAIN_LENGTH
-                and _chain_uses_hierarchical_relationships(tree, chain)
+                chain
+                for chain in chains
+                if len(chain) >= MIN_CHAIN_LENGTH and _chain_uses_hierarchical_relationships(tree, chain)
             ]
 
             if not valid_chains:
@@ -331,7 +320,7 @@ class ConceptRelationshipTransitiveMisuseRule(Rule):
                         f"REWRITE: the {len(longest_chain)}-join concept_relationship chain WITH "
                         f"`SELECT descendant_concept_id FROM concept_ancestor "
                         f"WHERE ancestor_concept_id = <start_concept> "
-                        f"AND min_levels_of_separation BETWEEN 1 AND {len(longest_chain)-1}`. "
+                        f"AND min_levels_of_separation BETWEEN 1 AND {len(longest_chain) - 1}`. "
                         f"concept_ancestor pre-computes the transitive 'Is a' closure."
                     ),
                     details={

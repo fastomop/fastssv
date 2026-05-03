@@ -73,9 +73,7 @@ def _wait_for_health(base_url: str, timeout_s: int) -> None:
         except (urllib.error.URLError, urllib.error.HTTPError, ConnectionError, TimeoutError) as e:
             last_err = e
         time.sleep(1)
-    raise AssertionError(
-        f"/v1/health did not return 200 within {timeout_s}s. Last error: {last_err!r}"
-    )
+    raise AssertionError(f"/v1/health did not return 200 within {timeout_s}s. Last error: {last_err!r}")
 
 
 pytestmark = pytest.mark.skipif(
@@ -117,10 +115,7 @@ def base_url() -> str:
             text=True,
             env=env,
         )
-        pytest.fail(
-            f"`docker compose up` failed (rc={e.returncode}). "
-            f"Logs:\n{logs.stdout}\n{logs.stderr}"
-        )
+        pytest.fail(f"`docker compose up` failed (rc={e.returncode}). Logs:\n{logs.stdout}\n{logs.stderr}")
 
     url = f"http://127.0.0.1:{port}"
     try:

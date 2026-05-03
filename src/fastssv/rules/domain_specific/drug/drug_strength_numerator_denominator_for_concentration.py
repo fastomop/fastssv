@@ -69,6 +69,7 @@ NUMERATOR_VALUE = "numerator_value"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -177,6 +178,7 @@ def _is_in_aggregate(node: exp.Expression) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_select_violation(tree, aliases, has_ds) -> bool:
     """Detect SELECT using amount_value without numerator_value."""
     if not _has_amount_usage(tree, aliases, has_ds):
@@ -199,10 +201,7 @@ def _detect_select_violation(tree, aliases, has_ds) -> bool:
 
 def _detect_where_violation(tree, aliases, has_ds) -> bool:
     """Detect WHERE filtering on amount_value without numerator alternative."""
-    comparison_types = (
-        exp.GT, exp.GTE, exp.LT, exp.LTE,
-        exp.EQ, exp.NEQ, exp.Is, exp.In, exp.Between
-    )
+    comparison_types = (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ, exp.Is, exp.In, exp.Between)
 
     has_amount = False
     has_numerator = False
@@ -223,6 +222,7 @@ def _detect_where_violation(tree, aliases, has_ds) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugStrengthNumeratorDenominatorForConcentrationRule(Rule):
     """Ensure both amount-based and concentration-based drugs are handled."""
@@ -239,10 +239,7 @@ class DrugStrengthNumeratorDenominatorForConcentrationRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: `WHERE amount_value <op> <n>` WITH `COALESCE(amount_value, numerator_value / NULLIF(denominator_value, 0))` to include concentration-based formulations (drug_strength stores liquid/injectable doses in numerator/denominator, not amount_value)."
-    example_bad = (
-        "SELECT drug_concept_id, amount_value FROM drug_strength\n"
-        "WHERE amount_value > 500;"
-    )
+    example_bad = "SELECT drug_concept_id, amount_value FROM drug_strength\nWHERE amount_value > 500;"
     example_good = (
         "SELECT drug_concept_id,\n"
         "       COALESCE(amount_value, numerator_value / denominator_value) AS dose\n"

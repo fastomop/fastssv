@@ -92,7 +92,6 @@ def _has_business_constraint(expr: exp.Expression, aliases: Dict[str, str], col_
     """
     for node in expr.walk():
         if isinstance(node, (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Between)):
-
             if isinstance(node, exp.Between):
                 if isinstance(node.this, exp.Column):
                     if _is_measurement_column(node.this, aliases, col_name):
@@ -129,10 +128,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
         right_has_concept = _has_business_constraint(right, aliases, VALUE_AS_CONCEPT_ID)
 
         # Require constraints on opposite sides of AND
-        if (
-            (left_has_number and right_has_concept) or
-            (left_has_concept and right_has_number)
-        ):
+        if (left_has_number and right_has_concept) or (left_has_concept and right_has_number):
             key = "value_number_and_concept"
             if key in seen:
                 continue
@@ -161,14 +157,8 @@ class MeasurementValueAsNumberAndConceptValidationRule(Rule):
 
     severity = Severity.ERROR
     suggested_fix = "REPLACE: `value_as_number <op> <n> AND value_as_concept_id = <id>` WITH a single check, OR use `OR` if you genuinely want either representation. The two columns hold mutually-exclusive representations of the same value."
-    example_bad = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE value_as_number > 140 AND value_as_concept_id = 4126681;"
-    )
-    example_good = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE value_as_number > 140;"
-    )
+    example_bad = "SELECT person_id FROM measurement\nWHERE value_as_number > 140 AND value_as_concept_id = 4126681;"
+    example_good = "SELECT person_id FROM measurement\nWHERE value_as_number > 140;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)

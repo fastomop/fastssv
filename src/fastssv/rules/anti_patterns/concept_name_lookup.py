@@ -44,16 +44,9 @@ class ConceptNameLookupRule(Rule):
         "concept_code + vocabulary_id, or by concept_id directly if "
         "you have it."
     )
-    example_bad = (
-        "SELECT c.concept_id\n"
-        "FROM concept c\n"
-        "WHERE c.concept_name = 'Type 2 diabetes mellitus';"
-    )
+    example_bad = "SELECT c.concept_id\nFROM concept c\nWHERE c.concept_name = 'Type 2 diabetes mellitus';"
     example_good = (
-        "SELECT c.concept_id\n"
-        "FROM concept c\n"
-        "WHERE c.concept_code = 'E11'\n"
-        "  AND c.vocabulary_id = 'ICD10CM';"
+        "SELECT c.concept_id\nFROM concept c\nWHERE c.concept_code = 'E11'\n  AND c.vocabulary_id = 'ICD10CM';"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -85,18 +78,16 @@ class ConceptNameLookupRule(Rule):
                 table, col = resolve_table_col(left, aliases)
 
                 if table == "concept" and col == "concept_name":
-                    violations.append(self.create_violation(
-                        message=(
-                            f"Query filters by concept_name ('{right.this}'). "
-                            f"Concept names are not unique and can change across vocabulary versions. "
-                            f"Use concept_code + vocabulary_id or concept_id instead."
-                        ),
-                        details={
-                            "concept_name": right.this,
-                            "table": table,
-                            "column": col
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"Query filters by concept_name ('{right.this}'). "
+                                f"Concept names are not unique and can change across vocabulary versions. "
+                                f"Use concept_code + vocabulary_id or concept_id instead."
+                            ),
+                            details={"concept_name": right.this, "table": table, "column": col},
+                        )
+                    )
 
             # Check for concept_name in IN clauses
             for in_expr in tree.find_all(exp.In):
@@ -117,18 +108,16 @@ class ConceptNameLookupRule(Rule):
                     if len(in_expr.expressions or []) > 3:
                         values_str += ", ..."
 
-                    violations.append(self.create_violation(
-                        message=(
-                            f"Query filters by concept_name IN ({values_str}). "
-                            f"Concept names are not unique and can change across vocabulary versions. "
-                            f"Use concept_code + vocabulary_id or concept_id instead."
-                        ),
-                        details={
-                            "concept_names": values,
-                            "table": table,
-                            "column": col
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"Query filters by concept_name IN ({values_str}). "
+                                f"Concept names are not unique and can change across vocabulary versions. "
+                                f"Use concept_code + vocabulary_id or concept_id instead."
+                            ),
+                            details={"concept_names": values, "table": table, "column": col},
+                        )
+                    )
 
             # Check for concept_name in LIKE/ILIKE
             for like_expr in tree.find_all((exp.Like, exp.ILike)):
@@ -140,18 +129,16 @@ class ConceptNameLookupRule(Rule):
 
                 if table == "concept" and col == "concept_name":
                     pattern = like_expr.expression
-                    violations.append(self.create_violation(
-                        message=(
-                            f"Query filters by concept_name with pattern matching ({pattern.sql() if pattern else 'unknown'}). "
-                            f"This is highly unreliable as concept names can vary. "
-                            f"Use concept_code + vocabulary_id or concept_id instead."
-                        ),
-                        details={
-                            "table": table,
-                            "column": col,
-                            "pattern": pattern.sql() if pattern else None
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"Query filters by concept_name with pattern matching ({pattern.sql() if pattern else 'unknown'}). "
+                                f"This is highly unreliable as concept names can vary. "
+                                f"Use concept_code + vocabulary_id or concept_id instead."
+                            ),
+                            details={"table": table, "column": col, "pattern": pattern.sql() if pattern else None},
+                        )
+                    )
 
         return violations
 

@@ -56,10 +56,7 @@ def demo_json_logging():
 
     logger.info("Validating SQL with JSON logging")
     violations = validate_sql_structured(SQL_QUERY, dialect="postgres")
-    logger.info(
-        "Validation complete",
-        extra={"violation_count": len(violations)}
-    )
+    logger.info("Validation complete", extra={"violation_count": len(violations)})
 
     print()
 
@@ -71,11 +68,7 @@ def demo_file_logging():
     print("=" * 60)
 
     log_file = "/tmp/fastssv_demo.log"
-    logger = setup_logging(
-        level="INFO",
-        log_file=log_file,
-        log_format="detailed"
-    )
+    logger = setup_logging(level="INFO", log_file=log_file, log_format="detailed")
 
     logger.info("This message goes to both console and file")
     violations = validate_sql_structured(SQL_QUERY, dialect="postgres")

@@ -63,10 +63,7 @@ ERA_TABLE_CONCEPT_COLUMNS = {
 }
 
 
-def _find_valid_era_concept_joins(
-    tree: exp.Expression,
-    aliases: Dict[str, str]
-) -> Set[str]:
+def _find_valid_era_concept_joins(tree: exp.Expression, aliases: Dict[str, str]) -> Set[str]:
     """
     Find concept table aliases that are VALIDLY joined to era tables
     using the correct concept_id column.
@@ -124,10 +121,7 @@ def _is_standard_concept_column(col: exp.Expression, aliases: Dict[str, str], va
 
     _, column = resolve_table_col(col, aliases)
 
-    return (
-        normalize_name(column) == "standard_concept"
-        and col.table in valid_aliases
-    )
+    return normalize_name(column) == "standard_concept" and col.table in valid_aliases
 
 
 def _check_filters(
@@ -178,7 +172,7 @@ def _check_filters(
 
             elif isinstance(node, exp.In):
                 # For IN clauses, values are in node.args['expressions']
-                in_values = node.args.get('expressions', [])
+                in_values = node.args.get("expressions", [])
                 if in_values:
                     values = {_extract_literal(v) for v in in_values}
                     # Flag if any value is not 'S'
@@ -189,10 +183,12 @@ def _check_filters(
                         )
 
             if msg:
-                issues.append({
-                    "message": msg,
-                    "node": node,
-                })
+                issues.append(
+                    {
+                        "message": msg,
+                        "node": node,
+                    }
+                )
 
     return issues
 
@@ -204,8 +200,7 @@ class EraTableStandardConceptsRule(Rule):
     rule_id = "concept_standardization.era_table_standard_concepts"
     name = "Era Tables Use Standard Concepts Only"
     description = (
-        "Era tables contain only standard concepts. Filtering for non-standard "
-        "concepts will always return 0 rows."
+        "Era tables contain only standard concepts. Filtering for non-standard concepts will always return 0 rows."
     )
     severity = Severity.ERROR
     suggested_fix = "REMOVE: any `standard_concept != 'S'` (or `'C'`, `NULL`) filter on era tables. drug_era / condition_era / dose_era contain only standard concepts by construction."

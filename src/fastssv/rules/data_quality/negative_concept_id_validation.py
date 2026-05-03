@@ -43,7 +43,6 @@ from fastssv.core.registry import register
 CONCEPT_ID_COLUMNS = {
     # Core
     "concept_id",
-
     # Clinical
     "condition_concept_id",
     "drug_concept_id",
@@ -56,7 +55,6 @@ CONCEPT_ID_COLUMNS = {
     "specimen_concept_id",
     "episode_concept_id",
     "cause_concept_id",
-
     # Source
     "condition_source_concept_id",
     "drug_source_concept_id",
@@ -69,7 +67,6 @@ CONCEPT_ID_COLUMNS = {
     "specimen_source_concept_id",
     "episode_source_concept_id",
     "cause_source_concept_id",
-
     # Type
     "condition_type_concept_id",
     "drug_type_concept_id",
@@ -83,7 +80,6 @@ CONCEPT_ID_COLUMNS = {
     "note_type_concept_id",
     "death_type_concept_id",
     "episode_type_concept_id",
-
     # Person
     "gender_concept_id",
     "race_concept_id",
@@ -91,7 +87,6 @@ CONCEPT_ID_COLUMNS = {
     "gender_source_concept_id",
     "race_source_concept_id",
     "ethnicity_source_concept_id",
-
     # Auxiliary
     "route_concept_id",
     "dose_unit_concept_id",
@@ -106,7 +101,6 @@ CONCEPT_ID_COLUMNS = {
     "note_encoding_concept_id",
     "language_concept_id",
     "condition_status_concept_id",
-
     # Payer
     "payer_concept_id",
     "plan_concept_id",
@@ -119,6 +113,7 @@ CONCEPT_ID_COLUMNS = {
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -144,6 +139,7 @@ def _extract_int(node: exp.Expression) -> Optional[int]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict]:
     issues: List[dict] = []
@@ -175,15 +171,16 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                         continue
                     seen.add(key)
 
-                    issues.append({
-                        "message": (
-                            f"Invalid negative concept_id: {col_name} {node.key} {value}. "
-                            f"Concept IDs must be >= 0."
-                        ),
-                        "fragment": node.sql(),
-                        "kind": "EQ" if isinstance(node, exp.EQ) else "OTHER",
-                        "col_qualified_sql": col_node.sql(),
-                    })
+                    issues.append(
+                        {
+                            "message": (
+                                f"Invalid negative concept_id: {col_name} {node.key} {value}. Concept IDs must be >= 0."
+                            ),
+                            "fragment": node.sql(),
+                            "kind": "EQ" if isinstance(node, exp.EQ) else "OTHER",
+                            "col_qualified_sql": col_node.sql(),
+                        }
+                    )
 
         # --- IN clause ---
         elif isinstance(node, exp.In):
@@ -208,15 +205,17 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                     continue
                 seen.add(key)
 
-                issues.append({
-                    "message": (
-                        f"Invalid negative values in {col_name} {node.key}: {sorted(negatives)}. "
-                        f"Concept IDs must be >= 0."
-                    ),
-                    "fragment": node.sql(),
-                    "kind": "IN",
-                    "col_qualified_sql": col_node.sql(),
-                })
+                issues.append(
+                    {
+                        "message": (
+                            f"Invalid negative values in {col_name} {node.key}: {sorted(negatives)}. "
+                            f"Concept IDs must be >= 0."
+                        ),
+                        "fragment": node.sql(),
+                        "kind": "IN",
+                        "col_qualified_sql": col_node.sql(),
+                    }
+                )
 
         # --- BETWEEN ---
         elif isinstance(node, exp.Between):
@@ -238,20 +237,23 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
                     continue
                 seen.add(key)
 
-                issues.append({
-                    "message": (
-                        f"Invalid BETWEEN range for {col_name}: ({low if low is not None else '?'}, "
-                        f"{high if high is not None else '?'}). Concept IDs must be >= 0."
-                    ),
-                    "fragment": node.sql(),
-                    "kind": "BETWEEN",
-                    "col_qualified_sql": col_node.sql(),
-                })
+                issues.append(
+                    {
+                        "message": (
+                            f"Invalid BETWEEN range for {col_name}: ({low if low is not None else '?'}, "
+                            f"{high if high is not None else '?'}). Concept IDs must be >= 0."
+                        ),
+                        "fragment": node.sql(),
+                        "kind": "BETWEEN",
+                        "col_qualified_sql": col_node.sql(),
+                    }
+                )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class NegativeConceptIdValidationRule(Rule):
@@ -270,16 +272,8 @@ class NegativeConceptIdValidationRule(Rule):
         "style synthetic IDs from another system. Replace the literal "
         "with the correct non-negative concept_id."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_concept_id = -1;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_concept_id = 201820;"
-    )
+    example_bad = "SELECT *\nFROM condition_occurrence\nWHERE condition_concept_id = -1;"
+    example_good = "SELECT *\nFROM condition_occurrence\nWHERE condition_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

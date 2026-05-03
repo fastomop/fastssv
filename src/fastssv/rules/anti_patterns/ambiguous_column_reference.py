@@ -86,6 +86,7 @@ AMBIGUOUS_COLUMNS: Set[str] = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -161,6 +162,7 @@ def _find_unqualified_ambiguous_columns(select: exp.Select) -> List[exp.Column]:
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class AmbiguousColumnReferenceRule(Rule):

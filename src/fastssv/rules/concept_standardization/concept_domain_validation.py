@@ -216,10 +216,7 @@ def _collect_domain_filters(
 class ConceptDomainValidationRule(Rule):
     rule_id = "concept_standardization.concept_domain_validation"
     name = "Concept Domain ID Matches Target Table"
-    description = (
-        "Validates that concept.domain_id matches the expected domain for each "
-        "*_concept_id column."
-    )
+    description = "Validates that concept.domain_id matches the expected domain for each *_concept_id column."
     severity = Severity.WARNING  # Best practice, not correctness issue
     suggested_fix = "ADD: `AND c.domain_id = '<expected_domain>'` matching the clinical table (e.g. 'Condition' for condition_occurrence, 'Drug' for drug_exposure, 'Procedure' for procedure_occurrence)."
     long_description = (
@@ -253,6 +250,7 @@ class ConceptDomainValidationRule(Rule):
 
         # Check validation context for severity adjustment
         from fastssv.core.validation_context import get_validation_context
+
         ctx = get_validation_context()
 
         # Default: WARNING (best practice) for missing filters
@@ -284,9 +282,7 @@ class ConceptDomainValidationRule(Rule):
                 else:
                     expected_raw = AUXILIARY_CONCEPT_COLUMNS[col]
                     # Support both single domain (str) and multiple domains (list)
-                    expected_domains = (
-                        expected_raw if isinstance(expected_raw, list) else [expected_raw]
-                    )
+                    expected_domains = expected_raw if isinstance(expected_raw, list) else [expected_raw]
                     expected = expected_domains[0]  # Primary domain for messages
 
                 expected_norms = {_norm(d) for d in expected_domains}
@@ -296,16 +292,18 @@ class ConceptDomainValidationRule(Rule):
                 # --- Missing filter ---
                 if not values:
                     if col_type == "main":
-                        violations.append(self.create_violation(
-                            severity=missing_filter_severity,  # Context-aware severity
-                            message=(
-                                f"{table}.{col} joined to concept '{concept_alias}' "
-                                f"without domain_id filter. Expected domain '{expected}'."
-                            ),
-                            suggested_fix=(
-                                f"ADD: `AND {concept_alias}.domain_id = '{expected}'` to the WHERE/JOIN-ON predicates."
-                            ),
-                        ))
+                        violations.append(
+                            self.create_violation(
+                                severity=missing_filter_severity,  # Context-aware severity
+                                message=(
+                                    f"{table}.{col} joined to concept '{concept_alias}' "
+                                    f"without domain_id filter. Expected domain '{expected}'."
+                                ),
+                                suggested_fix=(
+                                    f"ADD: `AND {concept_alias}.domain_id = '{expected}'` to the WHERE/JOIN-ON predicates."
+                                ),
+                            )
+                        )
                     continue
 
                 # --- Wrong domain ---
@@ -321,28 +319,28 @@ class ConceptDomainValidationRule(Rule):
                     else:
                         expected_msg = f"'{expected}'"
                         suggested_fix = (
-                            f"REPLACE: the existing domain_id filter WITH "
-                            f"`{concept_alias}.domain_id = '{expected}'`."
+                            f"REPLACE: the existing domain_id filter WITH `{concept_alias}.domain_id = '{expected}'`."
                         )
 
-                    violations.append(self.create_violation(
-                        severity=Severity.ERROR,  # Wrong domain is always ERROR
-                        message=(
-                            f"Domain mismatch for {table}.{col}: expected {expected_msg}, "
-                            f"found ({actual})."
-                        ),
-                        suggested_fix=suggested_fix,
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            severity=Severity.ERROR,  # Wrong domain is always ERROR
+                            message=(f"Domain mismatch for {table}.{col}: expected {expected_msg}, found ({actual})."),
+                            suggested_fix=suggested_fix,
+                        )
+                    )
 
                 # --- Optional: multi-domain warning (only if not all valid) ---
                 elif len(values) > 1 and not values.issubset(expected_norms):
-                    violations.append(self.create_violation(
-                        severity=Severity.WARNING,
-                        message=(
-                            f"{concept_alias}.domain_id uses multiple domains ({values}). "
-                            f"This may produce unintended results."
-                        ),
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            severity=Severity.WARNING,
+                            message=(
+                                f"{concept_alias}.domain_id uses multiple domains ({values}). "
+                                f"This may produce unintended results."
+                            ),
+                        )
+                    )
 
         return violations
 

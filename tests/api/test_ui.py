@@ -165,11 +165,7 @@ def test_ui_validate_result_includes_json_view_toggle(client: TestClient):
 
 
 def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient):
-    sql = (
-        "SELECT person_id FROM person; "
-        "SELECT * FROM bogus_table_alpha; "
-        "SELECT * FROM bogus_table_beta;"
-    )
+    sql = "SELECT person_id FROM person; SELECT * FROM bogus_table_alpha; SELECT * FROM bogus_table_beta;"
     resp = client.post("/ui/validate", data={"sql": sql, "dialect": "postgres"})
     assert resp.status_code == 200
     body = resp.text

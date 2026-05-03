@@ -88,6 +88,7 @@ EXPECTED_DOMAIN_NORM = normalize_name(EXPECTED_DOMAIN)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
 
@@ -236,6 +237,7 @@ def _extract_domain_values(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class VisitOccurrenceTypeDomainRule(Rule):
     """
@@ -306,9 +308,7 @@ class VisitOccurrenceTypeDomainRule(Rule):
                                 f"Expected '{EXPECTED_DOMAIN}'."
                             ),
                             severity=Severity.ERROR,
-                            suggested_fix=(
-                                f"Use: {concept_alias}.domain_id = '{EXPECTED_DOMAIN}'"
-                            ),
+                            suggested_fix=(f"Use: {concept_alias}.domain_id = '{EXPECTED_DOMAIN}'"),
                             details={
                                 "column": VISIT_TYPE_CONCEPT_ID,
                                 "concept_alias": concept_alias,
@@ -337,9 +337,7 @@ class VisitOccurrenceTypeDomainRule(Rule):
                                 f"without domain_id filter. Expected '{EXPECTED_DOMAIN}'."
                             ),
                             severity=Severity.ERROR,
-                            suggested_fix=(
-                                f"Add: {concept_alias}.domain_id = '{EXPECTED_DOMAIN}'"
-                            ),
+                            suggested_fix=(f"Add: {concept_alias}.domain_id = '{EXPECTED_DOMAIN}'"),
                             details={
                                 "column": VISIT_TYPE_CONCEPT_ID,
                                 "concept_alias": concept_alias,

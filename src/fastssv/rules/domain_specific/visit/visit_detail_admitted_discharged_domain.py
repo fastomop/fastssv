@@ -99,6 +99,7 @@ NORM_VALID_DOMAINS = {normalize_name(d) for d in VALID_DOMAINS}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -235,6 +236,7 @@ def _find_hardcoded_concept_filters(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class VisitDetailAdmittedDischargedDomainRule(Rule):
     """
@@ -254,10 +256,7 @@ class VisitDetailAdmittedDischargedDomainRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: hard-coded admitted_from_concept_id / discharged_to_concept_id literals WITH a JOIN to concept and filter `WHERE c.domain_id IN ('Visit', 'Place of Service')` to validate the domain of the concept you're filtering by."
-    example_bad = (
-        "SELECT visit_detail_id FROM visit_detail\n"
-        "WHERE admitted_from_concept_id = 8870;"
-    )
+    example_bad = "SELECT visit_detail_id FROM visit_detail\nWHERE admitted_from_concept_id = 8870;"
     example_good = (
         "SELECT vd.visit_detail_id FROM visit_detail vd\n"
         "JOIN concept c ON vd.admitted_from_concept_id = c.concept_id\n"

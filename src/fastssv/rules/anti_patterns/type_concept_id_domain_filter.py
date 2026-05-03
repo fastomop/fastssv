@@ -108,6 +108,7 @@ CORRECT_TYPE_DOMAIN_NORM = normalize_name(CORRECT_TYPE_DOMAIN)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
 
@@ -146,6 +147,7 @@ def _is_domain_id_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
 
 
 # --- Core detection --------------------------------------------------------
+
 
 def _find_type_concept_joins(
     tree: exp.Expression,
@@ -209,10 +211,10 @@ def _find_domain_filters(
     concept_alias_norm = _norm(concept_alias)
 
     nodes = (
-        list(tree.find_all(exp.EQ)) +
-        list(tree.find_all(exp.NEQ)) +
-        list(tree.find_all(exp.In)) +
-        list(tree.find_all(exp.Is))
+        list(tree.find_all(exp.EQ))
+        + list(tree.find_all(exp.NEQ))
+        + list(tree.find_all(exp.In))
+        + list(tree.find_all(exp.Is))
     )
 
     for node in nodes:
@@ -272,6 +274,7 @@ def _find_domain_filters(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class TypeConceptIdDomainFilterRule(Rule):
@@ -351,10 +354,7 @@ class TypeConceptIdDomainFilterRule(Rule):
                         # them on FREEFORM auto-default.
                         patch = None
                         if isinstance(node, exp.EQ):
-                            col_part = (
-                                node.this if isinstance(node.this, exp.Column)
-                                else node.expression
-                            )
+                            col_part = node.this if isinstance(node.this, exp.Column) else node.expression
                             if isinstance(col_part, exp.Column):
                                 span = locate(sql, node.sql())
                                 if span is not None:
@@ -370,9 +370,7 @@ class TypeConceptIdDomainFilterRule(Rule):
                                     f"Expected '{CORRECT_TYPE_DOMAIN}'."
                                 ),
                                 severity=Severity.WARNING,
-                                suggested_fix=(
-                                    f"Use domain_id = '{CORRECT_TYPE_DOMAIN}' or remove the filter"
-                                ),
+                                suggested_fix=(f"Use domain_id = '{CORRECT_TYPE_DOMAIN}' or remove the filter"),
                                 suggested_fix_patch=patch,
                                 details={
                                     "type_column": type_col,

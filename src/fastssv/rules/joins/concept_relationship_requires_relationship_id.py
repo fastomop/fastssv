@@ -106,9 +106,7 @@ def _is_grouping_by_relationship_id(tree: exp.Expression, cr_aliases: Set[str]) 
     return False
 
 
-def _find_join_on_sql_for_alias(
-    tree: exp.Expression, target_alias: str
-) -> Optional[str]:
+def _find_join_on_sql_for_alias(tree: exp.Expression, target_alias: str) -> Optional[str]:
     """Find the ON expression SQL for the JOIN that introduces ``target_alias``.
 
     Returns None if the alias isn't introduced by an explicit JOIN with an ON
@@ -128,10 +126,7 @@ def _find_join_on_sql_for_alias(
     return None
 
 
-def _check_missing_filters(
-    alias_filter_map: Dict[str, bool],
-    is_exploratory: bool
-) -> List[tuple]:
+def _check_missing_filters(alias_filter_map: Dict[str, bool], is_exploratory: bool) -> List[tuple]:
     """Generate issues for aliases missing filters.
 
     Returns list of (message, severity, alias) tuples. ``alias`` is the
@@ -147,14 +142,16 @@ def _check_missing_filters(
     issues = []
     for alias, has_filter in alias_filter_map.items():
         if not has_filter:
-            issues.append((
-                f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
-                f"This may produce a cross-product of all relationship types. "
-                f"For analytical queries exploring all relationships, this may be intentional. "
-                f"For cohort definitions, add a filter on relationship_id.",
-                Severity.WARNING,
-                alias,
-            ))
+            issues.append(
+                (
+                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
+                    f"This may produce a cross-product of all relationship types. "
+                    f"For analytical queries exploring all relationships, this may be intentional. "
+                    f"For cohort definitions, add a filter on relationship_id.",
+                    Severity.WARNING,
+                    alias,
+                )
+            )
 
     return issues
 
@@ -232,15 +229,12 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
             # Strict-mode escalation: promote the base WARNING to ERROR when
             # strict mode is on. Listed in validation_context.strict_escalation_rules.
             from fastssv.core.validation_context import get_validation_context
+
             ctx = get_validation_context()
             escalate = ctx.should_escalate_rule(self.rule_id)
 
             for issue, severity, alias in issues:
-                final_severity = (
-                    Severity.ERROR
-                    if escalate and severity == Severity.WARNING
-                    else severity
-                )
+                final_severity = Severity.ERROR if escalate and severity == Severity.WARNING else severity
 
                 # Structured patch: ADD `AND <alias>.relationship_id =
                 # '<relationship>'` to the end of the JOIN ON clause that
@@ -259,12 +253,14 @@ class ConceptRelationshipRequiresRelationshipIdRule(Rule):
                             f" AND {alias}.relationship_id = '<relationship>'",
                         )
 
-                violations.append(self.create_violation(
-                    message=issue,
-                    severity=final_severity,
-                    details={"strict_mode_escalated": final_severity != severity},
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=issue,
+                        severity=final_severity,
+                        details={"strict_mode_escalated": final_severity != severity},
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

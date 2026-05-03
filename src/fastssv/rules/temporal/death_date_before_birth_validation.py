@@ -117,26 +117,30 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
             rt, rc = resolve_table_col(right, aliases)
 
             # death_date < birth_datetime (or <=)
-            if (isinstance(node, (exp.LT, exp.LTE)) and
-                _norm(lt) == DEATH_TABLE and _norm(lc) == DEATH_DATE and
-                _norm(rt) == PERSON_TABLE and _norm(rc) == BIRTH_DATETIME):
+            if (
+                isinstance(node, (exp.LT, exp.LTE))
+                and _norm(lt) == DEATH_TABLE
+                and _norm(lc) == DEATH_DATE
+                and _norm(rt) == PERSON_TABLE
+                and _norm(rc) == BIRTH_DATETIME
+            ):
                 key = "death_before_birth"
                 if key not in seen:
                     seen.add(key)
-                    violations.append(
-                        "death_date occurs before birth_datetime, indicating impossible temporal logic."
-                    )
+                    violations.append("death_date occurs before birth_datetime, indicating impossible temporal logic.")
 
             # birth_datetime > death_date (or >=) - reversed comparison
-            elif (isinstance(node, (exp.GT, exp.GTE)) and
-                  _norm(lt) == PERSON_TABLE and _norm(lc) == BIRTH_DATETIME and
-                  _norm(rt) == DEATH_TABLE and _norm(rc) == DEATH_DATE):
+            elif (
+                isinstance(node, (exp.GT, exp.GTE))
+                and _norm(lt) == PERSON_TABLE
+                and _norm(lc) == BIRTH_DATETIME
+                and _norm(rt) == DEATH_TABLE
+                and _norm(rc) == DEATH_DATE
+            ):
                 key = "death_before_birth"
                 if key not in seen:
                     seen.add(key)
-                    violations.append(
-                        "death_date occurs before birth_datetime, indicating impossible temporal logic."
-                    )
+                    violations.append("death_date occurs before birth_datetime, indicating impossible temporal logic.")
 
         # --- YEAR(death_date) < year_of_birth ---
         if isinstance(left, exp.Expression) and isinstance(right, exp.Column):
@@ -171,9 +175,7 @@ class DeathDateBeforeBirthValidationRule(Rule):
     rule_id = "temporal.death_date_before_birth_validation"
     name = "Death Date Before Birth Validation"
 
-    description = (
-        "Detects impossible temporal conditions where death occurs before birth."
-    )
+    description = "Detects impossible temporal conditions where death occurs before birth."
 
     severity = Severity.ERROR
     suggested_fix = "REPLACE: `d.death_date < p.birth_datetime` (or < year_of_birth) WITH `d.death_date >= COALESCE(p.birth_datetime, MAKE_DATE(p.year_of_birth, 1, 1))`. Death-before-birth is logically impossible."

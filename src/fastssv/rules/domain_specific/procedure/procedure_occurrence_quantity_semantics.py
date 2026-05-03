@@ -65,6 +65,7 @@ WEAK_COUNT_KEYWORDS = {"number", "num", "n_"}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -124,13 +125,13 @@ def _is_direct_sum_of_quantity(sum_func: exp.Sum, aliases: Dict[str, str]) -> bo
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
     issues: List[str] = []
     seen: Set[str] = set()
 
     for select in tree.find_all(exp.Select):
         for expr in select.expressions or []:
-
             alias_name = None
             expr_to_check = expr
 
@@ -139,13 +140,11 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                 expr_to_check = expr.this
 
             for sum_func in expr_to_check.find_all(exp.Sum):
-
                 if not _is_direct_sum_of_quantity(sum_func, aliases):
                     continue
 
                 # Only flag when alias strongly suggests counting
                 if alias_name and _suggests_counting_records(alias_name):
-
                     key = f"sum_quantity|{alias_name}"
                     if key in seen:
                         continue
@@ -161,6 +160,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ProcedureOccurrenceQuantitySemanticsRule(Rule):

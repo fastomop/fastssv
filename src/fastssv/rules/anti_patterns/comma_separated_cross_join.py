@@ -96,6 +96,7 @@ LARGE_CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -196,6 +197,7 @@ def _has_join_condition_in_where(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class CommaSeparatedCrossJoinRule(Rule):
     """Detect accidental Cartesian products from comma-separated tables."""
@@ -203,10 +205,7 @@ class CommaSeparatedCrossJoinRule(Rule):
     rule_id = "anti_patterns.comma_separated_cross_join"
     name = "Comma-Separated Cross Join"
 
-    description = (
-        "Comma-separated FROM between clinical tables with no join predicate, "
-        "produces a Cartesian product."
-    )
+    description = "Comma-separated FROM between clinical tables with no join predicate, produces a Cartesian product."
 
     severity = Severity.ERROR
 

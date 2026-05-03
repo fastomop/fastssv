@@ -574,7 +574,7 @@ class TestObservationPeriodAnchoring:
             SELECT co.*, op.observation_period_start_date, op.observation_period_end_date
             FROM condition_occurrence co
             JOIN observation_period op ON co.person_id = op.person_id
-            WHERE co.condition_start_date BETWEEN op.observation_period_start_date 
+            WHERE co.condition_start_date BETWEEN op.observation_period_start_date
                 AND op.observation_period_end_date
         )
         SELECT * FROM valid_patients
@@ -20706,8 +20706,8 @@ class TestDestructiveOperationsOnClinicalTables:
     def test_gap_004_update_on_condition_occurrence_violation(self) -> None:
         """UPDATE on condition_occurrence should trigger ERROR."""
         sql = """
-        UPDATE condition_occurrence 
-        SET condition_end_date = condition_start_date 
+        UPDATE condition_occurrence
+        SET condition_end_date = condition_start_date
         WHERE condition_end_date IS NULL
         """
         violations = self._run_rule(sql)
@@ -20767,7 +20767,7 @@ class TestDestructiveOperationsOnClinicalTables:
     def test_gap_004_select_with_aggregation_correct(self) -> None:
         """SELECT with aggregation should pass."""
         sql = """
-        SELECT 
+        SELECT
           measurement_concept_id,
           COUNT(*) AS measurement_count,
           AVG(value_as_number) AS avg_value
@@ -20823,8 +20823,8 @@ class TestDestructiveOperationsOnClinicalTables:
         sql = """
         DELETE FROM measurement m
         WHERE EXISTS (
-          SELECT 1 FROM person p 
-          WHERE p.person_id = m.person_id 
+          SELECT 1 FROM person p
+          WHERE p.person_id = m.person_id
           AND p.year_of_birth < 1900
         )
         """
@@ -21044,7 +21044,7 @@ class TestDatetimeBetweenDateLiteral:
         sql = """
         SELECT * FROM measurement m
         JOIN observation_period op ON m.person_id = op.person_id
-        WHERE m.measurement_datetime BETWEEN op.observation_period_start_date 
+        WHERE m.measurement_datetime BETWEEN op.observation_period_start_date
                                          AND op.observation_period_end_date
         """
         violations = self._run_rule(sql)
@@ -24528,7 +24528,7 @@ class TestCostPayerPlanPeriodIdJoin:
         """OMOP_135: Multiple conditions without correct join should fail."""
         sql = """
         SELECT * FROM cost c
-        JOIN payer_plan_period pp 
+        JOIN payer_plan_period pp
           ON c.person_id = pp.person_id
           AND c.cost_domain_id = 'Drug'
         """
@@ -24550,7 +24550,7 @@ class TestCostPayerPlanPeriodIdJoin:
         """OMOP_135: Correct join with additional person_id validation should pass."""
         sql = """
         SELECT * FROM cost c
-        JOIN payer_plan_period pp 
+        JOIN payer_plan_period pp
           ON c.payer_plan_period_id = pp.payer_plan_period_id
           AND c.person_id = pp.person_id
         """
@@ -26220,8 +26220,8 @@ class TestConceptIdStringComparison:
     def test_omop_157_multiple_concept_ids_fails(self) -> None:
         """OMOP_157: Multiple concept_id columns with string literals should warn."""
         sql = """
-        SELECT * FROM observation 
-        WHERE observation_concept_id = '3038553' 
+        SELECT * FROM observation
+        WHERE observation_concept_id = '3038553'
         AND unit_concept_id = '8739'
         """
         violations = self._run_rule(sql)
@@ -26273,7 +26273,7 @@ class TestConceptIdStringComparison:
     def test_omop_157_not_in_clause_fails(self) -> None:
         """OMOP_157: NOT IN clause with string literals should warn."""
         sql = """
-        SELECT * FROM procedure_occurrence 
+        SELECT * FROM procedure_occurrence
         WHERE procedure_concept_id NOT IN ('4024659', '4019703')
         """
         violations = self._run_rule(sql)

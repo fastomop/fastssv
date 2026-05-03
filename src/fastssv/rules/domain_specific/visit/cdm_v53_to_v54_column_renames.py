@@ -72,10 +72,7 @@ DEPRECATED_COLUMNS: Dict[str, Dict[str, str]] = {
 # --- Precomputed Normalized Structures -------------------------------------
 
 DEPRECATED_COLUMNS_NORM: Dict[str, Dict[str, str]] = {
-    normalize_name(table): {
-        normalize_name(old): new
-        for old, new in cols.items()
-    }
+    normalize_name(table): {normalize_name(old): new for old, new in cols.items()}
     for table, cols in DEPRECATED_COLUMNS.items()
 }
 
@@ -84,11 +81,13 @@ RELEVANT_TABLES_NORM: Set[str] = set(DEPRECATED_COLUMNS_NORM.keys())
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class CdmV53ToV54ColumnRenamesRule(Rule):
@@ -99,22 +98,13 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
     rule_id = "domain_specific.cdm_v53_to_v54_column_renames"
     name = "CDM v5.3 to v5.4 Column Renames"
 
-    description = (
-        "Detects usage of deprecated OMOP CDM v5.3 column names "
-        "that were renamed in v5.4."
-    )
+    description = "Detects usage of deprecated OMOP CDM v5.3 column names that were renamed in v5.4."
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: v5.3 column names with their v5.4 equivalents: admitting_source_concept_id → admitted_from_concept_id, admitting_source_value → admitted_from_source_value, discharge_to_concept_id → discharged_to_concept_id, discharge_to_source_value → discharged_to_source_value."
-    example_bad = (
-        "SELECT visit_occurrence_id, admitting_source_concept_id\n"
-        "FROM visit_occurrence;"
-    )
-    example_good = (
-        "SELECT visit_occurrence_id, admitted_from_concept_id\n"
-        "FROM visit_occurrence;"
-    )
+    example_bad = "SELECT visit_occurrence_id, admitting_source_concept_id\nFROM visit_occurrence;"
+    example_good = "SELECT visit_occurrence_id, admitted_from_concept_id\nFROM visit_occurrence;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
@@ -217,8 +207,7 @@ class CdmV53ToV54ColumnRenamesRule(Rule):
                     violations.append(
                         self.create_violation(
                             message=(
-                                f"Column '{col_name}' is deprecated for table '{table_norm}'. "
-                                f"Use '{new_col}' instead."
+                                f"Column '{col_name}' is deprecated for table '{table_norm}'. Use '{new_col}' instead."
                             ),
                             severity=self.severity,
                             suggested_fix_patch=patch,

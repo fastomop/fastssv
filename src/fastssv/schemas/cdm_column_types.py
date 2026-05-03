@@ -43,7 +43,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
     # =====================================================================
     # STANDARDIZED CLINICAL DATA
     # =====================================================================
-
     "person": {
         "person_id": INTEGER,
         "gender_concept_id": INTEGER,
@@ -64,7 +63,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "ethnicity_source_value": VARCHAR,
         "ethnicity_source_concept_id": INTEGER,
     },
-
     "observation_period": {
         "observation_period_id": INTEGER,
         "person_id": INTEGER,
@@ -72,7 +70,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "observation_period_end_date": DATE,
         "period_type_concept_id": INTEGER,
     },
-
     "visit_occurrence": {
         "visit_occurrence_id": INTEGER,
         "person_id": INTEGER,
@@ -92,7 +89,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "discharged_to_source_value": VARCHAR,
         "preceding_visit_occurrence_id": INTEGER,
     },
-
     "visit_detail": {
         "visit_detail_id": INTEGER,
         "person_id": INTEGER,
@@ -114,7 +110,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "parent_visit_detail_id": INTEGER,
         "visit_occurrence_id": INTEGER,
     },
-
     "condition_occurrence": {
         "condition_occurrence_id": INTEGER,
         "person_id": INTEGER,
@@ -133,7 +128,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "condition_source_concept_id": INTEGER,
         "condition_status_source_value": VARCHAR,
     },
-
     "drug_exposure": {
         "drug_exposure_id": INTEGER,
         "person_id": INTEGER,
@@ -159,7 +153,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "route_source_value": VARCHAR,
         "dose_unit_source_value": VARCHAR,
     },
-
     "procedure_occurrence": {
         "procedure_occurrence_id": INTEGER,
         "person_id": INTEGER,
@@ -178,7 +171,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "procedure_source_concept_id": INTEGER,
         "modifier_source_value": VARCHAR,
     },
-
     "device_exposure": {
         "device_exposure_id": INTEGER,
         "person_id": INTEGER,
@@ -200,7 +192,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "unit_source_value": VARCHAR,
         "unit_source_concept_id": INTEGER,
     },
-
     "measurement": {
         "measurement_id": INTEGER,
         "person_id": INTEGER,
@@ -226,7 +217,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "measurement_event_id": INTEGER,
         "meas_event_field_concept_id": INTEGER,
     },
-
     "observation": {
         "observation_id": INTEGER,
         "person_id": INTEGER,
@@ -250,7 +240,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "observation_event_id": INTEGER,
         "obs_event_field_concept_id": INTEGER,
     },
-
     "death": {
         "person_id": INTEGER,
         "death_date": DATE,
@@ -260,7 +249,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "cause_source_value": VARCHAR,
         "cause_source_concept_id": INTEGER,
     },
-
     "note": {
         "note_id": INTEGER,
         "person_id": INTEGER,
@@ -279,7 +267,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "note_event_id": INTEGER,
         "note_event_field_concept_id": INTEGER,
     },
-
     "note_nlp": {
         "note_nlp_id": INTEGER,
         "note_id": INTEGER,
@@ -296,7 +283,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "term_temporal": VARCHAR,
         "term_modifiers": VARCHAR,
     },
-
     "specimen": {
         "specimen_id": INTEGER,
         "person_id": INTEGER,
@@ -314,7 +300,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "anatomic_site_source_value": VARCHAR,
         "disease_status_source_value": VARCHAR,
     },
-
     "fact_relationship": {
         "domain_concept_id_1": INTEGER,
         "fact_id_1": INTEGER,
@@ -322,11 +307,9 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "fact_id_2": INTEGER,
         "relationship_concept_id": INTEGER,
     },
-
     # =====================================================================
     # STANDARDIZED HEALTH SYSTEM DATA
     # =====================================================================
-
     "location": {
         "location_id": INTEGER,
         "address_1": VARCHAR,
@@ -341,7 +324,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "latitude": FLOAT,
         "longitude": FLOAT,
     },
-
     "care_site": {
         "care_site_id": INTEGER,
         "care_site_name": VARCHAR,
@@ -350,7 +332,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "care_site_source_value": VARCHAR,
         "place_of_service_source_value": VARCHAR,
     },
-
     "provider": {
         "provider_id": INTEGER,
         "provider_name": VARCHAR,
@@ -366,11 +347,9 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "gender_source_value": VARCHAR,
         "gender_source_concept_id": INTEGER,
     },
-
     # =====================================================================
     # STANDARDIZED HEALTH ECONOMICS
     # =====================================================================
-
     "payer_plan_period": {
         "payer_plan_period_id": INTEGER,
         "person_id": INTEGER,
@@ -390,7 +369,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "stop_reason_source_value": VARCHAR,
         "stop_reason_source_concept_id": INTEGER,
     },
-
     "cost": {
         "cost_id": INTEGER,
         "cost_event_id": INTEGER,
@@ -415,11 +393,9 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "drg_concept_id": INTEGER,
         "drg_source_value": VARCHAR,
     },
-
     # =====================================================================
     # STANDARDIZED DERIVED ELEMENTS
     # =====================================================================
-
     "drug_era": {
         "drug_era_id": INTEGER,
         "person_id": INTEGER,
@@ -429,7 +405,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "drug_exposure_count": INTEGER,
         "gap_days": INTEGER,
     },
-
     "dose_era": {
         "dose_era_id": INTEGER,
         "person_id": INTEGER,
@@ -439,7 +414,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "dose_era_start_date": DATE,
         "dose_era_end_date": DATE,
     },
-
     "condition_era": {
         "condition_era_id": INTEGER,
         "person_id": INTEGER,
@@ -448,7 +422,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "condition_era_end_date": DATE,
         "condition_occurrence_count": INTEGER,
     },
-
     "episode": {
         "episode_id": INTEGER,
         "person_id": INTEGER,
@@ -464,17 +437,14 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "episode_source_value": VARCHAR,
         "episode_source_concept_id": INTEGER,
     },
-
     "episode_event": {
         "episode_id": INTEGER,
         "event_id": INTEGER,
         "episode_event_field_concept_id": INTEGER,
     },
-
     # =====================================================================
     # METADATA
     # =====================================================================
-
     "metadata": {
         "metadata_id": INTEGER,
         "metadata_concept_id": INTEGER,
@@ -486,7 +456,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "metadata_date": DATE,
         "metadata_datetime": DATETIME,
     },
-
     "cdm_source": {
         "cdm_source_name": VARCHAR,
         "cdm_source_abbreviation": VARCHAR,
@@ -500,11 +469,9 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "cdm_version_concept_id": INTEGER,
         "vocabulary_version": VARCHAR,
     },
-
     # =====================================================================
     # VOCABULARY TABLES
     # =====================================================================
-
     "concept": {
         "concept_id": INTEGER,
         "concept_name": VARCHAR,
@@ -517,7 +484,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "valid_end_date": DATE,
         "invalid_reason": VARCHAR,
     },
-
     "vocabulary": {
         "vocabulary_id": VARCHAR,
         "vocabulary_name": VARCHAR,
@@ -525,19 +491,16 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "vocabulary_version": VARCHAR,
         "vocabulary_concept_id": INTEGER,
     },
-
     "domain": {
         "domain_id": VARCHAR,
         "domain_name": VARCHAR,
         "domain_concept_id": INTEGER,
     },
-
     "concept_class": {
         "concept_class_id": VARCHAR,
         "concept_class_name": VARCHAR,
         "concept_class_concept_id": INTEGER,
     },
-
     "concept_relationship": {
         "concept_id_1": INTEGER,
         "concept_id_2": INTEGER,
@@ -546,7 +509,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "valid_end_date": DATE,
         "invalid_reason": VARCHAR,
     },
-
     "relationship": {
         "relationship_id": VARCHAR,
         "relationship_name": VARCHAR,
@@ -555,20 +517,17 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "reverse_relationship_id": VARCHAR,
         "relationship_concept_id": INTEGER,
     },
-
     "concept_synonym": {
         "concept_id": INTEGER,
         "concept_synonym_name": VARCHAR,
         "language_concept_id": INTEGER,
     },
-
     "concept_ancestor": {
         "ancestor_concept_id": INTEGER,
         "descendant_concept_id": INTEGER,
         "min_levels_of_separation": INTEGER,
         "max_levels_of_separation": INTEGER,
     },
-
     "source_to_concept_map": {
         "source_code": VARCHAR,
         "source_concept_id": INTEGER,
@@ -580,7 +539,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "valid_end_date": DATE,
         "invalid_reason": VARCHAR,
     },
-
     "drug_strength": {
         "drug_concept_id": INTEGER,
         "ingredient_concept_id": INTEGER,
@@ -595,18 +553,15 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "valid_end_date": DATE,
         "invalid_reason": VARCHAR,
     },
-
     # =====================================================================
     # COHORT TABLES
     # =====================================================================
-
     "cohort": {
         "cohort_definition_id": INTEGER,
         "subject_id": INTEGER,
         "cohort_start_date": DATE,
         "cohort_end_date": DATE,
     },
-
     "cohort_definition": {
         "cohort_definition_id": INTEGER,
         "cohort_definition_name": VARCHAR,
@@ -616,14 +571,12 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "subject_concept_id": INTEGER,
         "cohort_initiation_date": DATE,
     },
-
     # =====================================================================
     # LEGACY / EXTENSION TABLES
     # Not in v5.4 core, but retained because fastssv ships rules that
     # specifically detect their presence (legacy v5.3 holdover or optional
     # extension).
     # =====================================================================
-
     "attribute_definition": {
         # Removed in v5.4; carried forward for legacy detection.
         "attribute_definition_id": INTEGER,
@@ -632,7 +585,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "attribute_type_concept_id": INTEGER,
         "attribute_syntax": VARCHAR,
     },
-
     "location_history": {
         # Optional v5.4 extension; ships with fastssv for sites that use it.
         "location_history_id": INTEGER,
@@ -649,6 +601,7 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
 # ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
+
 
 def get_column_type(table: str, column: str) -> str | None:
     """Return the type-constant string for ``table.column``, or None.
@@ -706,10 +659,7 @@ SOURCE_VALUE_COLUMNS: Set[str] = {
 # Derived column-name view (was cdm_columns.py before [Unreleased]).
 # ---------------------------------------------------------------------------
 
-CDM_COLUMNS: Dict[str, FrozenSet[str]] = {
-    table: frozenset(cols.keys())
-    for table, cols in CDM_COLUMN_TYPES.items()
-}
+CDM_COLUMNS: Dict[str, FrozenSet[str]] = {table: frozenset(cols.keys()) for table, cols in CDM_COLUMN_TYPES.items()}
 
 
 def get_table_columns(table_name: str) -> FrozenSet[str]:

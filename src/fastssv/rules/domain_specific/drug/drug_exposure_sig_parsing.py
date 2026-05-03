@@ -84,6 +84,7 @@ NUMERIC_REGEX = re.compile(r"\d|\[0-9\]|\\d")
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -219,6 +220,7 @@ def _likely_extraction(func: exp.Expression, func_name: str) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
     issues: List[str] = []
     seen: Set[Tuple[str, str]] = set()
@@ -233,9 +235,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
         is_numeric = _is_numeric_extraction_context(node)
 
-        should_flag = is_numeric or (
-            func_name in PARSING_FUNCTIONS and _likely_extraction(node, func_name)
-        )
+        should_flag = is_numeric or (func_name in PARSING_FUNCTIONS and _likely_extraction(node, func_name))
 
         if not should_flag:
             continue
@@ -262,6 +262,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugExposureSigParsingRule(Rule):
     """Detect parsing of drug_exposure.sig for structured dose extraction."""
@@ -277,10 +278,7 @@ class DrugExposureSigParsingRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: substring/regex parsing of de.sig WITH a JOIN to drug_strength: `JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id WHERE ds.invalid_reason IS NULL`. drug_strength carries amount_value / numerator_value / denominator_value as structured fields."
-    example_bad = (
-        "SELECT CAST(SUBSTRING(sig, 1, 3) AS INT) AS dose\n"
-        "FROM drug_exposure;"
-    )
+    example_bad = "SELECT CAST(SUBSTRING(sig, 1, 3) AS INT) AS dose\nFROM drug_exposure;"
     example_good = (
         "SELECT de.person_id, ds.amount_value, ds.amount_unit_concept_id\n"
         "FROM drug_exposure de\n"

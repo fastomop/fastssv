@@ -86,6 +86,7 @@ KNOWN_ANCESTOR_DOMAINS: Dict[int, str] = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -119,6 +120,7 @@ def _resolve_table_name(alias: Optional[str], aliases: Dict[str, str]) -> Option
 
 
 # --- Extraction ------------------------------------------------------------
+
 
 def _find_ancestor_filters(tree: exp.Expression, aliases: Dict[str, str]) -> Set[int]:
     ancestor_ids: Set[int] = set()
@@ -230,17 +232,14 @@ def _find_domain_filters(
 
 # --- Core Validation -------------------------------------------------------
 
+
 def _validate_domain_compatibility(
     tree: exp.Expression,
     aliases: Dict[str, str],
 ) -> List[Dict[str, object]]:
     violations: List[Dict[str, object]] = []
 
-    ca_aliases = {
-        _norm(alias)
-        for alias, table in aliases.items()
-        if _norm(table) == CONCEPT_ANCESTOR
-    }
+    ca_aliases = {_norm(alias) for alias, table in aliases.items() if _norm(table) == CONCEPT_ANCESTOR}
 
     if not ca_aliases:
         return []
@@ -257,28 +256,27 @@ def _validate_domain_compatibility(
     if not domain_filters:
         return []
 
-    expected_domains = {
-        KNOWN_ANCESTOR_DOMAINS[a]
-        for a in ancestor_ids
-        if a in KNOWN_ANCESTOR_DOMAINS
-    }
+    expected_domains = {KNOWN_ANCESTOR_DOMAINS[a] for a in ancestor_ids if a in KNOWN_ANCESTOR_DOMAINS}
 
     if not expected_domains:
         return []  # no strong signal → don't fire
 
     for domain_value, context in domain_filters:
         if all(_norm(domain_value) != _norm(d) for d in expected_domains):
-            violations.append({
-                "expected_domains": list(expected_domains),
-                "filtered_domain": domain_value,
-                "ancestor_ids": list(ancestor_ids),
-                "context": context,
-            })
+            violations.append(
+                {
+                    "expected_domains": list(expected_domains),
+                    "filtered_domain": domain_value,
+                    "ancestor_ids": list(ancestor_ids),
+                    "context": context,
+                }
+            )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptAncestorCrossDomainValidation(Rule):

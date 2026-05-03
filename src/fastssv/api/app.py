@@ -89,6 +89,7 @@ async def _lifespan(app: FastAPI):
 def _rules_count() -> int:
     try:
         from fastssv.core.registry import get_all_rules
+
         return len(get_all_rules())
     except Exception:
         return 0

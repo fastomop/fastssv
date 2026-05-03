@@ -95,6 +95,7 @@ TRIM_FUNCTIONS = {"trim", "rtrim", "ltrim", "btrim"}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
 
@@ -142,6 +143,7 @@ def _is_wrapped_in_trim(node: exp.Expression) -> bool:
 
 
 # --- Core detection --------------------------------------------------------
+
 
 def _find_concept_name_equalities(
     tree: exp.Expression,
@@ -193,6 +195,7 @@ def _find_concept_name_equalities(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptNameWhitespaceRule(Rule):
     """Detect concept_name equality filters without TRIM."""
@@ -200,10 +203,7 @@ class ConceptNameWhitespaceRule(Rule):
     rule_id = "data_quality.concept_name_whitespace"
     name = "Concept Name Whitespace"
 
-    description = (
-        "concept_name values may contain trailing whitespace. "
-        "Exact equality without TRIM may silently fail."
-    )
+    description = "concept_name values may contain trailing whitespace. Exact equality without TRIM may silently fail."
 
     severity = Severity.WARNING
 
@@ -216,16 +216,8 @@ class ConceptNameWhitespaceRule(Rule):
         "side, or use LIKE with explicit wildcards, so the query is "
         "resilient to whitespace artefacts."
     )
-    example_bad = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE concept_name = 'Type 2 diabetes mellitus';"
-    )
-    example_good = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE TRIM(concept_name) = 'Type 2 diabetes mellitus';"
-    )
+    example_bad = "SELECT concept_id\nFROM concept\nWHERE concept_name = 'Type 2 diabetes mellitus';"
+    example_good = "SELECT concept_id\nFROM concept\nWHERE TRIM(concept_name) = 'Type 2 diabetes mellitus';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_name" not in sql.lower():
@@ -245,10 +237,7 @@ class ConceptNameWhitespaceRule(Rule):
             aliases = extract_aliases(tree)
 
             # Safer: detect concept table directly from AST
-            has_concept = any(
-                _norm(t.name) == "concept"
-                for t in tree.find_all(exp.Table)
-            )
+            has_concept = any(_norm(t.name) == "concept" for t in tree.find_all(exp.Table))
 
             if not has_concept:
                 continue

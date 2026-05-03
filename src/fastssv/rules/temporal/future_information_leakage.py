@@ -104,8 +104,16 @@ def _find_cross_table_date_comparisons(
         if key in seen:
             continue
         seen.add(key)
-        results.append((later_table, later_col, earlier_table, earlier_col,
-                        node.sql(), str(later_qual) if later_qual else later_table))
+        results.append(
+            (
+                later_table,
+                later_col,
+                earlier_table,
+                earlier_col,
+                node.sql(),
+                str(later_qual) if later_qual else later_table,
+            )
+        )
 
     return results
 
@@ -120,8 +128,7 @@ def _resolve_observation_period_alias(aliases: Dict[str, str]) -> str | None:
     query joins observation_period without aliasing it.
     """
     op_aliases = [
-        alias for alias, real in aliases.items()
-        if real == "observation_period" and alias != "observation_period"
+        alias for alias, real in aliases.items() if real == "observation_period" and alias != "observation_period"
     ]
     if op_aliases:
         return op_aliases[0]
@@ -251,34 +258,33 @@ class FutureInformationLeakageRule(Rule):
                 patch = None
                 span = locate(sql, comparison_sql)
                 if span is not None:
-                    insert_text = (
-                        f" AND {later_qual}.{later_col} "
-                        f"<= {op_alias}.observation_period_end_date"
-                    )
+                    insert_text = f" AND {later_qual}.{later_col} <= {op_alias}.observation_period_end_date"
                     patch = patch_add(span[1], insert_text)
 
-                violations.append(self.create_violation(
-                    message=(
-                        f"Query compares {later_table}.{later_col} against "
-                        f"{earlier_table}.{earlier_col} without bounding the later "
-                        f"event by observation_period_end_date. The later event can "
-                        f"fall outside the patient's observed follow-up window, "
-                        f"producing immortal-time bias or similar follow-up-window "
-                        f"errors in cohort analyses."
-                    ),
-                    suggested_fix=(
-                        f"ADD: `AND {later_qual}.{later_col} "
-                        f"<= {op_alias}.observation_period_end_date` to bound the "
-                        f"later event by the patient's observed follow-up window."
-                    ),
-                    suggested_fix_patch=patch,
-                    details={
-                        "later_event": f"{later_table}.{later_col}",
-                        "index_event": f"{earlier_table}.{earlier_col}",
-                        "observation_period_alias": op_alias,
-                        "missing": "observation_period_end_date upper bound",
-                    },
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Query compares {later_table}.{later_col} against "
+                            f"{earlier_table}.{earlier_col} without bounding the later "
+                            f"event by observation_period_end_date. The later event can "
+                            f"fall outside the patient's observed follow-up window, "
+                            f"producing immortal-time bias or similar follow-up-window "
+                            f"errors in cohort analyses."
+                        ),
+                        suggested_fix=(
+                            f"ADD: `AND {later_qual}.{later_col} "
+                            f"<= {op_alias}.observation_period_end_date` to bound the "
+                            f"later event by the patient's observed follow-up window."
+                        ),
+                        suggested_fix_patch=patch,
+                        details={
+                            "later_event": f"{later_table}.{later_col}",
+                            "index_event": f"{earlier_table}.{earlier_col}",
+                            "observation_period_alias": op_alias,
+                            "missing": "observation_period_end_date upper bound",
+                        },
+                    )
+                )
 
         return violations
 

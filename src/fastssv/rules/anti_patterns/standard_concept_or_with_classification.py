@@ -74,15 +74,13 @@ CLASSIFICATION_VALUES = {"c"}
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _get_concept_aliases(aliases: Dict[str, str]) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == CONCEPT_TABLE
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == CONCEPT_TABLE}
 
 
 def _is_standard_concept_column(
@@ -142,9 +140,7 @@ def _first_standard_concept_column(
     """Return the first column reference matching concept.standard_concept under ``node``."""
     for eq in node.find_all(exp.EQ):
         for col_node in (eq.this, eq.expression):
-            if isinstance(col_node, exp.Column) and _is_standard_concept_column(
-                col_node, aliases, concept_aliases
-            ):
+            if isinstance(col_node, exp.Column) and _is_standard_concept_column(col_node, aliases, concept_aliases):
                 return col_node
     return None
 
@@ -218,6 +214,7 @@ def _detect_in_pattern(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class StandardConceptOrWithClassificationRule(Rule):
     """Detect OR/IN patterns mixing standard and classification concepts."""
@@ -276,9 +273,8 @@ class StandardConceptOrWithClassificationRule(Rule):
             if not concept_aliases:
                 continue
 
-            entries = (
-                _detect_or_pattern(tree, aliases, concept_aliases) +
-                _detect_in_pattern(tree, aliases, concept_aliases)
+            entries = _detect_or_pattern(tree, aliases, concept_aliases) + _detect_in_pattern(
+                tree, aliases, concept_aliases
             )
 
             for msg, node, col in entries:

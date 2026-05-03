@@ -81,9 +81,7 @@ def _find_value_as_number_threshold(
             # Accept if column is unqualified (only measurement in scope)
             # or explicitly from measurement
             if table is None or normalize_name(table) == "measurement":
-                qualifier = (
-                    normalize_name(col_side.table) if col_side.table else None
-                )
+                qualifier = normalize_name(col_side.table) if col_side.table else None
                 return node, qualifier
 
     # Also handle: value_as_number BETWEEN low AND high
@@ -106,9 +104,7 @@ def _find_value_as_number_threshold(
             if normalize_name(col) != "value_as_number":
                 continue
             if table is None or normalize_name(table) == "measurement":
-                qualifier = (
-                    normalize_name(col_node.table) if col_node.table else None
-                )
+                qualifier = normalize_name(col_node.table) if col_node.table else None
                 return node, qualifier
 
     return None
@@ -196,20 +192,22 @@ class MeasurementUnitValidationRule(Rule):
                     f" AND {qual}.unit_concept_id = <unit_concept_id>",
                 )
 
-            violations.append(self.create_violation(
-                message=(
-                    "Query filters measurement.value_as_number against a numeric "
-                    "threshold without constraining unit_concept_id. The same "
-                    "measurement concept can be stored in different units across "
-                    "sites (e.g. glucose: 5.5 mmol/L vs 100 mg/dL), making the "
-                    "numeric threshold unreliable without a unit filter."
-                ),
-                details={
-                    "column": "measurement.value_as_number",
-                    "missing": "unit_concept_id constraint",
-                },
-                suggested_fix_patch=patch,
-            ))
+            violations.append(
+                self.create_violation(
+                    message=(
+                        "Query filters measurement.value_as_number against a numeric "
+                        "threshold without constraining unit_concept_id. The same "
+                        "measurement concept can be stored in different units across "
+                        "sites (e.g. glucose: 5.5 mmol/L vs 100 mg/dL), making the "
+                        "numeric threshold unreliable without a unit filter."
+                    ),
+                    details={
+                        "column": "measurement.value_as_number",
+                        "missing": "unit_concept_id constraint",
+                    },
+                    suggested_fix_patch=patch,
+                )
+            )
 
         return violations
 

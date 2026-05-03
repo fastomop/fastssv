@@ -112,9 +112,8 @@ def _detect_los_expressions(tree: exp.Expression, aliases: dict) -> List[str]:
         left, right = sub.this, sub.expression
         if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
             continue
-        if (
-            _is_visit_date_column(left, aliases, VISIT_END_DATE_COLS)
-            and _is_visit_date_column(right, aliases, VISIT_START_DATE_COLS)
+        if _is_visit_date_column(left, aliases, VISIT_END_DATE_COLS) and _is_visit_date_column(
+            right, aliases, VISIT_START_DATE_COLS
         ):
             found.append(sub.sql())
 
@@ -172,10 +171,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
         "computing on live data."
     )
 
-    example_bad = (
-        "SELECT AVG(visit_end_date - visit_start_date) AS avg_los\n"
-        "FROM visit_occurrence;"
-    )
+    example_bad = "SELECT AVG(visit_end_date - visit_start_date) AS avg_los\nFROM visit_occurrence;"
     example_good = (
         "SELECT AVG(visit_end_date - visit_start_date) AS avg_los\n"
         "FROM visit_occurrence\n"

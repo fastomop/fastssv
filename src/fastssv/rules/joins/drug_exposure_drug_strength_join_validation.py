@@ -61,6 +61,7 @@ DRUG_CONCEPT_ID = "drug_concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -96,6 +97,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -119,8 +121,7 @@ def _detect(
         lt_norm = _normalize_table(lt)
         rt_norm = _normalize_table(rt)
 
-        if not ((_is_de(lt_norm) and _is_ds(rt_norm)) or
-                (_is_de(rt_norm) and _is_ds(lt_norm))):
+        if not ((_is_de(lt_norm) and _is_ds(rt_norm)) or (_is_de(rt_norm) and _is_ds(lt_norm))):
             continue
 
         found_any_de_ds_relation = True
@@ -164,6 +165,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugExposureDrugStrengthJoinValidationRule(Rule):
     """Validate drug_exposure ↔ drug_strength joins."""
@@ -172,21 +174,16 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
     name = "Drug Exposure to Drug Strength Join Validation"
 
     description = (
-        "Ensures drug_exposure joins to drug_strength using drug_concept_id. "
-        "Flags missing or non-standard joins."
+        "Ensures drug_exposure joins to drug_strength using drug_concept_id. Flags missing or non-standard joins."
     )
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join target WITH `drug_exposure.drug_concept_id = drug_strength.drug_concept_id`, AND add `AND drug_strength.invalid_reason IS NULL`."
     example_bad = (
-        "SELECT * FROM drug_exposure de\n"
-        "JOIN drug_strength ds ON de.drug_source_concept_id = ds.drug_concept_id;"
+        "SELECT * FROM drug_exposure de\nJOIN drug_strength ds ON de.drug_source_concept_id = ds.drug_concept_id;"
     )
-    example_good = (
-        "SELECT * FROM drug_exposure de\n"
-        "JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id;"
-    )
+    example_good = "SELECT * FROM drug_exposure de\nJOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -213,27 +210,25 @@ class DrugExposureDrugStrengthJoinValidationRule(Rule):
             for de, de_col, ds, ds_col in errors:
                 patch = None
                 if de_col == "NONE":
-                    msg = (
-                        "drug_exposure and drug_strength are used but not joined. "
-                        "Missing join condition."
-                    )
+                    msg = "drug_exposure and drug_strength are used but not joined. Missing join condition."
                 elif de_col == "UNKNOWN":
                     msg = (
                         "Invalid join between drug_exposure and drug_strength. "
                         "Expected drug_concept_id = drug_concept_id."
                     )
                 else:
-                    msg = (
-                        f"Invalid join: {de}.{de_col} = {ds}.{ds_col}. "
-                        f"Expected drug_concept_id = drug_concept_id."
-                    )
+                    msg = f"Invalid join: {de}.{de_col} = {ds}.{ds_col}. Expected drug_concept_id = drug_concept_id."
                     fix_text = (
-                        f"REPLACE: `{de}.{de_col} = {ds}.{ds_col}` "
-                        f"WITH `{de}.drug_concept_id = {ds}.drug_concept_id`."
+                        f"REPLACE: `{de}.{de_col} = {ds}.{ds_col}` WITH `{de}.drug_concept_id = {ds}.drug_concept_id`."
                     )
                     patch = build_join_replace_patch(
-                        sql, de, de_col, ds, ds_col,
-                        DRUG_CONCEPT_ID, DRUG_CONCEPT_ID,
+                        sql,
+                        de,
+                        de_col,
+                        ds,
+                        ds_col,
+                        DRUG_CONCEPT_ID,
+                        DRUG_CONCEPT_ID,
                         fix_text,
                         aliases=aliases,
                     )

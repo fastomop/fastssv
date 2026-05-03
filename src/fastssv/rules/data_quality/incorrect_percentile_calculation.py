@@ -38,11 +38,11 @@ def _has_incorrect_percentile_pattern(tree: exp.Expression) -> List[tuple]:
             alias = normalize_name(expr.alias)
             for case_expr in expr.find_all(exp.Case):
                 case_sql = case_expr.sql().lower()
-                if 'order_nr' not in case_sql:
+                if "order_nr" not in case_sql:
                     continue
-                if not any(col in case_sql for col in ['max_value', 'population_size']):
+                if not any(col in case_sql for col in ["max_value", "population_size"]):
                     continue
-                threshold_match = re.search(r'order_nr\s*<\s*([.0-9]+)\s*\*', case_sql)
+                threshold_match = re.search(r"order_nr\s*<\s*([.0-9]+)\s*\*", case_sql)
                 if threshold_match:
                     threshold = threshold_match.group(1)
                     percentile_case_statements.append((alias, threshold))
@@ -62,25 +62,27 @@ def _has_incorrect_percentile_pattern(tree: exp.Expression) -> List[tuple]:
     percentile_alias_patterns = set()
     for alias in aliases:
         alias_lower = str(alias).lower()
-        if any(marker in alias_lower for marker in ['25', 'quartile', 'p25']):
-            percentile_alias_patterns.add('25th')
-        elif any(marker in alias_lower for marker in ['50', 'median', 'p50']):
-            percentile_alias_patterns.add('50th')
-        elif any(marker in alias_lower for marker in ['75', 'p75']):
-            percentile_alias_patterns.add('75th')
-        elif 'percentile' in alias_lower:
-            percentile_alias_patterns.add('percentile')
+        if any(marker in alias_lower for marker in ["25", "quartile", "p25"]):
+            percentile_alias_patterns.add("25th")
+        elif any(marker in alias_lower for marker in ["50", "median", "p50"]):
+            percentile_alias_patterns.add("50th")
+        elif any(marker in alias_lower for marker in ["75", "p75"]):
+            percentile_alias_patterns.add("75th")
+        elif "percentile" in alias_lower:
+            percentile_alias_patterns.add("percentile")
 
     if len(percentile_alias_patterns) < 2:
         return issues
 
-    issues.append((
-        f"CRITICAL BUG: All percentile columns ({', '.join(aliases)}) use identical threshold ({thresholds[0]}). "
-        f"This will produce identical values at runtime, corrupting analytical results. "
-        f"Each percentile must use a different threshold: "
-        f"percentile_25 should use 0.25, median should use 0.50, percentile_75 should use 0.75.",
-        Severity.ERROR
-    ))
+    issues.append(
+        (
+            f"CRITICAL BUG: All percentile columns ({', '.join(aliases)}) use identical threshold ({thresholds[0]}). "
+            f"This will produce identical values at runtime, corrupting analytical results. "
+            f"Each percentile must use a different threshold: "
+            f"percentile_25 should use 0.25, median should use 0.50, percentile_75 should use 0.75.",
+            Severity.ERROR,
+        )
+    )
 
     return issues
 
@@ -149,13 +151,15 @@ class IncorrectPercentileCalculationRule(Rule):
             issues = _has_incorrect_percentile_pattern(tree)
 
             for issue, severity in issues:
-                violations.append(self.create_violation(
-                    message=issue,
-                    severity=severity,
-                    details={
-                        "pattern": "manual_percentile_with_row_number",
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=issue,
+                        severity=severity,
+                        details={
+                            "pattern": "manual_percentile_with_row_number",
+                        },
+                    )
+                )
 
         return violations
 

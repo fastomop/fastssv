@@ -97,6 +97,7 @@ PERSON_ID_COL = "person_id"
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -110,11 +111,7 @@ def _is_person_id(col: Optional[str]) -> bool:
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -197,6 +194,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class EpisodeEventNoPersonIdRule(Rule):
     """
@@ -214,13 +212,8 @@ class EpisodeEventNoPersonIdRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: `episode_event.person_id` references with a chain through episode: `JOIN episode e ON ee.episode_id = e.episode_id` and read `e.person_id`. episode_event has no person_id column."
-    example_bad = (
-        "SELECT person_id FROM episode_event;"
-    )
-    example_good = (
-        "SELECT e.person_id FROM episode_event ee\n"
-        "JOIN episode e ON ee.episode_id = e.episode_id;"
-    )
+    example_bad = "SELECT person_id FROM episode_event;"
+    example_good = "SELECT e.person_id FROM episode_event ee\nJOIN episode e ON ee.episode_id = e.episode_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

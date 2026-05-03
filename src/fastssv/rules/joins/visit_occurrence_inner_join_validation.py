@@ -87,6 +87,7 @@ CLINICAL_EVENT_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -163,6 +164,7 @@ def _has_implicit_join(tree: exp.Expression) -> bool:
 
 # --- Core ------------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict]:
     issues = []
     seen: Set[str] = set()
@@ -183,51 +185,55 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
         seen.add(key)
 
         if intentional:
-            issues.append({
-                "message": (
-                    "INNER JOIN to visit_occurrence with explicit filtering. "
-                    "This restricts results to visit-linked events only."
-                ),
-                "severity": Severity.WARNING,
-                "fixable": False,
-            })
+            issues.append(
+                {
+                    "message": (
+                        "INNER JOIN to visit_occurrence with explicit filtering. "
+                        "This restricts results to visit-linked events only."
+                    ),
+                    "severity": Severity.WARNING,
+                    "fixable": False,
+                }
+            )
         else:
-            issues.append({
-                "message": (
-                    "INNER JOIN to visit_occurrence may drop events with NULL "
-                    "visit_occurrence_id (often 20–60% of records). "
-                    "Consider LEFT JOIN unless filtering is intentional."
-                ),
-                "severity": Severity.WARNING,
-                "fixable": True,
-            })
+            issues.append(
+                {
+                    "message": (
+                        "INNER JOIN to visit_occurrence may drop events with NULL "
+                        "visit_occurrence_id (often 20–60% of records). "
+                        "Consider LEFT JOIN unless filtering is intentional."
+                    ),
+                    "severity": Severity.WARNING,
+                    "fixable": True,
+                }
+            )
 
     # --- Implicit JOINs ---
     if _has_implicit_join(tree):
         # Check if both VO and event tables are present
-        tables = {
-            _norm(t.name)
-            for t in tree.find_all(exp.Table)
-        }
+        tables = {_norm(t.name) for t in tree.find_all(exp.Table)}
 
         if VISIT_OCCURRENCE in tables and any(t in CLINICAL_EVENT_TABLES for t in tables):
             key = "implicit_join_vo"
             if key not in seen:
                 seen.add(key)
 
-                issues.append({
-                    "message": (
-                        "Implicit INNER JOIN involving visit_occurrence detected. "
-                        "This may unintentionally drop records with NULL visit_occurrence_id."
-                    ),
-                    "severity": Severity.WARNING,
-                    "fixable": False,
-                })
+                issues.append(
+                    {
+                        "message": (
+                            "Implicit INNER JOIN involving visit_occurrence detected. "
+                            "This may unintentionally drop records with NULL visit_occurrence_id."
+                        ),
+                        "severity": Severity.WARNING,
+                        "fixable": False,
+                    }
+                )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class VisitOccurrenceInnerJoinValidationRule(Rule):
@@ -235,10 +241,7 @@ class VisitOccurrenceInnerJoinValidationRule(Rule):
 
     rule_id = "joins.visit_occurrence_inner_join_validation"
     name = "Visit Occurrence INNER JOIN Validation"
-    description = (
-        "Detects INNER JOINs to visit_occurrence that may exclude events "
-        "with NULL visit_occurrence_id."
-    )
+    description = "Detects INNER JOINs to visit_occurrence that may exclude events with NULL visit_occurrence_id."
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `INNER JOIN visit_occurrence` WITH `LEFT JOIN visit_occurrence` if events without a recorded visit should be preserved (visit_occurrence_id is nullable on event tables)."
     example_bad = (
