@@ -61,6 +61,7 @@ NOTE_ID = "note_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -94,6 +95,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -126,8 +128,7 @@ def _detect(
         lt_norm = _normalize_table(lt)
         rt_norm = _normalize_table(rt)
 
-        if not ((_is_note_nlp(lt_norm) and _is_note(rt_norm)) or
-                (_is_note_nlp(rt_norm) and _is_note(lt_norm))):
+        if not ((_is_note_nlp(lt_norm) and _is_note(rt_norm)) or (_is_note_nlp(rt_norm) and _is_note(lt_norm))):
             continue
 
         found_any_relation = True
@@ -172,6 +173,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class NoteNlpNoteJoinValidationRule(Rule):
     """Validate note_nlp ↔ note joins via note_id."""
@@ -179,14 +181,13 @@ class NoteNlpNoteJoinValidationRule(Rule):
     rule_id = "joins.note_nlp_note_join_validation"
     name = "Note NLP to Note Join Validation"
 
-    description = (
-        "Ensures note_nlp joins to note using note_id. "
-        "Flags missing or invalid joins."
-    )
+    description = "Ensures note_nlp joins to note using note_id. Flags missing or invalid joins."
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: the join target WITH `note_nlp.note_id = note.note_id`. note_nlp links to note via note_id only."
+    suggested_fix = (
+        "REPLACE: the join target WITH `note_nlp.note_id = note.note_id`. note_nlp links to note via note_id only."
+    )
     example_bad = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_nlp_id = n.note_id;"
     example_good = "SELECT * FROM note_nlp nnlp JOIN note n ON nnlp.note_id = n.note_id;"
 
@@ -214,28 +215,24 @@ class NoteNlpNoteJoinValidationRule(Rule):
             for nn, nn_col, note, note_col in errors:
                 patch = None
                 if nn_col == "NONE":
-                    msg = (
-                        "note_nlp and note are used but not joined. "
-                        "Missing join condition."
-                    )
+                    msg = "note_nlp and note are used but not joined. Missing join condition."
                 elif nn_col == "INVALID":
-                    msg = (
-                        "Invalid join between note_nlp and note. "
-                        "Expected note_id = note_id."
-                    )
+                    msg = "Invalid join between note_nlp and note. Expected note_id = note_id."
                 else:
                     msg = (
                         f"Invalid FK join between note_nlp and note: "
                         f"{nn}.{nn_col} = {note}.{note_col}. "
                         f"Expected note_id = note_id."
                     )
-                    fix_text = (
-                        f"REPLACE: `{nn}.{nn_col} = {note}.{note_col}` "
-                        f"WITH `{nn}.note_id = {note}.note_id`."
-                    )
+                    fix_text = f"REPLACE: `{nn}.{nn_col} = {note}.{note_col}` WITH `{nn}.note_id = {note}.note_id`."
                     patch = build_join_replace_patch(
-                        sql, nn, nn_col, note, note_col,
-                        NOTE_ID, NOTE_ID,
+                        sql,
+                        nn,
+                        nn_col,
+                        note,
+                        note_col,
+                        NOTE_ID,
+                        NOTE_ID,
                         fix_text,
                         aliases=aliases,
                     )

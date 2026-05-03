@@ -124,12 +124,11 @@ NON_INGREDIENT_CLASSES = {
     "Clinical Pack",
 }
 
-NON_INGREDIENT_CLASSES_NORM = {
-    normalize_name(c) for c in NON_INGREDIENT_CLASSES
-}
+NON_INGREDIENT_CLASSES_NORM = {normalize_name(c) for c in NON_INGREDIENT_CLASSES}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
@@ -169,13 +168,9 @@ def _has_non_ingredient_concept_class_filter(
 ) -> Optional[str]:
     """Strict detection of concept.concept_class_id misuse."""
 
-    nodes = (
-        list(tree.find_all(exp.EQ)) +
-        list(tree.find_all(exp.In))
-    )
+    nodes = list(tree.find_all(exp.EQ)) + list(tree.find_all(exp.In))
 
     for node in nodes:
-
         # --- EQ ---
         if isinstance(node, exp.EQ):
             pairs = [(node.this, node.expression), (node.expression, node.this)]
@@ -220,6 +215,7 @@ def _has_non_ingredient_concept_class_filter(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptClassIdIngredientForDrugGroupingRule(Rule):

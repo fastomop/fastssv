@@ -96,15 +96,13 @@ MIN_LEVELS = "min_levels_of_separation"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _get_aliases_by_table(aliases: Dict[str, str], table_name: str) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == table_name
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == table_name}
 
 
 def _extract_literal_int(node: exp.Expression) -> Optional[int]:
@@ -117,6 +115,7 @@ def _extract_literal_int(node: exp.Expression) -> Optional[int]:
 
 
 # --- Column Checks (STRICT) ------------------------------------------------
+
 
 def _is_column(
     col: exp.Column,
@@ -138,6 +137,7 @@ def _is_column(
 
 
 # --- min_levels semantics --------------------------------------------------
+
 
 def _excludes_self(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     """
@@ -176,6 +176,7 @@ def _excludes_self(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 
 # --- ID Extraction (Scoped) ------------------------------------------------
+
 
 def _extract_ids_from_branch(
     node: exp.Expression,
@@ -237,6 +238,7 @@ def _extract_ids_from_branch(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_union(tree: exp.Expression) -> List[Dict]:
     violations = []
 
@@ -259,8 +261,7 @@ def _detect_union(tree: exp.Expression) -> List[Dict]:
         right_concept_aliases = _get_aliases_by_table(right_aliases, CONCEPT_TABLE)
         right_ancestor_aliases = _get_aliases_by_table(right_aliases, CONCEPT_ANCESTOR)
 
-        if not ((left_concept_aliases and right_ancestor_aliases) or
-                (right_concept_aliases and left_ancestor_aliases)):
+        if not ((left_concept_aliases and right_ancestor_aliases) or (right_concept_aliases and left_ancestor_aliases)):
             continue
 
         l_c, l_a = _extract_ids_from_branch(left, left_aliases, left_concept_aliases, left_ancestor_aliases)
@@ -269,12 +270,14 @@ def _detect_union(tree: exp.Expression) -> List[Dict]:
         overlap = (l_c | r_c) & (l_a | r_a)
 
         for cid in overlap:
-            violations.append({
-                "type": "union",
-                "concept_id": cid,
-                "context": union.sql(),
-                "union_type": "UNION ALL" if union.args.get("distinct") is False else "UNION",
-            })
+            violations.append(
+                {
+                    "type": "union",
+                    "concept_id": cid,
+                    "context": union.sql(),
+                    "union_type": "UNION ALL" if union.args.get("distinct") is False else "UNION",
+                }
+            )
 
     return violations
 
@@ -302,11 +305,13 @@ def _detect_or(tree: exp.Expression) -> List[Dict]:
         overlap = c_ids & a_ids
 
         for cid in overlap:
-            violations.append({
-                "type": "or",
-                "concept_id": cid,
-                "context": or_node.sql(),
-            })
+            violations.append(
+                {
+                    "type": "or",
+                    "concept_id": cid,
+                    "context": or_node.sql(),
+                }
+            )
 
     return violations
 
@@ -347,16 +352,19 @@ def _detect_in_subquery(tree: exp.Expression) -> List[Dict]:
             overlap = literals & ancestor_ids
 
             for cid in overlap:
-                violations.append({
-                    "type": "in_subquery",
-                    "concept_id": cid,
-                    "context": in_node.sql(),
-                })
+                violations.append(
+                    {
+                        "type": "in_subquery",
+                        "concept_id": cid,
+                        "context": in_node.sql(),
+                    }
+                )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptAncestorSelfIncludeRedundancyRule(Rule):
@@ -393,9 +401,7 @@ class ConceptAncestorSelfIncludeRedundancyRule(Rule):
         "WHERE concept_id = 201820;"
     )
     example_good = (
-        "SELECT descendant_concept_id AS concept_id\n"
-        "FROM concept_ancestor\n"
-        "WHERE ancestor_concept_id = 201820;"
+        "SELECT descendant_concept_id AS concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -413,11 +419,7 @@ class ConceptAncestorSelfIncludeRedundancyRule(Rule):
             if not tree or not has_table_reference(tree, CONCEPT_ANCESTOR):
                 continue
 
-            detected = (
-                _detect_union(tree) +
-                _detect_or(tree) +
-                _detect_in_subquery(tree)
-            )
+            detected = _detect_union(tree) + _detect_or(tree) + _detect_in_subquery(tree)
 
             for v in detected:
                 key = f"{v['type']}_{v['concept_id']}_{v['context']}"

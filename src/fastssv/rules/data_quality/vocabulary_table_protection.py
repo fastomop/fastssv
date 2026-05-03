@@ -62,6 +62,7 @@ DML_DDL_NODES = (
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _normalize_table_name(name: str) -> str:
     """Normalize table name and strip schema if present."""
     return normalize_name(name.split(".")[-1])
@@ -133,6 +134,7 @@ def _is_valid_drop_table(node: exp.Drop) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class VocabularyTableProtectionRule(Rule):
     """Prevents DML/DDL operations on OMOP vocabulary tables."""
@@ -158,15 +160,8 @@ class VocabularyTableProtectionRule(Rule):
         "release. Treat them as strictly read-only; vocabulary updates "
         "must be performed via official OHDSI releases."
     )
-    example_bad = (
-        "DELETE FROM concept\n"
-        "WHERE concept_id = 0;"
-    )
-    example_good = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE concept_id = 0;"
-    )
+    example_bad = "DELETE FROM concept\nWHERE concept_id = 0;"
+    example_good = "SELECT concept_id\nFROM concept\nWHERE concept_id = 0;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

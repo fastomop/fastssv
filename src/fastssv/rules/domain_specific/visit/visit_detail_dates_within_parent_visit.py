@@ -101,9 +101,8 @@ def _has_valid_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
             if _norm(lc) != VISIT_OCCURRENCE_ID or _norm(rc) != VISIT_OCCURRENCE_ID:
                 continue
 
-            if (
-                (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE)
-                or (_norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE)
+            if (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE) or (
+                _norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE
             ):
                 return True
 
@@ -124,9 +123,8 @@ def _has_valid_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
             if _norm(lc) != VISIT_OCCURRENCE_ID or _norm(rc) != VISIT_OCCURRENCE_ID:
                 continue
 
-            if (
-                (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE)
-                or (_norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE)
+            if (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE) or (
+                _norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE
             ):
                 return True
 
@@ -167,47 +165,51 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
         # --- Violations ---
         if (
-            _norm(lt) == VISIT_DETAIL and _norm(lc) == VISIT_DETAIL_START_DATE and
-            _norm(rt) == VISIT_OCCURRENCE and _norm(rc) == VISIT_START_DATE and
-            isinstance(node, (exp.LT, exp.LTE))
+            _norm(lt) == VISIT_DETAIL
+            and _norm(lc) == VISIT_DETAIL_START_DATE
+            and _norm(rt) == VISIT_OCCURRENCE
+            and _norm(rc) == VISIT_START_DATE
+            and isinstance(node, (exp.LT, exp.LTE))
         ):
             seen.add(key)
             violations.append(
-                "visit_detail_start_date occurs before visit_start_date. "
-                "This may contradict the visit hierarchy."
+                "visit_detail_start_date occurs before visit_start_date. This may contradict the visit hierarchy."
             )
 
         elif (
-            _norm(lt) == VISIT_DETAIL and _norm(lc) == VISIT_DETAIL_END_DATE and
-            _norm(rt) == VISIT_OCCURRENCE and _norm(rc) == VISIT_END_DATE and
-            isinstance(node, (exp.GT, exp.GTE))
+            _norm(lt) == VISIT_DETAIL
+            and _norm(lc) == VISIT_DETAIL_END_DATE
+            and _norm(rt) == VISIT_OCCURRENCE
+            and _norm(rc) == VISIT_END_DATE
+            and isinstance(node, (exp.GT, exp.GTE))
         ):
             seen.add(key)
             violations.append(
-                "visit_detail_end_date occurs after visit_end_date. "
-                "This may contradict the visit hierarchy."
+                "visit_detail_end_date occurs after visit_end_date. This may contradict the visit hierarchy."
             )
 
         elif (
-            _norm(lt) == VISIT_OCCURRENCE and _norm(lc) == VISIT_START_DATE and
-            _norm(rt) == VISIT_DETAIL and _norm(rc) == VISIT_DETAIL_START_DATE and
-            isinstance(node, (exp.GT, exp.GTE))
+            _norm(lt) == VISIT_OCCURRENCE
+            and _norm(lc) == VISIT_START_DATE
+            and _norm(rt) == VISIT_DETAIL
+            and _norm(rc) == VISIT_DETAIL_START_DATE
+            and isinstance(node, (exp.GT, exp.GTE))
         ):
             seen.add(key)
             violations.append(
-                "visit_start_date occurs after visit_detail_start_date. "
-                "This may contradict the visit hierarchy."
+                "visit_start_date occurs after visit_detail_start_date. This may contradict the visit hierarchy."
             )
 
         elif (
-            _norm(lt) == VISIT_OCCURRENCE and _norm(lc) == VISIT_END_DATE and
-            _norm(rt) == VISIT_DETAIL and _norm(rc) == VISIT_DETAIL_END_DATE and
-            isinstance(node, (exp.LT, exp.LTE))
+            _norm(lt) == VISIT_OCCURRENCE
+            and _norm(lc) == VISIT_END_DATE
+            and _norm(rt) == VISIT_DETAIL
+            and _norm(rc) == VISIT_DETAIL_END_DATE
+            and isinstance(node, (exp.LT, exp.LTE))
         ):
             seen.add(key)
             violations.append(
-                "visit_end_date occurs before visit_detail_end_date. "
-                "This may contradict the visit hierarchy."
+                "visit_end_date occurs before visit_detail_end_date. This may contradict the visit hierarchy."
             )
 
     return violations
@@ -218,10 +220,7 @@ class VisitDetailDatesWithinParentVisitRule(Rule):
     rule_id = "domain_specific.visit_detail_dates_within_parent_visit"
     name = "Visit Detail Dates Within Parent Visit"
 
-    description = (
-        "Detects conditions where visit_detail dates fall outside the parent "
-        "visit_occurrence range."
-    )
+    description = "Detects conditions where visit_detail dates fall outside the parent visit_occurrence range."
 
     severity = Severity.WARNING
     suggested_fix = "ADD: `AND vd.visit_detail_start_date >= vo.visit_start_date AND vd.visit_detail_end_date <= vo.visit_end_date` to constrain visit_detail dates inside the parent visit's window."

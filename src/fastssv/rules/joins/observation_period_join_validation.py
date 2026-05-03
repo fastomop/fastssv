@@ -75,6 +75,7 @@ CLINICAL_TABLES_WITH_DATES = {
 
 # --- Normalized ------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -83,12 +84,12 @@ OP_NORM = _norm(OBSERVATION_PERIOD_TABLE)
 PERSON_ID_NORM = _norm(PERSON_ID)
 
 CLINICAL_TABLES_NORM: Dict[str, Set[str]] = {
-    _norm(t): {_norm(c) for c in cols}
-    for t, cols in CLINICAL_TABLES_WITH_DATES.items()
+    _norm(t): {_norm(c) for c in cols} for t, cols in CLINICAL_TABLES_WITH_DATES.items()
 }
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _is_op_date(col: str) -> bool:
     return _norm(col) in {
@@ -160,10 +161,7 @@ def _has_strict_overlap(
             _, lc = resolve_table_col(low, aliases)
             _, hc = resolve_table_col(high, aliases)
 
-            if (
-                low_alias == op_alias and _is_op_date(lc) and
-                high_alias == op_alias and _is_op_date(hc)
-            ):
+            if low_alias == op_alias and _is_op_date(lc) and high_alias == op_alias and _is_op_date(hc):
                 return True
 
     # Comparisons
@@ -184,29 +182,37 @@ def _has_strict_overlap(
 
         # clinical >= op_start
         if (
-            left_alias == clinical_alias and _is_clinical_date(clinical_table, lc) and
-            right_alias == op_alias and _is_op_date(rc)
+            left_alias == clinical_alias
+            and _is_clinical_date(clinical_table, lc)
+            and right_alias == op_alias
+            and _is_op_date(rc)
         ):
             has_lower = True
 
         # clinical <= op_end
         if (
-            right_alias == clinical_alias and _is_clinical_date(clinical_table, rc) and
-            left_alias == op_alias and _is_op_date(lc)
+            right_alias == clinical_alias
+            and _is_clinical_date(clinical_table, rc)
+            and left_alias == op_alias
+            and _is_op_date(lc)
         ):
             has_upper = True
 
         # reversed cases: op_start <= clinical
         if (
-            right_alias == clinical_alias and _is_clinical_date(clinical_table, rc) and
-            left_alias == op_alias and _is_op_date(lc)
+            right_alias == clinical_alias
+            and _is_clinical_date(clinical_table, rc)
+            and left_alias == op_alias
+            and _is_op_date(lc)
         ):
             has_lower = True
 
         # reversed cases: op_end >= clinical
         if (
-            left_alias == clinical_alias and _is_clinical_date(clinical_table, lc) and
-            right_alias == op_alias and _is_op_date(rc)
+            left_alias == clinical_alias
+            and _is_clinical_date(clinical_table, lc)
+            and right_alias == op_alias
+            and _is_op_date(rc)
         ):
             has_upper = True
 
@@ -215,22 +221,18 @@ def _has_strict_overlap(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ObservationPeriodJoinValidationRule(Rule):
     rule_id = "joins.observation_period_join_validation"
     name = "Observation Period Join Requires Date Overlap"
 
-    description = (
-        "observation_period joins to clinical tables must include date overlap constraints."
-    )
+    description = "observation_period joins to clinical tables must include date overlap constraints."
 
     severity = Severity.WARNING
 
     suggested_fix = "ADD: `AND <clinical>.<event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` (date-overlap) on every observation_period join, in addition to the person_id linkage."
-    example_bad = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN observation_period op ON co.person_id = op.person_id;"
-    )
+    example_bad = "SELECT * FROM condition_occurrence co\nJOIN observation_period op ON co.person_id = op.person_id;"
     example_good = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN observation_period op\n"
@@ -261,20 +263,13 @@ class ObservationPeriodJoinValidationRule(Rule):
             aliases = extract_aliases(tree)
 
             # Find observation_period aliases
-            op_aliases = {
-                _norm(a) for a, t in aliases.items()
-                if _norm(t) == OP_NORM
-            }
+            op_aliases = {_norm(a) for a, t in aliases.items() if _norm(t) == OP_NORM}
 
             if not op_aliases:
                 continue
 
             # Find clinical aliases
-            clinical_aliases = {
-                _norm(a): _norm(t)
-                for a, t in aliases.items()
-                if _norm(t) in CLINICAL_TABLES_NORM
-            }
+            clinical_aliases = {_norm(a): _norm(t) for a, t in aliases.items() if _norm(t) in CLINICAL_TABLES_NORM}
 
             if not clinical_aliases:
                 continue
@@ -294,10 +289,7 @@ class ObservationPeriodJoinValidationRule(Rule):
                 op_alias = next(iter(op_in_join))
 
                 # Find clinical partner
-                clinical_alias = next(
-                    (a for a in join_aliases if a in clinical_aliases),
-                    None
-                )
+                clinical_alias = next((a for a in join_aliases if a in clinical_aliases), None)
 
                 if not clinical_alias:
                     continue
@@ -313,15 +305,10 @@ class ObservationPeriodJoinValidationRule(Rule):
 
                 clinical_table = clinical_aliases[clinical_alias]
 
-                if not _has_strict_overlap(
-                    tree, aliases, op_alias, clinical_alias, clinical_table
-                ):
+                if not _has_strict_overlap(tree, aliases, op_alias, clinical_alias, clinical_table):
                     violations.append(
                         self.create_violation(
-                            message=(
-                                f"observation_period joined to {clinical_table} "
-                                f"without date overlap constraint."
-                            ),
+                            message=(f"observation_period joined to {clinical_table} without date overlap constraint."),
                             severity=self.severity,
                         )
                     )

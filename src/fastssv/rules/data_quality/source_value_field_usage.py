@@ -35,10 +35,7 @@ from fastssv.core.helpers import (
 from fastssv.core.registry import register
 
 
-def _extract_source_value_columns_in_group_by(
-    tree: exp.Expression,
-    aliases: dict
-) -> List[str]:
+def _extract_source_value_columns_in_group_by(tree: exp.Expression, aliases: dict) -> List[str]:
     """Find *_source_value columns used in GROUP BY clause."""
     source_value_cols = []
 
@@ -48,7 +45,7 @@ def _extract_source_value_columns_in_group_by(
                 _, col = resolve_table_col(expr, aliases)
                 col_norm = normalize_name(col)
 
-                if col_norm.endswith('_source_value'):
+                if col_norm.endswith("_source_value"):
                     source_value_cols.append(col)
 
     return source_value_cols
@@ -79,14 +76,10 @@ class SourceValueFieldUsageRule(Rule):
         "Aggregate on the paired *_concept_id for portability."
     )
     example_bad = (
-        "SELECT condition_source_value, COUNT(*) AS n\n"
-        "FROM condition_occurrence\n"
-        "GROUP BY condition_source_value;"
+        "SELECT condition_source_value, COUNT(*) AS n\nFROM condition_occurrence\nGROUP BY condition_source_value;"
     )
     example_good = (
-        "SELECT condition_concept_id, COUNT(*) AS n\n"
-        "FROM condition_occurrence\n"
-        "GROUP BY condition_concept_id;"
+        "SELECT condition_concept_id, COUNT(*) AS n\nFROM condition_occurrence\nGROUP BY condition_concept_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -113,7 +106,7 @@ class SourceValueFieldUsageRule(Rule):
                 for col in unique_cols:
                     # Suggest the corresponding standard field
                     # e.g., plan_source_value -> plan_concept_id
-                    standard_field = col.replace('_source_value', '_concept_id')
+                    standard_field = col.replace("_source_value", "_concept_id")
 
                     message = (
                         f"Grouping by '{col}' (unstandardized source field) may produce "
@@ -121,18 +114,20 @@ class SourceValueFieldUsageRule(Rule):
                         f"with concept table joins for standardized analytics."
                     )
 
-                    violations.append(self.create_violation(
-                        message=message,
-                        suggested_fix=(
-                            f"REPLACE: `GROUP BY {col}` WITH `GROUP BY {standard_field}`, "
-                            f"and JOIN concept ON {standard_field} = concept.concept_id to "
-                            f"recover the standardized name."
-                        ),
-                        details={
-                            "source_value_field": col,
-                            "suggested_standard_field": standard_field,
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=message,
+                            suggested_fix=(
+                                f"REPLACE: `GROUP BY {col}` WITH `GROUP BY {standard_field}`, "
+                                f"and JOIN concept ON {standard_field} = concept.concept_id to "
+                                f"recover the standardized name."
+                            ),
+                            details={
+                                "source_value_field": col,
+                                "suggested_standard_field": standard_field,
+                            },
+                        )
+                    )
 
         return violations
 

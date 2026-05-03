@@ -72,6 +72,7 @@ CLINICAL_EVENT_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -146,9 +147,8 @@ def _has_valid_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
             if _norm(lc) != VISIT_OCCURRENCE_ID or _norm(rc) != VISIT_OCCURRENCE_ID:
                 continue
 
-            if (
-                (_norm(lt) == VISIT_OCCURRENCE_TABLE and _norm(rt) in CLINICAL_EVENT_TABLES)
-                or (_norm(rt) == VISIT_OCCURRENCE_TABLE and _norm(lt) in CLINICAL_EVENT_TABLES)
+            if (_norm(lt) == VISIT_OCCURRENCE_TABLE and _norm(rt) in CLINICAL_EVENT_TABLES) or (
+                _norm(rt) == VISIT_OCCURRENCE_TABLE and _norm(lt) in CLINICAL_EVENT_TABLES
             ):
                 return True
 
@@ -156,6 +156,7 @@ def _has_valid_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -216,6 +217,7 @@ def _find_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class VisitEventTemporalValidationRule(Rule):

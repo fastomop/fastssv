@@ -79,6 +79,7 @@ VISIT_END_DATE = "visit_end_date"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -133,7 +134,9 @@ def _has_person_id_constraint(
         right_alias = _norm(str(eq.expression.table)) if eq.expression.table else None
 
         # Check if they reference our two visit aliases
-        if (left_alias == source_alias and right_alias == target_alias) or (left_alias == target_alias and right_alias == source_alias):
+        if (left_alias == source_alias and right_alias == target_alias) or (
+            left_alias == target_alias and right_alias == source_alias
+        ):
             return True
 
     return False
@@ -185,16 +188,20 @@ def _has_temporal_constraint(
         # Check for: prior.visit_end_date <= current.visit_start_date
         if isinstance(node, (exp.LTE, exp.LT)):
             if (
-                left_alias == target_alias and lc == VISIT_END_DATE
-                and right_alias == source_alias and rc == VISIT_START_DATE
+                left_alias == target_alias
+                and lc == VISIT_END_DATE
+                and right_alias == source_alias
+                and rc == VISIT_START_DATE
             ):
                 return True
 
         # Check for: current.visit_start_date >= prior.visit_end_date
         if isinstance(node, (exp.GTE, exp.GT)):
             if (
-                left_alias == source_alias and lc == VISIT_START_DATE
-                and right_alias == target_alias and rc == VISIT_END_DATE
+                left_alias == source_alias
+                and lc == VISIT_START_DATE
+                and right_alias == target_alias
+                and rc == VISIT_END_DATE
             ):
                 return True
 
@@ -202,6 +209,7 @@ def _has_temporal_constraint(
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> Dict[str, List[str]]:
     """
@@ -261,25 +269,18 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> Dict[str,
 
         # --- Check 2: must join to visit_occurrence ---
         if not _is_visit_occurrence(target_table):
-            errors.append(
-                f"{PRECEDING} joined to '{target_table or 'unknown'}' table. "
-                f"Must join to visit_occurrence."
-            )
+            errors.append(f"{PRECEDING} joined to '{target_table or 'unknown'}' table. Must join to visit_occurrence.")
             continue
 
         # --- Check 3: must join to visit_occurrence_id ---
         if target_col != VISIT_ID:
-            errors.append(
-                f"{PRECEDING} joined to '{target_col}'. "
-                f"Must join to visit_occurrence_id."
-            )
+            errors.append(f"{PRECEDING} joined to '{target_col}'. Must join to visit_occurrence_id.")
             continue
 
         # --- Check 4: ensure different aliases (true self-join) ---
         if source_alias and target_alias and source_alias == target_alias:
             errors.append(
-                f"{PRECEDING} self-joined using same alias '{source_alias}'. "
-                f"Use two aliases for proper self-join."
+                f"{PRECEDING} self-joined using same alias '{source_alias}'. Use two aliases for proper self-join."
             )
             continue
 
@@ -305,6 +306,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> Dict[str,
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class PrecedingVisitOccurrenceValidationRule(Rule):

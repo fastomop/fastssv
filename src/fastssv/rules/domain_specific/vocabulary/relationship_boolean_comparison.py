@@ -110,16 +110,13 @@ BOOLEAN_COLUMNS = {"is_hierarchical", "defines_ancestry"}
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _is_relationship_table(name: Optional[str]) -> bool:
@@ -235,8 +232,7 @@ def _check_comparison(
                     )
             else:
                 return (
-                    f"Column '{col_name}' is boolean but compared with "
-                    f"invalid expression. Use 0/1 or TRUE/FALSE.",
+                    f"Column '{col_name}' is boolean but compared with invalid expression. Use 0/1 or TRUE/FALSE.",
                     None,
                 )
 
@@ -327,6 +323,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class RelationshipBooleanComparisonRule(Rule):
     """
@@ -344,14 +341,8 @@ class RelationshipBooleanComparisonRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: `is_hierarchical = 'yes'` (or 'true', 'Y', 'T') WITH `is_hierarchical = 1` (or = 0). Same for defines_ancestry. OMOP stores these as 0/1 strings, not English booleans."
-    example_bad = (
-        "SELECT relationship_id FROM relationship\n"
-        "WHERE is_hierarchical = 'yes';"
-    )
-    example_good = (
-        "SELECT relationship_id FROM relationship\n"
-        "WHERE is_hierarchical = 1;"
-    )
+    example_bad = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = 'yes';"
+    example_good = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = 1;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

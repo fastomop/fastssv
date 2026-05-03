@@ -60,6 +60,7 @@ OFFSET_COL = "offset"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -77,10 +78,7 @@ def _is_offset_col(col: Optional[str]) -> bool:
 
 
 def _has_note_nlp(tree: exp.Expression) -> bool:
-    return any(
-        _normalize_table(t.name) == NOTE_NLP
-        for t in tree.find_all(exp.Table)
-    )
+    return any(_normalize_table(t.name) == NOTE_NLP for t in tree.find_all(exp.Table))
 
 
 def _is_casted(node: exp.Expression) -> bool:
@@ -126,6 +124,7 @@ def _is_offset_reference(
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect_join_usage(tree, aliases, has_note_nlp):
     results = []
@@ -212,6 +211,7 @@ def _detect_arithmetic(tree, aliases, has_note_nlp):
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class NoteNlpOffsetIsCharacterPositionRule(Rule):
     """Ensure note_nlp.offset is not misused as numeric."""
@@ -235,16 +235,8 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
         "implicit-cast errors on strict dialects and silent mis-sorts on "
         "lenient ones. CAST to INT when you need numeric semantics."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM note_nlp\n"
-        "WHERE offset > 100;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM note_nlp\n"
-        "WHERE CAST(offset AS INT) > 100;"
-    )
+    example_bad = "SELECT *\nFROM note_nlp\nWHERE offset > 100;"
+    example_good = "SELECT *\nFROM note_nlp\nWHERE CAST(offset AS INT) > 100;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "note_nlp" not in sql.lower() or "offset" not in sql.lower():
@@ -301,9 +293,7 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
                 if kind in {"numeric", "between", "arithmetic"} and col_sql:
                     span = locate(sql, col_sql)
                     if span is not None:
-                        patch = patch_replace(
-                            span, f"CAST({col_sql} AS INTEGER)"
-                        )
+                        patch = patch_replace(span, f"CAST({col_sql} AS INTEGER)")
 
                 violations.append(
                     self.create_violation(

@@ -86,10 +86,7 @@ def test_validate_default_is_non_strict(client: TestClient):
     assert body["strict"] is False
     # Best-practice rule stays a WARNING; query is still is_valid=true.
     assert body["is_valid"] is True
-    assert any(
-        w["rule_id"] == "concept_standardization.standard_concept_enforcement"
-        for w in body["warnings"]
-    )
+    assert any(w["rule_id"] == "concept_standardization.standard_concept_enforcement" for w in body["warnings"])
 
 
 def test_validate_single_statement_has_one_result(client: TestClient):
@@ -110,11 +107,7 @@ def test_validate_multi_statement_attributes_per_query(client: TestClient):
     resp = client.post(
         "/v1/validate",
         json={
-            "sql": (
-                "SELECT person_id FROM person; "
-                "SELECT * FROM bogus_table_alpha; "
-                "SELECT * FROM bogus_table_beta;"
-            ),
+            "sql": ("SELECT person_id FROM person; SELECT * FROM bogus_table_alpha; SELECT * FROM bogus_table_beta;"),
             "dialect": "postgres",
         },
     )
@@ -127,13 +120,9 @@ def test_validate_multi_statement_attributes_per_query(client: TestClient):
     assert body["results"][0]["query_index"] == 1
     assert body["results"][1]["is_valid"] is False
     assert body["results"][1]["query_index"] == 2
-    assert any(
-        "bogus_table_alpha" in e["issue"] for e in body["results"][1]["errors"]
-    )
+    assert any("bogus_table_alpha" in e["issue"] for e in body["results"][1]["errors"])
     assert body["results"][2]["query_index"] == 3
-    assert any(
-        "bogus_table_beta" in e["issue"] for e in body["results"][2]["errors"]
-    )
+    assert any("bogus_table_beta" in e["issue"] for e in body["results"][2]["errors"])
 
 
 def test_validate_strict_escalates_warning_to_error(client: TestClient):
@@ -146,10 +135,7 @@ def test_validate_strict_escalates_warning_to_error(client: TestClient):
     assert body["strict"] is True
     assert body["is_valid"] is False
     # Standard-concept rule now reports as an ERROR.
-    assert any(
-        e["rule_id"] == "concept_standardization.standard_concept_enforcement"
-        for e in body["errors"]
-    )
+    assert any(e["rule_id"] == "concept_standardization.standard_concept_enforcement" for e in body["errors"])
 
 
 def test_validate_bad_dialect_rejected(client: TestClient):

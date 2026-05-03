@@ -217,6 +217,7 @@ TARGETS: Dict[str, Dict[str, object]] = {
 
 # --- Helpers --------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -227,9 +228,7 @@ def _extract_string_literal(node: exp.Expression) -> Optional[str]:
     return None
 
 
-def _is_target_column(
-    col: exp.Column, aliases: Dict[str, str]
-) -> Optional[str]:
+def _is_target_column(col: exp.Column, aliases: Dict[str, str]) -> Optional[str]:
     """If ``col`` resolves to a registered target column, return its
     normalized name. Otherwise None.
     """
@@ -250,9 +249,19 @@ def _is_wrapped_in_function(node: exp.Column) -> bool:
         if isinstance(parent, exp.Func) and not isinstance(
             parent,
             (
-                exp.And, exp.Or, exp.Not,
-                exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE,
-                exp.In, exp.Between, exp.Like, exp.ILike,
+                exp.And,
+                exp.Or,
+                exp.Not,
+                exp.EQ,
+                exp.NEQ,
+                exp.GT,
+                exp.GTE,
+                exp.LT,
+                exp.LTE,
+                exp.In,
+                exp.Between,
+                exp.Like,
+                exp.ILike,
             ),
         ):
             return True
@@ -261,6 +270,7 @@ def _is_wrapped_in_function(node: exp.Column) -> bool:
 
 
 # --- Extraction ----------------------------------------------------------
+
 
 def _extract_target_filters(
     tree: exp.Expression,
@@ -312,6 +322,7 @@ def _extract_target_filters(
 
 # --- Validation ----------------------------------------------------------
 
+
 def _evaluate(
     column: str,
     value: str,
@@ -342,10 +353,7 @@ def _evaluate(
     # split the diagnosis into "case", "hyphen", or "both".
     if flag_hyphens:
         value_no_hyphen = value.replace("-", "")
-        case_differs = (
-            value_no_hyphen.lower() == canonical.lower()
-            and value_no_hyphen != canonical
-        )
+        case_differs = value_no_hyphen.lower() == canonical.lower() and value_no_hyphen != canonical
         if has_hyphen and case_differs:
             issue = "both"
         elif has_hyphen:
@@ -360,6 +368,7 @@ def _evaluate(
 
 
 # --- Rule ----------------------------------------------------------------
+
 
 @register
 class CanonicalStringValueValidationRule(Rule):
@@ -389,16 +398,8 @@ class CanonicalStringValueValidationRule(Rule):
         "canonical form exactly."
     )
 
-    example_bad = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE vocabulary_id = 'snomed';"
-    )
-    example_good = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE vocabulary_id = 'SNOMED';"
-    )
+    example_bad = "SELECT concept_id\nFROM concept\nWHERE vocabulary_id = 'snomed';"
+    example_good = "SELECT concept_id\nFROM concept\nWHERE vocabulary_id = 'SNOMED';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()
@@ -433,23 +434,16 @@ class CanonicalStringValueValidationRule(Rule):
 
                 # --- Build message + fix ---
                 if issue == "hyphen" and expected is None:
-                    message = (
-                        f"Invalid {column} '{value}': contains hyphens. "
-                        f"OMOP {column} values are hyphen-free."
-                    )
+                    message = f"Invalid {column} '{value}': contains hyphens. OMOP {column} values are hyphen-free."
                     fix = f"REPLACE: `'{value}'` WITH the canonical OMOP form — remove hyphens (e.g. 'ICD-10-CM' -> 'ICD10CM')."
 
                 elif issue == "hyphen":
-                    message = (
-                        f"Invalid {column} '{value}': contains hyphens. "
-                        f"OMOP {column} values are hyphen-free."
-                    )
+                    message = f"Invalid {column} '{value}': contains hyphens. OMOP {column} values are hyphen-free."
                     fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
 
                 elif issue == "both":
                     message = (
-                        f"Invalid {column} '{value}': incorrect casing and contains hyphens. "
-                        f"Expected '{expected}'."
+                        f"Invalid {column} '{value}': incorrect casing and contains hyphens. Expected '{expected}'."
                     )
                     fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
 

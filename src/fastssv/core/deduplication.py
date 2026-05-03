@@ -27,6 +27,7 @@ def _normalize_issue(violation: RuleViolation) -> str:
     if "does not exist in table" in violation.message.lower():
         # Extract table and column from message
         import re
+
         match = re.search(r"column\s+'([^']+)'.*table\s+'([^']+)'", violation.message.lower())
         if match:
             column, table = match.groups()
@@ -67,6 +68,15 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     if not violations:
         return []
 
+    # Identity-keyed index map: lets us tiebreak/preserve original order
+    # in O(1) without `list.index`, and avoids value-equality collisions
+    # between distinct RuleViolation dataclasses with identical fields.
+    # `setdefault` keeps the first index if the same instance appears
+    # twice — matching `list.index(v)` semantics.
+    original_index: dict[int, int] = {}
+    for i, v in enumerate(violations):
+        original_index.setdefault(id(v), i)
+
     # Group violations by normalized issue
     issue_groups: dict = {}
 
@@ -93,14 +103,14 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
             key=lambda v: (
                 0 if v.severity.value == "error" else 1,  # ERROR first
                 -len(v.rule_id),  # Longer rule_id = more specific
-                violations.index(v)  # Original order
-            )
+                original_index[id(v)],  # Original order
+            ),
         )[0]
 
         deduplicated.append(best)
 
     # Return in original order
-    return sorted(deduplicated, key=lambda v: violations.index(v))
+    return sorted(deduplicated, key=lambda v: original_index[id(v)])
 
 
 __all__ = ["deduplicate_violations"]

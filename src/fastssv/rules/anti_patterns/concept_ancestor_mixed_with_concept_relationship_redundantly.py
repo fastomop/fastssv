@@ -118,12 +118,11 @@ HIERARCHICAL_RELATIONSHIPS = {
     "Has descendant",
 }
 
-HIERARCHICAL_RELATIONSHIPS_NORM = {
-    normalize_name(r) for r in HIERARCHICAL_RELATIONSHIPS
-}
+HIERARCHICAL_RELATIONSHIPS_NORM = {normalize_name(r) for r in HIERARCHICAL_RELATIONSHIPS}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
@@ -142,13 +141,9 @@ def _has_hierarchical_relationship_filter(
 ) -> bool:
     """Check if concept_relationship is filtered by hierarchical relationship_id."""
 
-    target_nodes = (
-        list(tree.find_all(exp.EQ)) +
-        list(tree.find_all(exp.In))
-    )
+    target_nodes = list(tree.find_all(exp.EQ)) + list(tree.find_all(exp.In))
 
     for node in target_nodes:
-
         # --- EQ ---
         if isinstance(node, exp.EQ):
             pairs = [(node.this, node.expression), (node.expression, node.this)]
@@ -196,6 +191,7 @@ def _has_hierarchical_relationship_filter(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptAncestorMixedWithConceptRelationshipRedundantlyRule(Rule):
     """Detect redundant use of both concept_ancestor and concept_relationship."""
@@ -229,11 +225,7 @@ class ConceptAncestorMixedWithConceptRelationshipRedundantlyRule(Rule):
         "WHERE ca.ancestor_concept_id = 201820\n"
         "  AND cr.relationship_id = 'Subsumes';"
     )
-    example_good = (
-        "SELECT ca.descendant_concept_id\n"
-        "FROM concept_ancestor ca\n"
-        "WHERE ca.ancestor_concept_id = 201820;"
-    )
+    example_good = "SELECT ca.descendant_concept_id\nFROM concept_ancestor ca\nWHERE ca.ancestor_concept_id = 201820;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()

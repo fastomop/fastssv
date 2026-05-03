@@ -101,16 +101,13 @@ logger = logging.getLogger(__name__)
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -135,10 +132,7 @@ def _is_left_join(join: exp.Join) -> bool:
     kind = join.args.get("kind")
     side = join.args.get("side")
 
-    return (
-        (kind and _norm(kind) == "left")
-        or (side and _norm(side) == "left")
-    )
+    return (kind and _norm(kind) == "left") or (side and _norm(side) == "left")
 
 
 def _get_right_table(join: exp.Join) -> Optional[str]:
@@ -241,9 +235,7 @@ def _find_violations(
         return issues
 
     for where in tree.find_all(exp.Where):
-        violations = _collect_where_right_table_filters(
-            where.this, right_tables, aliases, cte_names
-        )
+        violations = _collect_where_right_table_filters(where.this, right_tables, aliases, cte_names)
 
         if violations:
             cols = ", ".join(sorted(set(violations)))
@@ -258,6 +250,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class LeftJoinThenWhereOnRightTableRule(Rule):
     """
@@ -267,10 +260,7 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
     rule_id = "joins.left_join_then_where_on_right_table"
     name = "Left Join Then Where On Right Table"
 
-    description = (
-        "Filtering right table columns in WHERE after LEFT JOIN "
-        "turns it effectively into INNER JOIN."
-    )
+    description = "Filtering right table columns in WHERE after LEFT JOIN turns it effectively into INNER JOIN."
 
     severity = Severity.WARNING
 

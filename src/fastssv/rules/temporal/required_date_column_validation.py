@@ -101,12 +101,11 @@ TABLE_CONFIGS = {
     },
 }
 
-TEMPORAL_OPERATORS = {
-    exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ, exp.Between
-}
+TEMPORAL_OPERATORS = {exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ, exp.Between}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -160,7 +159,6 @@ def _has_null_check(
     col_norm = _norm(col_name)
 
     for node in tree.walk():
-
         # col IS NOT NULL
         if isinstance(node, exp.Is):
             if isinstance(node.expression, exp.Null) and node.args.get("negated"):
@@ -209,6 +207,7 @@ def _resolve_target_table(
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -281,6 +280,7 @@ def _find_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class RequiredDateColumnValidationRule(Rule):
     """Validate safe temporal filtering across OMOP clinical tables."""
@@ -303,16 +303,8 @@ class RequiredDateColumnValidationRule(Rule):
         "for the nullable ones only when their meaning is specifically what "
         "you need (duration calculations, end-of-period cohorts)."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM drug_exposure\n"
-        "WHERE drug_exposure_end_date >= DATE '2023-01-01';"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM drug_exposure\n"
-        "WHERE drug_exposure_start_date >= DATE '2023-01-01';"
-    )
+    example_bad = "SELECT person_id\nFROM drug_exposure\nWHERE drug_exposure_end_date >= DATE '2023-01-01';"
+    example_good = "SELECT person_id\nFROM drug_exposure\nWHERE drug_exposure_start_date >= DATE '2023-01-01';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

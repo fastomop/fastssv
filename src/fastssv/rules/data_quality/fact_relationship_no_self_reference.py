@@ -74,6 +74,7 @@ FACT_ID_2 = "fact_id_2"
 
 # --- Normalized Constants --------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -86,6 +87,7 @@ NORM_FACT_ID_NAMES = {NORM_FACT_ID_1, NORM_FACT_ID_2}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _normalize_aliases(aliases: Dict[str, str]) -> Dict[str, str]:
     return {_norm(k): _norm(v) for k, v in aliases.items()}
@@ -169,14 +171,13 @@ def _detect_self_reference_comparisons(
 
         # Check for fact_id_1 vs fact_id_2
         if {left_col, right_col} == NORM_FACT_ID_NAMES:
-            violations.append(
-                f"{left_alias}.fact_id_1 = {left_alias}.fact_id_2"
-            )
+            violations.append(f"{left_alias}.fact_id_1 = {left_alias}.fact_id_2")
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class FactRelationshipNoSelfReferenceRule(Rule):
@@ -203,11 +204,7 @@ class FactRelationshipNoSelfReferenceRule(Rule):
         "distinct facts, and add a relationship_concept_id filter so the "
         "query picks out one specific relationship type."
     )
-    example_bad = (
-        "SELECT fact_id_1\n"
-        "FROM fact_relationship\n"
-        "WHERE fact_id_1 = fact_id_2;"
-    )
+    example_bad = "SELECT fact_id_1\nFROM fact_relationship\nWHERE fact_id_1 = fact_id_2;"
     example_good = (
         "SELECT fact_id_1, fact_id_2\n"
         "FROM fact_relationship\n"

@@ -44,6 +44,7 @@ LOCATION_ID = "location_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -74,6 +75,7 @@ def _extract_join_conditions(join: exp.Join) -> List[exp.Expression]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _check_care_site_location_join(
     tree: exp.Expression,
@@ -110,7 +112,7 @@ def _check_care_site_location_join(
             rt = _normalize_table(rt)
 
             # Check both directions
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
@@ -132,6 +134,7 @@ def _check_care_site_location_join(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class CareSiteLocationJoinValidationRule(Rule):
     """Validate that care_site joins to location via location_id."""
@@ -139,10 +142,7 @@ class CareSiteLocationJoinValidationRule(Rule):
     rule_id = "joins.care_site_location_join_validation"
     name = "Care Site to Location Join Validation"
 
-    description = (
-        "care_site must join to location via location_id. "
-        "Joining on other columns is incorrect."
-    )
+    description = "care_site must join to location via location_id. Joining on other columns is incorrect."
 
     severity = Severity.ERROR
 
@@ -187,8 +187,13 @@ class CareSiteLocationJoinValidationRule(Rule):
                         ),
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, cs_table, cs_col, loc_table, loc_col,
-                            LOCATION_ID, LOCATION_ID,
+                            sql,
+                            cs_table,
+                            cs_col,
+                            loc_table,
+                            loc_col,
+                            LOCATION_ID,
+                            LOCATION_ID,
                             fix_text,
                             aliases=aliases,
                         ),

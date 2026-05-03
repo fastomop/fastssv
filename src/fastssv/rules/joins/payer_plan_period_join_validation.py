@@ -28,7 +28,6 @@ Correct pattern:
     -- CORRECT: Only returns the payer period active during the drug exposure
 """
 
-
 from typing import Dict, List, Optional, Set
 
 from sqlglot import exp
@@ -62,23 +61,31 @@ CLINICAL_EVENT_TABLES = {
 
 CLINICAL_DATE_COLUMNS: Dict[str, Set[str]] = {
     "condition_occurrence": {
-        "condition_start_date", "condition_start_datetime",
-        "condition_end_date", "condition_end_datetime",
+        "condition_start_date",
+        "condition_start_datetime",
+        "condition_end_date",
+        "condition_end_datetime",
     },
     "drug_exposure": {
-        "drug_exposure_start_date", "drug_exposure_start_datetime",
-        "drug_exposure_end_date", "drug_exposure_end_datetime",
+        "drug_exposure_start_date",
+        "drug_exposure_start_datetime",
+        "drug_exposure_end_date",
+        "drug_exposure_end_datetime",
     },
     "procedure_occurrence": {"procedure_date", "procedure_datetime"},
     "measurement": {"measurement_date", "measurement_datetime"},
     "observation": {"observation_date", "observation_datetime"},
     "device_exposure": {
-        "device_exposure_start_date", "device_exposure_start_datetime",
-        "device_exposure_end_date", "device_exposure_end_datetime",
+        "device_exposure_start_date",
+        "device_exposure_start_datetime",
+        "device_exposure_end_date",
+        "device_exposure_end_datetime",
     },
     "visit_occurrence": {
-        "visit_start_date", "visit_start_datetime",
-        "visit_end_date", "visit_end_datetime",
+        "visit_start_date",
+        "visit_start_datetime",
+        "visit_end_date",
+        "visit_end_datetime",
     },
     "specimen": {"specimen_date", "specimen_datetime"},
     "note": {"note_date", "note_datetime"},
@@ -89,6 +96,7 @@ PAYER_END = "payer_plan_period_end_date"
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -140,6 +148,7 @@ def _extract_conditions(tree: exp.Expression) -> List[exp.Expression]:
 
 # --- Temporal Logic --------------------------------------------------------
 
+
 def _detect_temporal_overlap(
     conditions: List[exp.Expression],
     clinical_table: str,
@@ -158,7 +167,6 @@ def _detect_temporal_overlap(
     between_valid = False
 
     for cond in conditions:
-
         # --- BETWEEN -------------------------------------------------------
         if isinstance(cond, exp.Between):
             this = cond.this
@@ -186,7 +194,6 @@ def _detect_temporal_overlap(
 
         # --- Binary comparisons -------------------------------------------
         if isinstance(cond, (exp.GTE, exp.GT, exp.LTE, exp.LT)):
-
             if not isinstance(cond.this, exp.Column) or not isinstance(cond.expression, exp.Column):
                 continue
 
@@ -212,6 +219,7 @@ def _detect_temporal_overlap(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -230,7 +238,6 @@ def _detect(
     conditions = _extract_conditions(tree)
 
     for clinical in clinical_tables:
-
         has_person_join = False
 
         for cond in conditions:
@@ -243,12 +250,8 @@ def _detect(
             lt, lc = resolve_table_col(cond.this, aliases)
             rt, rc = resolve_table_col(cond.expression, aliases)
 
-            if (
-                _norm(lt) == clinical and _is_person_id(lc) and
-                _is_payer(rt) and _is_person_id(rc)
-            ) or (
-                _is_payer(lt) and _is_person_id(lc) and
-                _norm(rt) == clinical and _is_person_id(rc)
+            if (_norm(lt) == clinical and _is_person_id(lc) and _is_payer(rt) and _is_person_id(rc)) or (
+                _is_payer(lt) and _is_person_id(lc) and _norm(rt) == clinical and _is_person_id(rc)
             ):
                 has_person_join = True
                 break
@@ -266,6 +269,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class PayerPlanPeriodJoinValidationRule(Rule):
     """
@@ -276,17 +280,13 @@ class PayerPlanPeriodJoinValidationRule(Rule):
     name = "Payer Plan Period Join Validation"
 
     description = (
-        "Ensures payer_plan_period joins to clinical tables include proper "
-        "date overlap conditions, not just person_id."
+        "Ensures payer_plan_period joins to clinical tables include proper date overlap conditions, not just person_id."
     )
 
     severity = Severity.WARNING
 
     suggested_fix = "ADD: `AND <clinical>.<event_date> BETWEEN ppp.payer_plan_period_start_date AND ppp.payer_plan_period_end_date` (date-overlap) on every payer_plan_period join, in addition to person_id."
-    example_bad = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN payer_plan_period ppp ON co.person_id = ppp.person_id;"
-    )
+    example_bad = "SELECT * FROM condition_occurrence co\nJOIN payer_plan_period ppp ON co.person_id = ppp.person_id;"
     example_good = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN payer_plan_period ppp\n"

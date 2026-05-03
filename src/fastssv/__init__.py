@@ -59,6 +59,7 @@ def validate_sql(
         }
     """
     from fastssv.core.helpers import parse_sql, detect_dialect
+
     if dialect == "auto":
         dialect = detect_dialect(sql)
 
@@ -215,6 +216,7 @@ def validate_sql_structured(
         - Multiple violations mean one or more rules detected issues.
     """
     from fastssv.core.helpers import parse_sql, detect_dialect
+
     if dialect == "auto":
         dialect = detect_dialect(sql)
 
@@ -259,6 +261,7 @@ def validate_sql_structured(
 
     # Deduplicate violations (remove redundant errors for same issue)
     from fastssv.core.deduplication import deduplicate_violations
+
     violations = deduplicate_violations(violations)
 
     _logger.info(f"After deduplication: {len(violations)} unique violations")
@@ -282,17 +285,14 @@ __all__ = [
     "validate_sql_structured",
     "PARSE_ERROR_RULE_ID",
     "NOT_SQL_RULE_ID",
-
     # Core classes
     "Rule",
     "RuleViolation",
     "Severity",
-
     # Registry
     "get_all_rules",
     "get_rule",
     "get_rules_by_category",
-
     # Category validators
     "validate_anti_patterns",
     "validate_concept_standardization",
@@ -300,7 +300,6 @@ __all__ = [
     "validate_domain_specific",
     "validate_joins",
     "validate_temporal",
-
     # Schemas
     "STANDARD_CONCEPT_FIELDS",
 ]

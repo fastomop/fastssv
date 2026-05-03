@@ -50,6 +50,7 @@ COLUMN_NAME = "quantity"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -89,6 +90,7 @@ def _extract_numeric(node: exp.Expression) -> Optional[float]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -105,8 +107,8 @@ def _find_violations(
             left, right = node.this, node.expression
 
             pairs = [
-                (left, right, False),   # normal
-                (right, left, True),    # reversed
+                (left, right, False),  # normal
+                (right, left, True),  # reversed
             ]
 
             for col_node, val_node, reversed_op in pairs:
@@ -127,10 +129,7 @@ def _find_violations(
 
                 # Case 1: explicit negative value
                 if value < 0:
-                    issues.append(
-                        f"quantity compared to negative value ({value}). "
-                        f"quantity should be non-negative."
-                    )
+                    issues.append(f"quantity compared to negative value ({value}). quantity should be non-negative.")
                     continue
 
                 # Case 2: filtering for negatives
@@ -138,15 +137,13 @@ def _find_violations(
                     if isinstance(node, (exp.LT, exp.LTE)) and value <= 0:
                         op_str = "<=" if isinstance(node, exp.LTE) else "<"
                         issues.append(
-                            f"quantity {op_str} {value} filters for negative values. "
-                            f"quantity should be non-negative."
+                            f"quantity {op_str} {value} filters for negative values. quantity should be non-negative."
                         )
                 else:
                     if isinstance(node, (exp.GT, exp.GTE)) and value <= 0:
                         op_str = ">=" if isinstance(node, exp.GTE) else ">"
                         issues.append(
-                            f"{value} {op_str} quantity filters for negative values. "
-                            f"quantity should be non-negative."
+                            f"{value} {op_str} quantity filters for negative values. quantity should be non-negative."
                         )
 
         # --- BETWEEN ---
@@ -169,8 +166,7 @@ def _find_violations(
                     seen.add(key)
 
                     issues.append(
-                        f"quantity BETWEEN contains negative bound ({bound}). "
-                        f"quantity should be non-negative."
+                        f"quantity BETWEEN contains negative bound ({bound}). quantity should be non-negative."
                     )
 
         # --- IN / NOT IN ---
@@ -195,14 +191,14 @@ def _find_violations(
                 seen.add(key)
 
                 issues.append(
-                    f"quantity IN clause contains negative values {negatives}. "
-                    f"quantity should be non-negative."
+                    f"quantity IN clause contains negative values {negatives}. quantity should be non-negative."
                 )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class DrugQuantityValidationRule(Rule):
@@ -212,20 +208,13 @@ class DrugQuantityValidationRule(Rule):
     name = "Drug Quantity Validation"
 
     description = (
-        "Ensures drug_exposure.quantity is non-negative. "
-        "Negative values indicate data quality or query logic issues."
+        "Ensures drug_exposure.quantity is non-negative. Negative values indicate data quality or query logic issues."
     )
 
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `quantity < 0` filters WITH `quantity >= 0`. Negative values indicate ETL errors or refund/return rows that shouldn't feed analytical aggregates."
-    example_bad = (
-        "SELECT person_id FROM drug_exposure\n"
-        "WHERE quantity < 0;"
-    )
-    example_good = (
-        "SELECT person_id FROM drug_exposure\n"
-        "WHERE quantity >= 0;"
-    )
+    example_bad = "SELECT person_id FROM drug_exposure\nWHERE quantity < 0;"
+    example_good = "SELECT person_id FROM drug_exposure\nWHERE quantity >= 0;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

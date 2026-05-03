@@ -62,6 +62,7 @@ CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -88,6 +89,7 @@ def _is_col(col: Optional[str], name: str) -> bool:
 
 # --- Join detection --------------------------------------------------------
 
+
 def _extract_conditions(join: exp.Join):
     on = join.args.get("on")
     if not on:
@@ -101,6 +103,7 @@ def _resolve(col: exp.Column, aliases: Dict[str, str]):
 
 
 # --- Correct path detection -----------------------------------------------
+
 
 def _has_valid_path(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     """
@@ -122,22 +125,14 @@ def _has_valid_path(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
         rt, rc = _resolve(right, aliases)
 
         # clinical → care_site
-        if (
-            _is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and
-            _is_care_site(rt) and _is_col(rc, CARE_SITE_ID)
-        ) or (
-            _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and
-            _is_care_site(lt) and _is_col(lc, CARE_SITE_ID)
+        if (_is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and _is_care_site(rt) and _is_col(rc, CARE_SITE_ID)) or (
+            _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and _is_care_site(lt) and _is_col(lc, CARE_SITE_ID)
         ):
             found_clinical_to_cs = True
 
         # care_site → location
-        if (
-            _is_care_site(lt) and _is_col(lc, LOCATION_ID) and
-            _is_location(rt) and _is_col(rc, LOCATION_ID)
-        ) or (
-            _is_care_site(rt) and _is_col(rc, LOCATION_ID) and
-            _is_location(lt) and _is_col(lc, LOCATION_ID)
+        if (_is_care_site(lt) and _is_col(lc, LOCATION_ID) and _is_location(rt) and _is_col(rc, LOCATION_ID)) or (
+            _is_care_site(rt) and _is_col(rc, LOCATION_ID) and _is_location(lt) and _is_col(lc, LOCATION_ID)
         ):
             found_cs_to_location = True
 
@@ -145,6 +140,7 @@ def _has_valid_path(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 
 # --- Invalid join detection ------------------------------------------------
+
 
 def _is_invalid_direct_join(node, aliases) -> Optional[str]:
     """
@@ -163,20 +159,14 @@ def _is_invalid_direct_join(node, aliases) -> Optional[str]:
     rt, rc = _resolve(right, aliases)
 
     # allow person.location_id
-    if (
-        _is_person(lt) and _is_col(lc, LOCATION_ID) and _is_location(rt)
-    ) or (
+    if (_is_person(lt) and _is_col(lc, LOCATION_ID) and _is_location(rt)) or (
         _is_person(rt) and _is_col(rc, LOCATION_ID) and _is_location(lt)
     ):
         return None
 
     # invalid direct join
-    if (
-        _is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and
-        _is_location(rt) and _is_col(rc, LOCATION_ID)
-    ) or (
-        _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and
-        _is_location(lt) and _is_col(lc, LOCATION_ID)
+    if (_is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and _is_location(rt) and _is_col(rc, LOCATION_ID)) or (
+        _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and _is_location(lt) and _is_col(lc, LOCATION_ID)
     ):
         return node.sql()
 
@@ -184,6 +174,7 @@ def _is_invalid_direct_join(node, aliases) -> Optional[str]:
 
 
 # --- Core ------------------------------------------------------------------
+
 
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
     issues = []
@@ -217,17 +208,17 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class CareSiteJoinValidationRule(Rule):
     """Robust validation of care_site join path."""
 
     rule_id = "joins.care_site_join_validation"
     name = "Care Site Join Path Validation"
-    description = (
-        "Ensures clinical tables join to location via care_site."
-    )
+    description = "Ensures clinical tables join to location via care_site."
     severity = Severity.WARNING
     suggested_fix = "ADD: the full clinical → care_site → location chain: `JOIN care_site cs ON <clinical>.care_site_id = cs.care_site_id JOIN location l ON cs.location_id = l.location_id`. Don't skip care_site to join clinical directly to location."
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 

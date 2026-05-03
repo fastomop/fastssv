@@ -74,6 +74,7 @@ OPERATOR_MAP: Dict[type, str] = {
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _is_concept_id_column(col_name: str) -> bool:
     if not col_name:
         return False
@@ -134,8 +135,7 @@ def _check_comparison(sql: str, node: exp.Expression, aliases: dict) -> List[Rul
                 rule_id="data_quality.concept_id_string_comparison",
                 severity=Severity.WARNING,
                 message=(
-                    f"Concept ID column compared with string literal: "
-                    f"{col_node.sql()} {operator} {lit_node.sql()}"
+                    f"Concept ID column compared with string literal: {col_node.sql()} {operator} {lit_node.sql()}"
                 ),
                 suggested_fix=(
                     f"REPLACE: `{col_node.sql()} {operator} '<digits>'` (string literal) WITH "
@@ -162,9 +162,7 @@ def _check_in_clause(sql: str, node: exp.In, aliases: dict) -> List[RuleViolatio
     if not isinstance(col_expr, exp.Column):
         return violations
 
-    string_values = [
-        val.this for val in (node.expressions or []) if is_string_literal(val)
-    ]
+    string_values = [val.this for val in (node.expressions or []) if is_string_literal(val)]
 
     if not string_values:
         return violations
@@ -194,9 +192,7 @@ def _check_in_clause(sql: str, node: exp.In, aliases: dict) -> List[RuleViolatio
     # locate the original IN SQL fragment in source and substitute with
     # the corrected text. Falls back to FREEFORM for ambiguous matches.
     patch = None
-    all_digits = [
-        str(val.this) for val in (node.expressions or []) if is_string_literal(val)
-    ]
+    all_digits = [str(val.this) for val in (node.expressions or []) if is_string_literal(val)]
     if all_digits and all(s.isdigit() for s in all_digits):
         # Build a corrected IN body and try to locate the original IN node
         # span in source. We try the node.sql() as a single fragment.
@@ -259,6 +255,7 @@ def _find_violations(sql: str, tree: exp.Expression) -> List[RuleViolation]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class ConceptIdStringComparisonRule(Rule):
     """
@@ -285,16 +282,8 @@ class ConceptIdStringComparisonRule(Rule):
         "literal as a plain integer keeps index usage intact and the "
         "semantics identical across every supported dialect."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM person\n"
-        "WHERE gender_concept_id = '8532';"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM person\n"
-        "WHERE gender_concept_id = 8532;"
-    )
+    example_bad = "SELECT person_id\nFROM person\nWHERE gender_concept_id = '8532';"
+    example_good = "SELECT person_id\nFROM person\nWHERE gender_concept_id = 8532;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

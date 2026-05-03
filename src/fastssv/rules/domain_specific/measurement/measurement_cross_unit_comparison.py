@@ -69,6 +69,7 @@ _AGGREGATION_TYPES = (exp.Avg, exp.Sum, exp.Min, exp.Max)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(val: Optional[str]) -> Optional[str]:
     return normalize_name(val) if val else None
 
@@ -133,19 +134,12 @@ def _has_unit_concept_constraint(
                 continue
 
             # Check if from measurement table or unqualified
-            is_measurement_col = (
-                _norm(table) == "measurement" or
-                (not table and "measurement" in aliases.values())
-            )
+            is_measurement_col = _norm(table) == "measurement" or (not table and "measurement" in aliases.values())
             if not is_measurement_col:
                 continue
 
             # Only safe if exactly 1 value
-            values = {
-                str(expr.this)
-                for expr in node.expressions or []
-                if isinstance(expr, exp.Literal)
-            }
+            values = {str(expr.this) for expr in node.expressions or [] if isinstance(expr, exp.Literal)}
 
             if len(values) == 1:
                 return True
@@ -188,10 +182,7 @@ def _has_multiple_unit_values_in_clause(
             continue
 
         # Check if from measurement table or unqualified
-        is_measurement_col = (
-            _norm(table) == "measurement" or
-            (not table and "measurement" in aliases.values())
-        )
+        is_measurement_col = _norm(table) == "measurement" or (not table and "measurement" in aliases.values())
         if not is_measurement_col:
             continue
 
@@ -209,6 +200,7 @@ def _has_multiple_unit_values_in_clause(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class MeasurementCrossUnitComparisonRule(Rule):
     """Detect aggregations on measurement.value_as_number across different units."""
@@ -224,10 +216,7 @@ class MeasurementCrossUnitComparisonRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "ADD: `AND m.unit_concept_id = <unit_id>` (single unit), OR GROUP BY m.unit_concept_id so each aggregate row is in one unit. Same clinical concept can be stored in mmol/L vs mg/dL across sites."
-    example_bad = (
-        "SELECT AVG(m.value_as_number) FROM measurement m\n"
-        "WHERE m.measurement_concept_id = 3004249;"
-    )
+    example_bad = "SELECT AVG(m.value_as_number) FROM measurement m\nWHERE m.measurement_concept_id = 3004249;"
     example_good = (
         "SELECT AVG(m.value_as_number) FROM measurement m\n"
         "WHERE m.measurement_concept_id = 3004249\n"

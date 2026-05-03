@@ -102,16 +102,13 @@ TABLE_COLUMN_MAPPINGS = {
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -176,12 +173,14 @@ def _find_violations(
         if t and t in TABLE_COLUMN_MAPPINGS:
             incorrect_col, correct_col, correct_datetime = TABLE_COLUMN_MAPPINGS[t]
             if c == _norm(incorrect_col):
-                issues.append((
-                    f"Reference to {t}.{incorrect_col} is invalid. "
-                    f"The {t} table has no {incorrect_col} column. "
-                    f"Use {correct_col} or {correct_datetime} instead.",
-                    incorrect_col,
-                ))
+                issues.append(
+                    (
+                        f"Reference to {t}.{incorrect_col} is invalid. "
+                        f"The {t} table has no {incorrect_col} column. "
+                        f"Use {correct_col} or {correct_datetime} instead.",
+                        incorrect_col,
+                    )
+                )
                 continue
 
         # --- Case 2: Unqualified misuse (safe heuristic) ---
@@ -191,12 +190,14 @@ def _find_violations(
                 if c == _norm(incorrect_col) and table_name in relevant_tables:
                     # Only flag if no other tables could own the column
                     if not other_tables:
-                        issues.append((
-                            f"Unqualified {incorrect_col} likely refers to "
-                            f"{table_name}.{incorrect_col}, which does not exist. "
-                            f"Use {correct_col} or {correct_datetime} instead.",
-                            incorrect_col,
-                        ))
+                        issues.append(
+                            (
+                                f"Unqualified {incorrect_col} likely refers to "
+                                f"{table_name}.{incorrect_col}, which does not exist. "
+                                f"Use {correct_col} or {correct_datetime} instead.",
+                                incorrect_col,
+                            )
+                        )
                         break
 
     # Deduplicate while preserving order and keeping the first incorrect_col
@@ -211,6 +212,7 @@ def _find_violations(
 
 
 # --- Rule --------------------------------------------------------------------
+
 
 @register
 class EventDateColumnCorrectnessRule(Rule):
@@ -230,14 +232,8 @@ class EventDateColumnCorrectnessRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: misnamed date columns with the v5.4 spelling: procedure_start_date → procedure_date, measurement_start_date → measurement_date, observation_start_date → observation_date, specimen_start_date → specimen_date, note_start_date → note_date."
-    example_bad = (
-        "SELECT person_id, procedure_start_date\n"
-        "FROM procedure_occurrence;"
-    )
-    example_good = (
-        "SELECT person_id, procedure_date\n"
-        "FROM procedure_occurrence;"
-    )
+    example_bad = "SELECT person_id, procedure_start_date\nFROM procedure_occurrence;"
+    example_good = "SELECT person_id, procedure_date\nFROM procedure_occurrence;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

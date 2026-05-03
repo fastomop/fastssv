@@ -99,6 +99,7 @@ PRECEDING_VISIT_OCCURRENCE_ID_COL = "preceding_visit_occurrence_id"
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -112,11 +113,7 @@ def _is_preceding_visit_occurrence_id(col: Optional[str]) -> bool:
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -193,6 +190,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class VisitDetailHasNoPrecedingVisitOccurrenceIdRule(Rule):
     """
@@ -211,14 +209,8 @@ class VisitDetailHasNoPrecedingVisitOccurrenceIdRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: `visit_detail.preceding_visit_occurrence_id` (does not exist) WITH `visit_detail.preceding_visit_detail_id`. Use preceding_visit_occurrence_id only on visit_occurrence."
-    example_bad = (
-        "SELECT visit_detail_id, preceding_visit_occurrence_id\n"
-        "FROM visit_detail;"
-    )
-    example_good = (
-        "SELECT visit_detail_id, preceding_visit_detail_id\n"
-        "FROM visit_detail;"
-    )
+    example_bad = "SELECT visit_detail_id, preceding_visit_occurrence_id\nFROM visit_detail;"
+    example_good = "SELECT visit_detail_id, preceding_visit_detail_id\nFROM visit_detail;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

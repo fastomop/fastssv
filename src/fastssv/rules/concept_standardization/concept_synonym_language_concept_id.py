@@ -76,6 +76,7 @@ LANGUAGE_COL = "language_concept_id"
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _is_target_column(table: str, column: str, tree: exp.Expression) -> bool:
     if normalize_name(column) != SYNONYM_NAME_COL:
         return False
@@ -112,9 +113,7 @@ def _has_like_on_synonym_name(tree: exp.Expression, aliases: dict) -> bool:
     return False
 
 
-def _find_like_predicate_for_synonym(
-    tree: exp.Expression, aliases: dict
-) -> Optional[tuple]:
+def _find_like_predicate_for_synonym(tree: exp.Expression, aliases: dict) -> Optional[tuple]:
     """Return (predicate_sql, table_qualifier) for the LIKE predicate on
     concept_synonym_name. The qualifier is the alias/table used in the SQL
     (or None when unqualified).
@@ -240,6 +239,7 @@ def _find_violations(sql: str, tree: exp.Expression) -> List[tuple]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class ConceptSynonymLanguageConceptIdRule(Rule):
     rule_id = "concept_standardization.concept_synonym_language_concept_id"
@@ -263,11 +263,7 @@ class ConceptSynonymLanguageConceptIdRule(Rule):
         "deployments. Add an explicit language filter, or use IN to allow "
         "a deliberate multilingual scope."
     )
-    example_bad = (
-        "SELECT cs.concept_id\n"
-        "FROM concept_synonym cs\n"
-        "WHERE cs.concept_synonym_name LIKE '%diabetes%';"
-    )
+    example_bad = "SELECT cs.concept_id\nFROM concept_synonym cs\nWHERE cs.concept_synonym_name LIKE '%diabetes%';"
     example_good = (
         "SELECT cs.concept_id\n"
         "FROM concept_synonym cs\n"

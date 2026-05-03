@@ -79,12 +79,12 @@ def _is_synthetic_data_pattern(select: exp.Select) -> bool:
         if not has_row_number:
             for func in expr.find_all(exp.Anonymous):
                 func_name = ""
-                if hasattr(func, 'name'):
+                if hasattr(func, "name"):
                     func_name = normalize_name(func.name)
-                elif hasattr(func, 'this') and isinstance(func.this, str):
+                elif hasattr(func, "this") and isinstance(func.this, str):
                     func_name = normalize_name(func.this)
 
-                if func_name == 'row_number':
+                if func_name == "row_number":
                     has_row_number = True
                     break
 
@@ -133,14 +133,8 @@ class TopAsSyntheticDataRule(Rule):
         "list, generate_series() in PostgreSQL, or a recursive CTE — so "
         "the synthetic data is deterministic and dialect-agnostic."
     )
-    example_bad = (
-        "SELECT TOP 10 ROW_NUMBER() OVER (ORDER BY person_id) AS n\n"
-        "FROM person;"
-    )
-    example_good = (
-        "SELECT n\n"
-        "FROM (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t(n);"
-    )
+    example_bad = "SELECT TOP 10 ROW_NUMBER() OVER (ORDER BY person_id) AS n\nFROM person;"
+    example_good = "SELECT n\nFROM (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t(n);"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
@@ -171,7 +165,8 @@ class TopAsSyntheticDataRule(Rule):
                         if "TOP" in hint_sql:
                             # Try to extract the number
                             import re
-                            match = re.search(r'TOP\s+(\d+)', hint_sql)
+
+                            match = re.search(r"TOP\s+(\d+)", hint_sql)
                             if match:
                                 limit_value = match.group(1)
 
@@ -181,18 +176,20 @@ class TopAsSyntheticDataRule(Rule):
                         f"This depends on table having at least {limit_value or 'N'} rows and assumes data distribution. "
                     )
 
-                    violations.append(self.create_violation(
-                        message=message,
-                        suggested_fix=(
-                            f"Use explicit VALUES clause or generate_series(). "
-                            f"Example for {limit_value or 'N'} rows: "
-                            f"VALUES (1), (2), ..., ({limit_value or 'N'})"
-                        ),
-                        details={
-                            "limit_value": limit_value,
-                            "pattern": "top_with_row_number_from_table",
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=message,
+                            suggested_fix=(
+                                f"Use explicit VALUES clause or generate_series(). "
+                                f"Example for {limit_value or 'N'} rows: "
+                                f"VALUES (1), (2), ..., ({limit_value or 'N'})"
+                            ),
+                            details={
+                                "limit_value": limit_value,
+                                "pattern": "top_with_row_number_from_table",
+                            },
+                        )
+                    )
 
         return violations
 

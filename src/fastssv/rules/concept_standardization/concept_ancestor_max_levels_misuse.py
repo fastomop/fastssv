@@ -77,6 +77,7 @@ SUSPICIOUS_MAX_LEVEL = 3
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -114,6 +115,7 @@ def _extract_literal_int(node: exp.Expression) -> Optional[int]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -147,17 +149,20 @@ def _detect_violations(
                 continue
             seen.add(key)
 
-            violations.append({
-                "operator": type(node).__name__,
-                "value": value,
-                "context": node.sql(),
-                "has_min_levels": has_min_levels,
-            })
+            violations.append(
+                {
+                    "operator": type(node).__name__,
+                    "value": value,
+                    "context": node.sql(),
+                    "has_min_levels": has_min_levels,
+                }
+            )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptAncestorMaxLevelsMisuseRule(Rule):
@@ -257,8 +262,7 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
 
                 elif op == "NEQ":
                     message = (
-                        f"Using max_levels_of_separation != {value} is unreliable due to multiple "
-                        f"hierarchy paths."
+                        f"Using max_levels_of_separation != {value} is unreliable due to multiple hierarchy paths."
                     )
                     fix = f"REPLACE: `max_levels_of_separation != {value}` WITH `min_levels_of_separation = 1` (direct only) or a range filter (`max_levels_of_separation <= <N>` / `>= <N>`)."
                     # Multi-option fix (range or min_levels) — leave FREEFORM.

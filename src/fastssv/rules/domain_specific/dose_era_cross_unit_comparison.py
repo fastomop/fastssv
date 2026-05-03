@@ -110,11 +110,7 @@ class DoseEraCrossUnitComparisonRule(Rule):
         "one unit, or report per-unit aggregates."
     )
 
-    example_bad = (
-        "SELECT AVG(dose_value) AS avg_dose\n"
-        "FROM dose_era\n"
-        "WHERE drug_concept_id = 1124300;"
-    )
+    example_bad = "SELECT AVG(dose_value) AS avg_dose\nFROM dose_era\nWHERE drug_concept_id = 1124300;"
     example_good = (
         "SELECT AVG(dose_value) AS avg_dose_mg\n"
         "FROM dose_era\n"

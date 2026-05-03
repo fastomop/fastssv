@@ -138,15 +138,13 @@ DOMAIN_VOCABULARIES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _get_concept_aliases(aliases: Dict[str, str]) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == CONCEPT_TABLE
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == CONCEPT_TABLE}
 
 
 def _is_column(
@@ -173,6 +171,7 @@ def _extract_string_literal(node: exp.Expression) -> Optional[str]:
 
 
 # --- Filter Detection ------------------------------------------------------
+
 
 def _extract_vocab_filters(
     node: exp.Expression,
@@ -268,6 +267,7 @@ def _has_standard_filter(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _is_exploratory_vocabulary_analysis(
     select: exp.Select,
     concept_alias: str,
@@ -352,9 +352,7 @@ def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
                     if _is_column(right, aliases, concept_aliases, CONCEPT_ID):
                         right_alias = _norm(right.table) if right.table else None
 
-                        if right_alias == table_alias or (
-                            not right_alias and len(concept_aliases) == 1
-                        ):
+                        if right_alias == table_alias or (not right_alias and len(concept_aliases) == 1):
                             _, col_name = resolve_table_col(left, aliases)
                             col_norm = _norm(col_name)
 
@@ -366,9 +364,7 @@ def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
                     elif _is_column(left, aliases, concept_aliases, CONCEPT_ID):
                         left_alias = _norm(left.table) if left.table else None
 
-                        if left_alias == table_alias or (
-                            not left_alias and len(concept_aliases) == 1
-                        ):
+                        if left_alias == table_alias or (not left_alias and len(concept_aliases) == 1):
                             _, col_name = resolve_table_col(right, aliases)
                             col_norm = _norm(col_name)
 
@@ -418,22 +414,25 @@ def _detect(tree: exp.Expression) -> List[Dict[str, object]]:
             # Check if this is exploratory analysis
             is_exploratory = _is_exploratory_vocabulary_analysis(select, table_alias)
 
-            violations.append({
-                "domain": found_domain,
-                "domain_name": config["domain_name"],
-                "column": domain_col,
-                "invalid_vocabularies": sorted(invalid_found),
-                "expected_vocabularies": sorted(config["standard_vocabularies"]),
-                "alias": table_alias,
-                "rule_id": config["rule_id"],
-                "context": join.sql(),
-                "is_exploratory": is_exploratory,
-            })
+            violations.append(
+                {
+                    "domain": found_domain,
+                    "domain_name": config["domain_name"],
+                    "column": domain_col,
+                    "invalid_vocabularies": sorted(invalid_found),
+                    "expected_vocabularies": sorted(config["standard_vocabularies"]),
+                    "alias": table_alias,
+                    "rule_id": config["rule_id"],
+                    "context": join.sql(),
+                    "is_exploratory": is_exploratory,
+                }
+            )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class DomainVocabularyValidationRule(Rule):

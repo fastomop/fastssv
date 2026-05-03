@@ -114,6 +114,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class HavingWithoutGroupByRule(Rule):
     """
@@ -124,8 +125,7 @@ class HavingWithoutGroupByRule(Rule):
     name = "Having Without Group By"
 
     description = (
-        "HAVING clauses without GROUP BY are almost always a logic error. "
-        "Add GROUP BY clause or use WHERE instead."
+        "HAVING clauses without GROUP BY are almost always a logic error. Add GROUP BY clause or use WHERE instead."
     )
 
     severity = Severity.ERROR
@@ -140,16 +140,8 @@ class HavingWithoutGroupByRule(Rule):
         "wanted WHERE (for row-level filtering) or forgot to add the "
         "GROUP BY for their aggregates."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM person\n"
-        "HAVING person_id > 1;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM person\n"
-        "WHERE person_id > 1;"
-    )
+    example_bad = "SELECT person_id\nFROM person\nHAVING person_id > 1;"
+    example_good = "SELECT person_id\nFROM person\nWHERE person_id > 1;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

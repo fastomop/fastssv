@@ -28,12 +28,12 @@ STRING_MATCH_EXP_TYPES = (exp.Like, exp.ILike, exp.RegexpLike)
 
 # Vocabulary inference patterns
 VOCABULARY_PATTERNS = {
-    'SNOMED': r'^\d{6,}$',  # 6+ digits (e.g., '73211009', '161891005')
-    'CPT4': r'^\d{5}$',  # Exactly 5 digits (e.g., '22851', '97001')
-    'HCPCS': r'^[A-Z]\d{4}$',  # Letter + 4 digits (e.g., 'G0283')
-    'ICD10CM': r'^[A-Z]\d{2}',  # Letter + 2+ digits (e.g., 'E11.9')
-    'ICD9CM': r'^\d{3}',  # Starts with 3 digits (e.g., '493.0')
-    'LOINC': r'^\d{4,5}-\d$',  # 4-5 digits + dash + digit (e.g., '1234-5')
+    "SNOMED": r"^\d{6,}$",  # 6+ digits (e.g., '73211009', '161891005')
+    "CPT4": r"^\d{5}$",  # Exactly 5 digits (e.g., '22851', '97001')
+    "HCPCS": r"^[A-Z]\d{4}$",  # Letter + 4 digits (e.g., 'G0283')
+    "ICD10CM": r"^[A-Z]\d{2}",  # Letter + 2+ digits (e.g., 'E11.9')
+    "ICD9CM": r"^\d{3}",  # Starts with 3 digits (e.g., '493.0')
+    "LOINC": r"^\d{4,5}-\d$",  # 4-5 digits + dash + digit (e.g., '1234-5')
 }
 
 
@@ -147,7 +147,9 @@ def _check_violations(
         if not _has_vocabulary_id_filter(select, alias):
             # Try to infer vocabulary from concept_code pattern
             inferred_vocab = None
-            suggested_fix = "ADD: `AND <alias>.vocabulary_id = '<vocab>'` in the same WHERE/JOIN scope as the concept_code filter."
+            suggested_fix = (
+                "ADD: `AND <alias>.vocabulary_id = '<vocab>'` in the same WHERE/JOIN scope as the concept_code filter."
+            )
 
             if concept_code_value:
                 inferred_vocab = _infer_vocabulary(concept_code_value)
@@ -166,17 +168,19 @@ def _check_violations(
             else:
                 patch = freeform(suggested_fix)
 
-            violations.append(RuleViolation(
-                rule_id="anti_patterns.concept_code_requires_vocabulary_id",
-                severity=Severity.WARNING,
-                message=message,
-                suggested_fix=suggested_fix,
-                details={
-                    "column": f"{table}.concept_code" if table else "concept_code",
-                    "inferred_vocabulary": inferred_vocab,
-                },
-                suggested_fix_patch=patch,
-            ))
+            violations.append(
+                RuleViolation(
+                    rule_id="anti_patterns.concept_code_requires_vocabulary_id",
+                    severity=Severity.WARNING,
+                    message=message,
+                    suggested_fix=suggested_fix,
+                    details={
+                        "column": f"{table}.concept_code" if table else "concept_code",
+                        "inferred_vocabulary": inferred_vocab,
+                    },
+                    suggested_fix_patch=patch,
+                )
+            )
 
     # --- concept_code = 'value' ---
     for eq in tree.find_all(exp.EQ):
@@ -190,7 +194,7 @@ def _check_violations(
             continue
         if normalize_name(left.name) != "concept_code":
             continue
-        code_value = right.this if hasattr(right, 'this') else str(right)
+        code_value = right.this if hasattr(right, "this") else str(right)
         _maybe_add(
             left,
             code_value,
@@ -213,7 +217,7 @@ def _check_violations(
         if len(string_vals) > 3:
             vals_str += ", ..."
         # Use first code for inference
-        first_code = string_vals[0].this if hasattr(string_vals[0], 'this') else str(string_vals[0])
+        first_code = string_vals[0].this if hasattr(string_vals[0], "this") else str(string_vals[0])
         _maybe_add(
             col,
             first_code,
@@ -280,21 +284,15 @@ class ConceptCodeRequiresVocabularyIdRule(Rule):
         "on vocabulary_id silently matches unintended concepts from other "
         "vocabularies. Always pair the two predicates in the same scope."
     )
-    example_bad = (
-        "SELECT c.concept_id\n"
-        "FROM concept c\n"
-        "WHERE c.concept_code = 'E11.9';"
-    )
+    example_bad = "SELECT c.concept_id\nFROM concept c\nWHERE c.concept_code = 'E11.9';"
     example_good = (
-        "SELECT c.concept_id\n"
-        "FROM concept c\n"
-        "WHERE c.concept_code = 'E11.9'\n"
-        "  AND c.vocabulary_id = 'ICD10CM';"
+        "SELECT c.concept_id\nFROM concept c\nWHERE c.concept_code = 'E11.9'\n  AND c.vocabulary_id = 'ICD10CM';"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         # Check validation context for severity adjustment
         from fastssv.core.validation_context import get_validation_context
+
         ctx = get_validation_context()
 
         # Default: WARNING (best practice)

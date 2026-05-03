@@ -80,9 +80,8 @@ def _check_visit_occurrence_id_linkage(node: exp.Expression, aliases: dict) -> b
     if _norm(lc) != VISIT_OCCURRENCE_ID or _norm(rc) != VISIT_OCCURRENCE_ID:
         return False
 
-    return (
-        (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE)
-        or (_norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE)
+    return (_norm(lt) == VISIT_DETAIL and _norm(rt) == VISIT_OCCURRENCE) or (
+        _norm(rt) == VISIT_DETAIL and _norm(lt) == VISIT_OCCURRENCE
     )
 
 
@@ -155,17 +154,11 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
     rule_id = "domain_specific.visit_detail_visit_occurrence_reference"
     name = "Visit Detail Visit Occurrence Reference"
 
-    description = (
-        "Detects potential issues when using visit_detail without proper "
-        "visit_occurrence context or join."
-    )
+    description = "Detects potential issues when using visit_detail without proper visit_occurrence context or join."
 
     severity = Severity.ERROR
     suggested_fix = "ADD: `JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id` whenever visit-level context is needed. visit_detail rows alone don't carry visit_occurrence columns."
-    example_bad = (
-        "SELECT visit_detail_id, visit_detail_concept_id\n"
-        "FROM visit_detail;"
-    )
+    example_bad = "SELECT visit_detail_id, visit_detail_concept_id\nFROM visit_detail;"
     example_good = (
         "SELECT vd.visit_detail_id, vd.visit_detail_concept_id, vo.visit_concept_id\n"
         "FROM visit_detail vd\n"

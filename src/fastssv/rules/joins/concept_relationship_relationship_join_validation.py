@@ -54,6 +54,7 @@ RELATIONSHIP_ID = "relationship_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -100,13 +101,13 @@ def _involves_target_tables(
 ) -> bool:
     lt = _normalize_table(lt)
     rt = _normalize_table(rt)
-    return (
-        (_is_concept_relationship(lt) and _is_relationship(rt)) or
-        (_is_concept_relationship(rt) and _is_relationship(lt))
+    return (_is_concept_relationship(lt) and _is_relationship(rt)) or (
+        _is_concept_relationship(rt) and _is_relationship(lt)
     )
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect_violations(
     tree: exp.Expression,
@@ -145,12 +146,11 @@ def _detect_violations(
             lt_norm = _normalize_table(lt)
             rt_norm = _normalize_table(rt)
 
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt_norm, lc, rt_norm, rc),
                 (rt_norm, rc, lt_norm, lc),
             ]:
                 if _is_concept_relationship(t1) and _is_relationship(t2):
-
                     if _is_col(c1, RELATIONSHIP_ID) and _is_col(c2, RELATIONSHIP_ID):
                         found_valid_fk_join = True
                     else:
@@ -186,12 +186,11 @@ def _detect_violations(
         lt_norm = _normalize_table(lt)
         rt_norm = _normalize_table(rt)
 
-        for (t1, c1, t2, c2) in [
+        for t1, c1, t2, c2 in [
             (lt_norm, lc, rt_norm, rc),
             (rt_norm, rc, lt_norm, lc),
         ]:
             if _is_concept_relationship(t1) and _is_relationship(t2):
-
                 if _is_col(c1, RELATIONSHIP_ID) and _is_col(c2, RELATIONSHIP_ID):
                     found_valid_fk_join = True
                 else:
@@ -220,6 +219,7 @@ def _detect_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptRelationshipRelationshipJoinValidationRule(Rule):
     """Validate concept_relationship ↔ relationship joins."""
@@ -227,21 +227,14 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
     rule_id = "joins.concept_relationship_relationship_join_validation"
     name = "Concept Relationship to Relationship Join Validation"
 
-    description = (
-        "When concept_relationship is joined with relationship, "
-        "it must use relationship_id on both sides."
-    )
+    description = "When concept_relationship is joined with relationship, it must use relationship_id on both sides."
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join target WITH `concept_relationship.relationship_id = relationship.relationship_id` (both VARCHAR). Use relationship_id, not relationship_concept_id, for the join."
-    example_bad = (
-        "SELECT * FROM concept_relationship cr\n"
-        "JOIN relationship r ON cr.concept_id_1 = r.relationship_id;"
-    )
+    example_bad = "SELECT * FROM concept_relationship cr\nJOIN relationship r ON cr.concept_id_1 = r.relationship_id;"
     example_good = (
-        "SELECT * FROM concept_relationship cr\n"
-        "JOIN relationship r ON cr.relationship_id = r.relationship_id;"
+        "SELECT * FROM concept_relationship cr\nJOIN relationship r ON cr.relationship_id = r.relationship_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -281,8 +274,13 @@ class ConceptRelationshipRelationshipJoinValidationRule(Rule):
                         ),
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, cr_table, cr_col, r_table, r_col,
-                            RELATIONSHIP_ID, RELATIONSHIP_ID,
+                            sql,
+                            cr_table,
+                            cr_col,
+                            r_table,
+                            r_col,
+                            RELATIONSHIP_ID,
+                            RELATIONSHIP_ID,
                             fix_text,
                             aliases=aliases,
                         ),

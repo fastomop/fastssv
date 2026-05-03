@@ -66,6 +66,7 @@ DATE_FUNCTIONS = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -173,9 +174,7 @@ def _has_multiday_datediff_filter(
             if not isinstance(left, exp.Func):
                 continue
 
-            func_name = _norm(
-                left.sql_name() if hasattr(left, "sql_name") else str(left.key)
-            )
+            func_name = _norm(left.sql_name() if hasattr(left, "sql_name") else str(left.key))
             if func_name not in DATE_FUNCTIONS:
                 continue
 
@@ -209,6 +208,7 @@ def _has_multiday_datediff_filter(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -236,6 +236,7 @@ def _find_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class VisitOutpatientSameDayValidationRule(Rule):

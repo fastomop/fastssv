@@ -53,6 +53,7 @@ CONCEPT_CLASS_ID = "concept_class_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -114,6 +115,7 @@ def _is_valid_column_join(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -153,12 +155,11 @@ def _detect_violations(
             if not _is_valid_column_join(lt_norm, rt_norm):
                 continue
 
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt_norm, lc, rt_norm, rc),
                 (rt_norm, rc, lt_norm, lc),
             ]:
                 if _is_concept(t1) and _is_concept_class(t2):
-
                     if _is_col(c1, CONCEPT_CLASS_ID) and _is_col(c2, CONCEPT_CLASS_ID):
                         has_correct_join = True
                     else:
@@ -187,6 +188,7 @@ def _detect_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptConceptClassJoinValidationRule(Rule):
     """
@@ -209,13 +211,9 @@ class ConceptConceptClassJoinValidationRule(Rule):
 
     suggested_fix = "REPLACE: the concept ↔ concept_class ON clause WITH `concept.concept_class_id = concept_class.concept_class_id`. Joining via vocabulary_id, domain_id, or any other column is incorrect — concept_class.concept_class_id is the only FK target."
 
-    example_bad = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN concept_class cc ON c.vocabulary_id = cc.concept_class_id;"
-    )
+    example_bad = "SELECT c.concept_id FROM concept c\nJOIN concept_class cc ON c.vocabulary_id = cc.concept_class_id;"
     example_good = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id;"
+        "SELECT c.concept_id FROM concept c\nJOIN concept_class cc ON c.concept_class_id = cc.concept_class_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -254,8 +252,14 @@ class ConceptConceptClassJoinValidationRule(Rule):
                         ),
                         suggested_fix=fix_text,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, cc_table, cc_col,
-                            "concept_class_id", "concept_class_id", fix_text,
+                            sql,
+                            c_table,
+                            c_col,
+                            cc_table,
+                            cc_col,
+                            "concept_class_id",
+                            "concept_class_id",
+                            fix_text,
                             aliases=aliases,
                         ),
                         details={
@@ -282,8 +286,14 @@ class ConceptConceptClassJoinValidationRule(Rule):
                         severity=Severity.WARNING,
                         suggested_fix=fix_text,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, cc_table, cc_col,
-                            "concept_class_id", "concept_class_id", fix_text,
+                            sql,
+                            c_table,
+                            c_col,
+                            cc_table,
+                            cc_col,
+                            "concept_class_id",
+                            "concept_class_id",
+                            fix_text,
                             aliases=aliases,
                         ),
                         details={

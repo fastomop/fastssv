@@ -218,11 +218,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                 left, right = node.left, node.right
 
                 # Left side
-                if (
-                    _is_value_as_string(left, aliases)
-                    and not _is_safely_casted(left)
-                    and _is_numeric_literal(right)
-                ):
+                if _is_value_as_string(left, aliases) and not _is_safely_casted(left) and _is_numeric_literal(right):
                     key = node.sql()
                     if key not in seen:
                         seen.add(key)
@@ -232,11 +228,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                         )
 
                 # Right side
-                elif (
-                    _is_numeric_literal(left)
-                    and _is_value_as_string(right, aliases)
-                    and not _is_safely_casted(right)
-                ):
+                elif _is_numeric_literal(left) and _is_value_as_string(right, aliases) and not _is_safely_casted(right):
                     key = node.sql()
                     if key not in seen:
                         seen.add(key)
@@ -266,21 +258,14 @@ class ObservationValueAsStringNumericComparisonRule(Rule):
     name = "Observation Value As String Numeric Comparison"
 
     description = (
-        "Detects numeric comparisons on observation.value_as_string "
-        "(VARCHAR). This can lead to incorrect results."
+        "Detects numeric comparisons on observation.value_as_string (VARCHAR). This can lead to incorrect results."
     )
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: `WHERE value_as_string <op> <number>` WITH `WHERE value_as_number <op> <number>` (use the typed column), OR explicitly `CAST(value_as_string AS NUMERIC) <op> <number>`."
-    example_bad = (
-        "SELECT person_id FROM observation\n"
-        "WHERE value_as_string > 100;"
-    )
-    example_good = (
-        "SELECT person_id FROM observation\n"
-        "WHERE value_as_number > 100;"
-    )
+    example_bad = "SELECT person_id FROM observation\nWHERE value_as_string > 100;"
+    example_good = "SELECT person_id FROM observation\nWHERE value_as_number > 100;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

@@ -70,6 +70,7 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -86,10 +87,7 @@ def _resolve_alias(table_or_alias: Optional[str], aliases: Dict[str, str]) -> Op
 
 
 def _get_aliases_for_table(target: str, aliases: Dict[str, str]) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == _norm(target) and alias != table
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == _norm(target) and alias != table}
 
 
 def _has_person_and_condition(aliases: Dict[str, str]) -> bool:
@@ -115,8 +113,9 @@ def _has_person_id_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
         if not (isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column)):
             continue
 
-        if (_matches(eq.this, person_aliases) and _matches(eq.expression, condition_aliases)) or \
-           (_matches(eq.this, condition_aliases) and _matches(eq.expression, person_aliases)):
+        if (_matches(eq.this, person_aliases) and _matches(eq.expression, condition_aliases)) or (
+            _matches(eq.this, condition_aliases) and _matches(eq.expression, person_aliases)
+        ):
             return True
 
     # Check USING(person_id)
@@ -171,6 +170,7 @@ def _has_top_level_aggregation(select: exp.Select) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     if not _has_person_and_condition(aliases):
         return False
@@ -186,6 +186,7 @@ def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConditionOccurrenceCardinalityValidationRule(Rule):

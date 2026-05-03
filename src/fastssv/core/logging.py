@@ -97,9 +97,7 @@ def setup_logging(
         formatter = JSONFormatter()
     else:
         format_string = FORMATS.get(log_format, FORMATS["detailed"])
-        formatter = logging.Formatter(
-            format_string, datefmt="%Y-%m-%d %H:%M:%S"
-        )
+        formatter = logging.Formatter(format_string, datefmt="%Y-%m-%d %H:%M:%S")
 
     # Console handler
     console_handler = logging.StreamHandler(sys.stderr)
@@ -149,9 +147,7 @@ def log_validation_start(logger: logging.Logger, sql_length: int, dialect: str) 
         sql_length: Length of SQL query in characters
         dialect: SQL dialect being used
     """
-    logger.info(
-        f"Starting validation: {sql_length} characters, dialect={dialect}"
-    )
+    logger.info(f"Starting validation: {sql_length} characters, dialect={dialect}")
 
 
 def log_validation_complete(
@@ -177,8 +173,7 @@ def log_validation_complete(
         extra["duration_ms"] = duration_ms
 
     logger.info(
-        f"Validation complete: {total_rules} rules, "
-        f"{error_count} errors, {warning_count} warnings",
+        f"Validation complete: {total_rules} rules, {error_count} errors, {warning_count} warnings",
         extra=extra,
     )
 

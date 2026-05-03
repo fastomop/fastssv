@@ -56,7 +56,8 @@ def _normalize_expression(expr: exp.Expression) -> str:
 
     # Remove extra whitespace
     import re
-    sql_str = re.sub(r'\s+', ' ', sql_str)
+
+    sql_str = re.sub(r"\s+", " ", sql_str)
 
     return sql_str
 
@@ -118,7 +119,9 @@ class DuplicateColumnAliasRule(Rule):
 
     severity = Severity.WARNING
 
-    suggested_fix = "REMOVE: duplicate SELECT-list columns/aliases that compute the same value. Keep one alias per distinct value."
+    suggested_fix = (
+        "REMOVE: duplicate SELECT-list columns/aliases that compute the same value. Keep one alias per distinct value."
+    )
     long_description = (
         "Selecting the same expression twice with different aliases is "
         "almost always the result of copy-paste during iteration. It "
@@ -128,14 +131,8 @@ class DuplicateColumnAliasRule(Rule):
         "same value projected twice, make the second projection "
         "compute something different (or name them differently via a view)."
     )
-    example_bad = (
-        "SELECT person_id AS pid_a, person_id AS pid_b\n"
-        "FROM person;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM person;"
-    )
+    example_bad = "SELECT person_id AS pid_a, person_id AS pid_b\nFROM person;"
+    example_good = "SELECT person_id\nFROM person;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
@@ -157,18 +154,20 @@ class DuplicateColumnAliasRule(Rule):
                 if len(display_expr) > 50:
                     display_expr = display_expr[:50] + "..."
 
-                violations.append(self.create_violation(
-                    message=(
-                        f"Duplicate column expression detected: '{display_expr}' "
-                        f"is selected with multiple aliases: {', '.join(repr(a) for a in aliases)}. "
-                        f"This is likely a copy-paste error."
-                    ),
-                    details={
-                        "aliases": aliases,
-                        "expression": expression,
-                        "recommendation": "Remove duplicate columns or ensure each represents a unique calculation."
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Duplicate column expression detected: '{display_expr}' "
+                            f"is selected with multiple aliases: {', '.join(repr(a) for a in aliases)}. "
+                            f"This is likely a copy-paste error."
+                        ),
+                        details={
+                            "aliases": aliases,
+                            "expression": expression,
+                            "recommendation": "Remove duplicate columns or ensure each represents a unique calculation.",
+                        },
+                    )
+                )
 
         return violations
 

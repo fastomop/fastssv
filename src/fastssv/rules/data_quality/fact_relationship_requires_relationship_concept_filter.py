@@ -81,6 +81,7 @@ NORM_CONCEPT_ID = normalize_name(CONCEPT_ID)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -141,11 +142,7 @@ def _is_valid_concept_filter(
 
         if table and _norm(table) in concept_aliases:
             # Reject self comparisons like c.concept_id = c.concept_id
-            col_tables = {
-                resolve_table_col(c, aliases)[0]
-                for c in columns
-                if isinstance(c, exp.Column)
-            }
+            col_tables = {resolve_table_col(c, aliases)[0] for c in columns if isinstance(c, exp.Column)}
 
             if len(col_tables) == 1:
                 continue
@@ -184,9 +181,8 @@ def _has_concept_filtered_join(tree: exp.Expression, aliases: Dict[str, str]) ->
             _, left_col = resolve_table_col(cols[0], aliases)
             _, right_col = resolve_table_col(cols[1], aliases)
 
-            if (
-                (_is_relationship_concept_column(cols[0], aliases) and _norm(right_col) == NORM_CONCEPT_ID)
-                or (_is_relationship_concept_column(cols[1], aliases) and _norm(left_col) == NORM_CONCEPT_ID)
+            if (_is_relationship_concept_column(cols[0], aliases) and _norm(right_col) == NORM_CONCEPT_ID) or (
+                _is_relationship_concept_column(cols[1], aliases) and _norm(left_col) == NORM_CONCEPT_ID
             ):
                 has_join = True
 
@@ -225,14 +221,11 @@ def _has_subquery_filter(tree: exp.Expression) -> bool:
 
 
 def _has_relationship_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    return (
-        _has_direct_filter(tree, aliases)
-        or _has_concept_filtered_join(tree, aliases)
-        or _has_subquery_filter(tree)
-    )
+    return _has_direct_filter(tree, aliases) or _has_concept_filtered_join(tree, aliases) or _has_subquery_filter(tree)
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
@@ -255,15 +248,8 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
         "that filter combines unrelated link types into one result set. "
         "Always restrict to the specific relationship you need."
     )
-    example_bad = (
-        "SELECT fact_id_1, fact_id_2\n"
-        "FROM fact_relationship;"
-    )
-    example_good = (
-        "SELECT fact_id_1, fact_id_2\n"
-        "FROM fact_relationship\n"
-        "WHERE relationship_concept_id = 44818859;"
-    )
+    example_bad = "SELECT fact_id_1, fact_id_2\nFROM fact_relationship;"
+    example_good = "SELECT fact_id_1, fact_id_2\nFROM fact_relationship\nWHERE relationship_concept_id = 44818859;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()
@@ -294,9 +280,7 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
                     seen.add(key)
                     violations.append(
                         self.create_violation(
-                            message=(
-                                "fact_relationship table used without filtering by relationship_concept_id."
-                            ),
+                            message=("fact_relationship table used without filtering by relationship_concept_id."),
                             suggested_fix=self.suggested_fix,
                             details={"table": "fact_relationship"},
                         )

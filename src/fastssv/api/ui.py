@@ -63,6 +63,7 @@ def _pretty_sql(sql: str, dialect: str) -> str:
     except Exception:
         return sql
 
+
 logger = logging.getLogger("fastssv.api.ui")
 
 _BASE = Path(__file__).resolve().parent
@@ -273,11 +274,7 @@ async def ui_validate(
         "dialect": dialect,
         "duration_ms": round(duration_ms, 2),
         "results": [
-            {
-                k: v for k, v in q.items()
-                if k not in ("violations", "json_str", "sql_pretty")
-            }
-            for q in query_results
+            {k: v for k, v in q.items() if k not in ("violations", "json_str", "sql_pretty")} for q in query_results
         ],
     }
     full_report_json = json.dumps(aggregate_report, indent=2, ensure_ascii=False)

@@ -155,15 +155,13 @@ SOURCE_CONCEPT_ID_COLUMNS: Set[str] = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _get_concept_aliases(aliases: Dict[str, str]) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == CONCEPT_TABLE
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == CONCEPT_TABLE}
 
 
 def _is_source_concept_id_column(
@@ -213,6 +211,7 @@ def _extract_string_literal(node: exp.Expression) -> Optional[str]:
 
 
 # --- Filter Detection ------------------------------------------------------
+
 
 def _has_standard_filter(
     node: exp.Expression,
@@ -286,6 +285,7 @@ def _find_standard_filter_node(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]]:
     violations: List[Dict[str, object]] = []
     seen: Set[str] = set()
@@ -330,9 +330,7 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
                         if _is_concept_id_column(right, aliases, concept_aliases):
                             right_alias = _norm(right.table) if right.table else None
 
-                            if right_alias == table_alias or (
-                                not right_alias and len(concept_aliases) == 1
-                            ):
+                            if right_alias == table_alias or (not right_alias and len(concept_aliases) == 1):
                                 found_source_join = True
                                 _, source_col_name = resolve_table_col(left, aliases)
                                 break
@@ -341,9 +339,7 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
                         if _is_concept_id_column(left, aliases, concept_aliases):
                             left_alias = _norm(left.table) if left.table else None
 
-                            if left_alias == table_alias or (
-                                not left_alias and len(concept_aliases) == 1
-                            ):
+                            if left_alias == table_alias or (not left_alias and len(concept_aliases) == 1):
                                 found_source_join = True
                                 _, source_col_name = resolve_table_col(right, aliases)
                                 break
@@ -356,27 +352,21 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
 
             filter_node: Optional[exp.Expression] = None
 
-            on_filter = _find_standard_filter_node(
-                on_clause, aliases, table_alias, concept_aliases
-            )
+            on_filter = _find_standard_filter_node(on_clause, aliases, table_alias, concept_aliases)
             if on_filter is not None:
                 filter_node = on_filter
 
             if filter_node is None:
                 where = select.args.get("where")
                 if where:
-                    where_filter = _find_standard_filter_node(
-                        where, aliases, table_alias, concept_aliases
-                    )
+                    where_filter = _find_standard_filter_node(where, aliases, table_alias, concept_aliases)
                     if where_filter is not None:
                         filter_node = where_filter
 
             if filter_node is None:
                 having = select.args.get("having")
                 if having:
-                    having_filter = _find_standard_filter_node(
-                        having, aliases, table_alias, concept_aliases
-                    )
+                    having_filter = _find_standard_filter_node(having, aliases, table_alias, concept_aliases)
                     if having_filter is not None:
                         filter_node = having_filter
 
@@ -388,23 +378,25 @@ def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]
                 continue
             seen.add(key)
 
-            violations.append({
-                "type": "source_concept_standard_filter",
-                "alias": table_alias,
-                "source_column": source_col_name,
-                "context": join.sql(),
-                "filter_sql": filter_node.sql(),
-                "filter_parent_is_and": isinstance(filter_node.parent, exp.And),
-                "filter_is_left_of_and": (
-                    isinstance(filter_node.parent, exp.And)
-                    and filter_node.parent.this is filter_node
-                ),
-            })
+            violations.append(
+                {
+                    "type": "source_concept_standard_filter",
+                    "alias": table_alias,
+                    "source_column": source_col_name,
+                    "context": join.sql(),
+                    "filter_sql": filter_node.sql(),
+                    "filter_parent_is_and": isinstance(filter_node.parent, exp.And),
+                    "filter_is_left_of_and": (
+                        isinstance(filter_node.parent, exp.And) and filter_node.parent.this is filter_node
+                    ),
+                }
+            )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class SourceConceptIdStandardFilterRule(Rule):

@@ -71,6 +71,7 @@ DRUG_SPECIFIC_COLUMNS = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -191,6 +192,7 @@ def _check_domain_filter_in_node(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class CostPaidIngredientCostDrugSpecificRule(Rule):
     """Ensure drug-specific cost columns are only used with Drug domain filter."""
@@ -207,13 +209,8 @@ class CostPaidIngredientCostDrugSpecificRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "ADD: `WHERE c.cost_domain_id = 'Drug'` before reading paid_ingredient_cost / paid_dispensing_fee. These columns are NULL or meaningless for non-pharmacy cost rows."
-    example_bad = (
-        "SELECT cost_id, paid_ingredient_cost FROM cost;"
-    )
-    example_good = (
-        "SELECT cost_id, paid_ingredient_cost FROM cost\n"
-        "WHERE cost_domain_id = 'Drug';"
-    )
+    example_bad = "SELECT cost_id, paid_ingredient_cost FROM cost;"
+    example_good = "SELECT cost_id, paid_ingredient_cost FROM cost\nWHERE cost_domain_id = 'Drug';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "cost" not in sql.lower():

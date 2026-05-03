@@ -120,6 +120,7 @@ TABLE_CONFIGS = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -174,6 +175,7 @@ def _resolve_table_safe(
 
 # --- Constraint Model ------------------------------------------------------
 
+
 class DateBounds:
     def __init__(self):
         self.min_date: Optional[datetime] = None
@@ -220,6 +222,7 @@ class DateBounds:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
     bounds: Dict[Tuple[str, str], DateBounds] = {}
     violations = []
@@ -254,19 +257,13 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
                     key = f"{t1}|direct"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            t1,
-                            f"{c1n} compared greater than {c2n}, forcing start > end"
-                        ))
+                        violations.append((t1, f"{c1n} compared greater than {c2n}, forcing start > end"))
 
                 if c2n == start and c1n == end and isinstance(node, (exp.LT, exp.LTE)):
                     key = f"{t1}|direct"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            t1,
-                            f"{c1n} compared less than {c2n}, forcing end < start"
-                        ))
+                        violations.append((t1, f"{c1n} compared less than {c2n}, forcing end < start"))
 
         # --- Column vs literal constraints ---
         if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
@@ -339,15 +336,13 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
                 continue
             seen.add(key)
 
-            violations.append((
-                table,
-                f"Impossible date constraint on {table}: filters force {start} > {end}"
-            ))
+            violations.append((table, f"Impossible date constraint on {table}: filters force {start} > {end}"))
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class EndBeforeStartValidationRule(Rule):
@@ -364,16 +359,8 @@ class EndBeforeStartValidationRule(Rule):
         "records where start > end selects zero rows. Useful as a data-"
         "quality probe, but usually the operator was reversed by accident."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM visit_occurrence\n"
-        "WHERE visit_start_date > visit_end_date;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM visit_occurrence\n"
-        "WHERE visit_start_date <= visit_end_date;"
-    )
+    example_bad = "SELECT *\nFROM visit_occurrence\nWHERE visit_start_date > visit_end_date;"
+    example_good = "SELECT *\nFROM visit_occurrence\nWHERE visit_start_date <= visit_end_date;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

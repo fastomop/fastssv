@@ -62,31 +62,30 @@ def _find_null_comparisons(tree: exp.Expression) -> List[tuple]:
     for node in tree.walk():
         # Check for comparison operators
         if isinstance(node, (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)):
-            left = node.this if hasattr(node, 'this') else None
-            right = node.expression if hasattr(node, 'expression') else None
+            left = node.this if hasattr(node, "this") else None
+            right = node.expression if hasattr(node, "expression") else None
 
             # Check if either side is NULL
             is_left_null = isinstance(left, exp.Null) or (
-                isinstance(left, exp.Literal) and
-                left.this and
-                str(left.this).upper() == 'NULL'
+                isinstance(left, exp.Literal) and left.this and str(left.this).upper() == "NULL"
             )
             is_right_null = isinstance(right, exp.Null) or (
-                isinstance(right, exp.Literal) and
-                right.this and
-                str(right.this).upper() == 'NULL'
+                isinstance(right, exp.Literal) and right.this and str(right.this).upper() == "NULL"
             )
 
             if is_left_null or is_right_null:
                 # Get operator name
+                # sqlglot canonicalizes '!=' to '<>' on parse, so the
+                # real operator the user wrote is recovered later in
+                # validate() from the source-SQL span.
                 op_name = {
-                    exp.EQ: '=',
-                    exp.NEQ: '<>' or '!=',
-                    exp.GT: '>',
-                    exp.GTE: '>=',
-                    exp.LT: '<',
-                    exp.LTE: '<=',
-                }.get(type(node), '?')
+                    exp.EQ: "=",
+                    exp.NEQ: "<>",
+                    exp.GT: ">",
+                    exp.GTE: ">=",
+                    exp.LT: "<",
+                    exp.LTE: "<=",
+                }.get(type(node), "?")
 
                 # Get context (WHERE, CASE, etc.)
                 context = _get_context(node)
@@ -103,7 +102,7 @@ def _find_null_comparisons(tree: exp.Expression) -> List[tuple]:
 
 def _get_context(node: exp.Expression) -> str:
     """Determine the context where the NULL comparison appears."""
-    parent = node.parent if hasattr(node, 'parent') else None
+    parent = node.parent if hasattr(node, "parent") else None
 
     while parent:
         if isinstance(parent, exp.Where):
@@ -117,7 +116,7 @@ def _get_context(node: exp.Expression) -> str:
         elif isinstance(parent, exp.Having):
             return "HAVING clause"
 
-        parent = parent.parent if hasattr(parent, 'parent') else None
+        parent = parent.parent if hasattr(parent, "parent") else None
 
     return "expression"
 
@@ -149,16 +148,8 @@ class NullComparisonOperatorRule(Rule):
         "dedicated predicates `IS NULL` and `IS NOT NULL` — they are the "
         "only correct way to test nullability in SQL."
     )
-    example_bad = (
-        "SELECT person_id\n"
-        "FROM death\n"
-        "WHERE death_date = NULL;"
-    )
-    example_good = (
-        "SELECT person_id\n"
-        "FROM death\n"
-        "WHERE death_date IS NULL;"
-    )
+    example_bad = "SELECT person_id\nFROM death\nWHERE death_date = NULL;"
+    example_good = "SELECT person_id\nFROM death\nWHERE death_date IS NULL;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations = []
@@ -174,6 +165,21 @@ class NullComparisonOperatorRule(Rule):
             null_comparisons = _find_null_comparisons(tree)
 
             for operator, context, sql_fragment, node_type, non_null_sql in null_comparisons:
+                # sqlglot renders NEQ as '<>' regardless of source. If
+                # the user wrote '!=', `locate` won't find the rendered
+                # fragment in the original SQL — retry with '!=' so the
+                # patch path keeps working for both spellings.
+                span = locate(sql, sql_fragment)
+                if span is None and node_type is exp.NEQ:
+                    span = locate(sql, sql_fragment.replace("<>", "!="))
+
+                # Recover the operator the user actually typed so the
+                # diagnostic doesn't claim '<>' when they wrote '!='.
+                if span and node_type is exp.NEQ:
+                    source = sql[span[0] : span[1]]
+                    if "!=" in source and "<>" not in source:
+                        operator = "!="
+
                 message = (
                     f"Incorrect NULL comparison using '{operator}' operator in {context}. "
                     f"NULL comparisons with =, <>, !=, >, <, >=, <= always return UNKNOWN (neither true nor false), "
@@ -185,7 +191,6 @@ class NullComparisonOperatorRule(Rule):
                 # against NULL are nonsense; emit FREEFORM since the user's
                 # intent isn't recoverable.
                 patch = None
-                span = locate(sql, sql_fragment)
                 if span and non_null_sql:
                     if node_type is exp.EQ:
                         patch = replace(span, f"{non_null_sql} IS NULL")

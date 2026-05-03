@@ -102,9 +102,7 @@ def _has_field_concept_filter(
             if not is_in_where_or_join_clause(node):
                 continue
             left = node.this
-            if isinstance(left, exp.Column) and _is_target_column(
-                left, aliases, table, field_concept_col
-            ):
+            if isinstance(left, exp.Column) and _is_target_column(left, aliases, table, field_concept_col):
                 right = node.expression
                 if isinstance(right, exp.Literal) and not right.is_string:
                     return True
@@ -112,9 +110,7 @@ def _has_field_concept_filter(
             if not is_in_where_or_join_clause(node):
                 continue
             left = node.this
-            if isinstance(left, exp.Column) and _is_target_column(
-                left, aliases, table, field_concept_col
-            ):
+            if isinstance(left, exp.Column) and _is_target_column(left, aliases, table, field_concept_col):
                 vals = node.expressions or []
                 if any(isinstance(v, exp.Literal) and not v.is_string for v in vals):
                     return True

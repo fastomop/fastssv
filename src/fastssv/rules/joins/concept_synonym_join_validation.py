@@ -50,6 +50,7 @@ CONCEPT_ID = "concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -91,6 +92,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect(
     tree: exp.Expression,
@@ -168,6 +170,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptSynonymJoinValidationRule(Rule):
     """
@@ -191,9 +194,7 @@ class ConceptSynonymJoinValidationRule(Rule):
         "JOIN concept_synonym cs ON c.concept_name = cs.concept_synonym_name;"
     )
     example_good = (
-        "SELECT cs.concept_synonym_name\n"
-        "FROM concept c\n"
-        "JOIN concept_synonym cs ON c.concept_id = cs.concept_id;"
+        "SELECT cs.concept_synonym_name\nFROM concept c\nJOIN concept_synonym cs ON c.concept_id = cs.concept_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -215,7 +216,6 @@ class ConceptSynonymJoinValidationRule(Rule):
             detected = _detect(tree, aliases)
 
             for lt, lc, rt, rc in detected:
-
                 patch = None
                 if lc == "NONE":
                     msg = (
@@ -223,25 +223,21 @@ class ConceptSynonymJoinValidationRule(Rule):
                         f"Missing join condition using concept_id."
                     )
                 elif lc == "INVALID":
-                    msg = (
-                        f"Invalid join between {CONCEPT_SYNONYM} and {CONCEPT}. "
-                        f"Must use concept_id."
-                    )
+                    msg = f"Invalid join between {CONCEPT_SYNONYM} and {CONCEPT}. Must use concept_id."
                 else:
                     left = f"{lt}.{lc}" if lt != "unknown" else lc
                     right = f"{rt}.{rc}" if rt != "unknown" else rc
 
-                    msg = (
-                        f"Invalid join: {left} → {right}. "
-                        f"concept_synonym must join to concept via concept_id."
-                    )
-                    fix_text = (
-                        f"REPLACE: `{left} = {right}` "
-                        f"WITH `{lt}.concept_id = {rt}.concept_id`."
-                    )
+                    msg = f"Invalid join: {left} → {right}. concept_synonym must join to concept via concept_id."
+                    fix_text = f"REPLACE: `{left} = {right}` WITH `{lt}.concept_id = {rt}.concept_id`."
                     patch = build_join_replace_patch(
-                        sql, lt, lc, rt, rc,
-                        CONCEPT_ID, CONCEPT_ID,
+                        sql,
+                        lt,
+                        lc,
+                        rt,
+                        rc,
+                        CONCEPT_ID,
+                        CONCEPT_ID,
                         fix_text,
                         aliases=aliases,
                     )

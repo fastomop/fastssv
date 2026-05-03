@@ -40,6 +40,7 @@ JOIN_KEY = "visit_occurrence_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _is_vd(table: str) -> bool:
     return normalize_name(table) == VD
 
@@ -62,10 +63,7 @@ def _is_correct_join(left, right, aliases) -> bool:
     lt, lc = normalize_name(lt), normalize_name(lc)
     rt, rc = normalize_name(rt), normalize_name(rc)
 
-    return (
-        lc == JOIN_KEY and rc == JOIN_KEY and
-        ((_is_vd(lt) and _is_vo(rt)) or (_is_vo(lt) and _is_vd(rt)))
-    )
+    return lc == JOIN_KEY and rc == JOIN_KEY and ((_is_vd(lt) and _is_vo(rt)) or (_is_vo(lt) and _is_vd(rt)))
 
 
 def _join_contains_correct_key(join: exp.Join, aliases: Dict[str, str]) -> bool:
@@ -115,6 +113,7 @@ def _is_vd_vo_join(join: exp.Join, aliases: Dict[str, str]) -> bool:
 
 # --- Core detection --------------------------------------------------------
 
+
 def _qualifier_for(table: str, aliases: Dict[str, str]) -> str:
     """Return the alias used for ``table`` in this query, falling back to the
     table name itself when no alias has been declared.
@@ -146,10 +145,7 @@ def _find_invalid_joins(
         if not _is_vd_vo_join(join, aliases):
             continue
 
-        has_valid_join = (
-            _join_contains_correct_key(join, aliases)
-            or _join_uses_using_key(join)
-        )
+        has_valid_join = _join_contains_correct_key(join, aliases) or _join_uses_using_key(join)
 
         if has_valid_join:
             continue
@@ -164,19 +160,22 @@ def _find_invalid_joins(
         vd_qual = _qualifier_for(VD, aliases)
         vo_qual = _qualifier_for(VO, aliases)
 
-        issues.append((
-            f"visit_detail joined to visit_occurrence without {JOIN_KEY}. "
-            f"This may produce many-to-many joins and duplicate records. "
-            f"Use: vd.{JOIN_KEY} = vo.{JOIN_KEY}",
-            on_sql,
-            vd_qual,
-            vo_qual,
-        ))
+        issues.append(
+            (
+                f"visit_detail joined to visit_occurrence without {JOIN_KEY}. "
+                f"This may produce many-to-many joins and duplicate records. "
+                f"Use: vd.{JOIN_KEY} = vo.{JOIN_KEY}",
+                on_sql,
+                vd_qual,
+                vo_qual,
+            )
+        )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class VisitDetailJoinValidationRule(Rule):
@@ -190,13 +189,9 @@ class VisitDetailJoinValidationRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "ADD: `AND vd.visit_occurrence_id = vo.visit_occurrence_id` (the primary FK) to the join, in addition to person_id. Joining on person_id alone fans out across all of the person's visits."
-    example_bad = (
-        "SELECT * FROM visit_detail vd\n"
-        "JOIN visit_occurrence vo ON vd.person_id = vo.person_id;"
-    )
+    example_bad = "SELECT * FROM visit_detail vd\nJOIN visit_occurrence vo ON vd.person_id = vo.person_id;"
     example_good = (
-        "SELECT * FROM visit_detail vd\n"
-        "JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;"
+        "SELECT * FROM visit_detail vd\nJOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -228,10 +223,12 @@ class VisitDetailJoinValidationRule(Rule):
                             f" AND {vd_qual}.{JOIN_KEY} = {vo_qual}.{JOIN_KEY}",
                         )
 
-                violations.append(self.create_violation(
-                    message=msg,
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=msg,
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

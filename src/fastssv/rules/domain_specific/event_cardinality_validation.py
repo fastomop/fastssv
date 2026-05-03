@@ -78,9 +78,8 @@ def _has_join_on_column(
         left, right = eq.this, eq.expression
         if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
             continue
-        if (
-            (_matches(left, parent_aliases) and _matches(right, child_aliases))
-            or (_matches(left, child_aliases) and _matches(right, parent_aliases))
+        if (_matches(left, parent_aliases) and _matches(right, child_aliases)) or (
+            _matches(left, child_aliases) and _matches(right, parent_aliases)
         ):
             return True
     return False
@@ -124,9 +123,7 @@ class EventCardinalityValidationRule(Rule):
     )
 
     example_bad = (
-        "SELECT p.person_id, o.observation_concept_id\n"
-        "FROM person p\n"
-        "JOIN observation o ON p.person_id = o.person_id;"
+        "SELECT p.person_id, o.observation_concept_id\nFROM person p\nJOIN observation o ON p.person_id = o.person_id;"
     )
     example_good = (
         "SELECT p.person_id, COUNT(DISTINCT o.observation_concept_id) AS n_obs\n"
@@ -138,10 +135,7 @@ class EventCardinalityValidationRule(Rule):
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         sql_lower = sql.lower()
         # Fast pre-filter: at least one (parent, child) pair must be mentioned
-        if not any(
-            parent in sql_lower and child in sql_lower
-            for parent, child, _, _ in TARGET_PAIRS
-        ):
+        if not any(parent in sql_lower and child in sql_lower for parent, child, _, _ in TARGET_PAIRS):
             return []
 
         trees, err = parse_sql(sql, dialect)
@@ -166,9 +160,7 @@ class EventCardinalityValidationRule(Rule):
                 if not parent_aliases or not child_aliases:
                     continue
 
-                if not _has_join_on_column(
-                    tree, aliases, parent_aliases, child_aliases, join_col
-                ):
+                if not _has_join_on_column(tree, aliases, parent_aliases, child_aliases, join_col):
                     continue
 
                 # Any SELECT in this tree has aggregation? Then OK.

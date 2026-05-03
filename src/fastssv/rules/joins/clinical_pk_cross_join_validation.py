@@ -57,6 +57,7 @@ CLINICAL_EVENT_PKS = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -90,6 +91,7 @@ def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect(
     tree: exp.Expression,
@@ -153,6 +155,7 @@ def _detect(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ClinicalPkCrossJoinValidationRule(Rule):
     """
@@ -179,10 +182,7 @@ class ClinicalPkCrossJoinValidationRule(Rule):
         "SELECT * FROM condition_occurrence co\n"
         "JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id;"
     )
-    example_good = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN drug_exposure de ON co.person_id = de.person_id;"
-    )
+    example_good = "SELECT * FROM condition_occurrence co\nJOIN drug_exposure de ON co.person_id = de.person_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -204,7 +204,6 @@ class ClinicalPkCrossJoinValidationRule(Rule):
             detected = _detect(tree, aliases)
 
             for lt, lc, rt, rc in detected:
-
                 lt_disp = lt if lt and lt != "unknown" else ""
                 rt_disp = rt if rt and rt != "unknown" else ""
 

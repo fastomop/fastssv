@@ -129,20 +129,13 @@ class DeathCauseSourceConceptValidationRule(Rule):
     name = "Death Cause Source Concept Not For Analytical Filtering"
 
     description = (
-        "Avoid using death.cause_source_concept_id for analytical filtering. "
-        "Use death.cause_concept_id instead."
+        "Avoid using death.cause_source_concept_id for analytical filtering. Use death.cause_concept_id instead."
     )
 
     severity = Severity.ERROR
     suggested_fix = "REPLACE: `WHERE death.cause_source_concept_id = <id>` WITH `WHERE death.cause_concept_id = <id>`. Use cause_source_concept_id only for ETL/source exploration."
-    example_bad = (
-        "SELECT person_id FROM death\n"
-        "WHERE cause_source_concept_id = 4316491;"
-    )
-    example_good = (
-        "SELECT person_id FROM death\n"
-        "WHERE cause_concept_id = 4316491;"
-    )
+    example_bad = "SELECT person_id FROM death\nWHERE cause_source_concept_id = 4316491;"
+    example_good = "SELECT person_id FROM death\nWHERE cause_concept_id = 4316491;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)

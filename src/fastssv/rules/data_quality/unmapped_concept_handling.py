@@ -42,10 +42,7 @@ CLINICAL_CONCEPT_ID_COLUMNS = {
 }
 
 
-def _infer_table_for_column(
-    col_name: str,
-    aliases: Dict[str, str]
-) -> Optional[str]:
+def _infer_table_for_column(col_name: str, aliases: Dict[str, str]) -> Optional[str]:
     """For unqualified columns, try to infer the table from CLINICAL_CONCEPT_ID_COLUMNS."""
     matching_tables = []
     for table, columns in CLINICAL_CONCEPT_ID_COLUMNS.items():
@@ -59,9 +56,7 @@ def _infer_table_for_column(
 
 
 def _extract_concept_id_filters(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    outermost_only: bool = True
+    tree: exp.Expression, aliases: Dict[str, str], outermost_only: bool = True
 ) -> List[Tuple[str, str, exp.Expression]]:
     """Find all filters on *_concept_id columns with specific numeric values.
 
@@ -99,9 +94,7 @@ def _extract_concept_id_filters(
 
 
 def _extract_filters_from_node(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    recurse: bool = True
+    node: exp.Expression, aliases: Dict[str, str], recurse: bool = True
 ) -> List[Tuple[str, str, exp.Expression]]:
     """Extract concept_id filters from a specific node."""
     filters: List[Tuple[str, str, exp.Expression]] = []
@@ -176,12 +169,7 @@ def _find_shallow(node: exp.Expression, node_type) -> List[exp.Expression]:
     return results
 
 
-def _handles_zero_concept_id(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    table: str,
-    column: str
-) -> bool:
+def _handles_zero_concept_id(tree: exp.Expression, aliases: Dict[str, str], table: str, column: str) -> bool:
     """Check if the query explicitly handles concept_id = 0 for the given column.
 
     Patterns that indicate handling:
@@ -300,6 +288,7 @@ class UnmappedConceptHandlingRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "ADD: explicit handling of unmapped rows (concept_id = 0). Examples: `AND <x>_concept_id <> 0` to exclude them; or `AND <x>_concept_id = 0` to count them; or `COALESCE(<x>_concept_id, 0)` if the column is nullable."
+
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         """Validate SQL and return list of violations."""
         violations = []
@@ -347,11 +336,7 @@ class UnmappedConceptHandlingRule(Rule):
                 col_node = predicate.this if hasattr(predicate, "this") else None
                 qualifier: Optional[str] = None
                 if isinstance(col_node, exp.Column):
-                    qualifier = (
-                        normalize_name(col_node.table)
-                        if col_node.table
-                        else table
-                    )
+                    qualifier = normalize_name(col_node.table) if col_node.table else table
                 if qualifier:
                     span = locate(sql, predicate.sql())
                     if span is not None:
@@ -360,12 +345,14 @@ class UnmappedConceptHandlingRule(Rule):
                             f" AND {qualifier}.{column} != 0",
                         )
 
-                violations.append(self.create_violation(
-                    message=f"Query filters {table}.{column} but does not explicitly handle concept_id = 0 (unmapped records)",
-                    suggested_fix=f"ADD: `AND {column} != 0` (or `> 0`) to the WHERE clause to explicitly exclude unmapped records (concept_id = 0).",
-                    details={"table": table, "column": column},
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=f"Query filters {table}.{column} but does not explicitly handle concept_id = 0 (unmapped records)",
+                        suggested_fix=f"ADD: `AND {column} != 0` (or `> 0`) to the WHERE clause to explicitly exclude unmapped records (concept_id = 0).",
+                        details={"table": table, "column": column},
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

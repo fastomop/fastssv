@@ -81,6 +81,7 @@ VALID_DOMAIN_LITERALS = set(TABLE_TO_DOMAIN.values())
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -183,7 +184,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
             if isinstance(parent, exp.Union):
                 is_nested = True
                 break
-            parent = parent.parent if hasattr(parent, 'parent') else None
+            parent = parent.parent if hasattr(parent, "parent") else None
 
         if is_nested:
             continue
@@ -230,6 +231,7 @@ def _find_violations(tree: exp.Expression) -> List[str]:
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class UnionConceptIdDomainIndicatorRule(Rule):

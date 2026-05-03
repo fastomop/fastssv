@@ -70,6 +70,7 @@ CLINICAL_TABLE_PK = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _is_cost(table: Optional[str]) -> bool:
     return table and normalize_name(table) == COST
 
@@ -89,10 +90,7 @@ def _get_clinical_info(table: Optional[str]) -> Optional[Tuple[str, str]]:
 
 def _extract_cost_aliases(aliases: Dict[str, str]) -> Set[str]:
     """Return aliases that map to cost table."""
-    return {
-        alias for alias, table in aliases.items()
-        if normalize_name(table) == COST
-    }
+    return {alias for alias, table in aliases.items() if normalize_name(table) == COST}
 
 
 def _match_cost_join(eq: exp.EQ, aliases: Dict[str, str]):
@@ -178,6 +176,7 @@ def _collect_domain_filters(
 
 # --- Core Logic ------------------------------------------------------------
 
+
 def _find_violations(
     tree: exp.Expression, aliases: Dict[str, str]
 ) -> List[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
@@ -233,31 +232,35 @@ def _find_violations(
 
         # No filter
         if not filters:
-            issues.append((
-                f"Missing cost_domain_id filter for cost join (expected '{expected}'). "
-                f"Add: {alias}.cost_domain_id = '{expected}'",
-                alias,
-                expected,
-                eq_sql,
-            ))
+            issues.append(
+                (
+                    f"Missing cost_domain_id filter for cost join (expected '{expected}'). "
+                    f"Add: {alias}.cost_domain_id = '{expected}'",
+                    alias,
+                    expected,
+                    eq_sql,
+                )
+            )
             continue
 
         # Wrong domain — no clean ADD anchor; the existing predicate would
         # need a REPLACE, which the locate-based detector here doesn't emit.
         if expected_norm not in filters:
             actual = ", ".join(sorted(filters))
-            issues.append((
-                f"Cost domain mismatch for alias '{alias}': expected '{expected}', "
-                f"found ({actual})",
-                None,
-                None,
-                None,
-            ))
+            issues.append(
+                (
+                    f"Cost domain mismatch for alias '{alias}': expected '{expected}', found ({actual})",
+                    None,
+                    None,
+                    None,
+                )
+            )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class CostTableDomainValidationRule(Rule):
@@ -265,15 +268,10 @@ class CostTableDomainValidationRule(Rule):
 
     rule_id = "joins.cost_table_domain_validation"
     name = "Cost Table Domain Validation"
-    description = (
-        "Ensures cost joins use correct cost_domain_id to disambiguate polymorphic keys."
-    )
+    description = "Ensures cost joins use correct cost_domain_id to disambiguate polymorphic keys."
     severity = Severity.WARNING  # Changed from ERROR to WARNING
     suggested_fix = "ADD: `AND c.cost_domain_id = '<Domain>'` when joining cost via cost_event_id to a clinical event table (the polymorphic FK needs disambiguation)."
-    example_bad = (
-        "SELECT * FROM cost c\n"
-        "JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id;"
-    )
+    example_bad = "SELECT * FROM cost c\nJOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id;"
     example_good = (
         "SELECT * FROM cost c\n"
         "JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id\n"
@@ -312,10 +310,12 @@ class CostTableDomainValidationRule(Rule):
                             f" AND {cost_alias}.cost_domain_id = '{domain_value}'",
                         )
 
-                violations.append(self.create_violation(
-                    message=msg,
-                    suggested_fix_patch=patch,
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=msg,
+                        suggested_fix_patch=patch,
+                    )
+                )
 
         return violations
 

@@ -19,43 +19,60 @@ from fastssv.core.registry import register
 
 CLINICAL_EVENT_TABLES_DATES: Dict[str, Set[str]] = {
     "condition_occurrence": {
-        "condition_start_date", "condition_start_datetime",
-        "condition_end_date", "condition_end_datetime",
+        "condition_start_date",
+        "condition_start_datetime",
+        "condition_end_date",
+        "condition_end_datetime",
     },
     "drug_exposure": {
-        "drug_exposure_start_date", "drug_exposure_start_datetime",
-        "drug_exposure_end_date", "drug_exposure_end_datetime",
+        "drug_exposure_start_date",
+        "drug_exposure_start_datetime",
+        "drug_exposure_end_date",
+        "drug_exposure_end_datetime",
     },
     "procedure_occurrence": {
-        "procedure_date", "procedure_datetime",
+        "procedure_date",
+        "procedure_datetime",
     },
     "measurement": {
-        "measurement_date", "measurement_datetime",
+        "measurement_date",
+        "measurement_datetime",
     },
     "observation": {
-        "observation_date", "observation_datetime",
+        "observation_date",
+        "observation_datetime",
     },
     "visit_occurrence": {
-        "visit_start_date", "visit_start_datetime",
-        "visit_end_date", "visit_end_datetime",
+        "visit_start_date",
+        "visit_start_datetime",
+        "visit_end_date",
+        "visit_end_datetime",
     },
     "visit_detail": {
-        "visit_detail_start_date", "visit_detail_start_datetime",
-        "visit_detail_end_date", "visit_detail_end_datetime",
+        "visit_detail_start_date",
+        "visit_detail_start_datetime",
+        "visit_detail_end_date",
+        "visit_detail_end_datetime",
     },
     "device_exposure": {
-        "device_exposure_start_date", "device_exposure_start_datetime",
-        "device_exposure_end_date", "device_exposure_end_datetime",
+        "device_exposure_start_date",
+        "device_exposure_start_datetime",
+        "device_exposure_end_date",
+        "device_exposure_end_datetime",
     },
     "specimen": {
-        "specimen_date", "specimen_datetime",
+        "specimen_date",
+        "specimen_datetime",
     },
     "note": {
-        "note_date", "note_datetime",
+        "note_date",
+        "note_datetime",
     },
     "episode": {
-        "episode_start_date", "episode_start_datetime",
-        "episode_end_date", "episode_end_datetime",
+        "episode_start_date",
+        "episode_start_datetime",
+        "episode_end_date",
+        "episode_end_datetime",
     },
 }
 
@@ -69,6 +86,7 @@ FAR_FUTURE_THRESHOLD_YEAR = CURRENT_YEAR + 10
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -131,10 +149,7 @@ def _contains_event_date(
 
         if table:
             table_norm = _norm(table)
-            if (
-                table_norm in CLINICAL_EVENT_TABLES_DATES
-                and col_norm in CLINICAL_EVENT_TABLES_DATES[table_norm]
-            ):
+            if table_norm in CLINICAL_EVENT_TABLES_DATES and col_norm in CLINICAL_EVENT_TABLES_DATES[table_norm]:
                 return table_norm, col_norm
         else:
             # Only allow unqualified if single table
@@ -147,6 +162,7 @@ def _contains_event_date(
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -187,12 +203,14 @@ def _find_violations(
                     key = f"{node.sql()}_{table}_{col}"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            f"{table}.{col} is compared to CURRENT_DATE in a way that implies future dates. "
-                            f"This may indicate data quality issues or logic errors.",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} is compared to CURRENT_DATE in a way that implies future dates. "
+                                f"This may indicate data quality issues or logic errors.",
+                                table,
+                                col,
+                            )
+                        )
 
                 # Far future literal
                 year = _extract_date_literal_year(right)
@@ -200,12 +218,14 @@ def _find_violations(
                     key = f"{node.sql()}_{table}_{col}"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            f"{table}.{col} is compared to far-future year ({year}). "
-                            f"This may indicate data quality issues or logic errors.",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} is compared to far-future year ({year}). "
+                                f"This may indicate data quality issues or logic errors.",
+                                table,
+                                col,
+                            )
+                        )
 
         # --- BETWEEN ---
         elif isinstance(node, exp.Between):
@@ -215,11 +235,13 @@ def _find_violations(
                 for bound in (node.args.get("low"), node.args.get("high")):
                     year = _extract_date_literal_year(bound)
                     if year and year > FAR_FUTURE_THRESHOLD_YEAR:
-                        violations.append((
-                            f"{table}.{col} BETWEEN includes far-future year ({year}).",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} BETWEEN includes far-future year ({year}).",
+                                table,
+                                col,
+                            )
+                        )
 
         # --- IN ---
         elif isinstance(node, exp.In):
@@ -229,16 +251,19 @@ def _find_violations(
                 for val in node.expressions or []:
                     year = _extract_date_literal_year(val)
                     if year and year > FAR_FUTURE_THRESHOLD_YEAR:
-                        violations.append((
-                            f"{table}.{col} IN clause includes far-future year ({year}).",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} IN clause includes far-future year ({year}).",
+                                table,
+                                col,
+                            )
+                        )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ClinicalEventDateInFutureValidationRule(Rule):
@@ -264,14 +289,8 @@ class ClinicalEventDateInFutureValidationRule(Rule):
         "a comment; if the predicate is accidentally reversed, flip the "
         "operator."
     )
-    example_bad = (
-        "SELECT * FROM condition_occurrence\n"
-        "WHERE condition_start_date > CURRENT_DATE;"
-    )
-    example_good = (
-        "SELECT * FROM condition_occurrence\n"
-        "WHERE condition_start_date <= CURRENT_DATE;"
-    )
+    example_bad = "SELECT * FROM condition_occurrence\nWHERE condition_start_date > CURRENT_DATE;"
+    example_good = "SELECT * FROM condition_occurrence\nWHERE condition_start_date <= CURRENT_DATE;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -284,9 +303,7 @@ class ClinicalEventDateInFutureValidationRule(Rule):
             if not tree:
                 continue
 
-            if not any(
-                has_table_reference(tree, t) for t in CLINICAL_EVENT_TABLES_DATES.keys()
-            ):
+            if not any(has_table_reference(tree, t) for t in CLINICAL_EVENT_TABLES_DATES.keys()):
                 continue
 
             aliases = extract_aliases(tree)

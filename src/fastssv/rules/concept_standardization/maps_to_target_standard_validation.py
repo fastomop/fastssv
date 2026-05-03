@@ -60,6 +60,7 @@ STANDARD_CONCEPT = "standard_concept"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -124,10 +125,7 @@ def _references_concept_id_2(tree: exp.Expression, aliases: Dict[str, str]) -> b
     return False
 
 
-def _validates_concept_id_2_as_standard(
-    tree: exp.Expression,
-    aliases: Dict[str, str]
-) -> bool:
+def _validates_concept_id_2_as_standard(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     """
     Check if query validates concept_id_2 as standard via:
     1. Join to concept table on concept_id_2
@@ -148,11 +146,19 @@ def _validates_concept_id_2_as_standard(
         rt_resolved = _resolve_table(rt, aliases)
 
         # concept_relationship.concept_id_2 = concept.concept_id
-        if (lt_resolved == CONCEPT_RELATIONSHIP and _norm(lc) == CONCEPT_ID_2 and
-            rt_resolved == CONCEPT and _norm(rc) == "concept_id"):
+        if (
+            lt_resolved == CONCEPT_RELATIONSHIP
+            and _norm(lc) == CONCEPT_ID_2
+            and rt_resolved == CONCEPT
+            and _norm(rc) == "concept_id"
+        ):
             has_join = True
-        elif (rt_resolved == CONCEPT_RELATIONSHIP and _norm(rc) == CONCEPT_ID_2 and
-              lt_resolved == CONCEPT and _norm(lc) == "concept_id"):
+        elif (
+            rt_resolved == CONCEPT_RELATIONSHIP
+            and _norm(rc) == CONCEPT_ID_2
+            and lt_resolved == CONCEPT
+            and _norm(lc) == "concept_id"
+        ):
             has_join = True
 
     if not has_join:
@@ -166,7 +172,7 @@ def _validates_concept_id_2_as_standard(
             table_resolved = _resolve_table(table, aliases)
             value = _norm(eq.expression.this)
 
-            if (table_resolved == CONCEPT and _norm(column) == STANDARD_CONCEPT and value == "s"):
+            if table_resolved == CONCEPT and _norm(column) == STANDARD_CONCEPT and value == "s":
                 return True
         # Check for literal = column pattern
         elif isinstance(eq.this, exp.Literal) and isinstance(eq.expression, exp.Column):
@@ -174,13 +180,14 @@ def _validates_concept_id_2_as_standard(
             table_resolved = _resolve_table(table, aliases)
             value = _norm(eq.this.this)
 
-            if (table_resolved == CONCEPT and _norm(column) == STANDARD_CONCEPT and value == "s"):
+            if table_resolved == CONCEPT and _norm(column) == STANDARD_CONCEPT and value == "s":
                 return True
 
     return False
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class MapsToTargetStandardValidationRule(Rule):
@@ -269,7 +276,7 @@ class MapsToTargetStandardValidationRule(Rule):
                         details={
                             "relationship": "Maps to",
                             "missing_validation": "standard_concept = 'S' on concept_id_2",
-                            "note": "best_practice_recommendation"
+                            "note": "best_practice_recommendation",
                         },
                     )
                 )

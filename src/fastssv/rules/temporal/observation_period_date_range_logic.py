@@ -49,11 +49,9 @@ CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _is_op_date(table: str, col: str) -> bool:
-    return (
-        normalize_name(table) == OBSERVATION_PERIOD_TABLE
-        and normalize_name(col) in {OP_START, OP_END}
-    )
+    return normalize_name(table) == OBSERVATION_PERIOD_TABLE and normalize_name(col) in {OP_START, OP_END}
 
 
 def _is_event_date(table: str, col: str) -> bool:
@@ -64,14 +62,12 @@ def _is_event_date(table: str, col: str) -> bool:
         return False
 
     return (
-        col.endswith("_start_date")
-        or col.endswith("_end_date")
-        or col.endswith("_date")
-        or col.endswith("_datetime")
+        col.endswith("_start_date") or col.endswith("_end_date") or col.endswith("_date") or col.endswith("_datetime")
     )
 
 
 # --- BETWEEN detection -----------------------------------------------------
+
 
 def _find_between_reversed(
     tree: exp.Expression,
@@ -117,6 +113,7 @@ def _find_between_reversed(
 
 # --- >= AND <= detection ---------------------------------------------------
 
+
 def _find_comparison_reversed(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -155,6 +152,7 @@ def _find_comparison_reversed(
 
 
 # --- RULE ------------------------------------------------------------------
+
 
 @register
 class ObservationPeriodDateRangeLogicRule(Rule):

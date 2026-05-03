@@ -55,6 +55,7 @@ VISIT_OCCURRENCE_ID_COL = "visit_occurrence_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(name: str) -> str:
     return normalize_name(name)
 
@@ -64,6 +65,7 @@ def _is_pure_column_equality(eq: exp.EQ) -> bool:
 
 
 # --- Join Detection --------------------------------------------------------
+
 
 def _has_condition_visit_detail_join(
     tree: exp.Expression,
@@ -87,9 +89,8 @@ def _has_condition_visit_detail_join(
             if _norm(lc) != VISIT_DETAIL_ID_COL or _norm(rc) != VISIT_DETAIL_ID_COL:
                 continue
 
-            if (
-                (_norm(lt) == CONDITION_TABLE and _norm(rt) == VISIT_DETAIL_TABLE)
-                or (_norm(rt) == CONDITION_TABLE and _norm(lt) == VISIT_DETAIL_TABLE)
+            if (_norm(lt) == CONDITION_TABLE and _norm(rt) == VISIT_DETAIL_TABLE) or (
+                _norm(rt) == CONDITION_TABLE and _norm(lt) == VISIT_DETAIL_TABLE
             ):
                 return True
 
@@ -121,9 +122,8 @@ def _has_valid_visit_occurrence_join(
             if _norm(lc) != VISIT_OCCURRENCE_ID_COL or _norm(rc) != VISIT_OCCURRENCE_ID_COL:
                 continue
 
-            if (
-                (_norm(lt) == VISIT_DETAIL_TABLE and _norm(rt) == VISIT_OCCURRENCE_TABLE)
-                or (_norm(rt) == VISIT_DETAIL_TABLE and _norm(lt) == VISIT_OCCURRENCE_TABLE)
+            if (_norm(lt) == VISIT_DETAIL_TABLE and _norm(rt) == VISIT_OCCURRENCE_TABLE) or (
+                _norm(rt) == VISIT_DETAIL_TABLE and _norm(lt) == VISIT_OCCURRENCE_TABLE
             ):
                 return True
 
@@ -131,6 +131,7 @@ def _has_valid_visit_occurrence_join(
 
 
 # --- Column Usage Detection ------------------------------------------------
+
 
 def _references_visit_occurrence_columns(
     tree: exp.Expression,
@@ -144,6 +145,7 @@ def _references_visit_occurrence_columns(
 
 
 # --- Core Detection --------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -171,6 +173,7 @@ def _find_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConditionVisitHierarchyValidationRule(Rule):

@@ -62,6 +62,7 @@ STANDARD_CONCEPT = "standard_concept"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -87,6 +88,7 @@ def _extract_intent_value(value: str) -> str:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _detect_violations(
     tree: exp.Expression,
@@ -125,13 +127,15 @@ def _detect_violations(
                     continue
                 seen.add(key)
 
-                violations.append({
-                    "issue": "null_equality",
-                    "operator": type(node).__name__,
-                    "value": None,
-                    "context": node.sql(),
-                    "col_sql": col_node.sql(),
-                })
+                violations.append(
+                    {
+                        "issue": "null_equality",
+                        "operator": type(node).__name__,
+                        "value": None,
+                        "context": node.sql(),
+                        "col_sql": col_node.sql(),
+                    }
+                )
                 continue
 
             # --- String misuse ---
@@ -147,13 +151,15 @@ def _detect_violations(
                     continue
                 seen.add(key)
 
-                violations.append({
-                    "issue": "empty_string",
-                    "operator": type(node).__name__,
-                    "value": value,
-                    "context": node.sql(),
-                    "col_sql": col_node.sql(),
-                })
+                violations.append(
+                    {
+                        "issue": "empty_string",
+                        "operator": type(node).__name__,
+                        "value": value,
+                        "context": node.sql(),
+                        "col_sql": col_node.sql(),
+                    }
+                )
 
             elif norm_val == "N":
                 key = f"invalid_n_{node.sql()}"
@@ -161,13 +167,15 @@ def _detect_violations(
                     continue
                 seen.add(key)
 
-                violations.append({
-                    "issue": "invalid_n",
-                    "operator": type(node).__name__,
-                    "value": value,
-                    "context": node.sql(),
-                    "col_sql": col_node.sql(),
-                })
+                violations.append(
+                    {
+                        "issue": "invalid_n",
+                        "operator": type(node).__name__,
+                        "value": value,
+                        "context": node.sql(),
+                        "col_sql": col_node.sql(),
+                    }
+                )
 
     # --- IN clause ---
     for node in tree.find_all(exp.In):
@@ -193,12 +201,14 @@ def _detect_violations(
                     continue
                 seen.add(key)
 
-                violations.append({
-                    "issue": "invalid_n_in_list",
-                    "operator": "IN",
-                    "value": value,
-                    "context": node.sql(),
-                })
+                violations.append(
+                    {
+                        "issue": "invalid_n_in_list",
+                        "operator": "IN",
+                        "value": value,
+                        "context": node.sql(),
+                    }
+                )
 
             elif norm_val == "":
                 key = f"in_empty_{node.sql()}"
@@ -206,17 +216,20 @@ def _detect_violations(
                     continue
                 seen.add(key)
 
-                violations.append({
-                    "issue": "empty_string_in_list",
-                    "operator": "IN",
-                    "value": value,
-                    "context": node.sql(),
-                })
+                violations.append(
+                    {
+                        "issue": "empty_string_in_list",
+                        "operator": "IN",
+                        "value": value,
+                        "context": node.sql(),
+                    }
+                )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class StandardConceptNullHandlingRule(Rule):
@@ -242,16 +255,8 @@ class StandardConceptNullHandlingRule(Rule):
         "select non-standard concepts, use `IS NULL`; to select standard "
         "or classification, use the explicit literals 'S' or 'C'."
     )
-    example_bad = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE standard_concept = 'N';"
-    )
-    example_good = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE standard_concept IS NULL;"
-    )
+    example_bad = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'N';"
+    example_good = "SELECT concept_id\nFROM concept\nWHERE standard_concept IS NULL;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "standard_concept" not in sql.lower():
@@ -280,23 +285,16 @@ class StandardConceptNullHandlingRule(Rule):
 
                 if issue == "null_equality":
                     if operator == "EQ":
-                        message = (
-                            "Using standard_concept = NULL is invalid. "
-                            "Use IS NULL to find non-standard concepts."
-                        )
+                        message = "Using standard_concept = NULL is invalid. Use IS NULL to find non-standard concepts."
                         fix = "REPLACE: `standard_concept = NULL` WITH `standard_concept IS NULL`."
                     else:
-                        message = (
-                            "Invalid comparison with NULL on standard_concept. "
-                            "Use IS NULL or IS NOT NULL."
+                        message = "Invalid comparison with NULL on standard_concept. Use IS NULL or IS NOT NULL."
+                        fix = (
+                            "REPLACE: `standard_concept <op> NULL` WITH `standard_concept IS NULL` (or `IS NOT NULL`)."
                         )
-                        fix = "REPLACE: `standard_concept <op> NULL` WITH `standard_concept IS NULL` (or `IS NOT NULL`)."
 
                 elif issue == "empty_string":
-                    message = (
-                        "standard_concept = '' is invalid. "
-                        "Non-standard concepts are NULL."
-                    )
+                    message = "standard_concept = '' is invalid. Non-standard concepts are NULL."
                     fix = "REPLACE: `standard_concept = ''` WITH `standard_concept IS NULL`."
 
                 elif issue == "invalid_n":
@@ -307,16 +305,11 @@ class StandardConceptNullHandlingRule(Rule):
                     fix = "REPLACE: `standard_concept = 'N'` WITH `standard_concept IS NULL`."
 
                 elif issue == "invalid_n_in_list":
-                    message = (
-                        "'N' in standard_concept IN clause is invalid. "
-                        "Use IS NULL for non-standard concepts."
-                    )
+                    message = "'N' in standard_concept IN clause is invalid. Use IS NULL for non-standard concepts."
                     fix = "REMOVE: `'N'` from the `standard_concept IN (...)` list, AND ADD `OR standard_concept IS NULL` if non-standard concepts should be included."
 
                 elif issue == "empty_string_in_list":
-                    message = (
-                        "Empty string in standard_concept IN clause is invalid."
-                    )
+                    message = "Empty string in standard_concept IN clause is invalid."
                     fix = "REMOVE: `''` from the `standard_concept IN (...)` list, AND ADD `OR standard_concept IS NULL` if non-standard concepts should be included."
 
                 else:
@@ -331,9 +324,7 @@ class StandardConceptNullHandlingRule(Rule):
                 patch = None
                 col_sql = v.get("col_sql")
                 context = v["context"]
-                if col_sql and issue in {
-                    "null_equality", "empty_string", "invalid_n"
-                }:
+                if col_sql and issue in {"null_equality", "empty_string", "invalid_n"}:
                     if issue == "null_equality" and operator == "NEQ":
                         replacement = f"{col_sql} IS NOT NULL"
                     else:

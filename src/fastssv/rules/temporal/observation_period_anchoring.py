@@ -44,45 +44,64 @@ CLINICAL_TABLES_WITH_DATES = {
 # Date columns in clinical tables that indicate temporal constraints when filtered
 TEMPORAL_DATE_COLUMNS = {
     # Condition
-    "condition_start_date", "condition_start_datetime",
-    "condition_end_date", "condition_end_datetime",
+    "condition_start_date",
+    "condition_start_datetime",
+    "condition_end_date",
+    "condition_end_datetime",
     # Drug
-    "drug_exposure_start_date", "drug_exposure_start_datetime",
-    "drug_exposure_end_date", "drug_exposure_end_datetime",
+    "drug_exposure_start_date",
+    "drug_exposure_start_datetime",
+    "drug_exposure_end_date",
+    "drug_exposure_end_datetime",
     # Procedure
-    "procedure_date", "procedure_datetime",
+    "procedure_date",
+    "procedure_datetime",
     # Measurement
-    "measurement_date", "measurement_datetime",
+    "measurement_date",
+    "measurement_datetime",
     # Observation
-    "observation_date", "observation_datetime",
+    "observation_date",
+    "observation_datetime",
     # Visit
-    "visit_start_date", "visit_start_datetime",
-    "visit_end_date", "visit_end_datetime",
+    "visit_start_date",
+    "visit_start_datetime",
+    "visit_end_date",
+    "visit_end_datetime",
     # Visit detail
-    "visit_detail_start_date", "visit_detail_start_datetime",
-    "visit_detail_end_date", "visit_detail_end_datetime",
+    "visit_detail_start_date",
+    "visit_detail_start_datetime",
+    "visit_detail_end_date",
+    "visit_detail_end_datetime",
     # Device
-    "device_exposure_start_date", "device_exposure_start_datetime",
-    "device_exposure_end_date", "device_exposure_end_datetime",
+    "device_exposure_start_date",
+    "device_exposure_start_datetime",
+    "device_exposure_end_date",
+    "device_exposure_end_datetime",
     # Death
-    "death_date", "death_datetime",
+    "death_date",
+    "death_datetime",
     # Specimen
-    "specimen_date", "specimen_datetime",
+    "specimen_date",
+    "specimen_datetime",
     # Note
-    "note_date", "note_datetime",
+    "note_date",
+    "note_datetime",
     # Episode
-    "episode_start_date", "episode_start_datetime",
-    "episode_end_date", "episode_end_datetime",
+    "episode_start_date",
+    "episode_start_datetime",
+    "episode_end_date",
+    "episode_end_datetime",
 }
+
 
 def is_date_column(col_name: str) -> bool:
     """Check if column name looks like a date/temporal column."""
     col_lower = normalize_name(col_name)
     return (
-        col_lower in TEMPORAL_DATE_COLUMNS or
-        col_lower.endswith("_date") or
-        col_lower.endswith("_datetime") or
-        col_lower.endswith("_time")
+        col_lower in TEMPORAL_DATE_COLUMNS
+        or col_lower.endswith("_date")
+        or col_lower.endswith("_datetime")
+        or col_lower.endswith("_time")
     )
 
 
@@ -106,7 +125,7 @@ def _is_date_literal(node: exp.Expression) -> bool:
 
     # Check for date function calls like DATE('2020-01-01')
     if isinstance(node, exp.Anonymous):
-        func_name = normalize_name(node.name) if hasattr(node, 'name') else ""
+        func_name = normalize_name(node.name) if hasattr(node, "name") else ""
         if func_name in {"date", "timestamp", "datetime"}:
             return True
 
@@ -114,8 +133,7 @@ def _is_date_literal(node: exp.Expression) -> bool:
 
 
 def _extract_temporal_constraints(
-    tree: exp.Expression,
-    aliases: Dict[str, str]
+    tree: exp.Expression, aliases: Dict[str, str]
 ) -> List[Tuple[str, str, exp.Expression]]:
     """
     Find temporal constraints in the query.
@@ -188,7 +206,7 @@ def _has_washout_or_followup_logic(tree: exp.Expression) -> bool:
     """
     # Check for DateDiff, DateAdd expressions
     date_expr_types = []
-    for expr_name in ['DateDiff', 'DateAdd', 'DateSub', 'TsOrDsAdd']:
+    for expr_name in ["DateDiff", "DateAdd", "DateSub", "TsOrDsAdd"]:
         if hasattr(exp, expr_name):
             date_expr_types.append(getattr(exp, expr_name))
 
@@ -204,9 +222,9 @@ def _has_washout_or_followup_logic(tree: exp.Expression) -> bool:
     # Also check for Anonymous functions with date arithmetic names
     for func in tree.find_all(exp.Anonymous):
         func_name = ""
-        if hasattr(func, 'name'):
+        if hasattr(func, "name"):
             func_name = normalize_name(func.name)
-        elif hasattr(func, 'this') and isinstance(func.this, str):
+        elif hasattr(func, "this") and isinstance(func.this, str):
             func_name = normalize_name(func.this)
 
         # DATEDIFF, DATEADD in WHERE/JOIN clause indicates temporal logic
@@ -319,18 +337,20 @@ class ObservationPeriodAnchoringRule(Rule):
                 and (has_temporal_constraints or has_washout_logic)
                 and _references_clinical_fact_table(tree)
             ):
-                violations.append(self.create_violation(
-                    message=(
-                        "Query filters clinical events by date but does not anchor to observation_period. "
-                        "Temporal constraints are only valid within a patient's observation window."
-                    ),
-                    severity=Severity.WARNING,
-                    suggested_fix=(
-                        "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id "
-                        "AND <event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` "
-                        "to anchor temporal filters inside the patient's observation window."
-                    ),
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            "Query filters clinical events by date but does not anchor to observation_period. "
+                            "Temporal constraints are only valid within a patient's observation window."
+                        ),
+                        severity=Severity.WARNING,
+                        suggested_fix=(
+                            "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id "
+                            "AND <event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` "
+                            "to anchor temporal filters inside the patient's observation window."
+                        ),
+                    )
+                )
 
             # If observation_period IS used, check if it's properly joined
             if uses_op:
@@ -346,24 +366,26 @@ class ObservationPeriodAnchoringRule(Rule):
 
                 has_any_person_id_join = False
                 for lt, lc, rt, rc in join_conditions:
-                    if (lt == "observation_period" or rt == "observation_period"):
+                    if lt == "observation_period" or rt == "observation_period":
                         if lc == "person_id" and rc == "person_id":
                             has_any_person_id_join = True
                             break
 
                 if not has_any_person_id_join:
                     # observation_period is in the query but never joined on person_id
-                    violations.append(self.create_violation(
-                        message=(
-                            "observation_period table is referenced but not joined on person_id. "
-                            "If using observation_period, it should typically be joined via person_id."
-                        ),
-                        severity=Severity.WARNING,
-                        suggested_fix=(
-                            "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id` "
-                            "to link the referenced observation_period rows back to person."
-                        ),
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                "observation_period table is referenced but not joined on person_id. "
+                                "If using observation_period, it should typically be joined via person_id."
+                            ),
+                            severity=Severity.WARNING,
+                            suggested_fix=(
+                                "ADD: `JOIN observation_period op ON op.person_id = <clinical>.person_id` "
+                                "to link the referenced observation_period rows back to person."
+                            ),
+                        )
+                    )
 
         return violations
 
@@ -400,7 +422,11 @@ class ObservationPeriodAnchoringRule(Rule):
         for col in tree.find_all(exp.Column):
             col_name = normalize_name(col.name)
             # Check if this is an observation_period column
-            if col_name.startswith("observation_period_") or col.table and normalize_name(str(col.table)) == "observation_period":
+            if (
+                col_name.startswith("observation_period_")
+                or col.table
+                and normalize_name(str(col.table)) == "observation_period"
+            ):
                 has_op_columns = True
                 break
 

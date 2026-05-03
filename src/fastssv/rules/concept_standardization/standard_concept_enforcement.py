@@ -56,9 +56,7 @@ def _extract_concept_references(
             # Unqualified — try to attribute to a unique standard-field-owning
             # table in scope. Skip if zero or multiple candidates (ambiguous).
             col_norm = normalize_name(col_name)
-            candidates = [
-                t for t in tables_in_scope if (t, col_norm) in standard_fields
-            ]
+            candidates = [t for t in tables_in_scope if (t, col_norm) in standard_fields]
             if len(candidates) != 1:
                 continue
             table = candidates[0]
@@ -100,9 +98,7 @@ def _has_specific_concept_id_filter(
         else:
             # Unqualified — attribute to the unique standard-field-owning
             # table in scope, mirroring _extract_concept_references.
-            candidates = [
-                t for t in tables_in_scope if (t, col_norm) in standard_fields
-            ]
+            candidates = [t for t in tables_in_scope if (t, col_norm) in standard_fields]
             if len(candidates) != 1:
                 continue
             table_norm = candidates[0]
@@ -168,9 +164,7 @@ def _filters_via_concept_ancestor(
         if table_resolved:
             table_norm = normalize_name(table_resolved)
         else:
-            candidates = [
-                t for t in tables_in_scope if (t, col_norm) in standard_fields
-            ]
+            candidates = [t for t in tables_in_scope if (t, col_norm) in standard_fields]
             if len(candidates) != 1:
                 continue
             table_norm = candidates[0]
@@ -220,10 +214,7 @@ def _has_chained_join_to_concept_ancestor_via_concept(
     for lt, lc, rt, rc in join_conditions:
         for s1_t, s1_c, s2_t, s2_c in ((lt, lc, rt, rc), (rt, rc, lt, lc)):
             # Hop 1: clinical fact table . *_concept_id = concept.concept_id
-            if (
-                normalize_name(s2_t) == "concept"
-                and normalize_name(s2_c) == "concept_id"
-            ):
+            if normalize_name(s2_t) == "concept" and normalize_name(s2_c) == "concept_id":
                 key = (normalize_name(s1_t), normalize_name(s1_c))
                 if key in standard_fields:
                     has_clinical_to_concept = True
@@ -314,12 +305,7 @@ def _uses_maps_to_relationship(tree: exp.Expression) -> bool:
     if not has_table_reference(tree, "concept_relationship"):
         return False
 
-    return has_condition(
-        tree,
-        "relationship_id",
-        {normalize_name(MAPS_TO_RELATIONSHIP)},
-        require_where_clause=True
-    )
+    return has_condition(tree, "relationship_id", {normalize_name(MAPS_TO_RELATIONSHIP)}, require_where_clause=True)
 
 
 @register
@@ -366,7 +352,6 @@ class StandardConceptEnforcementRule(Rule):
         ("condition_era", "condition_concept_id"),
         ("drug_era", "drug_concept_id"),
         ("dose_era", "drug_concept_id"),
-
         # Person demographic attributes - always standard
         ("person", "gender_concept_id"),
         ("person", "race_concept_id"),
@@ -419,12 +404,8 @@ class StandardConceptEnforcementRule(Rule):
             has_standard_enforcement = _enforces_standard_concept(tree)
             has_maps_to = _uses_maps_to_relationship(tree)
             has_specific_filter = _has_specific_concept_id_filter(tree, aliases, standard_fields)
-            has_concept_ancestor_filter = _filters_via_concept_ancestor(
-                tree, aliases, standard_fields
-            )
-            has_concept_ancestor_join = _has_clinical_join_to_concept_ancestor(
-                tree, aliases, standard_fields
-            )
+            has_concept_ancestor_filter = _filters_via_concept_ancestor(tree, aliases, standard_fields)
+            has_concept_ancestor_join = _has_clinical_join_to_concept_ancestor(tree, aliases, standard_fields)
             has_concept_ancestor_chain = _has_chained_join_to_concept_ancestor_via_concept(
                 tree, aliases, standard_fields
             )
@@ -440,6 +421,7 @@ class StandardConceptEnforcementRule(Rule):
             ):
                 # Check strict mode for severity escalation
                 from fastssv.core.validation_context import get_validation_context
+
                 ctx = get_validation_context()
                 severity = Severity.ERROR if ctx.should_escalate_rule(self.rule_id) else Severity.WARNING
 
@@ -447,12 +429,14 @@ class StandardConceptEnforcementRule(Rule):
                 if severity == Severity.ERROR:
                     message += " (Strict mode: cohort definitions must use standard concepts)"
 
-                violations.append(self.create_violation(
-                    message=message,
-                    severity=severity,
-                    suggested_fix="ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts.",
-                    details={"strict_mode_escalated": severity == Severity.ERROR}
-                ))
+                violations.append(
+                    self.create_violation(
+                        message=message,
+                        severity=severity,
+                        suggested_fix="ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts.",
+                        details={"strict_mode_escalated": severity == Severity.ERROR},
+                    )
+                )
 
         return violations
 

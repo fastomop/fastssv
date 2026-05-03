@@ -19,7 +19,6 @@ Correct pattern:
     WHERE standard_concept IS NULL
 """
 
-
 from typing import Dict, List, Set, Tuple, Optional
 
 from sqlglot import exp
@@ -42,6 +41,7 @@ VALID_VALUES = {"S", "C"}
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _normalize_literal(node: exp.Expression) -> Optional[str]:
     """Extract and normalize literal value."""
@@ -87,6 +87,7 @@ def _collect_in_values(node: exp.In) -> Tuple[Set[str], Set[str]]:
 
 # --- Core Detection --------------------------------------------------------
 
+
 def _find_invalid_values(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -123,26 +124,29 @@ def _find_invalid_values(
                     key = f"MIXED:{values}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append({
-                            "message": (
-                                f"Mixed literal types in standard_concept IN clause: {values}. "
-                                f"Use only 'S', 'C', or NULL."
-                            ),
-                            "kind": "IN_MIXED",
-                        })
+                        issues.append(
+                            {
+                                "message": (
+                                    f"Mixed literal types in standard_concept IN clause: {values}. "
+                                    f"Use only 'S', 'C', or NULL."
+                                ),
+                                "kind": "IN_MIXED",
+                            }
+                        )
 
                 invalid = [v for v in values if v not in VALID_VALUES]
                 if invalid:
                     key = f"IN:{','.join(sorted(invalid))}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append({
-                            "message": (
-                                f"Invalid standard_concept values: {invalid}. "
-                                f"Valid values are 'S', 'C', or NULL."
-                            ),
-                            "kind": "IN_INVALID",
-                        })
+                        issues.append(
+                            {
+                                "message": (
+                                    f"Invalid standard_concept values: {invalid}. Valid values are 'S', 'C', or NULL."
+                                ),
+                                "kind": "IN_INVALID",
+                            }
+                        )
 
             # --- Equality / inequality ---
             else:
@@ -151,19 +155,21 @@ def _find_invalid_values(
                     key = f"VAL:{value}"
                     if key not in seen:
                         seen.add(key)
-                        issues.append({
-                            "message": (
-                                f"Invalid standard_concept value: '{value}'. "
-                                f"Valid values are 'S', 'C', or NULL."
-                            ),
-                            "kind": "EQ" if isinstance(node, exp.EQ) else "NEQ",
-                            "literal_sql": val_node.sql() if val_node is not None else None,
-                        })
+                        issues.append(
+                            {
+                                "message": (
+                                    f"Invalid standard_concept value: '{value}'. Valid values are 'S', 'C', or NULL."
+                                ),
+                                "kind": "EQ" if isinstance(node, exp.EQ) else "NEQ",
+                                "literal_sql": val_node.sql() if val_node is not None else None,
+                            }
+                        )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class StandardConceptValueValidationRule(Rule):
@@ -171,9 +177,7 @@ class StandardConceptValueValidationRule(Rule):
 
     rule_id = "concept_standardization.standard_concept_value_validation"
     name = "Standard Concept Value Validation"
-    description = (
-        "Ensures standard_concept uses only valid values: 'S', 'C', or NULL."
-    )
+    description = "Ensures standard_concept uses only valid values: 'S', 'C', or NULL."
     severity = Severity.ERROR
     suggested_fix = "REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'` (classification), `IS NULL` (non-standard). Those are the only valid values in OMOP."
     long_description = (
@@ -185,16 +189,8 @@ class StandardConceptValueValidationRule(Rule):
         "fix is usually 'S'; reach for 'C' only when you specifically "
         "want classification-level concepts such as MedDRA grouping."
     )
-    example_bad = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE standard_concept = 'X';"
-    )
-    example_good = (
-        "SELECT concept_id\n"
-        "FROM concept\n"
-        "WHERE standard_concept = 'S';"
-    )
+    example_bad = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'X';"
+    example_good = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'S';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

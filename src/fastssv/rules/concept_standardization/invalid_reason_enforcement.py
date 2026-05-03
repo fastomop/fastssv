@@ -382,16 +382,9 @@ class InvalidReasonEnforcementRule(Rule):
         "``--strict`` (CLI) or ``strict=True`` (API) when you want the "
         "vocabulary-hygiene check applied; the rule is silent otherwise."
     )
-    example_bad = (
-        "SELECT concept_id, concept_name\n"
-        "FROM concept\n"
-        "WHERE vocabulary_id = 'SNOMED';"
-    )
+    example_bad = "SELECT concept_id, concept_name\nFROM concept\nWHERE vocabulary_id = 'SNOMED';"
     example_good = (
-        "SELECT concept_id, concept_name\n"
-        "FROM concept\n"
-        "WHERE vocabulary_id = 'SNOMED'\n"
-        "  AND invalid_reason IS NULL;"
+        "SELECT concept_id, concept_name\nFROM concept\nWHERE vocabulary_id = 'SNOMED'\n  AND invalid_reason IS NULL;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -401,6 +394,7 @@ class InvalidReasonEnforcementRule(Rule):
         ``ValidationContext.strict_mode`` is False.
         """
         from fastssv.core.validation_context import get_validation_context
+
         ctx = get_validation_context()
         if not ctx.strict_mode:
             return []
@@ -453,16 +447,18 @@ class InvalidReasonEnforcementRule(Rule):
                     f"Add 'invalid_reason IS NULL' to ensure only currently-valid concepts are used."
                 )
 
-                violations.append(self.create_violation(
-                    severity=severity,  # Context-aware severity
-                    message=message,
-                    suggested_fix="ADD: `AND invalid_reason IS NULL` to the WHERE clause to exclude deprecated/superseded vocabulary rows.",
-                    details={
-                        "vocabulary_tables": sorted(tables_with_invalid_reason),
-                        "recommendation": "Add WHERE condition: invalid_reason IS NULL",
-                        "strict_mode_escalated": severity == Severity.ERROR
-                    }
-                ))
+                violations.append(
+                    self.create_violation(
+                        severity=severity,  # Context-aware severity
+                        message=message,
+                        suggested_fix="ADD: `AND invalid_reason IS NULL` to the WHERE clause to exclude deprecated/superseded vocabulary rows.",
+                        details={
+                            "vocabulary_tables": sorted(tables_with_invalid_reason),
+                            "recommendation": "Add WHERE condition: invalid_reason IS NULL",
+                            "strict_mode_escalated": severity == Severity.ERROR,
+                        },
+                    )
+                )
 
             # Handle derived tables (concept_ancestor, etc.).
             # Skip when the derived table only appears in a JOIN (auxiliary
@@ -473,10 +469,7 @@ class InvalidReasonEnforcementRule(Rule):
             # specific concept, not a source to filter against, so demanding
             # invalid_reason would exclude legitimate historical results.
             aliases = extract_aliases(tree)
-            derived_tables_as_source = {
-                t for t in derived_tables
-                if _derived_table_in_from(tree, t)
-            }
+            derived_tables_as_source = {t for t in derived_tables if _derived_table_in_from(tree, t)}
             # Restore symmetry across all source-usage shapes: direct JOIN,
             # chained JOIN through `concept`, multi-ancestor IN-lists, etc.
             # `_derived_table_in_from` only catches primary-FROM usage; this
@@ -509,18 +502,20 @@ class InvalidReasonEnforcementRule(Rule):
                         f"'concept.invalid_reason IS NULL' to filter out deprecated concepts."
                     )
 
-                    violations.append(self.create_violation(
-                        message=message,
-                        severity=severity,  # Context-aware: WARNING by default, ERROR in strict mode
-                        suggested_fix=(
-                            "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.invalid_reason IS NULL` to exclude deprecated concepts."
-                        ),
-                        details={
-                            "derived_tables": sorted(derived_tables_as_source),
-                            "recommendation": "JOIN concept c ON c.concept_id = <table>.concept_id WHERE c.invalid_reason IS NULL",
-                            "strict_mode_escalated": severity == Severity.ERROR,
-                        }
-                    ))
+                    violations.append(
+                        self.create_violation(
+                            message=message,
+                            severity=severity,  # Context-aware: WARNING by default, ERROR in strict mode
+                            suggested_fix=(
+                                "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.invalid_reason IS NULL` to exclude deprecated concepts."
+                            ),
+                            details={
+                                "derived_tables": sorted(derived_tables_as_source),
+                                "recommendation": "JOIN concept c ON c.concept_id = <table>.concept_id WHERE c.invalid_reason IS NULL",
+                                "strict_mode_escalated": severity == Severity.ERROR,
+                            },
+                        )
+                    )
 
         return violations
 

@@ -23,6 +23,7 @@ from fastssv.core.patch import (
 
 # --- Schema construction ---------------------------------------------------
 
+
 def test_replace_shape():
     assert replace((10, 20), "new") == {"action": "REPLACE", "span": [10, 20], "text": "new"}
 
@@ -40,6 +41,7 @@ def test_freeform_shape():
 
 
 # --- Applier ---------------------------------------------------------------
+
 
 def test_apply_replace_substitutes_span():
     sql = "SELECT * FROM t WHERE x = NULL"
@@ -97,6 +99,7 @@ def test_apply_add_invalid_offset_raises():
 
 # --- locate() --------------------------------------------------------------
 
+
 def test_locate_exact_match():
     sql = "SELECT * FROM t WHERE x = 1"
     assert locate(sql, "x = 1") == (22, 27)
@@ -115,7 +118,7 @@ def test_locate_case_insensitive_fallback():
     sql = "SELECT * FROM T WHERE Concept_Id = 1"
     span = locate(sql, "concept_id = 1")
     assert span is not None
-    assert sql[span[0]:span[1]].lower() == "concept_id = 1"
+    assert sql[span[0] : span[1]].lower() == "concept_id = 1"
 
 
 def test_locate_whitespace_normalised_fallback():
@@ -123,25 +126,23 @@ def test_locate_whitespace_normalised_fallback():
     # Fragment uses single spaces; source has runs of whitespace
     span = locate(sql, "FROM t WHERE x = 1")
     assert span is not None
-    assert "FROM" in sql[span[0]:span[1]]
-    assert "WHERE x = 1" in sql[span[0]:span[1]]
+    assert "FROM" in sql[span[0] : span[1]]
+    assert "WHERE x = 1" in sql[span[0] : span[1]]
 
 
 # --- Placeholders ----------------------------------------------------------
 
+
 def test_has_unresolved_placeholders_detects():
-    assert has_unresolved_placeholders(
-        {"action": "ADD", "at": 0, "text": " AND vocabulary_id = '<vocab>'"}
-    )
+    assert has_unresolved_placeholders({"action": "ADD", "at": 0, "text": " AND vocabulary_id = '<vocab>'"})
 
 
 def test_has_unresolved_placeholders_clean_when_resolved():
-    assert not has_unresolved_placeholders(
-        {"action": "ADD", "at": 0, "text": " AND vocabulary_id = 'ICD10CM'"}
-    )
+    assert not has_unresolved_placeholders({"action": "ADD", "at": 0, "text": " AND vocabulary_id = 'ICD10CM'"})
 
 
 # --- Rule integration ------------------------------------------------------
+
 
 def _violations(sql: str, rule_id: str):
     """Run the named rule and return its violations on ``sql``."""
@@ -293,8 +294,17 @@ def test_violation_freeform_serialises_as_prose_string():
 # allows at the start of a class-level ``suggested_fix``. Adding a new verb
 # here is intentional — it's a small surface change that's easy to review.
 CANONICAL_FIX_VERBS = (
-    "REPLACE:", "ADD:", "REMOVE:", "JOIN:", "JOIN ", "CAST:", "REWRITE:",
-    "FILTER:", "WRAP:", "GROUP BY:", "QUALIFY:",
+    "REPLACE:",
+    "ADD:",
+    "REMOVE:",
+    "JOIN:",
+    "JOIN ",
+    "CAST:",
+    "REWRITE:",
+    "FILTER:",
+    "WRAP:",
+    "GROUP BY:",
+    "QUALIFY:",
 )
 
 

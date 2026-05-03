@@ -211,9 +211,7 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]
                 for bound in [node.args.get("low"), node.args.get("high")]:
                     year = _extract_date_literal_year(bound)
                     if year and year > FAR_FUTURE_THRESHOLD_YEAR:
-                        violations.append(
-                            f"death_date BETWEEN includes far future year {year}."
-                        )
+                        violations.append(f"death_date BETWEEN includes far future year {year}.")
 
     return violations
 
@@ -223,9 +221,7 @@ class DeathDateInFutureValidationRule(Rule):
     rule_id = "temporal.death_date_in_future_validation"
     name = "Death Date In Future Validation"
 
-    description = (
-        "Detects queries filtering for future death dates, indicating data or logic issues."
-    )
+    description = "Detects queries filtering for future death dates, indicating data or logic issues."
 
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `death_date > CURRENT_DATE` (or > GETDATE() / NOW()) WITH `death_date <= CURRENT_DATE`. Future death dates always indicate data errors."
@@ -237,14 +233,8 @@ class DeathDateInFutureValidationRule(Rule):
         "reversed comparison. The severity is WARNING rather than ERROR to "
         "allow legitimate audit queries."
     )
-    example_bad = (
-        "SELECT * FROM death\n"
-        "WHERE death_date > CURRENT_DATE;"
-    )
-    example_good = (
-        "SELECT * FROM death\n"
-        "WHERE death_date <= CURRENT_DATE;"
-    )
+    example_bad = "SELECT * FROM death\nWHERE death_date > CURRENT_DATE;"
+    example_good = "SELECT * FROM death\nWHERE death_date <= CURRENT_DATE;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)

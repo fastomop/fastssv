@@ -56,6 +56,7 @@ COLUMN_NAME = "days_supply"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -118,6 +119,7 @@ def _validate_value(value: int) -> Optional[str]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -216,6 +218,7 @@ def _find_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugDaysSupplyValidationRule(Rule):
     """Validates that drug_exposure.days_supply contains plausible values."""
@@ -229,14 +232,8 @@ class DrugDaysSupplyValidationRule(Rule):
     )
     severity = Severity.WARNING
     suggested_fix = "REPLACE: implausible days_supply filters (>365, <1) WITH `days_supply BETWEEN 1 AND 365`. Outliers usually indicate ETL errors or mis-encoded multi-fill records."
-    example_bad = (
-        "SELECT person_id FROM drug_exposure\n"
-        "WHERE days_supply = 400;"
-    )
-    example_good = (
-        "SELECT person_id FROM drug_exposure\n"
-        "WHERE days_supply BETWEEN 1 AND 365;"
-    )
+    example_bad = "SELECT person_id FROM drug_exposure\nWHERE days_supply = 400;"
+    example_good = "SELECT person_id FROM drug_exposure\nWHERE days_supply BETWEEN 1 AND 365;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

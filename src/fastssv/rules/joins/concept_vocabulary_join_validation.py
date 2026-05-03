@@ -54,6 +54,7 @@ VOCABULARY_CONCEPT_ID = "vocabulary_concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -103,6 +104,7 @@ def _extract_eq_groups(tree: exp.Expression) -> List[List[exp.EQ]]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -137,12 +139,11 @@ def _detect_violations(
             lt = _normalize_table(lt)
             rt = _normalize_table(rt)
 
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
                 if _is_concept(t1) and _is_vocabulary(t2):
-
                     # Correct join
                     if _is_col(c1, VOCABULARY_ID) and _is_col(c2, VOCABULARY_ID):
                         has_correct_join = True
@@ -155,13 +156,11 @@ def _detect_violations(
             continue
 
         for concept_table, concept_col, vocab_table, vocab_col in candidates:
-
             key = (concept_table, concept_col, vocab_table, vocab_col)
 
             # --- ERROR: clearly wrong joins ---
-            if (
-                (_is_col(concept_col, CONCEPT_ID) and _is_col(vocab_col, VOCABULARY_CONCEPT_ID))
-                or (_is_col(concept_col, VOCABULARY_ID) and not _is_col(vocab_col, VOCABULARY_ID))
+            if (_is_col(concept_col, CONCEPT_ID) and _is_col(vocab_col, VOCABULARY_CONCEPT_ID)) or (
+                _is_col(concept_col, VOCABULARY_ID) and not _is_col(vocab_col, VOCABULARY_ID)
             ):
                 if key not in seen_errors:
                     errors.append(key)
@@ -177,6 +176,7 @@ def _detect_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptVocabularyJoinValidationRule(Rule):
@@ -200,14 +200,8 @@ class ConceptVocabularyJoinValidationRule(Rule):
 
     suggested_fix = "REPLACE: the concept ↔ vocabulary ON clause WITH `concept.vocabulary_id = vocabulary.vocabulary_id`. Joining via domain_id, concept_class_id, or any other column is incorrect — vocabulary.vocabulary_id is the only FK target."
 
-    example_bad = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN vocabulary v ON c.domain_id = v.vocabulary_id;"
-    )
-    example_good = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id;"
-    )
+    example_bad = "SELECT c.concept_id FROM concept c\nJOIN vocabulary v ON c.domain_id = v.vocabulary_id;"
+    example_good = "SELECT c.concept_id FROM concept c\nJOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -239,13 +233,18 @@ class ConceptVocabularyJoinValidationRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"Invalid join: {c_table}.{c_col} = {v_table}.{v_col}. "
-                            f"Use vocabulary_id = vocabulary_id."
+                            f"Invalid join: {c_table}.{c_col} = {v_table}.{v_col}. Use vocabulary_id = vocabulary_id."
                         ),
                         suggested_fix=fix_text,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, v_table, v_col,
-                            "vocabulary_id", "vocabulary_id", fix_text,
+                            sql,
+                            c_table,
+                            c_col,
+                            v_table,
+                            v_col,
+                            "vocabulary_id",
+                            "vocabulary_id",
+                            fix_text,
                             aliases=aliases,
                         ),
                         details={
@@ -266,14 +265,19 @@ class ConceptVocabularyJoinValidationRule(Rule):
                     RuleViolation(
                         rule_id=self.rule_id,
                         message=(
-                            f"Suspicious join: {c_table}.{c_col} = {v_table}.{v_col}. "
-                            f"Expected vocabulary_id alignment."
+                            f"Suspicious join: {c_table}.{c_col} = {v_table}.{v_col}. Expected vocabulary_id alignment."
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=fix_text,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, v_table, v_col,
-                            "vocabulary_id", "vocabulary_id", fix_text,
+                            sql,
+                            c_table,
+                            c_col,
+                            v_table,
+                            v_col,
+                            "vocabulary_id",
+                            "vocabulary_id",
+                            fix_text,
                             aliases=aliases,
                         ),
                         details={

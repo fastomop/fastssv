@@ -72,6 +72,7 @@ TARGET_KEYWORDS = {"target", "tgt", "to", "dest", "destination", "two", "second"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -164,6 +165,7 @@ def _extract_cr_concept_joins(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -188,9 +190,7 @@ def _detect(
 
         cr_col_norm = _norm(cr_col)
 
-        mismatch = (
-            intent == "source" and cr_col_norm == CONCEPT_ID_2
-        ) or (
+        mismatch = (intent == "source" and cr_col_norm == CONCEPT_ID_2) or (
             intent == "target" and cr_col_norm == CONCEPT_ID_1
         )
 
@@ -204,6 +204,7 @@ def _detect(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptRelationshipConceptJoinValidationRule(Rule):
@@ -264,9 +265,12 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
                 # `build_join_replace_patch` will iterate alias forms for both sides.
                 patch = build_join_replace_patch(
                     sql,
-                    CONCEPT_RELATIONSHIP, actual_col,
-                    CONCEPT, CONCEPT_ID,
-                    expected_col, CONCEPT_ID,
+                    CONCEPT_RELATIONSHIP,
+                    actual_col,
+                    CONCEPT,
+                    CONCEPT_ID,
+                    expected_col,
+                    CONCEPT_ID,
                     fix_text,
                     aliases=aliases,
                 )
@@ -277,10 +281,7 @@ class ConceptRelationshipConceptJoinValidationRule(Rule):
                             f"Semantic mismatch: alias '{concept_alias}' implies {intent} concept "
                             f"(expected {expected_col}) but join uses {actual_col}."
                         ),
-                        suggested_fix=(
-                            f"Use: concept_relationship.{expected_col} = "
-                            f"{concept_alias}.concept_id"
-                        ),
+                        suggested_fix=(f"Use: concept_relationship.{expected_col} = {concept_alias}.concept_id"),
                         suggested_fix_patch=patch,
                         details={
                             "type": "semantic_intent_mismatch",

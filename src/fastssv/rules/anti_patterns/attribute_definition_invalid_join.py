@@ -69,6 +69,7 @@ NORM_ATTRIBUTE_DEFINITION = normalize_name(ATTRIBUTE_DEFINITION)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: str) -> str:
     return normalize_name(x) if x else ""
 
@@ -95,6 +96,7 @@ def _get_tables_in_select_scope(select: exp.Select) -> Set[str]:
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class AttributeDefinitionInvalidJoinRule(Rule):
@@ -125,15 +127,8 @@ class AttributeDefinitionInvalidJoinRule(Rule):
         "own when you need attribute metadata, and drop any JOINs against "
         "it."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM person p\n"
-        "JOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id;"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM attribute_definition;"
-    )
+    example_bad = "SELECT *\nFROM person p\nJOIN attribute_definition ad ON p.person_id = ad.attribute_definition_id;"
+    example_good = "SELECT *\nFROM attribute_definition;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
@@ -159,9 +154,7 @@ class AttributeDefinitionInvalidJoinRule(Rule):
 
                 # If more than one table in this SELECT → invalid usage
                 if len(tables) > 1:
-                    other_tables = [
-                        t for t in tables if t != NORM_ATTRIBUTE_DEFINITION
-                    ]
+                    other_tables = [t for t in tables if t != NORM_ATTRIBUTE_DEFINITION]
 
                     other_tables_str = ", ".join(sorted(other_tables)[:3])
                     if len(other_tables) > 3:

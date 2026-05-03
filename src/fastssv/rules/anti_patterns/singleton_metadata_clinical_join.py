@@ -42,14 +42,8 @@ logger = logging.getLogger(__name__)
 # Singleton/instance metadata tables that have no FK to clinical data.
 # Mapping: table name -> short rationale used in the violation message.
 METADATA_TABLES: Dict[str, str] = {
-    "cdm_source": (
-        "single-row metadata table describing the CDM instance "
-        "(version, vocabulary version, source name)"
-    ),
-    "metadata": (
-        "stores CDM-level metadata (ETL provenance, data characterization), "
-        "not patient-level clinical data"
-    ),
+    "cdm_source": ("single-row metadata table describing the CDM instance (version, vocabulary version, source name)"),
+    "metadata": ("stores CDM-level metadata (ETL provenance, data characterization), not patient-level clinical data"),
 }
 
 CLINICAL_TABLES: Set[str] = {
@@ -79,6 +73,7 @@ CLINICAL_TABLES: Set[str] = {
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _tables_in_select_scope(select: exp.Select) -> Set[str]:
     """Collect table names referenced directly in this SELECT, ignoring nested subqueries."""
     tables: Set[str] = set()
@@ -99,6 +94,7 @@ def _tables_in_select_scope(select: exp.Select) -> Set[str]:
 
 
 # --- Rule --------------------------------------------------------------------
+
 
 @register
 class SingletonMetadataClinicalJoinRule(Rule):
@@ -124,15 +120,8 @@ class SingletonMetadataClinicalJoinRule(Rule):
         "count, yielding a Cartesian product. Read these tables on their own "
         "or via a scalar subquery; never through a JOIN."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM person p, cdm_source cs;"
-    )
-    example_good = (
-        "SELECT *,\n"
-        "       (SELECT cdm_version FROM cdm_source) AS cdm_version\n"
-        "FROM person;"
-    )
+    example_bad = "SELECT *\nFROM person p, cdm_source cs;"
+    example_good = "SELECT *,\n       (SELECT cdm_version FROM cdm_source) AS cdm_version\nFROM person;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
@@ -170,9 +159,7 @@ class SingletonMetadataClinicalJoinRule(Rule):
                     if meta_table not in tables_in_select:
                         continue
 
-                    clinical_found = sorted(
-                        t for t in tables_in_select if t in CLINICAL_TABLES
-                    )
+                    clinical_found = sorted(t for t in tables_in_select if t in CLINICAL_TABLES)
                     for clinical_table in clinical_found:
                         key = (meta_table, clinical_table)
                         if key in seen:

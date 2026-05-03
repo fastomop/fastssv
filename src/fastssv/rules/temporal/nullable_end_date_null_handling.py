@@ -66,6 +66,7 @@ from fastssv.core.registry import register
 
 # --- Configuration ---------------------------------------------------------
 
+
 class EndDateConfig:
     """Configuration for nullable end_date column."""
 
@@ -111,6 +112,7 @@ DATE_FUNCTIONS = {
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -171,10 +173,7 @@ def _is_null_check_for_column(
     if not matched:
         return False
 
-    return (
-        _norm(matched.table) == _norm(config.table)
-        and _norm(matched.column) == _norm(config.column)
-    )
+    return _norm(matched.table) == _norm(config.table) and _norm(matched.column) == _norm(config.column)
 
 
 def _has_local_null_filter(
@@ -197,9 +196,7 @@ def _is_wrapped_with_null_handling(node: exp.Expression) -> bool:
             return True
 
         if isinstance(parent, exp.Func):
-            name = _norm(
-                parent.sql_name() if hasattr(parent, "sql_name") else str(parent.key)
-            )
+            name = _norm(parent.sql_name() if hasattr(parent, "sql_name") else str(parent.key))
             if name in {"isnull", "ifnull", "nvl"}:
                 return True
 
@@ -242,6 +239,7 @@ def _collect_relevant_expressions(tree: exp.Expression) -> List[exp.Expression]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _find_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -252,12 +250,9 @@ def _find_violations(
     exprs = _collect_relevant_expressions(tree)
 
     for expr_node in exprs:
-
         # --- Date functions ---
         for func in expr_node.find_all(exp.Func):
-            name = _norm(
-                func.sql_name() if hasattr(func, "sql_name") else str(func.key)
-            )
+            name = _norm(func.sql_name() if hasattr(func, "sql_name") else str(func.key))
 
             if name not in DATE_FUNCTIONS:
                 continue
@@ -275,11 +270,13 @@ def _find_violations(
                     continue
                 seen.add(key)
 
-                issues.append((
-                    config,
-                    f"{config.column} used in {name.upper()}() without NULL handling. "
-                    f"Use COALESCE({config.column}, fallback) or filter IS NOT NULL."
-                ))
+                issues.append(
+                    (
+                        config,
+                        f"{config.column} used in {name.upper()}() without NULL handling. "
+                        f"Use COALESCE({config.column}, fallback) or filter IS NOT NULL.",
+                    )
+                )
 
         # --- Arithmetic ---
         for node in expr_node.find_all((exp.Add, exp.Sub)):
@@ -296,11 +293,13 @@ def _find_violations(
                     continue
                 seen.add(key)
 
-                issues.append((
-                    config,
-                    f"{config.column} used in arithmetic without NULL handling. "
-                    "Use COALESCE or filter IS NOT NULL."
-                ))
+                issues.append(
+                    (
+                        config,
+                        f"{config.column} used in arithmetic without NULL handling. "
+                        "Use COALESCE or filter IS NOT NULL.",
+                    )
+                )
 
         # --- BETWEEN ---
         for between in expr_node.find_all(exp.Between):
@@ -320,11 +319,9 @@ def _find_violations(
                 continue
             seen.add(key)
 
-            issues.append((
-                config,
-                f"{config.column} used in BETWEEN without NULL handling. "
-                "Use COALESCE or filter IS NOT NULL."
-            ))
+            issues.append(
+                (config, f"{config.column} used in BETWEEN without NULL handling. Use COALESCE or filter IS NOT NULL.")
+            )
 
         # --- Comparisons ---
         for comp in expr_node.find_all((exp.GT, exp.GTE, exp.LT, exp.LTE)):
@@ -344,16 +341,19 @@ def _find_violations(
                     continue
                 seen.add(key)
 
-                issues.append((
-                    config,
-                    f"{config.column} used in comparison without NULL handling. "
-                    "Use COALESCE or filter IS NOT NULL."
-                ))
+                issues.append(
+                    (
+                        config,
+                        f"{config.column} used in comparison without NULL handling. "
+                        "Use COALESCE or filter IS NOT NULL.",
+                    )
+                )
 
     return issues
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class NullableEndDateNullHandlingRule(Rule):
@@ -403,10 +403,7 @@ class NullableEndDateNullHandlingRule(Rule):
                 continue
 
             # Skip if no relevant tables
-            if not any(
-                has_table_reference(tree, config.table)
-                for config in NULLABLE_END_DATE_CONFIGS.values()
-            ):
+            if not any(has_table_reference(tree, config.table) for config in NULLABLE_END_DATE_CONFIGS.values()):
                 continue
 
             aliases = extract_aliases(tree)

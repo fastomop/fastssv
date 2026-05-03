@@ -52,6 +52,7 @@ DOMAIN_ID = "domain_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -101,6 +102,7 @@ def _extract_eq_groups(tree: exp.Expression) -> List[List[exp.EQ]]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -135,12 +137,11 @@ def _detect_violations(
             lt = _normalize_table(lt)
             rt = _normalize_table(rt)
 
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
                 if _is_concept(t1) and _is_domain(t2):
-
                     # Correct relationship join
                     if _is_col(c1, DOMAIN_ID) and _is_col(c2, DOMAIN_ID):
                         has_correct_join = True
@@ -170,6 +171,7 @@ def _detect_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ConceptDomainJoinValidationRule(Rule):
     """
@@ -183,23 +185,14 @@ class ConceptDomainJoinValidationRule(Rule):
     rule_id = "joins.concept_domain_join_validation"
     name = "Concept to Domain Join Validation"
 
-    description = (
-        "If concept is joined to domain, the relationship should use "
-        "concept.domain_id = domain.domain_id."
-    )
+    description = "If concept is joined to domain, the relationship should use concept.domain_id = domain.domain_id."
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the concept ↔ domain ON clause WITH `concept.domain_id = domain.domain_id`. Joining via vocabulary_id, concept_class_id, or any other column is incorrect — domain.domain_id is the only FK target."
 
-    example_bad = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN domain d ON c.vocabulary_id = d.domain_id;"
-    )
-    example_good = (
-        "SELECT c.concept_id FROM concept c\n"
-        "JOIN domain d ON c.domain_id = d.domain_id;"
-    )
+    example_bad = "SELECT c.concept_id FROM concept c\nJOIN domain d ON c.vocabulary_id = d.domain_id;"
+    example_good = "SELECT c.concept_id FROM concept c\nJOIN domain d ON c.domain_id = d.domain_id;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -236,8 +229,13 @@ class ConceptDomainJoinValidationRule(Rule):
                             f"WITH `{c_table}.domain_id = {d_table}.domain_id`."
                         ),
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, d_table, d_col,
-                            "domain_id", "domain_id",
+                            sql,
+                            c_table,
+                            c_col,
+                            d_table,
+                            d_col,
+                            "domain_id",
+                            "domain_id",
                             f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
                             f"WITH `{c_table}.domain_id = {d_table}.domain_id`.",
                             aliases=aliases,
@@ -256,8 +254,7 @@ class ConceptDomainJoinValidationRule(Rule):
                     RuleViolation(
                         rule_id=self.rule_id,
                         message=(
-                            f"Suspicious join: {c_table}.{c_col} = {d_table}.{d_col}. "
-                            f"Expected alignment on domain_id."
+                            f"Suspicious join: {c_table}.{c_col} = {d_table}.{d_col}. Expected alignment on domain_id."
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
@@ -265,8 +262,13 @@ class ConceptDomainJoinValidationRule(Rule):
                             f"WITH `{c_table}.domain_id = {d_table}.domain_id`."
                         ),
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, c_table, c_col, d_table, d_col,
-                            "domain_id", "domain_id",
+                            sql,
+                            c_table,
+                            c_col,
+                            d_table,
+                            d_col,
+                            "domain_id",
+                            "domain_id",
                             f"REPLACE: `{c_table}.{c_col} = {d_table}.{d_col}` "
                             f"WITH `{c_table}.domain_id = {d_table}.domain_id`.",
                             aliases=aliases,

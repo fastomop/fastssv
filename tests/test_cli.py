@@ -20,9 +20,7 @@ from fastssv.cli import _clean_llm_output, _split_queries, main
 # ---- main(...) end-to-end ---------------------------------------------------
 
 
-def test_main_batch_multiple_queries_writes_grouped_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_batch_multiple_queries_writes_grouped_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sql = """
     SELECT person_id FROM person;
     SELECT * FROM no_such_table;
@@ -44,9 +42,7 @@ def test_main_batch_multiple_queries_writes_grouped_report(
     assert len(report["results"]) == 3
 
 
-def test_main_reads_from_stdin_when_no_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_reads_from_stdin_when_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out = tmp_path / "stdin_out.json"
     monkeypatch.chdir(tmp_path)
 

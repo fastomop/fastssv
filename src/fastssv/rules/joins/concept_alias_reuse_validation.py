@@ -52,6 +52,7 @@ CONCEPT_ID = "concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -84,9 +85,7 @@ def _is_primary_concept_id(col: Optional[str]) -> bool:
     if not c:
         return False
 
-    return (c.endswith("_concept_id") and
-            not c.endswith("_source_concept_id") and
-            not c.endswith("_type_concept_id"))
+    return c.endswith("_concept_id") and not c.endswith("_source_concept_id") and not c.endswith("_type_concept_id")
 
 
 def _is_concept_id(col: Optional[str]) -> bool:
@@ -95,9 +94,7 @@ def _is_concept_id(col: Optional[str]) -> bool:
 
 def _is_concept_id_like(col: Optional[str]) -> bool:
     """Check if column is any type of concept_id column."""
-    return (_is_primary_concept_id(col) or
-            _is_source_concept_id(col) or
-            _is_type_concept_id(col))
+    return _is_primary_concept_id(col) or _is_source_concept_id(col) or _is_type_concept_id(col)
 
 
 def _extract_all_equalities(tree: exp.Expression) -> List[exp.EQ]:
@@ -109,12 +106,13 @@ def _extract_all_equalities(tree: exp.Expression) -> List[exp.EQ]:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
 ) -> Tuple[
     List[Tuple[str, str, List[str], str]],  # errors: (alias, source, cols, error_type)
-    List[Tuple[str, str, List[str]]],       # warnings: (alias, source, cols)
+    List[Tuple[str, str, List[str]]],  # warnings: (alias, source, cols)
 ]:
     """
     Detect concept alias reuse issues.
@@ -235,9 +233,7 @@ def _detect_violations(
             source_tables = sorted({s for s, _ in usages})
 
             if len(source_tables) > 1 and (
-                (has_primary and has_source)
-                or (has_primary and has_type)
-                or (has_source and has_type)
+                (has_primary and has_source) or (has_primary and has_type) or (has_source and has_type)
             ):
                 key = (concept_alias, "MULTI_TABLE", tuple(source_tables))
                 if key not in seen_warnings:
@@ -248,6 +244,7 @@ def _detect_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptAliasReuseValidationRule(Rule):
@@ -365,8 +362,7 @@ class ConceptAliasReuseValidationRule(Rule):
                     RuleViolation(
                         rule_id=self.rule_id,
                         message=(
-                            f"Alias '{concept_alias}' reused across multiple concept joins "
-                            f"({', '.join(columns)})."
+                            f"Alias '{concept_alias}' reused across multiple concept joins ({', '.join(columns)})."
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(

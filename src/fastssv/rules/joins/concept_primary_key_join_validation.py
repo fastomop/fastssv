@@ -49,6 +49,7 @@ CONCEPT_ID = "concept_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -130,12 +131,13 @@ def _group_equalities_by_join(
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
 ) -> Tuple[
-    List[Tuple[str, str, str, str]],   # errors
-    List[Tuple[str, str, str, str]],   # warnings
+    List[Tuple[str, str, str, str]],  # errors
+    List[Tuple[str, str, str, str]],  # warnings
 ]:
     errors: List[Tuple[str, str, str, str]] = []
     warnings: List[Tuple[str, str, str, str]] = []
@@ -167,11 +169,10 @@ def _detect_violations(
 
         # Evaluate each condition within its join group
         for lt, lc, rt, rc in resolved:
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
-
                 if not _is_concept(t2):
                     continue
 
@@ -187,9 +188,7 @@ def _detect_violations(
                 elif _is_vocab_safe_column(c2):
                     # Check if vocabulary_id also present in same join group
                     has_vocab_constraint = any(
-                        _norm(col2) == "vocabulary_id"
-                        for (_, _, t2b, col2) in resolved
-                        if _is_concept(t2b)
+                        _norm(col2) == "vocabulary_id" for (_, _, t2b, col2) in resolved if _is_concept(t2b)
                     )
 
                     if not has_vocab_constraint:
@@ -202,6 +201,7 @@ def _detect_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ConceptJoinValidationRule(Rule):
@@ -227,12 +227,10 @@ class ConceptJoinValidationRule(Rule):
     suggested_fix = "REPLACE: any `*_concept_id` join target other than `concept.concept_id` WITH `concept.concept_id`. ADD: `AND <c>.vocabulary_id = '<vocab>'` whenever joining on `concept_code` (concept_code is unique only within a vocabulary)."
 
     example_bad = (
-        "SELECT co.person_id FROM condition_occurrence co\n"
-        "JOIN concept c ON co.condition_concept_id = c.concept_name;"
+        "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_name;"
     )
     example_good = (
-        "SELECT co.person_id FROM condition_occurrence co\n"
-        "JOIN concept c ON co.condition_concept_id = c.concept_id;"
+        "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -272,8 +270,14 @@ class ConceptJoinValidationRule(Rule):
                         # Only the RHS changes (concept_col → concept_id);
                         # `other_col` is preserved.
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, other_table, other_col, concept_table, concept_col,
-                            other_col, "concept_id", fix_text,
+                            sql,
+                            other_table,
+                            other_col,
+                            concept_table,
+                            concept_col,
+                            other_col,
+                            "concept_id",
+                            fix_text,
                             aliases=aliases,
                         ),
                         details={
@@ -298,6 +302,7 @@ class ConceptJoinValidationRule(Rule):
                 # Try aliased forms too — the detector resolved table names
                 # but the SQL may use aliases (e.g. `c.concept_code`).
                 from fastssv.core.patch import _qualifiers_for_table
+
                 other_quals = _qualifiers_for_table(other_table, aliases)
                 concept_quals = _qualifiers_for_table(concept_table, aliases)
                 patch = freeform(fix_text)

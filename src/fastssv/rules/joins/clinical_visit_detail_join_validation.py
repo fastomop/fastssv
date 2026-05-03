@@ -59,6 +59,7 @@ CLINICAL_TABLES = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -103,12 +104,11 @@ def _classify_join(
         (clinical_table, clinical_col, visit_detail_table, visit_detail_col, error_type)
     """
 
-    for (t1, c1, t2, c2) in [
+    for t1, c1, t2, c2 in [
         (lt, lc, rt, rc),
         (rt, rc, lt, lc),
     ]:
         if _is_clinical(t1) and _is_visit_detail(t2):
-
             # Case 1: visit_occurrence_id -> visit_detail_id (invalid)
             if _is_col(c1, VISIT_OCCURRENCE_ID) and _is_col(c2, VISIT_DETAIL_ID):
                 return (t1, c1, t2, c2, "visit_occurrence_to_visit_detail_id")
@@ -156,6 +156,7 @@ def _detect_violations(
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class ClinicalVisitDetailJoinValidationRule(Rule):
     """
@@ -192,8 +193,7 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
         """
 
         message = (
-            f"ID type mismatch: {clinical_table}.{clinical_col} joined to "
-            f"{visit_detail_table}.{visit_detail_col}."
+            f"ID type mismatch: {clinical_table}.{clinical_col} joined to {visit_detail_table}.{visit_detail_col}."
         )
 
         if error_type == "visit_occurrence_to_visit_detail_id":
@@ -211,17 +211,17 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
             )
 
         else:
-            suggested_fix = "REPLACE: the visit_detail join keys WITH `<clinical>.visit_detail_id = visit_detail.visit_detail_id`."
+            suggested_fix = (
+                "REPLACE: the visit_detail join keys WITH `<clinical>.visit_detail_id = visit_detail.visit_detail_id`."
+            )
 
         return message, suggested_fix
 
     example_bad = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id;"
+        "SELECT * FROM condition_occurrence co\nJOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id;"
     )
     example_good = (
-        "SELECT * FROM condition_occurrence co\n"
-        "JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id;"
+        "SELECT * FROM condition_occurrence co\nJOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -252,7 +252,6 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
                 visit_detail_col,
                 error_type,
             ) in bad_joins:
-
                 message, suggested_fix = self._build_message(
                     clinical_table,
                     clinical_col,
@@ -265,9 +264,12 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
                 # `<clinical>.visit_detail_id = visit_detail.visit_detail_id`.
                 patch = build_join_replace_patch(
                     sql,
-                    clinical_table, clinical_col,
-                    visit_detail_table, visit_detail_col,
-                    "visit_detail_id", "visit_detail_id",
+                    clinical_table,
+                    clinical_col,
+                    visit_detail_table,
+                    visit_detail_col,
+                    "visit_detail_id",
+                    "visit_detail_id",
                     suggested_fix,
                     aliases=aliases,
                 )
@@ -283,10 +285,7 @@ class ClinicalVisitDetailJoinValidationRule(Rule):
                             "visit_detail_table": visit_detail_table,
                             "visit_detail_column": visit_detail_col,
                             "error_type": error_type,
-                            "expected": (
-                                f"{clinical_table}.visit_detail_id = "
-                                f"{visit_detail_table}.visit_detail_id"
-                            ),
+                            "expected": (f"{clinical_table}.visit_detail_id = {visit_detail_table}.visit_detail_id"),
                         },
                     )
                 )

@@ -89,6 +89,7 @@ PAYER_PLAN_PERIOD_ID_COL = "payer_plan_period_id"
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -107,11 +108,7 @@ def _is_ppp_id(col: Optional[str]) -> bool:
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
     """Collect CTE names to avoid shadowing real tables."""
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -131,21 +128,16 @@ def _resolve_column(
 
 
 def _is_cost_ppp_pair(t1: str, t2: str) -> bool:
-    return (
-        (_is_cost(t1) and _is_payer_plan_period(t2))
-        or (_is_payer_plan_period(t1) and _is_cost(t2))
-    )
+    return (_is_cost(t1) and _is_payer_plan_period(t2)) or (_is_payer_plan_period(t1) and _is_cost(t2))
 
 
 def _is_valid_join(
-    t1: str, c1: str,
-    t2: str, c2: str,
+    t1: str,
+    c1: str,
+    t2: str,
+    c2: str,
 ) -> bool:
-    return (
-        _is_cost_ppp_pair(t1, t2)
-        and _is_ppp_id(c1)
-        and _is_ppp_id(c2)
-    )
+    return _is_cost_ppp_pair(t1, t2) and _is_ppp_id(c1) and _is_ppp_id(c2)
 
 
 def _analyze_conditions(
@@ -220,6 +212,7 @@ def _check_joins(tree: exp.Expression) -> List[str]:
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class CostPayerPlanPeriodIdJoinRule(Rule):
     """
@@ -230,20 +223,15 @@ class CostPayerPlanPeriodIdJoinRule(Rule):
     name = "Cost Payer Plan Period ID Join"
 
     description = (
-        "cost.payer_plan_period_id is a FK to payer_plan_period.payer_plan_period_id. "
-        "Joins must use this column pair."
+        "cost.payer_plan_period_id is a FK to payer_plan_period.payer_plan_period_id. Joins must use this column pair."
     )
 
     severity = Severity.ERROR
 
     suggested_fix = "REPLACE: the join condition WITH `c.payer_plan_period_id = ppp.payer_plan_period_id`. cost.payer_plan_period_id is a FK only to payer_plan_period.payer_plan_period_id."
-    example_bad = (
-        "SELECT c.cost_id FROM cost c\n"
-        "JOIN payer_plan_period p ON c.payer_plan_period_id = p.person_id;"
-    )
+    example_bad = "SELECT c.cost_id FROM cost c\nJOIN payer_plan_period p ON c.payer_plan_period_id = p.person_id;"
     example_good = (
-        "SELECT c.cost_id FROM cost c\n"
-        "JOIN payer_plan_period p ON c.payer_plan_period_id = p.payer_plan_period_id;"
+        "SELECT c.cost_id FROM cost c\nJOIN payer_plan_period p ON c.payer_plan_period_id = p.payer_plan_period_id;"
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

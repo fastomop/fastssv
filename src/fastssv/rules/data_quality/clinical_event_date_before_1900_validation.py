@@ -41,7 +41,6 @@ Correct patterns:
     SELECT * FROM procedure_occurrence WHERE YEAR(procedure_date) >= 1900
 """
 
-
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 
@@ -63,43 +62,60 @@ from fastssv.core.registry import register
 
 CLINICAL_EVENT_TABLES_DATES: Dict[str, Set[str]] = {
     "condition_occurrence": {
-        "condition_start_date", "condition_start_datetime",
-        "condition_end_date", "condition_end_datetime",
+        "condition_start_date",
+        "condition_start_datetime",
+        "condition_end_date",
+        "condition_end_datetime",
     },
     "drug_exposure": {
-        "drug_exposure_start_date", "drug_exposure_start_datetime",
-        "drug_exposure_end_date", "drug_exposure_end_datetime",
+        "drug_exposure_start_date",
+        "drug_exposure_start_datetime",
+        "drug_exposure_end_date",
+        "drug_exposure_end_datetime",
     },
     "procedure_occurrence": {
-        "procedure_date", "procedure_datetime",
+        "procedure_date",
+        "procedure_datetime",
     },
     "measurement": {
-        "measurement_date", "measurement_datetime",
+        "measurement_date",
+        "measurement_datetime",
     },
     "observation": {
-        "observation_date", "observation_datetime",
+        "observation_date",
+        "observation_datetime",
     },
     "visit_occurrence": {
-        "visit_start_date", "visit_start_datetime",
-        "visit_end_date", "visit_end_datetime",
+        "visit_start_date",
+        "visit_start_datetime",
+        "visit_end_date",
+        "visit_end_datetime",
     },
     "visit_detail": {
-        "visit_detail_start_date", "visit_detail_start_datetime",
-        "visit_detail_end_date", "visit_detail_end_datetime",
+        "visit_detail_start_date",
+        "visit_detail_start_datetime",
+        "visit_detail_end_date",
+        "visit_detail_end_datetime",
     },
     "device_exposure": {
-        "device_exposure_start_date", "device_exposure_start_datetime",
-        "device_exposure_end_date", "device_exposure_end_datetime",
+        "device_exposure_start_date",
+        "device_exposure_start_datetime",
+        "device_exposure_end_date",
+        "device_exposure_end_datetime",
     },
     "specimen": {
-        "specimen_date", "specimen_datetime",
+        "specimen_date",
+        "specimen_datetime",
     },
     "note": {
-        "note_date", "note_datetime",
+        "note_date",
+        "note_datetime",
     },
     "episode": {
-        "episode_start_date", "episode_start_datetime",
-        "episode_end_date", "episode_end_datetime",
+        "episode_start_date",
+        "episode_start_datetime",
+        "episode_end_date",
+        "episode_end_datetime",
     },
 }
 
@@ -112,6 +128,7 @@ MINIMUM_YEAR_THRESHOLD = 1900
 
 
 # --- Helpers ---------------------------------------------------------------
+
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
@@ -157,10 +174,7 @@ def _contains_event_date(
 
         if table:
             table_norm = _norm(table)
-            if (
-                table_norm in CLINICAL_EVENT_TABLES_DATES
-                and col_norm in CLINICAL_EVENT_TABLES_DATES[table_norm]
-            ):
+            if table_norm in CLINICAL_EVENT_TABLES_DATES and col_norm in CLINICAL_EVENT_TABLES_DATES[table_norm]:
                 return table_norm, col_norm
         else:
             if len(aliases) == 1:
@@ -172,6 +186,7 @@ def _contains_event_date(
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _find_violations(
     tree: exp.Expression,
@@ -208,12 +223,14 @@ def _find_violations(
                         key = f"{node.sql()}_{table}_{col}_{year}"
                         if key not in seen:
                             seen.add(key)
-                            violations.append((
-                                f"{table}.{col} is filtered for dates before {MINIMUM_YEAR_THRESHOLD} (year={year}). "
-                                f"This may indicate implausible or placeholder dates.",
-                                table,
-                                col,
-                            ))
+                            violations.append(
+                                (
+                                    f"{table}.{col} is filtered for dates before {MINIMUM_YEAR_THRESHOLD} (year={year}). "
+                                    f"This may indicate implausible or placeholder dates.",
+                                    table,
+                                    col,
+                                )
+                            )
 
             # --- literal OP column ---
             elif right_info and not left_info:
@@ -226,12 +243,14 @@ def _find_violations(
                     key = f"{node.sql()}_{table}_{col}_{year}"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            f"{table}.{col} is filtered for dates before {MINIMUM_YEAR_THRESHOLD} (year={year}). "
-                            f"This may indicate implausible or placeholder dates.",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} is filtered for dates before {MINIMUM_YEAR_THRESHOLD} (year={year}). "
+                                f"This may indicate implausible or placeholder dates.",
+                                table,
+                                col,
+                            )
+                        )
 
         # --- BETWEEN ---
         elif isinstance(node, exp.Between):
@@ -246,11 +265,13 @@ def _find_violations(
 
                 if low_year and high_year:
                     if low_year < MINIMUM_YEAR_THRESHOLD and high_year < MINIMUM_YEAR_THRESHOLD:
-                        violations.append((
-                            f"{table}.{col} BETWEEN targets dates before {MINIMUM_YEAR_THRESHOLD}.",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} BETWEEN targets dates before {MINIMUM_YEAR_THRESHOLD}.",
+                                table,
+                                col,
+                            )
+                        )
 
         # --- IN ---
         elif isinstance(node, exp.In):
@@ -269,16 +290,19 @@ def _find_violations(
                     key = f"{node.sql()}_{table}_{col}"
                     if key not in seen:
                         seen.add(key)
-                        violations.append((
-                            f"{table}.{col} IN clause includes date before 1900.",
-                            table,
-                            col,
-                        ))
+                        violations.append(
+                            (
+                                f"{table}.{col} IN clause includes date before 1900.",
+                                table,
+                                col,
+                            )
+                        )
 
     return violations
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ClinicalEventDateBefore1900ValidationRule(Rule):
@@ -287,10 +311,7 @@ class ClinicalEventDateBefore1900ValidationRule(Rule):
     rule_id = "data_quality.clinical_event_date_before_1900_validation"
     name = "Clinical Event Date Should Not Be Before 1900"
 
-    description = (
-        "Detects filtering logic that targets implausible historical dates (<1900) "
-        "in clinical event tables."
-    )
+    description = "Detects filtering logic that targets implausible historical dates (<1900) in clinical event tables."
 
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `<date_col> < '1900-01-01'` (or earlier-cutoff predicates) WITH `<date_col> >= '1900-01-01'`. Pre-1900 clinical event dates are almost always ETL sentinels or year_of_birth misuse."
@@ -302,16 +323,8 @@ class ClinicalEventDateBefore1900ValidationRule(Rule):
         "queries to >= 1900-01-01 unless the intent is explicitly a "
         "data-quality audit of the placeholder rows."
     )
-    example_bad = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_start_date < '1900-01-01';"
-    )
-    example_good = (
-        "SELECT *\n"
-        "FROM condition_occurrence\n"
-        "WHERE condition_start_date >= '1900-01-01';"
-    )
+    example_bad = "SELECT *\nFROM condition_occurrence\nWHERE condition_start_date < '1900-01-01';"
+    example_good = "SELECT *\nFROM condition_occurrence\nWHERE condition_start_date >= '1900-01-01';"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

@@ -31,20 +31,20 @@ def _read_sql(sql_file: str | None) -> str:
 
 def _clean_llm_output(sql: str) -> str:
     """Clean SQL from LLM output by removing markdown and explanatory text."""
-    fence_pattern = r'```(?:sql|postgresql)?\s*\n(.*?)\n```'
+    fence_pattern = r"```(?:sql|postgresql)?\s*\n(.*?)\n```"
     fence_match = re.search(fence_pattern, sql, re.DOTALL)
 
     if fence_match:
         sql = fence_match.group(1)
     else:
-        sql = re.sub(r'```(?:sql|postgresql)?\s*', '', sql)
-        sql = re.sub(r'```', '', sql)
+        sql = re.sub(r"```(?:sql|postgresql)?\s*", "", sql)
+        sql = re.sub(r"```", "", sql)
 
-    last_semicolon = sql.rfind(';')
+    last_semicolon = sql.rfind(";")
     if last_semicolon != -1:
-        sql = sql[:last_semicolon + 1]
+        sql = sql[: last_semicolon + 1]
 
-    sql = re.sub(r'`+\s*$', '', sql)
+    sql = re.sub(r"`+\s*$", "", sql)
     return sql.strip()
 
 
@@ -114,8 +114,7 @@ def _serve_command(argv: Sequence[str]) -> int:
         import uvicorn  # type: ignore
     except ImportError:
         print(
-            "fastssv serve requires the api extras. "
-            "Install with: pip install 'fastssv[api]'",
+            "fastssv serve requires the api extras. Install with: pip install 'fastssv[api]'",
             file=sys.stderr,
         )
         return 1
@@ -134,13 +133,20 @@ def _serve_command(argv: Sequence[str]) -> int:
         return subprocess.call(
             [
                 gunicorn,
-                "-k", "uvicorn.workers.UvicornWorker",
-                "-w", str(args.workers),
-                "-b", f"{args.host}:{args.port}",
-                "--timeout", "30",
-                "--graceful-timeout", "30",
-                "--access-logfile", "-",
-                "--error-logfile", "-",
+                "-k",
+                "uvicorn.workers.UvicornWorker",
+                "-w",
+                str(args.workers),
+                "-b",
+                f"{args.host}:{args.port}",
+                "--timeout",
+                "30",
+                "--graceful-timeout",
+                "30",
+                "--access-logfile",
+                "-",
+                "--error-logfile",
+                "-",
                 "fastssv.api.app:app",
             ]
         )
@@ -281,7 +287,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Default mode: best practices are warnings, only correctness issues are errors
         set_validation_context(ValidationContext(strict_mode=False, dialect=dialect))
         logger.info("Default validation mode (best practices = WARNING, correctness = ERROR)")
-
 
     if len(queries) <= 1 or args.combined:
         # Single query or combined mode

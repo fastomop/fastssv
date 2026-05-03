@@ -161,10 +161,8 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
 
                 # Fire on year-returning expressions, integer literals (1900-2099),
                 # or a column that's NOT another year_of_birth (rules out yob - yob).
-                fires = (
-                    _is_year_extracting_expr(other_side)
-                    or (isinstance(other_side, exp.Column)
-                        and not _is_year_of_birth_column(other_side, aliases))
+                fires = _is_year_extracting_expr(other_side) or (
+                    isinstance(other_side, exp.Column) and not _is_year_of_birth_column(other_side, aliases)
                 )
                 if not fires:
                     continue

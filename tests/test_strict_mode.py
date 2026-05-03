@@ -110,10 +110,7 @@ class TestStrictMode:
         # Should have violation for missing domain_id filter
         assert len(violations) > 0
         # In normal mode, should be WARNING
-        assert any(
-            v.severity == Severity.WARNING and "domain_id" in v.message
-            for v in violations
-        )
+        assert any(v.severity == Severity.WARNING and "domain_id" in v.message for v in violations)
 
     def test_concept_domain_validation_strict_mode(self):
         """In strict mode, missing domain_id violations should be ERROR."""
@@ -133,10 +130,7 @@ class TestStrictMode:
         # Should have violation for missing domain_id filter
         assert len(violations) > 0
         # In strict mode, should be ERROR
-        assert any(
-            v.severity == Severity.ERROR and "domain_id" in v.message
-            for v in violations
-        )
+        assert any(v.severity == Severity.ERROR and "domain_id" in v.message for v in violations)
 
     def test_concept_domain_validation_wrong_domain_always_error(self):
         """Wrong domain_id should always be ERROR, even in normal mode."""

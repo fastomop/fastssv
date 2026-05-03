@@ -27,10 +27,10 @@ def test_cdm_columns_is_derived_from_cdm_column_types():
 
 
 @pytest.mark.parametrize(
-    "table, column", sorted(STANDARD_CONCEPT_FIELDS),
+    "table, column",
+    sorted(STANDARD_CONCEPT_FIELDS),
 )
 def test_standard_concept_field_exists(table: str, column: str) -> None:
     assert column in CDM_COLUMN_TYPES.get(table, {}), (
-        f"STANDARD_CONCEPT_FIELDS declares ('{table}', '{column}') but "
-        f"that column is not in CDM_COLUMN_TYPES"
+        f"STANDARD_CONCEPT_FIELDS declares ('{table}', '{column}') but that column is not in CDM_COLUMN_TYPES"
     )

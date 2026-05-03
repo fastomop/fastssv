@@ -64,6 +64,7 @@ NOTE_DATE = "note_date"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -157,6 +158,7 @@ def _is_in_where(node: exp.Expression) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_nlp_date_usage(tree, aliases, has_note_nlp):
     results = []
 
@@ -194,6 +196,7 @@ def _detect_between(tree, aliases, has_note_nlp):
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class NoteNlpNlpDateForTemporalFilteringRule(Rule):
     """Prevent misuse of nlp_date for clinical filtering."""
@@ -216,11 +219,7 @@ class NoteNlpNlpDateForTemporalFilteringRule(Rule):
         "date, not the processing date — that lives on note.note_date. "
         "Join note_nlp back to note and filter on note_date instead."
     )
-    example_bad = (
-        "SELECT note_nlp_id\n"
-        "FROM note_nlp\n"
-        "WHERE nlp_date >= DATE '2023-01-01';"
-    )
+    example_bad = "SELECT note_nlp_id\nFROM note_nlp\nWHERE nlp_date >= DATE '2023-01-01';"
     example_good = (
         "SELECT nnlp.note_nlp_id\n"
         "FROM note_nlp nnlp\n"

@@ -56,6 +56,7 @@ TABLES_WITH_CARE_SITE_ID = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -81,6 +82,7 @@ def _extract_join_conditions(join: exp.Join) -> List[exp.Expression]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _check_care_site_join(
     tree: exp.Expression,
@@ -113,7 +115,7 @@ def _check_care_site_join(
             if not (lt and lc and rt and rc):
                 continue
 
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
@@ -134,6 +136,7 @@ def _check_care_site_join(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class CareSiteIdJoinValidationRule(Rule):
@@ -188,9 +191,13 @@ class CareSiteIdJoinValidationRule(Rule):
                         ),
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, source_table, source_col,
-                            care_site_table, care_site_col,
-                            CARE_SITE_ID, CARE_SITE_ID,
+                            sql,
+                            source_table,
+                            source_col,
+                            care_site_table,
+                            care_site_col,
+                            CARE_SITE_ID,
+                            CARE_SITE_ID,
                             fix_text,
                             aliases=aliases,
                         ),

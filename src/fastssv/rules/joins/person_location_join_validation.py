@@ -44,6 +44,7 @@ LOCATION_ID = "location_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -74,6 +75,7 @@ def _extract_join_conditions(join: exp.Join) -> List[exp.Expression]:
 
 
 # --- Detection -------------------------------------------------------------
+
 
 def _check_person_location_join(
     tree: exp.Expression,
@@ -110,7 +112,7 @@ def _check_person_location_join(
             rt = _normalize_table(rt)
 
             # Check both directions
-            for (t1, c1, t2, c2) in [
+            for t1, c1, t2, c2 in [
                 (lt, lc, rt, rc),
                 (rt, rc, lt, lc),
             ]:
@@ -131,6 +133,7 @@ def _check_person_location_join(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class PersonLocationJoinValidationRule(Rule):
@@ -187,9 +190,13 @@ class PersonLocationJoinValidationRule(Rule):
                         ),
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=build_join_replace_patch(
-                            sql, person_table, person_col,
-                            location_table, location_col,
-                            LOCATION_ID, LOCATION_ID,
+                            sql,
+                            person_table,
+                            person_col,
+                            location_table,
+                            location_col,
+                            LOCATION_ID,
+                            LOCATION_ID,
                             fix_text,
                             aliases=aliases,
                         ),

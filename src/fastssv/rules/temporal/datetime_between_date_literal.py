@@ -93,6 +93,7 @@ DATE_PATTERNS = [
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return x.lower() if x else None
 
@@ -159,6 +160,7 @@ def _build_aliases(tree: exp.Expression) -> Dict[str, str]:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DatetimeBetweenDateLiteralRule(Rule):
     """Detect BETWEEN on datetime columns with date-only literals."""
@@ -185,9 +187,7 @@ class DatetimeBetweenDateLiteralRule(Rule):
         "is not needed."
     )
     example_bad = (
-        "SELECT *\n"
-        "FROM measurement\n"
-        "WHERE measurement_datetime BETWEEN DATE '2023-01-01' AND DATE '2023-12-31';"
+        "SELECT *\nFROM measurement\nWHERE measurement_datetime BETWEEN DATE '2023-01-01' AND DATE '2023-12-31';"
     )
     example_good = (
         "SELECT *\n"

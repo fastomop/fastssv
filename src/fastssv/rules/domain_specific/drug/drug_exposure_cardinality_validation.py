@@ -70,15 +70,13 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
 def _get_aliases_for_table(target: str, aliases: Dict[str, str]) -> Set[str]:
-    return {
-        alias for alias, table in aliases.items()
-        if _norm(table) == _norm(target)
-    }
+    return {alias for alias, table in aliases.items() if _norm(table) == _norm(target)}
 
 
 def _has_table(target: str, aliases: Dict[str, str]) -> bool:
@@ -178,6 +176,7 @@ def _has_problematic_count(select: exp.Select, aliases: Dict[str, str]) -> bool:
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     if not _has_table(TABLE_DRUG_EXPOSURE, aliases):
         return False
@@ -194,6 +193,7 @@ def _detect_violation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class DrugExposureCardinalityValidationRule(Rule):
     """Warn about counting drug_exposure rows instead of patients."""
@@ -202,18 +202,13 @@ class DrugExposureCardinalityValidationRule(Rule):
     name = "Drug Exposure Cardinality Awareness"
 
     description = (
-        "Counting drug_exposure rows may overcount patients due to multiple exposures "
-        "(e.g., refills, restarts)."
+        "Counting drug_exposure rows may overcount patients due to multiple exposures (e.g., refills, restarts)."
     )
 
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: `COUNT(*)` (or COUNT(person_id)) WITH `COUNT(DISTINCT person_id)` for patient counts, OR query drug_era for consolidated exposure periods."
-    example_bad = (
-        "SELECT drug_concept_id, COUNT(*) AS patient_count\n"
-        "FROM drug_exposure\n"
-        "GROUP BY drug_concept_id;"
-    )
+    example_bad = "SELECT drug_concept_id, COUNT(*) AS patient_count\nFROM drug_exposure\nGROUP BY drug_concept_id;"
     example_good = (
         "SELECT drug_concept_id, COUNT(DISTINCT person_id) AS patient_count\n"
         "FROM drug_exposure\n"

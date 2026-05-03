@@ -111,6 +111,7 @@ VALUE_COLUMNS = {VALUE_AS_NUMBER, VALUE_AS_STRING, VALUE_AS_CONCEPT_ID}
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -125,11 +126,7 @@ def _is_value_column(col: Optional[str]) -> Optional[str]:
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -169,9 +166,16 @@ def _has_value_comparison(
     if isinstance(
         node,
         (
-            exp.GT, exp.GTE, exp.LT, exp.LTE,
-            exp.EQ, exp.NEQ,
-            exp.Between, exp.In, exp.Like, exp.ILike,
+            exp.GT,
+            exp.GTE,
+            exp.LT,
+            exp.LTE,
+            exp.EQ,
+            exp.NEQ,
+            exp.Between,
+            exp.In,
+            exp.Like,
+            exp.ILike,
         ),
     ):
         for col in node.find_all(exp.Column):
@@ -235,9 +239,7 @@ def _find_violations(
 
     # --- WHERE clauses ---
     for where in tree.find_all(exp.Where):
-        value_columns_used = _analyze_boolean_scope(
-            where.this, aliases, cte_names, has_observation
-        )
+        value_columns_used = _analyze_boolean_scope(where.this, aliases, cte_names, has_observation)
 
         if len(value_columns_used) >= 2:
             cols = ", ".join(sorted(value_columns_used))
@@ -252,9 +254,7 @@ def _find_violations(
         if not on_clause:
             continue
 
-        value_columns_used = _analyze_boolean_scope(
-            on_clause, aliases, cte_names, has_observation
-        )
+        value_columns_used = _analyze_boolean_scope(on_clause, aliases, cte_names, has_observation)
 
         if len(value_columns_used) >= 2:
             cols = ", ".join(sorted(value_columns_used))
@@ -267,6 +267,7 @@ def _find_violations(
 
 
 # --- Rule --------------------------------------------------------------------
+
 
 @register
 class ObservationValueAsColumnsMutuallyContextualRule(Rule):
@@ -285,14 +286,8 @@ class ObservationValueAsColumnsMutuallyContextualRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "REPLACE: `value_as_number AND value_as_string` WITH a single predicate matching the value type for that observation_concept_id, OR use `OR` if both representations are intentional. Per row only one value_as_* column is populated in OMOP."
-    example_bad = (
-        "SELECT person_id FROM observation\n"
-        "WHERE value_as_number > 5 AND value_as_string = 'positive';"
-    )
-    example_good = (
-        "SELECT person_id FROM observation\n"
-        "WHERE value_as_number > 5;"
-    )
+    example_bad = "SELECT person_id FROM observation\nWHERE value_as_number > 5 AND value_as_string = 'positive';"
+    example_good = "SELECT person_id FROM observation\nWHERE value_as_number > 5;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:

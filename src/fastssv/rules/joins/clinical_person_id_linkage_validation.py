@@ -90,6 +90,7 @@ PERSON_ID = "person_id"
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -356,6 +357,7 @@ def _connected_components(graph: Dict[str, Set[str]], nodes: List[str]) -> List[
 
 # --- Detection -------------------------------------------------------------
 
+
 def _detect_violations(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -388,10 +390,7 @@ def _detect_violations(
 
     # No joins at all → immediate violation
     if not conditions and not using_edges:
-        return [(
-            list(clinical_aliases.keys()),
-            []
-        )]
+        return [(list(clinical_aliases.keys()), [])]
 
     graph = _build_graph(conditions, using_edges, aliases, clinical_aliases, cte_names)
 
@@ -408,6 +407,7 @@ def _detect_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class ClinicalPersonIdLinkageValidationRule(Rule):

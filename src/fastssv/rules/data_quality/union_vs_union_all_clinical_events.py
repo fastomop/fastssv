@@ -119,6 +119,7 @@ CLINICAL_EVENT_TABLES: Set[str] = {
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -129,10 +130,7 @@ def _is_clinical_event_table(table: Optional[str]) -> bool:
 
 def _has_clinical_event_table(node: exp.Expression) -> bool:
     """Check if any part of a query branch references clinical event tables."""
-    return any(
-        _is_clinical_event_table(t.name)
-        for t in node.find_all(exp.Table)
-    )
+    return any(_is_clinical_event_table(t.name) for t in node.find_all(exp.Table))
 
 
 def _is_union_without_all(union: exp.Union) -> bool:
@@ -209,6 +207,7 @@ def _is_cohort_id_only_union(union: exp.Union) -> bool:
 
 # --- Rule ------------------------------------------------------------------
 
+
 @register
 class UnionVsUnionAllClinicalEventsRule(Rule):
     """Detect UNION without ALL for clinical event tables."""
@@ -280,8 +279,8 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
 
                 # Check both branches (robust to nesting)
                 if not (
-                    (union.this and _has_clinical_event_table(union.this)) or
-                    (union.expression and _has_clinical_event_table(union.expression))
+                    (union.this and _has_clinical_event_table(union.this))
+                    or (union.expression and _has_clinical_event_table(union.expression))
                 ):
                     continue
 
@@ -299,7 +298,7 @@ class UnionVsUnionAllClinicalEventsRule(Rule):
                 patch = None
                 span = _find_unique_union_keyword_span(sql)
                 if span is not None:
-                    keyword_text = sql[span[0]:span[1]]
+                    keyword_text = sql[span[0] : span[1]]
                     patch = patch_replace(span, f"{keyword_text} ALL")
 
                 violations.append(

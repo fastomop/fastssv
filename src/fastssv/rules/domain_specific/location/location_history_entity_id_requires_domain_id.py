@@ -121,6 +121,7 @@ ENTITY_TABLE_ID_COLS = {
 
 # --- Helpers -----------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -138,11 +139,7 @@ def _is_domain_id(col: Optional[str]) -> bool:
 
 
 def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {
-        _norm(cte.alias_or_name)
-        for cte in tree.find_all(exp.CTE)
-        if cte.alias_or_name
-    }
+    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
 def _resolve_column(
@@ -292,6 +289,7 @@ def _find_violations(
 
 # --- Rule --------------------------------------------------------------------
 
+
 @register
 class LocationHistoryEntityIdRequiresDomainIdRule(Rule):
     """
@@ -309,10 +307,7 @@ class LocationHistoryEntityIdRequiresDomainIdRule(Rule):
     severity = Severity.ERROR
 
     suggested_fix = "ADD: `AND lh.domain_id = '<Domain>'` matching the joined target table (e.g. 'Person' for person, 'Provider' for provider, 'Care Site' for care_site)."
-    example_bad = (
-        "SELECT lh.location_history_id FROM location_history lh\n"
-        "JOIN person p ON lh.entity_id = p.person_id;"
-    )
+    example_bad = "SELECT lh.location_history_id FROM location_history lh\nJOIN person p ON lh.entity_id = p.person_id;"
     example_good = (
         "SELECT lh.location_history_id FROM location_history lh\n"
         "JOIN person p ON lh.entity_id = p.person_id\n"

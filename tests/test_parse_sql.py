@@ -50,10 +50,7 @@ def test_non_sql_text_rejected(sql: str) -> None:
     trees, err = parse_sql(sql)
     assert trees is None
     assert err is not None
-    assert (
-        "did not parse as a SQL statement" in err
-        or "SQL parse error" in err
-    )
+    assert "did not parse as a SQL statement" in err or "SQL parse error" in err
 
 
 @pytest.mark.parametrize(

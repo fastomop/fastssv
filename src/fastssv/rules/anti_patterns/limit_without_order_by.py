@@ -94,7 +94,7 @@ class LimitWithoutOrderByRule(Rule):
         "Most SQL engines make no guarantee about row order in the absence of "
         "an explicit ``ORDER BY`` clause. Pairing ``LIMIT N`` (or ``TOP N``, "
         "or ``FETCH FIRST N ROWS ONLY``) with no ordering produces "
-        "non-deterministic results: a query that asks for \"100 patients\" "
+        'non-deterministic results: a query that asks for "100 patients" '
         "may return a different 100 each run, depending on plan choice, "
         "parallel-execution interleaving, or storage layout. The same shape "
         "breaks pagination (page 2 may overlap page 1) and CI tests that "
@@ -103,11 +103,7 @@ class LimitWithoutOrderByRule(Rule):
         "that uniquely identifies a row) before the row-limiting clause."
     )
 
-    example_bad = (
-        "SELECT person_id, condition_concept_id\n"
-        "FROM condition_occurrence\n"
-        "LIMIT 100;"
-    )
+    example_bad = "SELECT person_id, condition_concept_id\nFROM condition_occurrence\nLIMIT 100;"
     example_good = (
         "SELECT person_id, condition_concept_id\n"
         "FROM condition_occurrence\n"

@@ -94,6 +94,7 @@ AGGREGATION_TYPES = (exp.Count, exp.Avg, exp.Sum, exp.Min, exp.Max)
 
 # --- Helpers ---------------------------------------------------------------
 
+
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
@@ -217,7 +218,6 @@ def _is_safe_aggregation(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
     # Check each SELECT for proper grouping/distinct
     for select in tree.find_all(exp.Select):
-
         # GROUP BY natural key
         if _has_natural_key_grouping(select, aliases):
             continue
@@ -262,8 +262,7 @@ def _is_low_risk_query(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
                 # Check if it's in a filtering context (not just SELECT list)
                 parent = col.parent
                 while parent:
-                    if isinstance(parent, (exp.Where, exp.Join, exp.Between,
-                                         exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
+                    if isinstance(parent, (exp.Where, exp.Join, exp.Between, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
                         return True
                     parent = parent.parent
 
@@ -271,6 +270,7 @@ def _is_low_risk_query(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 
 # --- Rule ------------------------------------------------------------------
+
 
 @register
 class MeasurementDuplicateDetectionRule(Rule):
@@ -287,9 +287,7 @@ class MeasurementDuplicateDetectionRule(Rule):
     severity = Severity.WARNING
 
     suggested_fix = "ADD: GROUP BY (person_id, measurement_concept_id, measurement_date), OR SELECT DISTINCT on those columns, OR deduplicate explicitly with ROW_NUMBER() OVER (PARTITION BY person_id, measurement_concept_id, measurement_date ORDER BY measurement_datetime NULLS LAST) and keep rn = 1."
-    example_bad = (
-        "SELECT AVG(value_as_number) FROM measurement;"
-    )
+    example_bad = "SELECT AVG(value_as_number) FROM measurement;"
     example_good = (
         "SELECT person_id, measurement_date, measurement_concept_id,\n"
         "       AVG(value_as_number) AS avg_value\n"

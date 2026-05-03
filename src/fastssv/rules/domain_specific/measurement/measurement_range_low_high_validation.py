@@ -156,9 +156,7 @@ def _is_measurement_column(col: exp.Column, aliases: Dict[str, str], name: str) 
     return TABLE_NAME in {_norm(t) for t in aliases.values()}
 
 
-def _find_violations(
-    tree: exp.Expression, aliases: Dict[str, str]
-) -> List[Tuple[str, Optional[exp.Expression]]]:
+def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[Tuple[str, Optional[exp.Expression]]]:
     """Return list of (message, offending_node).
 
     ``offending_node`` is the AST node whose source span we'll target with a
@@ -190,24 +188,28 @@ def _find_violations(
                 t2, c2 = resolve_table_col(right, aliases)
 
                 # Check both are from measurement (handle qualified and unqualified)
-                t1_is_measurement = _norm(t1) == TABLE_NAME if t1 else TABLE_NAME in {_norm(t) for t in aliases.values()}
-                t2_is_measurement = _norm(t2) == TABLE_NAME if t2 else TABLE_NAME in {_norm(t) for t in aliases.values()}
+                t1_is_measurement = (
+                    _norm(t1) == TABLE_NAME if t1 else TABLE_NAME in {_norm(t) for t in aliases.values()}
+                )
+                t2_is_measurement = (
+                    _norm(t2) == TABLE_NAME if t2 else TABLE_NAME in {_norm(t) for t in aliases.values()}
+                )
 
                 if t1_is_measurement and t2_is_measurement:
                     c1n, c2n = _norm(c1), _norm(c2)
 
-                    if (
-                        (c1n == RANGE_LOW and c2n == RANGE_HIGH and isinstance(node, (exp.GT, exp.GTE)))
-                        or
-                        (c1n == RANGE_HIGH and c2n == RANGE_LOW and isinstance(node, (exp.LT, exp.LTE)))
+                    if (c1n == RANGE_LOW and c2n == RANGE_HIGH and isinstance(node, (exp.GT, exp.GTE))) or (
+                        c1n == RANGE_HIGH and c2n == RANGE_LOW and isinstance(node, (exp.LT, exp.LTE))
                     ):
                         key = "direct_comparison"
                         if key not in seen:
                             seen.add(key)
-                            violations.append((
-                                f"Comparison implies {RANGE_LOW} > {RANGE_HIGH}, which is invalid.",
-                                node,
-                            ))
+                            violations.append(
+                                (
+                                    f"Comparison implies {RANGE_LOW} > {RANGE_HIGH}, which is invalid.",
+                                    node,
+                                )
+                            )
 
         # --- Column vs literal ---
         if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
@@ -258,10 +260,12 @@ def _find_violations(
             seen.add(key)
             # Static contradictions span multiple predicates; no single
             # mechanical edit cleans them up.  Leave patch to FREEFORM.
-            violations.append((
-                f"Static filters imply {RANGE_LOW} > {RANGE_HIGH}, which is logically impossible.",
-                None,
-            ))
+            violations.append(
+                (
+                    f"Static filters imply {RANGE_LOW} > {RANGE_HIGH}, which is logically impossible.",
+                    None,
+                )
+            )
 
     return violations
 
@@ -271,20 +275,12 @@ class MeasurementRangeLowHighValidationRule(Rule):
     rule_id = "domain_specific.measurement_range_low_high_validation"
     name = "Measurement Range Low/High Validation"
 
-    description = (
-        "Detects logically impossible constraints where range_low > range_high."
-    )
+    description = "Detects logically impossible constraints where range_low > range_high."
 
     severity = Severity.ERROR
     suggested_fix = "REPLACE: `range_low > range_high` WITH `range_low <= range_high` (or remove the predicate — range_low must be no greater than range_high by definition)."
-    example_bad = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE range_low > range_high;"
-    )
-    example_good = (
-        "SELECT person_id FROM measurement\n"
-        "WHERE range_low <= range_high;"
-    )
+    example_bad = "SELECT person_id FROM measurement\nWHERE range_low > range_high;"
+    example_good = "SELECT person_id FROM measurement\nWHERE range_low <= range_high;"
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, parse_error = parse_sql(sql, dialect)
