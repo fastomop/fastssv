@@ -45,8 +45,11 @@ htmlcov/
 # Environment variables
 .env
 .env.local
-.claude
-CLAUDE.md
+
+# Claude Code: `.agents/`, `.claude/`, `AGENTS.md`, and `CLAUDE.md` are all
+# tracked so the team shares the same agent instructions/skills/prompts.
+# Only personal per-user state stays out of git.
+.claude/settings.local.json
 
 # Generated output files and datasets
 output/
