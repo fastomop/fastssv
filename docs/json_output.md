@@ -17,7 +17,7 @@ fastssv query.sql --combined            # multi-statement input → single combi
 | `0` | No `error`-severity violations (`is_valid: true` for the whole submission) |
 | `1` | One or more `error`-severity violations (`is_valid: false`) |
 
-`warning`-severity violations never affect the exit code under normal mode. Pass `--strict` to escalate best-practice warnings to errors — see the [Semantic rules guide](SEMANTIC_RULES_GUIDE.md) for which rules participate in strict mode.
+`warning`-severity violations never affect the exit code under normal mode. Pass `--strict` to escalate best-practice warnings to errors — see the [Semantic rules guide](semantic_rules_guide.md) for which rules participate in strict mode.
 
 ---
 
@@ -122,7 +122,7 @@ Every entry in `errors[]` or `warnings[]` has the same shape:
 
 | Field | Type | Notes |
 |---|---|---|
-| `rule_id` | string | Stable rule identifier, e.g. `joins.join_path_validation`. See the [Rules reference](RULES_REFERENCE.md). |
+| `rule_id` | string | Stable rule identifier, e.g. `joins.join_path_validation`. See the [Rules reference](rules_reference.md). |
 | `severity` | `"error"` \| `"warning"` | Lowercase. Mirrored as `severity` field on the violation. |
 | `issue` | string | Human-readable description of what's wrong and why it matters. |
 | `fix` | string \| object | See below — heterogeneous: prose for free-form fixes, patch dict for mechanical ones. |

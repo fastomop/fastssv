@@ -462,6 +462,6 @@ cat logs/fastssv.json | \
 
 ## Related Documentation
 
-- [HTTP API](API.md) — the FastAPI service uses the same logging stack and emits `sql_hash` (never the SQL body) per validation
-- [JSON output](JSON_OUTPUT.md) — the CLI's structured report format, distinct from the log stream
-- [Plugin system](PLUGIN_ARCHITECTURE.md) — how to add log calls inside a custom rule
+- [HTTP API](api.md) — the FastAPI service uses the same logging stack and emits `sql_hash` (never the SQL body) per validation
+- [JSON output](json_output.md) — the CLI's structured report format, distinct from the log stream
+- [Plugin system](plugin_architecture.md) — how to add log calls inside a custom rule

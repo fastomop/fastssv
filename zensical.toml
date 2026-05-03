@@ -12,16 +12,16 @@ nav = [
   { "Home" = "index.md" },
   { "Architecture" = [
       { "Overview" = "architecture.md" },
-      { "Plugin system" = "PLUGIN_ARCHITECTURE.md" },
+      { "Plugin system" = "plugin_architecture.md" },
   ] },
   { "Guides" = [
-      { "Semantic rules guide" = "SEMANTIC_RULES_GUIDE.md" },
+      { "Semantic rules guide" = "semantic_rules_guide.md" },
   ] },
   { "Reference" = [
-      { "Rules reference" = "RULES_REFERENCE.md" },
-      { "HTTP API" = "API.md" },
-      { "Logging" = "LOGGING.md" },
-      { "JSON output" = "JSON_OUTPUT.md" },
+      { "Rules reference" = "rules_reference.md" },
+      { "HTTP API" = "api.md" },
+      { "Logging" = "logging.md" },
+      { "JSON output" = "json_output.md" },
   ] },
 ]
 

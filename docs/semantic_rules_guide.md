@@ -1,6 +1,6 @@
 # Semantic Rules Guide
 
-This guide walks through the core OMOP CDM patterns FastSSV's semantic rules enforce, with a representative example for each. For the exhaustive per-rule catalog see [Rules reference](RULES_REFERENCE.md); for the rule-author tutorial see [Plugin system](PLUGIN_ARCHITECTURE.md).
+This guide walks through the core OMOP CDM patterns FastSSV's semantic rules enforce, with a representative example for each. For the exhaustive per-rule catalog see [Rules reference](rules_reference.md); for the rule-author tutorial see [Plugin system](plugin_architecture.md).
 
 ## Quick Start
 
@@ -353,7 +353,7 @@ class TestDomainValidation:
 
 ## Coverage status
 
-The seven examples above are a sampling, not the full rule set. The current registry has **154 rules across 6 categories** (`anti_patterns`, `concept_standardization`, `data_quality`, `domain_specific`, `joins`, `temporal`) — see [Rules reference](RULES_REFERENCE.md) for the per-rule catalog with severities, examples, and suggested fixes.
+The seven examples above are a sampling, not the full rule set. The current registry has **154 rules across 6 categories** (`anti_patterns`, `concept_standardization`, `data_quality`, `domain_specific`, `joins`, `temporal`) — see [Rules reference](rules_reference.md) for the per-rule catalog with severities, examples, and suggested fixes.
 
 For the live registered set at any moment:
 
@@ -386,7 +386,7 @@ for rule_cls in get_all_rules():
 
 ## Adding New Semantic Rules
 
-The full rule-author walkthrough — `Rule` subclass, `@register` decorator, category `__init__.py` wiring, and the test class added to `tests/test_rules.py` — lives in [Plugin system](PLUGIN_ARCHITECTURE.md#creating-a-new-rule). Semantic rules use the same scaffolding as any other rule; pick `concept_standardization`, `joins`, or `temporal` as the category and follow the four-step recipe there.
+The full rule-author walkthrough — `Rule` subclass, `@register` decorator, category `__init__.py` wiring, and the test class added to `tests/test_rules.py` — lives in [Plugin system](plugin_architecture.md#creating-a-new-rule). Semantic rules use the same scaffolding as any other rule; pick `concept_standardization`, `joins`, or `temporal` as the category and follow the four-step recipe there.
 
 ### Modifying field classifications
 
@@ -499,6 +499,6 @@ if not error:
 FastSSV's semantic validation system provides:
 
 - **154 registered rules across 6 categories** validating OMOP CDM v5.4 constraints
-- **Plugin architecture** for easy extension — see [Plugin system](PLUGIN_ARCHITECTURE.md)
+- **Plugin architecture** for easy extension — see [Plugin system](plugin_architecture.md)
 - **Schema-driven validation** anchored in `schemas/cdm_column_types.py` (table → {column → type}) and `schemas/semantic_schema.py` (`STANDARD_CONCEPT_FIELDS`)
 - **Flexible API** supporting filtering by `categories=[...]` or `rule_ids=[...]`

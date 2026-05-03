@@ -82,7 +82,7 @@ WHERE c.concept_name LIKE '%aspirin%';
 }
 ```
 
-`is_valid` is `true` because every violation here is a `warning` — under normal mode, only `error`-severity violations gate the exit code. Run `fastssv query.sql --strict` to escalate best-practice warnings to errors. See the [Semantic rules guide](docs/SEMANTIC_RULES_GUIDE.md) for the reasoning behind each category and the [Rules reference](docs/RULES_REFERENCE.md) for the full catalog.
+`is_valid` is `true` because every violation here is a `warning` — under normal mode, only `error`-severity violations gate the exit code. Run `fastssv query.sql --strict` to escalate best-practice warnings to errors. See the [Semantic rules guide](docs/semantic_rules_guide.md) for the reasoning behind each category and the [Rules reference](docs/rules_reference.md) for the full catalog.
 
 ## Why FastSSV
 
@@ -116,19 +116,19 @@ pip install "fastssv[api]"
 fastssv serve              # http://localhost:8000 — JSON API + HTMX web UI
 ```
 
-The service ships body-size limits, parse-timeout, rate limiting, strict CORS, security headers, structured JSON logging, and a Docker image under `deploy/`. See the [HTTP API guide](docs/API.md) for endpoints, configuration, and deployment.
+The service ships body-size limits, parse-timeout, rate limiting, strict CORS, security headers, structured JSON logging, and a Docker image under `deploy/`. See the [HTTP API guide](docs/api.md) for endpoints, configuration, and deployment.
 
 ## Documentation
 
 | Topic | Page |
 |---|---|
 | Architecture overview | [docs/architecture.md](docs/architecture.md) |
-| Plugin system / writing a rule | [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) |
-| Reasoning behind each rule category | [docs/SEMANTIC_RULES_GUIDE.md](docs/SEMANTIC_RULES_GUIDE.md) |
-| Per-rule catalog (all 154) | [docs/RULES_REFERENCE.md](docs/RULES_REFERENCE.md) |
-| HTTP API | [docs/API.md](docs/API.md) |
-| JSON report format | [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) |
-| Logging | [docs/LOGGING.md](docs/LOGGING.md) |
+| Plugin system / writing a rule | [docs/plugin_architecture.md](docs/plugin_architecture.md) |
+| Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
+| Per-rule catalog (all 154) | [docs/rules_reference.md](docs/rules_reference.md) |
+| HTTP API | [docs/api.md](docs/api.md) |
+| JSON report format | [docs/json_output.md](docs/json_output.md) |
+| Logging | [docs/logging.md](docs/logging.md) |
 
 For contributing, see [AGENTS.md](AGENTS.md). Release notes live in [CHANGELOG.md](CHANGELOG.md).
 

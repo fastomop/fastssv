@@ -88,7 +88,7 @@ def to_dict(self) -> dict:
     return result
 ```
 
-So the wire shape for a single violation is `{rule_id, severity, issue, fix?, location?}`. See [JSON output](JSON_OUTPUT.md) for the full CLI report shape (which wraps these in `errors[]` and `warnings[]` arrays) and [HTTP API](API.md) for the same shape on the API surface.
+So the wire shape for a single violation is `{rule_id, severity, issue, fix?, location?}`. See [JSON output](json_output.md) for the full CLI report shape (which wraps these in `errors[]` and `warnings[]` arrays) and [HTTP API](api.md) for the same shape on the API surface.
 
 ### 3. Registry System (`core/registry.py`)
 
@@ -287,7 +287,7 @@ for v in violations:
 
 ### Core Categories
 
-Current registered category counts (see [RULES_REFERENCE.md](RULES_REFERENCE.md)
+Current registered category counts (see [rules_reference.md](rules_reference.md)
 for the full list):
 
 - `anti_patterns`: 20

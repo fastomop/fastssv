@@ -11,6 +11,21 @@ between minor versions.
 
 ### Changed
 
+- **All `docs/*.md` filenames lowercased.** `docs/API.md` → `docs/api.md`,
+  `docs/JSON_OUTPUT.md` → `docs/json_output.md`, `docs/LOGGING.md` →
+  `docs/logging.md`, `docs/PLUGIN_ARCHITECTURE.md` →
+  `docs/plugin_architecture.md`, `docs/RULES_REFERENCE.md` →
+  `docs/rules_reference.md`, `docs/SEMANTIC_RULES_GUIDE.md` →
+  `docs/semantic_rules_guide.md`. The previous SHOUTING_SNAKE filenames were
+  inconsistent with `docs/index.md`, `docs/architecture.md`, and the rest of
+  the project's lowercase naming. All ~50 cross-references in the docs
+  themselves, `README.md`, `zensical.toml` (nav), `examples/logging_demo.py`,
+  and previous `[Unreleased]` CHANGELOG bullets were updated in the same
+  pass. **URL impact:** the deployed site URLs change correspondingly —
+  `https://fastomop.github.io/fastSSV/API/` → `/api/`, `/JSON_OUTPUT/` →
+  `/json_output/`, etc. Old bookmarks will 404; the site is too new to have
+  meaningful external link rot, but worth noting.
+
 - **README slimmed from 733 lines to ~110 lines.** The README had grown into
   a near-duplicate of the docs site — duplicate "Why FastSSV", per-category
   rule walkthroughs (~140 lines of "Key X Rules" subsections that drifted
@@ -31,43 +46,43 @@ between minor versions.
     `temporal.observation_period_anchoring`, `joins.maps_to_direction`, and
     `concept_standardization.concept_domain_validation` — all four are
     `Severity.WARNING` in the registry but were variously documented as ERROR
-    across `architecture.md`, `SEMANTIC_RULES_GUIDE.md`, and the per-rule entry
-    in `RULES_REFERENCE.md` (which contradicted its own quick-reference table).
-  - **Removed-symbol references retired.** `SEMANTIC_RULES_GUIDE.md` no longer
+    across `architecture.md`, `semantic_rules_guide.md`, and the per-rule entry
+    in `rules_reference.md` (which contradicted its own quick-reference table).
+  - **Removed-symbol references retired.** `semantic_rules_guide.md` no longer
     documents `SOURCE_CONCEPT_FIELDS` as a live symbol or
     `hierarchy_expansion_required` as an implemented rule — both were removed
     in 0.2.0. Short historical notes explain why.
-  - **Stale rule count fixed**: `SEMANTIC_RULES_GUIDE.md` claimed "7
+  - **Stale rule count fixed**: `semantic_rules_guide.md` claimed "7
     production-ready rules"; the registry has 154. Replaced with a
-    pointer to `RULES_REFERENCE.md` and a `get_all_rules()` snippet for the
+    pointer to `rules_reference.md` and a `get_all_rules()` snippet for the
     live count.
-  - **`API.md` violation shape** now matches `fastssv/api/models.py:Violation`
+  - **`api.md` violation shape** now matches `fastssv/api/models.py:Violation`
     — `suggested_fix` renamed to `fix`, `details` removed (the field is not
     on the wire). The dialect enum is expanded from `auto|postgres|tsql` to
     the full nine values the model actually accepts.
-  - **`JSON_OUTPUT.md` `validate_sql()` schema** now lists the `parse_error`
+  - **`json_output.md` `validate_sql()` schema** now lists the `parse_error`
     and `dialect` keys returned by the function. The invalid `--dialect mysql`
     example replaced with a real choice.
   - **Architecture directory tree** now references `schemas/cdm_column_types.py`
     (the actual file post-0.2.0); the deleted `schemas/cdm_schema.py` no
     longer appears.
   - **De-duplicated the rule-author walkthrough.** `architecture.md` and
-    `SEMANTIC_RULES_GUIDE.md` no longer paraphrase the four-step rule
+    `semantic_rules_guide.md` no longer paraphrase the four-step rule
     creation recipe; both now link to the canonical version in
-    `PLUGIN_ARCHITECTURE.md`. The walkthrough also points at
+    `plugin_architecture.md`. The walkthrough also points at
     `tests/test_rules.py` (the real canonical test file per `AGENTS.md`)
     instead of the previously-shown `tests/test_my_new_rule.py`.
-  - **`PLUGIN_ARCHITECTURE.md`**: dropped the "Migration from Older Patterns"
+  - **`plugin_architecture.md`**: dropped the "Migration from Older Patterns"
     section — the deprecated function-style API it referenced was never in
     the public registry.
   - **Index page** now includes a Logging card alongside the other landing
     cards (it had a nav slot but no entry on the home grid).
-  - **`LOGGING.md` Related Documentation** section now links to the in-site
-    pages (`API.md`, `JSON_OUTPUT.md`, `PLUGIN_ARCHITECTURE.md`) instead of
+  - **`logging.md` Related Documentation** section now links to the in-site
+    pages (`api.md`, `json_output.md`, `plugin_architecture.md`) instead of
     GitHub README anchors.
-  - **CLI JSON report shape rewritten across the docs.** `JSON_OUTPUT.md`,
-    `README.md`, `PLUGIN_ARCHITECTURE.md` (`RuleViolation.to_dict()` example),
-    and the cross-reference paragraph in `API.md` previously documented an
+  - **CLI JSON report shape rewritten across the docs.** `json_output.md`,
+    `README.md`, `plugin_architecture.md` (`RuleViolation.to_dict()` example),
+    and the cross-reference paragraph in `api.md` previously documented an
     older wire shape — a top-level `violations[]` array with `suggested_fix`
     and `details` fields on each entry. The actual implementation
     (`cli.py:build_validation_result`, `core/base.py:RuleViolation.to_dict`)
@@ -99,7 +114,7 @@ between minor versions.
   `emoji_generator` are now plain string references to
   `zensical.extensions.emoji.*`), and the `nav` block is expressed as TOML
   inline tables. Three template-style bracketed placeholders in
-  `docs/PLUGIN_ARCHITECTURE.md` (`[What's wrong]`, `[Why it matters]`,
+  `docs/plugin_architecture.md` (`[What's wrong]`, `[Why it matters]`,
   `[How to fix it]`) were backslash-escaped — Zensical's stricter
   link-reference parser was treating them as broken links under `--strict`.
   Motivation: MkDocs has been unmaintained since August 2024; Zensical is
@@ -215,7 +230,7 @@ between minor versions.
   plus Swagger UI at `/docs`. Production guardrails baked in: body-size
   limit, parse timeout, rate limiting, strict CORS, security headers,
   structured JSON logging (SQL body never logged — only hash),
-  consistent error schema, versioned routes. See [docs/API.md](docs/API.md).
+  consistent error schema, versioned routes. See [docs/api.md](docs/api.md).
 - **HTMX web UI** served from the same app: `GET /` for an interactive
   SQL validator, `GET /rules` for a browsable rule list with filter.
   Server-rendered via Jinja2, vendored HTMX (`fastssv/api/static/`), no
@@ -458,8 +473,8 @@ public export to its consumers and turned up several that nothing in
   The class was a thin wrapper around `time.perf_counter()` with a
   `timed_operation` context manager and a hidden `FASTSSV_LOG_PERFORMANCE`
   env-var toggle. Both are removed; the env var is dropped from
-  `.env.example` and `docs/LOGGING.md`. The `examples/logging_demo.py`
-  performance demo and the LOGGING.md "Performance Tracking" section are
+  `.env.example` and `docs/logging.md`. The `examples/logging_demo.py`
+  performance demo and the logging.md "Performance Tracking" section are
   retired in favour of the simpler pattern (`time.perf_counter()` plus
   `extra={"duration_ms": ...}` on the structured log record), which is
   what `core.logging.log_validation_complete` and `log_rule_execution`

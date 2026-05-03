@@ -26,7 +26,7 @@ src/fastssv/
 
 ## Architecture Overview
 
-FastSSV uses a **plugin-based architecture** where validation rules are automatically discovered and registered at import time. For a step-by-step walkthrough of writing a new rule, see [Plugin system](PLUGIN_ARCHITECTURE.md) — this page focuses on the conceptual layout.
+FastSSV uses a **plugin-based architecture** where validation rules are automatically discovered and registered at import time. For a step-by-step walkthrough of writing a new rule, see [Plugin system](plugin_architecture.md) — this page focuses on the conceptual layout.
 
 ### Separation of Concerns
 
@@ -116,7 +116,7 @@ class RuleViolation:
 
 ## Adding New Rules
 
-The full step-by-step walkthrough lives in [Plugin system](PLUGIN_ARCHITECTURE.md#creating-a-new-rule) — pick a category under `src/fastssv/rules/`, write a `Rule` subclass with `@register`, wire it into the category's `__init__.py`, and add a test to `tests/test_rules.py`. Once registered the rule is reachable via `validate_sql_structured(sql, categories=[...])` / `rule_ids=[...]` and the CLI's `--categories` / `--rules` flags.
+The full step-by-step walkthrough lives in [Plugin system](plugin_architecture.md#creating-a-new-rule) — pick a category under `src/fastssv/rules/`, write a `Rule` subclass with `@register`, wire it into the category's `__init__.py`, and add a test to `tests/test_rules.py`. Once registered the rule is reachable via `validate_sql_structured(sql, categories=[...])` / `rule_ids=[...]` and the CLI's `--categories` / `--rules` flags.
 
 ## Current Rules
 
