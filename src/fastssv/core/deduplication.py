@@ -68,6 +68,11 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     if not violations:
         return []
 
+    # Identity-keyed index map: lets us tiebreak/preserve original order
+    # in O(1) without `list.index`, and avoids value-equality collisions
+    # between distinct RuleViolation dataclasses with identical fields.
+    original_index = {id(v): i for i, v in enumerate(violations)}
+
     # Group violations by normalized issue
     issue_groups: dict = {}
 
@@ -94,14 +99,14 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
             key=lambda v: (
                 0 if v.severity.value == "error" else 1,  # ERROR first
                 -len(v.rule_id),  # Longer rule_id = more specific
-                violations.index(v),  # Original order
+                original_index[id(v)],  # Original order
             ),
         )[0]
 
         deduplicated.append(best)
 
     # Return in original order
-    return sorted(deduplicated, key=lambda v: violations.index(v))
+    return sorted(deduplicated, key=lambda v: original_index[id(v)])
 
 
 __all__ = ["deduplicate_violations"]
