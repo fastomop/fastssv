@@ -46,6 +46,7 @@ htmlcov/
 .env
 .env.local
 .claude
+CLAUDE.md
 
 # Generated output files and datasets
 output/
