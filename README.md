@@ -42,35 +42,47 @@ for v in validate_sql_structured(sql):
 
 ## What it catches
 
-This query runs cleanly and returns rows, but is analytically wrong:
+This query runs cleanly and returns rows, but every row is analytically suspect:
 
 ```sql
-SELECT person_id
-FROM condition_occurrence
-WHERE condition_concept_id IN (201826, 443238);
+SELECT *
+FROM drug_exposure de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.concept_name LIKE '%aspirin%';
 ```
+
+`fastssv query.sql` writes `output/validation_report.json`:
 
 ```json
 {
-  "is_valid": false,
-  "violations": [
+  "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
+  "is_valid": true,
+  "error_count": 0,
+  "warning_count": 3,
+  "warnings": [
+    {
+      "rule_id": "anti_patterns.concept_name_lookup",
+      "severity": "warning",
+      "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). This is highly unreliable as concept names can vary. Use concept_code + vocabulary_id or concept_id instead.",
+      "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, OR with `WHERE c.concept_id = <id>` if the concept_id is known."
+    },
     {
       "rule_id": "concept_standardization.standard_concept_enforcement",
       "severity": "warning",
-      "issue": "Query filters condition_concept_id without constraining standard_concept = 'S'.",
-      "suggested_fix": "Join concept and add WHERE concept.standard_concept = 'S', or resolve through 'Maps to'."
+      "issue": "Query uses STANDARD concept fields without ensuring concepts are standard.",
+      "fix": "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts."
     },
     {
-      "rule_id": "data_quality.unmapped_concept_handling",
+      "rule_id": "concept_standardization.concept_domain_validation",
       "severity": "warning",
-      "issue": "Query filters condition_concept_id without acknowledging concept_id = 0 (unmapped).",
-      "suggested_fix": "Add: condition_concept_id > 0"
+      "issue": "drug_exposure.drug_concept_id joined to concept 'c' without domain_id filter. Expected domain 'Drug'.",
+      "fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
     }
   ]
 }
 ```
 
-See the [Semantic rules guide](docs/SEMANTIC_RULES_GUIDE.md) for the reasoning behind each category and the [Rules reference](docs/RULES_REFERENCE.md) for the full catalog.
+`is_valid` is `true` because every violation here is a `warning` — under normal mode, only `error`-severity violations gate the exit code. Run `fastssv query.sql --strict` to escalate best-practice warnings to errors. See the [Semantic rules guide](docs/SEMANTIC_RULES_GUIDE.md) for the reasoning behind each category and the [Rules reference](docs/RULES_REFERENCE.md) for the full catalog.
 
 ## Why FastSSV
 

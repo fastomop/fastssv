@@ -1,493 +1,246 @@
-# JSON Output Format for FastSSV Validation
+# JSON output format
 
-## Quick Reference
+`fastssv <path>` writes a structured JSON report to disk and prints a one-line summary to the terminal. The report is the canonical machine-readable contract for CI integrations, dashboards, and any downstream tool that needs to consume validation results.
 
-### Command Line Usage
+## Quick reference
+
 ```bash
-# Default output to output/validation_report.json
-fastssv query.sql
-
-# Custom output path
-fastssv query.sql --output my_report.json
-
-# With other options
-fastssv query.sql --dialect bigquery --categories joins
+fastssv query.sql                       # writes output/validation_report.json
+fastssv query.sql --output report.json  # custom path
+fastssv query.sql --combined            # multi-statement input → single combined report
 ```
 
-### Exit Codes
-- **0** = No ERROR-level violations (`is_valid: true`)
-- **1** = One or more ERROR-level violations (`is_valid: false`)
+**Exit codes**
 
-Note: WARNING-level violations do not affect exit code.
+| Code | Meaning |
+|---|---|
+| `0` | No `error`-severity violations (`is_valid: true` for the whole submission) |
+| `1` | One or more `error`-severity violations (`is_valid: false`) |
 
-### Key Response Fields
-
-**Single Query Response:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `query` | string | Normalized SQL query (whitespace collapsed) |
-| `dialect` | string | SQL dialect (`auto`, `postgres`, `tsql`, `oracle`, `redshift`, `bigquery`, `snowflake`, `databricks`, `duckdb`) |
-| `is_valid` | boolean | true if no ERROR-level violations |
-| `error_count` | number | Count of ERROR-level violations |
-| `warning_count` | number | Count of WARNING-level violations |
-| `violations` | array | Violation objects (omitted if empty) |
-
-**Violation Object:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `rule_id` | string | Unique rule identifier (e.g., "joins.join_path_validation") |
-| `severity` | string | "error" or "warning" (lowercase) |
-| `issue` | string | Human-readable violation message |
-| `suggested_fix` | string | Recommendation for fixing the violation |
-| `location` | string | Optional location info |
-| `details` | object | Optional structured metadata |
-
-**Multiple Query Response:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `total_queries` | number | Total number of queries validated |
-| `valid_queries` | number | Count of queries with no ERROR violations |
-| `invalid_queries` | number | Count of queries with ERROR violations |
-| `results` | array | Query results with `query_index` field |
+`warning`-severity violations never affect the exit code under normal mode. Pass `--strict` to escalate best-practice warnings to errors — see the [Semantic rules guide](SEMANTIC_RULES_GUIDE.md) for which rules participate in strict mode.
 
 ---
 
-## Overview
+## Single-query report
 
-FastSSV outputs validation results in JSON format for structured, machine-readable results. This enables integration with automated systems, APIs, and CI/CD pipelines.
-
-## CLI Behavior
-
-FastSSV writes JSON validation reports to a file and prints a summary to the terminal:
-
-```bash
-$ fastssv query.sql
-Validation INVALID
-  Errors: 2
-  Warnings: 1
-  Report saved to: /path/to/output/validation_report.json
-```
-
-### Output File Location
-
-**Default:** `output/validation_report.json`
-
-**Custom path:** Use `--output` or `-o` flag:
-```bash
-fastssv query.sql --output my_custom_report.json
-```
-
-The output directory is automatically created if it doesn't exist.
-
-## JSON Structure
-
-### Single Query Output
-
-For a single query, the output structure is:
+For input containing a single SQL statement (or multi-statement input with `--combined`), the report is a flat object:
 
 ```json
 {
-  "query": "SELECT p.person_id FROM person p WHERE p.gender_concept_id = 8507",
-  "dialect": "postgres",
+  "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
   "is_valid": true,
   "error_count": 0,
-  "warning_count": 0
-}
-```
-
-When validation fails, a `violations` array is included:
-
-```json
-{
-  "query": "SELECT c.person_id, x.concept_name FROM condition_occurrence c JOIN concept x ON x.concept_id = c.condition_concept_id WHERE x.concept_name = 'Hypertension'",
-  "dialect": "postgres",
-  "is_valid": false,
-  "error_count": 2,
-  "warning_count": 1,
-  "violations": [
+  "warning_count": 3,
+  "warnings": [
+    {
+      "rule_id": "anti_patterns.concept_name_lookup",
+      "severity": "warning",
+      "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). This is highly unreliable as concept names can vary. Use concept_code + vocabulary_id or concept_id instead.",
+      "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, OR with `WHERE c.concept_id = <id>` if the concept_id is known."
+    },
     {
       "rule_id": "concept_standardization.standard_concept_enforcement",
-      "severity": "error",
-      "issue": "Query uses STANDARD concept field 'condition_concept_id' without enforcing standard_concept = 'S'. This may include non-standard concepts in results.",
-      "suggested_fix": "Add WHERE clause: concept.standard_concept = 'S' OR use concept_relationship with relationship_id = 'Maps to'",
-      "details": {
-        "field": "condition_concept_id",
-        "table": "condition_occurrence"
-      }
+      "severity": "warning",
+      "issue": "Query uses STANDARD concept fields without ensuring concepts are standard.",
+      "fix": "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts."
     },
     {
-      "rule_id": "anti_patterns.no_string_identification",
+      "rule_id": "concept_standardization.concept_domain_validation",
       "severity": "warning",
-      "issue": "Concept table string filter outside concept_id lookup: x.concept_name = 'Hypertension'",
-      "suggested_fix": "Use concept_id-based filtering instead of string matching on concept_name"
+      "issue": "drug_exposure.drug_concept_id joined to concept 'c' without domain_id filter. Expected domain 'Drug'.",
+      "fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
     }
   ]
 }
 ```
 
-### Multiple Queries Output
+| Field | Type | Notes |
+|---|---|---|
+| `query` | string | SQL with comments stripped and whitespace collapsed |
+| `is_valid` | boolean | `true` iff `error_count == 0` |
+| `error_count` | number | Count of `error`-severity violations |
+| `warning_count` | number | Count of `warning`-severity violations |
+| `errors` | array | Present only when `error_count > 0` |
+| `warnings` | array | Present only when `warning_count > 0` |
 
-When the SQL file contains multiple queries (separated by semicolons), the output structure is:
+Errors and warnings are **split into two arrays**, not flattened into a single `violations` array. If a query has only warnings, the `errors` key is omitted entirely (and vice versa).
+
+---
+
+## Multi-query report
+
+When the input file contains multiple `;`-separated statements, FastSSV validates each independently and wraps the per-statement results in an outer object:
 
 ```json
 {
-  "total_queries": 3,
+  "total_queries": 2,
   "valid_queries": 2,
-  "invalid_queries": 1,
+  "invalid_queries": 0,
   "results": [
     {
-      "query_index": 1,
-      "query": "SELECT * FROM person LIMIT 10",
-      "dialect": "postgres",
+      "query": "SELECT * FROM person WHERE person_id = 1;",
       "is_valid": true,
       "error_count": 0,
       "warning_count": 0
     },
     {
-      "query_index": 2,
-      "query": "SELECT ...",
-      "dialect": "postgres",
-      "is_valid": false,
-      "error_count": 1,
-      "warning_count": 0,
-      "violations": [...]
-    },
-    {
-      "query_index": 3,
-      "query": "SELECT ...",
-      "dialect": "postgres",
+      "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
       "is_valid": true,
       "error_count": 0,
-      "warning_count": 0
+      "warning_count": 3,
+      "warnings": [ ... ]
     }
   ]
 }
 ```
 
-### Violation Object Structure
+| Field | Type | Notes |
+|---|---|---|
+| `total_queries` | number | Statements parsed out of the input |
+| `valid_queries` | number | Statements where `is_valid == true` |
+| `invalid_queries` | number | Statements where `is_valid == false` |
+| `results` | array | One single-query report per statement, in source order |
 
-Each violation has the following fields:
+Each entry in `results` has the same shape as a [single-query report](#single-query-report). Position in the array is the statement index (0-based in JSON, 1-based in log lines).
+
+To collapse a multi-statement file back to one combined report (legacy behaviour), pass `--combined` — the multiple statements are joined and reported as a single query.
+
+---
+
+## Violation object
+
+Every entry in `errors[]` or `warnings[]` has the same shape:
 
 ```json
 {
-  "rule_id": "concept_standardization.concept_ancestor_rollup_direction",
-  "severity": "error",
-  "issue": "Join to concept_ancestor uses ancestor_concept_id but the query intent (based on alias) suggests descendants.",
-  "suggested_fix": "Use concept_ancestor.descendant_concept_id when rolling up to descendants of a given ancestor.",
-  "location": "drug_exposure.drug_concept_id",
-  "details": {
-    "field": "drug_concept_id",
-    "table": "drug_exposure",
-    "filtered_values": [1234, 5678]
-  }
+  "rule_id": "anti_patterns.concept_name_lookup",
+  "severity": "warning",
+  "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). ...",
+  "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, ..."
 }
 ```
 
-**Required fields:**
-- `rule_id` - Unique identifier for the validation rule
-- `severity` - Either `"error"` (blocks validation) or `"warning"` (informational)
-- `issue` - Human-readable description of the violation
-- `suggested_fix` - Specific recommendation for fixing the issue
+| Field | Type | Notes |
+|---|---|---|
+| `rule_id` | string | Stable rule identifier, e.g. `joins.join_path_validation`. See the [Rules reference](RULES_REFERENCE.md). |
+| `severity` | `"error"` \| `"warning"` | Lowercase. Mirrored as `severity` field on the violation. |
+| `issue` | string | Human-readable description of what's wrong and why it matters. |
+| `fix` | string \| object | See below — heterogeneous: prose for free-form fixes, patch dict for mechanical ones. |
+| `location` | string | **Optional.** Set when the rule can pin the issue to a specific table.column or SQL fragment. Omitted otherwise. |
 
-**Optional fields:**
-- `location` - Where the issue occurs (table.column, line number, etc.)
-- `details` - Structured metadata with additional context
+### `fix` is heterogeneous
 
-## Programmatic Usage
+For free-form fixes (the default for ~60% of rules), `fix` is a prose string starting with an imperative verb (`REPLACE:`, `ADD:`, `JOIN:`, `FILTER:`, `GROUP BY:`, `CAST:`):
 
-### Python - Subprocess
+```json
+"fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
+```
+
+For mechanical fixes (~40% of rules — REPLACE / ADD / REMOVE patches that an outer correction loop can apply directly), `fix` is a patch object:
+
+```json
+"fix": {
+  "action": "REPLACE",
+  "span": [42, 55],
+  "text": "concept_id IS NOT NULL"
+}
+```
+
+Switch on the type:
+
+```python
+if isinstance(violation["fix"], str):
+    print("Prose suggestion:", violation["fix"])
+else:
+    apply_patch(sql, violation["fix"])  # action / span / text
+```
+
+There is **no `suggested_fix` or `details` field** on the wire. Earlier versions exposed both; they were unified into the single `fix` field (and `details` was retired from the JSON because the keys varied too much across rules to be programmatically useful — see `core/base.py:RuleViolation.to_dict`).
+
+---
+
+## Programmatic usage
+
+### Python — direct API (recommended)
+
+Skip the subprocess + JSON round-trip. Call the library:
+
+```python
+from fastssv import validate_sql_structured
+from fastssv.core.base import Severity
+
+violations = validate_sql_structured(sql, dialect="postgres")
+errors   = [v for v in violations if v.severity == Severity.ERROR]
+warnings = [v for v in violations if v.severity == Severity.WARNING]
+
+for v in violations:
+    print(f"[{v.severity.value.upper()}] {v.rule_id}")
+    print(f"  {v.message}")
+    print(f"  Fix: {v.suggested_fix}")  # prose; .suggested_fix_patch holds the structured form
+```
+
+The Python `RuleViolation` dataclass keeps `suggested_fix` (prose) and `suggested_fix_patch` (structured) as separate attributes, plus an in-process `details` dict. The single `fix` field on the JSON wire is derived from these via `to_dict()`.
+
+Filter at validation time instead of post-filtering:
+
+```python
+violations = validate_sql_structured(sql, categories=["concept_standardization"])
+violations = validate_sql_structured(sql, rule_ids=["joins.join_path_validation"])
+violations = validate_sql_structured(sql, dialect="bigquery")
+```
+
+### Python — subprocess
 
 ```python
 import json
 import subprocess
 from pathlib import Path
 
-# Run FastSSV
-result = subprocess.run(
-    ["fastssv", "query.sql", "--output", "report.json"],
-    capture_output=True,
-    text=True
-)
-
-# Read JSON report
+subprocess.run(["fastssv", "query.sql", "--output", "report.json"], check=False)
 report = json.loads(Path("report.json").read_text())
 
-# Check if valid
-if report["is_valid"]:
-    print("✓ Query is valid")
-else:
-    print(f"✗ {report['error_count']} errors, {report['warning_count']} warnings")
-    for violation in report.get("violations", []):
-        print(f"  [{violation['rule_id']}] {violation['issue']}")
-        print(f"  → {violation['suggested_fix']}")
-
-# Check exit code
-if result.returncode != 0:
-    print("Validation failed (errors found)")
+for v in report.get("errors", []) + report.get("warnings", []):
+    print(f"[{v['rule_id']}] {v['issue']}")
 ```
 
-### Python - Direct API (Recommended)
-
-```python
-from fastssv import validate_sql_structured
-
-# Get structured violations
-violations = validate_sql_structured(sql, dialect="postgres")
-
-# Check results
-if not violations:
-    print("✓ Valid")
-else:
-    for v in violations:
-        print(f"{v.severity.value}: [{v.rule_id}] {v.message}")
-        print(f"  Fix: {v.suggested_fix}")
-
-# Filter by category
-violations = validate_sql_structured(sql, categories=["concept_standardization"])
-
-# Filter by specific rules
-violations = validate_sql_structured(
-    sql,
-    rule_ids=["concept_standardization.standard_concept_enforcement"]
-)
-
-# Convert to dict for JSON serialization
-violations_dict = [v.to_dict() for v in violations]
-```
-
-### Python - Grouped Validation Results
-
-```python
-from fastssv import validate_sql
-
-results = validate_sql(sql, categories=["concept_standardization", "temporal"])
-
-print(results.keys())
-# dict_keys(['violations', 'category_errors', 'all_errors'])
-
-for category, messages in results["category_errors"].items():
-    if messages:
-        print(category, len(messages))
-```
-
-### JavaScript/Node.js
-
-```javascript
-const fs = require('fs');
-const { execSync } = require('child_process');
-
-// Run FastSSV
-execSync('fastssv query.sql --output report.json');
-
-// Read JSON report
-const report = JSON.parse(fs.readFileSync('report.json', 'utf8'));
-
-// Process results
-if (report.is_valid) {
-  console.log('✓ Query is valid');
-} else {
-  console.log(`✗ ${report.error_count} errors found`);
-
-  report.violations?.forEach(v => {
-    console.log(`  [${v.rule_id}] ${v.issue}`);
-    console.log(`  → ${v.suggested_fix}`);
-  });
-}
-```
-
-### Shell Script
+### Shell + jq
 
 ```bash
-#!/bin/bash
+fastssv query.sql --output report.json
 
-fastssv query.sql --output result.json
+# All violations across both severities
+jq '(.errors // []) + (.warnings // []) | .[] | "[\(.rule_id)] \(.issue)"' report.json
 
-if [ $? -eq 0 ]; then
-  echo "✓ Valid"
-else
-  echo "✗ Invalid"
-  jq '.violations[] | "[\(.rule_id)] \(.issue)"' result.json
-fi
+# Errors only
+jq '.errors[]?' report.json
+
+# Group violations by category
+jq '[(.errors // []) + (.warnings // []) | .[] | .rule_id | split(".")[0]] | group_by(.) | map({cat: .[0], n: length})' report.json
 ```
 
-## Integration Examples
-
-### REST API Endpoint
+### Multi-query result handling
 
 ```python
-from flask import Flask, request, jsonify
-from fastssv import validate_sql_structured
-
-app = Flask(__name__)
-
-@app.route("/validate", methods=["POST"])
-def validate():
-    sql = request.json.get("query")
-    dialect = request.json.get("dialect", "postgres")
-
-    violations = validate_sql_structured(sql, dialect=dialect)
-
-    errors = [v for v in violations if v.severity.value == "error"]
-    warnings = [v for v in violations if v.severity.value == "warning"]
-
-    response = {
-        "is_valid": len(errors) == 0,
-        "error_count": len(errors),
-        "warning_count": len(warnings),
-        "violations": [v.to_dict() for v in violations]
-    }
-
-    status_code = 200 if response["is_valid"] else 400
-    return jsonify(response), status_code
-```
-
-### GitHub Actions Workflow
-
-```yaml
-name: Validate OMOP SQL Queries
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install fastssv
-
-      - name: Validate SQL queries
-        run: |
-          for sql_file in queries/*.sql; do
-            echo "Validating $sql_file..."
-            fastssv "$sql_file" --output "output/$(basename $sql_file .sql).json"
-
-            if [ $? -ne 0 ]; then
-              echo "❌ Failed: $sql_file"
-              cat "output/$(basename $sql_file .sql).json" | jq '.violations'
-              exit 1
-            fi
-          done
-
-          echo "✅ All queries validated successfully"
-```
-
-### Batch Validation Script
-
-```python
-import json
-import sys
-import subprocess
-from pathlib import Path
-
-def validate_all_queries(query_dir: Path, output_dir: Path):
-    """Validate all SQL queries in a directory."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    failed = []
-
-    for sql_file in query_dir.glob("*.sql"):
-        output_file = output_dir / f"{sql_file.stem}.json"
-
-        result = subprocess.run(
-            ["fastssv", str(sql_file), "--output", str(output_file)],
-            capture_output=True,
-            text=True
-        )
-
-        report = json.loads(output_file.read_text())
-
-        if not report["is_valid"]:
-            failed.append({
-                "file": sql_file.name,
-                "errors": report["error_count"],
-                "violations": report.get("violations", [])
-            })
-
-    # Print summary
-    if failed:
-        print(f"\n❌ {len(failed)} queries failed validation:\n")
-        for fail in failed:
-            print(f"  {fail['file']}: {fail['errors']} errors")
-            for v in fail['violations']:
-                print(f"    - [{v['rule_id']}] {v['issue']}")
-        sys.exit(1)
-    else:
-        print(f"\n✅ All queries validated successfully")
-        sys.exit(0)
-
-if __name__ == "__main__":
-    validate_all_queries(Path("queries"), Path("output/validation"))
-```
-
-## Common Parsing Patterns
-
-### Check Overall Status
-```python
-report = json.loads(report_file.read_text())
-
-if report["is_valid"]:
-    print("✓ Valid")
-else:
-    print(f"✗ {report['error_count']} errors, {report['warning_count']} warnings")
-```
-
-### Filter by Severity
-```python
-errors = [v for v in report.get("violations", []) if v["severity"] == "error"]
-warnings = [v for v in report.get("violations", []) if v["severity"] == "warning"]
-
-print(f"Errors: {len(errors)}, Warnings: {len(warnings)}")
-```
-
-### Group by Rule Category
-```python
-from collections import defaultdict
-
-by_category = defaultdict(list)
-for v in report.get("violations", []):
-    category = v["rule_id"].split(".")[0]  # e.g., "concept_standardization", "anti_patterns", "joins", etc.
-    by_category[category].append(v)
-
-for category, violations in by_category.items():
-    print(f"{category}: {len(violations)} violations")
-```
-
-### Handle Multiple Queries
-```python
-report = json.loads(report_file.read_text())
+report = json.loads(Path("report.json").read_text())
 
 if "results" in report:
-    # Multiple queries
-    print(f"Validated {report['total_queries']} queries")
-    print(f"  Valid: {report['valid_queries']}")
-    print(f"  Invalid: {report['invalid_queries']}")
-
-    for result in report["results"]:
+    for idx, result in enumerate(report["results"], start=1):
         status = "✓" if result["is_valid"] else "✗"
-        print(f"{status} Query {result['query_index']}: {result['error_count']} errors")
+        print(f"{status} Query {idx}: {result['error_count']} errors, {result['warning_count']} warnings")
 else:
-    # Single query
     status = "✓" if report["is_valid"] else "✗"
     print(f"{status} {report['error_count']} errors, {report['warning_count']} warnings")
 ```
 
-## Schema Reference
+---
 
-### `validate_sql()` Result Schema
+## `validate_sql()` helper
 
-The `validate_sql()` helper returns grouped messages rather than the CLI JSON report:
+`validate_sql()` is a separate convenience entry point that returns a grouped dict (rather than the CLI's flat report). It's useful when you want errors grouped by rule category without filtering yourself.
 
 ```typescript
 {
-  violations: RuleViolation[],
+  violations: RuleViolation[],   // All RuleViolation objects (Python objects, not dicts)
   category_errors: {
     anti_patterns: string[],
     concept_standardization: string[],
@@ -496,119 +249,48 @@ The `validate_sql()` helper returns grouped messages rather than the CLI JSON re
     joins: string[],
     temporal: string[]
   },
-  all_errors: string[],
-  parse_error: string | null,   // Set when SQL couldn't be parsed; null otherwise
-  dialect: string               // The dialect actually used (after auto-detection)
+  all_errors: string[],          // Flattened list of every violation message
+  parse_error: string | null,    // Set when SQL couldn't be parsed; null otherwise
+  dialect: string                // Dialect actually used (after auto-detection)
 }
 ```
 
-### Complete Single Query Schema
+Use it when you want the category grouping pre-built:
 
-```typescript
-{
-  query: string,              // Normalized SQL query (comments removed, whitespace collapsed)
-  dialect: string,            // SQL dialect used for parsing
-  is_valid: boolean,          // true if no ERROR-level violations
-  error_count: number,        // Count of ERROR violations
-  warning_count: number,      // Count of WARNING violations
-  violations?: [              // Array (omitted if empty)
-    {
-      rule_id: string,        // e.g., "joins.join_path_validation"
-      severity: "error" | "warning",
-      issue: string,          // Human-readable violation message
-      suggested_fix: string,  // Specific fix recommendation
-      location?: string,      // Optional location info
-      details?: object        // Optional structured metadata
-    }
-  ]
-}
+```python
+from fastssv import validate_sql
+
+results = validate_sql(sql, categories=["concept_standardization", "temporal"])
+
+for category, messages in results["category_errors"].items():
+    if messages:
+        print(f"{category}: {len(messages)} violations")
 ```
 
-### Complete Multiple Query Schema
+For everything else, prefer `validate_sql_structured()` (returns the typed dataclass list) or read the CLI report.
 
-```typescript
-{
-  total_queries: number,       // Total queries in file
-  valid_queries: number,       // Queries with is_valid=true
-  invalid_queries: number,     // Queries with is_valid=false
-  results: [                   // Array of query results
-    {
-      query_index: number,     // 1-based index
-      query: string,
-      dialect: string,
-      is_valid: boolean,
-      error_count: number,
-      warning_count: number,
-      violations?: [...]       // Same as single query
-    }
-  ]
-}
-```
+---
 
-## Schema Notes
+## Defensive parsing
 
-The CLI JSON report shape shown above reflects the implementation in `src/fastssv/cli.py`. Optional fields such as `violations`, `location`, and `details` may be omitted when not applicable.
-
-### Defensive Parsing
-
-To future-proof your code, use defensive parsing:
+The shape is stable enough to consume directly, but defensive code is cheap insurance:
 
 ```python
 report = json.loads(output)
 
-# Check for single vs multiple query format
+# Distinguish single vs multi-query
 if "results" in report:
-    # Multiple queries
-    for result in report["results"]:
-        process_result(result)
+    entries = report["results"]
 else:
-    # Single query
-    process_result(report)
+    entries = [report]
 
-# Safe access to optional fields
-violations = report.get("violations", [])
-for v in violations:
-    rule_id = v.get("rule_id", "unknown")
-    severity = v.get("severity", "error")
-    issue = v.get("issue", v.get("message", "No message"))  # Fallback to old "message" field
-    suggested_fix = v.get("suggested_fix", "")
-    details = v.get("details", {})
+for entry in entries:
+    for v in entry.get("errors", []) + entry.get("warnings", []):
+        rule_id  = v["rule_id"]
+        severity = v["severity"]
+        issue    = v["issue"]
+        fix      = v.get("fix")          # may be string OR dict OR absent
+        location = v.get("location")     # often absent
 ```
 
-## Current Example
-
-For the query:
-
-```sql
-SELECT person_id
-FROM condition_occurrence
-WHERE condition_concept_id IN (201826, 443238);
-```
-
-`validate_sql_structured()` currently emits:
-
-```json
-[
-  {
-    "rule_id": "concept_standardization.standard_concept_enforcement",
-    "severity": "error",
-    "issue": "Query filters on condition_occurrence.condition_concept_id without constraining concept.standard_concept = 'S'. Non-standard concepts may be returned, producing an inconsistent cohort.",
-    "suggested_fix": "Join to the concept table and add WHERE concept.standard_concept = 'S', or resolve the source concept through a 'Maps to' relationship in concept_relationship.",
-    "details": {
-      "filtered_columns": [
-        "condition_occurrence.condition_concept_id"
-      ]
-    }
-  },
-  {
-    "rule_id": "data_quality.unmapped_concept_handling",
-    "severity": "warning",
-    "issue": "Query filters condition_occurrence.condition_concept_id by specific value(s) but does not explicitly handle concept_id = 0 (unmapped records). Records where the source code could not be mapped to a standard concept will be silently excluded.",
-    "suggested_fix": "Add: condition_concept_id > 0",
-    "details": {
-      "table": "condition_occurrence",
-      "column": "condition_concept_id"
-    }
-  }
-]
-```
+Optional fields (`errors`, `warnings`, `fix`, `location`) are omitted when not applicable rather than emitted as `null` — always use `.get()` or check `in`.

@@ -65,6 +65,22 @@ between minor versions.
   - **`LOGGING.md` Related Documentation** section now links to the in-site
     pages (`API.md`, `JSON_OUTPUT.md`, `PLUGIN_ARCHITECTURE.md`) instead of
     GitHub README anchors.
+  - **CLI JSON report shape rewritten across the docs.** `JSON_OUTPUT.md`,
+    `README.md`, `PLUGIN_ARCHITECTURE.md` (`RuleViolation.to_dict()` example),
+    and the cross-reference paragraph in `API.md` previously documented an
+    older wire shape — a top-level `violations[]` array with `suggested_fix`
+    and `details` fields on each entry. The actual implementation
+    (`cli.py:build_validation_result`, `core/base.py:RuleViolation.to_dict`)
+    splits violations into `errors[]` and `warnings[]` arrays, emits a single
+    `fix` field (string for prose, patch object for mechanical), and
+    intentionally omits `details` from the wire. All four pages now match
+    the real output, verified by running the CLI on the canonical example
+    query and capturing the JSON. The README's "What it catches" example
+    query was also replaced — the previous query (`SELECT person_id FROM
+    condition_occurrence WHERE condition_concept_id IN (201826, 443238)`)
+    no longer fires under the current rule calibration; the new example
+    (a bare `concept_name LIKE '%aspirin%'` lookup) reliably produces three
+    warnings whose actual JSON is what's shown.
 
 ### Changed
 
