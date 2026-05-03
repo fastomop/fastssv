@@ -21,7 +21,21 @@ between minor versions.
   --fix`, `ruff-format`) revisions, same `exclude` pattern. Contributors
   should now run `uvx prek run --all-files` instead of `uvx pre-commit run
   --all-files`; the YAML file has been removed, so anyone still invoking
-  upstream `pre-commit` directly needs to switch to `prek`. Closes #27.
+  upstream `pre-commit` directly needs to switch to `prek`.
+
+  **Migration for existing contributors:** if you previously ran
+  `pre-commit install`, the generated `.git/hooks/pre-commit` script still
+  shells out to upstream `pre-commit`, which now errors on every commit
+  because its config file is gone. Recover with a one-time:
+
+  ```sh
+  uvx pre-commit uninstall   # remove the stale generated hook
+  uvx prek install           # install the prek-managed equivalent
+  ```
+
+  Contributors who never installed the auto-on-commit hook (i.e. only ever
+  ran `uvx pre-commit run` manually) only need to swap the command for
+  `uvx prek run`. Closes #27.
 
 - **All `docs/*.md` filenames lowercased.** `docs/API.md` → `docs/api.md`,
   `docs/JSON_OUTPUT.md` → `docs/json_output.md`, `docs/LOGGING.md` →
