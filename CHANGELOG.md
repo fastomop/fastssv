@@ -11,6 +11,18 @@ between minor versions.
 
 ### Added
 
+- **`SECURITY.md` with a private-reporting policy.** New file at the repo
+  root pointing reporters at GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
+  flow as the primary channel (no email exposure needed). Documents the
+  pre-1.0 supported-versions policy (latest minor only), realistic
+  response targets (7-day acknowledgement, 21-day assessment, 90-day fix
+  or coordinated disclosure), explicit scope (in: `src/fastssv/`, the
+  optional `api/` service, the `deploy/` image, `.github/workflows/`;
+  out: third-party dependency CVEs, user-supplied SQL behaviour,
+  downstream deployment configuration), and a coordinated-disclosure
+  default with reporter credit. `CONTRIBUTING.md` now points at it from
+  the "Reporting issues" paragraph.
+
 - **`CONTRIBUTING.md` with an explicit AI-assisted PR policy.** The new
   file at the repo root sets the contract for both human-authored and
   AI-assisted contributions. AI-assisted PRs are welcome subject to two

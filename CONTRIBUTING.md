@@ -109,7 +109,7 @@ For every PR, AI-assisted or not:
 
 ## Reporting issues
 
-Open a GitHub issue with: the SQL that triggered the unexpected behaviour, the dialect (`--dialect`), the expected vs. actual output, and the FastSSV version (`fastssv --version`). For security issues, see [SECURITY.md](SECURITY.md) if present, otherwise contact the maintainers directly rather than opening a public issue.
+Open a GitHub issue with: the SQL that triggered the unexpected behaviour, the dialect (`--dialect`), the expected vs. actual output, and the FastSSV version (`fastssv --version`). For security issues, follow [SECURITY.md](SECURITY.md) — use GitHub's private vulnerability reporting rather than opening a public issue.
 
 ## Licence
 
