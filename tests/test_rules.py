@@ -11,8 +11,8 @@ This file contains comprehensive tests for all validation rule categories:
 
 import pytest
 
+from fastssv import validate_concept_standardization
 from fastssv.core.base import Severity
-from fastssv.rules import validate_concept_standardization
 
 
 def validate_standard_concept_mapping(sql: str, dialect: str = "postgres") -> list[str]:

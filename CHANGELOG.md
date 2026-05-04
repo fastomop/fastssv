@@ -11,6 +11,48 @@ between minor versions.
 
 ### Changed
 
+- **`domain_specific/` layout normalised; off-pattern rules moved into
+  table subpackages.** Three rules previously lived flat at the top of
+  `src/fastssv/rules/domain_specific/` despite being table-specific,
+  contradicting the documented "table rules under `<table>/`,
+  cross-cutting rules flat" convention:
+
+  | Old path | New path |
+  | --- | --- |
+  | `domain_specific/cost_currency_concept_id.py` | `domain_specific/cost/cost_currency_concept_id.py` |
+  | `domain_specific/cost_paid_ingredient_cost_drug_specific.py` | `domain_specific/cost/cost_paid_ingredient_cost_drug_specific.py` |
+  | `domain_specific/dose_era_cross_unit_comparison.py` | `domain_specific/dose_era/dose_era_cross_unit_comparison.py` |
+
+  `rule_id`s are unchanged (the directory nesting under
+  `domain_specific/<table>/` is organisational and never appears in the
+  id), so anyone calling `get_rule("domain_specific.cost_currency_concept_id")`
+  etc. is unaffected. Internally, `domain_specific/__init__.py` now
+  imports each table subpackage as a side-effect-only module
+  (`from . import cohort, condition, …`) instead of mixing
+  `from .<table> import *` with explicit class imports for the off-pattern
+  trio. Direct submodule imports
+  (`from fastssv.rules.domain_specific.cost.cost_currency_concept_id import …`)
+  are the documented contract; nothing in the tree imported these classes
+  via the parent package.
+
+- **Validation helpers consolidated at the package root.** The six
+  `validate_<category>` helpers (legacy string-error API) now live in
+  `src/fastssv/__init__.py` next to `validate_sql` /
+  `validate_sql_structured`; `src/fastssv/rules/__init__.py` is now a
+  pure side-effect module that triggers `@register` for every rule.
+  The documented import is and always was `from fastssv import
+  validate_<category>`. `from fastssv.rules import validate_<category>`
+  no longer resolves — only `tests/test_rules.py` used that form, and it
+  has been updated.
+
+- **`deploy/.dockerignore` removed.** `deploy/docker-compose.yml` builds
+  with `context: ..` (the repo root), so Docker reads the root
+  `.dockerignore` and never consulted `deploy/.dockerignore`. The dead
+  file was inconsistent with the live one (different exclusion lists)
+  and an obvious tripwire for future readers. Per-Dockerfile ignore
+  files would need the BuildKit-recognised name `Dockerfile.dockerignore`
+  in `deploy/`, which is not what was there.
+
 - **BREAKING: two `domain_specific` rule IDs renamed to match the
   documented 2-segment `<category>.<rule_name>` format.** Two legacy
   rules predated the convention and used a 3-segment id derived from
