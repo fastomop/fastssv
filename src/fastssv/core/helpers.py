@@ -116,9 +116,23 @@ def split_sql_statements(sql: str) -> List[str]:
     """
 
     def _has_sql_content(text: str) -> bool:
-        no_block = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-        no_any = re.sub(r"--[^\n]*", "", no_block)
-        return bool(no_any.strip())
+        # Linear scan rather than regex: `re.sub(r"/\*.*?\*/", ...)` is
+        # polynomial on inputs like "/*" + "a/*"*N (no closing "*/"),
+        # which a public API caller controls.
+        i, n = 0, len(text)
+        while i < n:
+            c = text[i]
+            if c == "/" and i + 1 < n and text[i + 1] == "*":
+                j = text.find("*/", i + 2)
+                i = n if j == -1 else j + 2
+            elif c == "-" and i + 1 < n and text[i + 1] == "-":
+                j = text.find("\n", i + 2)
+                i = n if j == -1 else j
+            elif not c.isspace():
+                return True
+            else:
+                i += 1
+        return False
 
     statements: List[str] = []
     current: List[str] = []

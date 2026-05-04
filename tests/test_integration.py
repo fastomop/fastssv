@@ -133,3 +133,19 @@ class TestParseErrorSurface:
             assert viols[0].rule_id == PARSE_ERROR_RULE_ID, (
                 f"Expected parse.syntax_error for {sql!r}, got {viols[0].rule_id}"
             )
+
+    def test_split_sql_statements_unclosed_block_comment_is_not_polynomial(self) -> None:
+        # Regression for CodeQL py/polynomial-redos: the prior regex-based
+        # `_has_sql_content` was O(N²) on inputs of the form "/*" + "a/*"*N
+        # (open comment never closes). At ~60 KB the old code took ~2.5 s;
+        # the linear scan returns in milliseconds.
+        import time
+
+        from fastssv.core.helpers import split_sql_statements
+
+        payload = "/*" + ("a/*" * 20_000)
+        start = time.perf_counter()
+        result = split_sql_statements(payload)
+        elapsed = time.perf_counter() - start
+        assert result == []
+        assert elapsed < 1.0, f"split_sql_statements took {elapsed:.2f}s on a 60 KB unclosed-comment input"

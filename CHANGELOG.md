@@ -268,6 +268,25 @@ between minor versions.
   the upstream-recommended replacement and produces a noticeably faster
   rebuild loop during local docs work.
 
+### Security
+
+- **Polynomial ReDoS in `split_sql_statements` fixed (CodeQL
+  `py/polynomial-redos`).** `_has_sql_content` in
+  [`src/fastssv/core/helpers.py`](src/fastssv/core/helpers.py) used
+  `re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)` to strip block
+  comments before checking whether a statement carried any SQL. On
+  inputs of the form `"/*" + "a/*"*N` (an unclosed block comment with
+  many nested `/*` markers) the engine retried from every starting
+  position, giving O(N²) runtime: a 60 KB payload took ~2.5 s and a
+  120 KB payload ~10.6 s of CPU per call. Because `split_sql_statements`
+  is called on every request to `POST /validate` and the UI's
+  `/ui/validate`, a single crafted submission within the default
+  `max_sql_bytes` cap of 100 000 bytes could pin an API worker for
+  ~7 s. The helper has been rewritten as a single linear scan over the
+  string (no regex, no backtracking), and a regression test in
+  `tests/test_integration.py` asserts the 60 KB payload now returns in
+  under a second. No change to observable splitting behaviour.
+
 ## [0.2.0] - 2026-04-30
 
 ### Fixed
