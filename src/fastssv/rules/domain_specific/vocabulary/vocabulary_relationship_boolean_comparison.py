@@ -330,7 +330,7 @@ class RelationshipBooleanComparisonRule(Rule):
     OMOP_150: Validate boolean column comparisons in relationship table.
     """
 
-    rule_id = "domain_specific.vocabulary.relationship_boolean_comparison"
+    rule_id = "domain_specific.vocabulary_relationship_boolean_comparison"
     name = "Relationship Boolean Comparison"
 
     description = (

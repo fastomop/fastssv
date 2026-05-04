@@ -299,7 +299,7 @@ class NoteNlpSnippetMisuseRule(Rule):
     OMOP_152: Validate misuse of note_nlp text columns for matching.
     """
 
-    rule_id = "domain_specific.note.note_nlp_snippet_misuse"
+    rule_id = "domain_specific.note_nlp_snippet_misuse"
     name = "Note NLP Snippet Misuse"
 
     description = (

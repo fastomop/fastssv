@@ -192,7 +192,7 @@ For each rule you will find:
 | `domain_specific.measurement_range_low_high_validation` | [Measurement Range Low/High Validation](#domain-specific-measurement-range-low-high-validation) | ERROR | domain_specific |
 | `domain_specific.measurement_unit_validation` | [Measurement Unit Validation](#domain-specific-measurement-unit-validation) | WARNING | domain_specific |
 | `domain_specific.measurement_value_as_number_and_concept_validation` | [Measurement Value Representation Consistency](#domain-specific-measurement-value-as-number-and-concept-validation) | ERROR | domain_specific |
-| `domain_specific.note.note_nlp_snippet_misuse` | [Note NLP Snippet Misuse](#domain-specific-note-note-nlp-snippet-misuse) | WARNING | domain_specific |
+| `domain_specific.note_nlp_snippet_misuse` | [Note NLP Snippet Misuse](#domain-specific-note-nlp-snippet-misuse) | WARNING | domain_specific |
 | `domain_specific.observation_value_as_columns_mutually_contextual` | [Observation Value As Columns Mutually Contextual](#domain-specific-observation-value-as-columns-mutually-contextual) | WARNING | domain_specific |
 | `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | ERROR | domain_specific |
 | `domain_specific.observation_value_as_string_numeric_comparison` | [Observation Value As String Numeric Comparison](#domain-specific-observation-value-as-string-numeric-comparison) | ERROR | domain_specific |
@@ -207,7 +207,7 @@ For each rule you will find:
 | `domain_specific.visit_length_of_stay_arithmetic`{ #domain-specific-visit-length-of-stay-arithmetic } | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
 | `domain_specific.visit_occurrence_type_domain`{ #domain-specific-visit-occurrence-type-domain } | [Visit Occurrence Type Concept Domain Validation](#domain-specific-visit-occurrence-type-domain) | ERROR | domain_specific |
 | `domain_specific.visit_outpatient_same_day_validation` | [Visit Outpatient Same-Day Validation](#domain-specific-visit-outpatient-same-day-validation) | WARNING | domain_specific |
-| `domain_specific.vocabulary.relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
+| `domain_specific.vocabulary_relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
 | `domain_specific.year_of_birth_age_arithmetic`{ #domain-specific-year-of-birth-age-arithmetic } | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
 
 
@@ -6254,9 +6254,9 @@ Use OR or separate logic depending on measurement type
 
 ### NOTE Domain
 
-### 1. Note NLP Snippet Misuse { #domain-specific-note-note-nlp-snippet-misuse }
+### 1. Note NLP Snippet Misuse { #domain-specific-note-nlp-snippet-misuse }
 
-**Rule ID:** `domain_specific.note.note_nlp_snippet_misuse`
+**Rule ID:** `domain_specific.note_nlp_snippet_misuse`
 **Severity:** WARNING
 
 #### Intent
@@ -7064,7 +7064,7 @@ Use visit_concept_id = 9201 (inpatient) for multi-day stays, or adjust date rang
 
 ### 1. Relationship Boolean Comparison { #domain-specific-vocabulary-relationship-boolean-comparison }
 
-**Rule ID:** `domain_specific.vocabulary.relationship_boolean_comparison`
+**Rule ID:** `domain_specific.vocabulary_relationship_boolean_comparison`
 **Severity:** ERROR
 
 #### Intent

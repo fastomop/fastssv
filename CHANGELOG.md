@@ -9,6 +9,88 @@ between minor versions.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: two `domain_specific` rule IDs renamed to match the
+  documented 2-segment `<category>.<rule_name>` format.** Two legacy
+  rules predated the convention and used a 3-segment id derived from
+  their table subpackage:
+
+  | Old `rule_id` | New `rule_id` |
+  | --- | --- |
+  | `domain_specific.note.note_nlp_snippet_misuse` | `domain_specific.note_nlp_snippet_misuse` |
+  | `domain_specific.vocabulary.relationship_boolean_comparison` | `domain_specific.vocabulary_relationship_boolean_comparison` |
+
+  The README documents `<category>.<rule_name>` as the stable format,
+  and pre-1.0 minor releases explicitly allow breaking rule-set changes
+  (see the "Stability" section), so these are normalised in this
+  release rather than left to fester. The `vocabulary` rule's source
+  file was also renamed
+  `vocabulary/relationship_boolean_comparison.py` →
+  `vocabulary/vocabulary_relationship_boolean_comparison.py` so its
+  filename matches the new id and the table-prefix convention used by
+  every other nested `domain_specific` rule (`measurement_*.py`,
+  `drug_*.py`, `visit_*.py`, …). **Anyone calling
+  `get_rule("domain_specific.note.note_nlp_snippet_misuse")` or
+  `get_rule("domain_specific.vocabulary.relationship_boolean_comparison")`
+  must update to the new ids** — there is no compatibility shim.
+  Saved JSON validation reports that reference the old ids will need
+  to be regenerated. Documentation in
+  [`docs/rules_reference.md`](docs/rules_reference.md) and the rule's
+  unit tests in `tests/test_rules.py` were updated in lockstep.
+
+### Added
+
+- **`SECURITY.md` with a private-reporting policy.** New file at the repo
+  root pointing reporters at GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
+  flow as the primary channel (no email exposure needed). Documents the
+  pre-1.0 supported-versions policy (latest minor only), realistic
+  response targets (7-day acknowledgement, 21-day assessment, 90-day fix
+  or coordinated disclosure), explicit scope (in: `src/fastssv/`, the
+  optional `api/` service, the `deploy/` image, `.github/workflows/`;
+  out: third-party dependency CVEs, user-supplied SQL behaviour,
+  downstream deployment configuration), and a coordinated-disclosure
+  default with reporter credit. `CONTRIBUTING.md` now points at it from
+  the "Reporting issues" paragraph.
+
+- **`CONTRIBUTING.md` with an explicit AI-assisted PR policy.** The new
+  file at the repo root sets the contract for both human-authored and
+  AI-assisted contributions. AI-assisted PRs are welcome subject to two
+  standards: (1) Linux-kernel-style disclosure and accountability —
+  human submitter signs the DCO, an `Assisted-by: AGENT_NAME:MODEL_VERSION`
+  trailer per the kernel's [`coding-assistants`](https://docs.kernel.org/process/coding-assistants.html)
+  format, prompts and scope disclosed in the commit body, and reviewers
+  applying scrutiny in proportion to how much was machine-generated; and
+  (2) any agent skills shipped under `.agents/skills/` follow the
+  [agentskills.io](https://agentskills.io) format that
+  [`tiangolo/library-skills`](https://github.com/tiangolo/library-skills)
+  builds on (a `SKILL.md` with YAML frontmatter inside a
+  `.agents/skills/<name>/` directory). Drive-by, undisclosed, or
+  undefendable machine output ("AI slop") will be closed.
+
+- **`add-rule` skill under `.agents/skills/add-rule/`.** A self-contained
+  walkthrough for adding a new validation rule — category selection, file
+  layout, the `Rule` + `@register` template, category `__init__.py` wiring,
+  test expectations, and pre-flight commands. Symlinked at
+  `.claude/skills/add-rule` so Claude Code (which does not yet read
+  `.agents/`) picks it up. AGENTS.md now points to the skill from the
+  "Adding a validation rule" section instead of duplicating the steps.
+
+### Changed
+
+- **`AGENTS.md` rewritten for higher signal-to-token ratio.** The agent
+  guidance file at the repo root has been condensed from ~11 KB of prose
+  paragraphs to ~5.6 KB of bullets and tables, while preserving every
+  load-bearing rule (uv-only workflow, `[api]` extra transitive-dep rule,
+  `cors_origins` validator caveat, post-change stale-reference sweep,
+  `prek` hook list, UI smoke-test requirement for `src/fastssv/api/`
+  changes, `[tool.ruff]` ignore set, coverage gate, cross-tool layout).
+  The `## Cross-tool layout` section also documents the new
+  `.claude/skills/<name>` → `.agents/skills/<name>` symlink convention
+  and points at the new `CONTRIBUTING.md` for the AI-assisted PR policy.
+  The `CLAUDE.md` symlink picks up the rewrite automatically. No code or
+  runtime change.
+
 ### Removed
 
 - **`viz` and `langfuse` optional-dependency groups dropped from

@@ -1,110 +1,113 @@
 # AGENTS.md
 
-Shared guidance for AI coding assistants working on **fastSSV** (Fast Semantic Static Validator). This file follows the open [AGENTS.md](https://agents.md/) standard so it works across Claude Code, OpenCode, Codex, Cursor, and any other agent that reads it. Tool-specific entry points (`CLAUDE.md`, `.claude/…`) are tracked symlinks into the shared assets — see [Cross-tool layout](#cross-tool-layout) below.
+Shared guidance for AI coding agents on **FastSSV** (Fast Semantic Static Validator). Format follows the [agents.md](https://agents.md/) standard so every agent (Claude Code, Codex, OpenCode, Cursor, …) reads the same file. See [Cross-tool layout](#cross-tool-layout) for tool-specific entry points.
 
-## What this project is
+For the AI-assisted PR policy (Linux-kernel-style disclosure, DCO, library-skills format), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- A static, semantic validator for SQL queries written against the [OMOP CDM](https://ohdsi.github.io/CommonDataModel/). It catches schema, vocabulary, and modelling mistakes that pass syntax-check but fail at run-time or produce silently-wrong analytics.
-- Built on top of [`sqlglot`](https://github.com/tobymao/sqlglot). Validation rules live under `src/fastssv/rules/<category>/`, one rule per file. Each rule self-registers via a decorator that the package's `__init__.py` files trigger by importing each module.
-- Ships a CLI entry point (`fastssv …`, declared in `[project.scripts]`) and an optional FastAPI service (`[api]` extra; runs under gunicorn via the `deploy/` Docker image).
+## What this is
+
+A static, semantic validator for SQL written against the [OMOP CDM v5.4](https://ohdsi.github.io/CommonDataModel/), built on [`sqlglot`](https://github.com/tobymao/sqlglot). Catches schema, vocabulary, and modelling errors that pass syntax check but produce silently-wrong analytics — no DB connection. Ships a CLI (`fastssv …`) and an optional FastAPI service (`[api]` extra).
 
 ## Setup
 
-The project uses **uv** end-to-end. Install it once ([instructions](https://docs.astral.sh/uv/getting-started/installation/)), then from the repo root:
+`requires-python = ">=3.10"`. The project uses **uv** end-to-end ([install](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```sh
-uv sync --frozen --extra dev --extra api    # full development environment
-uv sync --frozen --extra docs               # if working on the docs site
+uv sync --frozen --extra dev --extra api    # full dev env
+uv sync --frozen --extra docs               # docs work
 ```
 
-`uv sync` creates `.venv/`, downloads a matching Python interpreter if one isn't already on the system, and installs the locked dependency set exactly. `requires-python = ">=3.10"`.
+## Commands
 
-## Common commands
+| Task | Command |
+| --- | --- |
+| Tests | `uv run --frozen --no-sync pytest tests/ -v` |
+| Tests + coverage | `uv run --frozen --no-sync pytest tests/ --cov` |
+| Lint | `uvx ruff check src/ tests/` |
+| Format | `uvx ruff format src/ tests/` |
+| Pre-commit | `uvx prek run --all-files` |
+| Build sdist + wheel | `uv build` |
+| Serve API locally | `uv run --frozen --no-sync fastssv serve --reload` |
+| Serve docs | `uv run --frozen --no-sync zensical serve` |
+| Build container | `docker compose -f deploy/docker-compose.yml build` |
+| Run container | `docker compose -f deploy/docker-compose.yml up` |
 
-| Task                | Command                                                       |
-| ------------------- | ------------------------------------------------------------- |
-| Run tests           | `uv run --frozen --no-sync pytest tests/ -v`                  |
-| Tests + coverage    | `uv run --frozen --no-sync pytest tests/ --cov`               |
-| Lint                | `uvx ruff check src/ tests/`                                  |
-| Auto-format         | `uvx ruff format src/ tests/`                                 |
-| Build sdist + wheel | `uv build`                                                    |
-| Serve docs locally  | `uv run --frozen --no-sync zensical serve`                    |
-| Build container     | `docker compose -f deploy/docker-compose.yml build`           |
-| Run container       | `docker compose -f deploy/docker-compose.yml up`              |
-| Run pre-commit hooks | `uvx prek run --all-files`                                   |
+`--no-sync` on `uv run` skips lock revalidation; `uv sync --frozen` above already established the env.
 
-The `--no-sync` flag on `uv run` skips re-validating the lock on every invocation; `uv sync --frozen` (above) already established the env.
-
-## Repo layout
+## Layout
 
 ```
-src/fastssv/          package source
-  api/                optional FastAPI service ([api] extra)
-  rules/              validation rules; one per file, self-registering
-tests/                pytest suite (unit + api integration)
-docs/                 zensical source (configured by zensical.toml at repo root)
-deploy/               Dockerfile + docker-compose for the API service
-.github/workflows/    CI: tests.yml, docs.yml, publish.yml
+src/fastssv/
+  api/                FastAPI service ([api] extra) — Jinja templates, htmx UI
+  core/               base Rule, registry, helpers
+  rules/<category>/   validation rules; one rule per file, self-registering
+tests/                pytest (unit + api integration); rule tests in tests/test_rules.py
+docs/                 zensical source (zensical.toml at repo root)
+deploy/               Dockerfile + docker-compose for the API
+.github/workflows/    tests.yml, docs.yml, publish.yml
+.agents/              shared agent assets (skills, prompts) — see Cross-tool layout
 ```
+
+Rule categories: `anti_patterns`, `concept_standardization`, `data_quality`, `domain_specific`, `joins`, `temporal`.
 
 ## Code style
 
-- Formatter / linter: **ruff** — config in `pyproject.toml` under `[tool.ruff]`. Line length 120, target Python 3.10+.
-- Project-wide ignores: `E501` (line-too-long — the 120-line cap is set, but pre-existing lines exceed), `E741` (`l`/`I` variable names), `E402` (intentional in some `__init__.py` for circular-import avoidance), `F841` (unused locals — some rules build WIP regex/match variables that aren't yet wired up).
-- One per-file ignore: `src/fastssv/__init__.py` waives `F401` because it imports submodules purely for the `@register` side effect. Category `__init__.py` files don't need this — they re-export rule classes via `__all__`, so F401 doesn't fire.
-- `tests/test_rules.py` is in `extend-exclude` (skipped by ruff but still run by pytest).
-- Coverage configuration sits in `[tool.coverage.*]` with `fail_under = 79`.
+- **ruff** (`[tool.ruff]` in `pyproject.toml`). Line length 120, target 3.10+.
+- Project ignores: `E501` (pre-existing long lines), `E741` (`l`/`I` names), `E402` (intentional in some `__init__.py` for circular-import avoidance), `F841` (WIP regex/match locals in some rules).
+- `src/fastssv/__init__.py` waives `F401` — it imports submodules purely for `@register` side effects.
+- `tests/test_rules.py` is in `extend-exclude` (skipped by ruff, still run by pytest).
+- Coverage gate: `fail_under = 79` under `[tool.coverage.*]`.
 
-## Build backend
+## Build & release
 
-- `[build-system].build-backend = "uv_build"`. Both sdist and wheel come from `uv build`.
-- PyPI release is automated by `.github/workflows/publish.yml` on a `v*` tag — the workflow checks the tag matches `[project].version` before publishing.
+- `[build-system].build-backend = "uv_build"`. `uv build` produces sdist + wheel.
+- Tag-driven publish: `.github/workflows/publish.yml` fires on `v*` and aborts unless the tag matches `[project].version`.
 
-## Adding a new validation rule
+## Adding a validation rule
 
-Categories live under `src/fastssv/rules/`: `anti_patterns/`, `concept_standardization/`, `data_quality/`, `domain_specific/`, `joins/`, `temporal/`. Pick the one that fits.
+A dedicated [Skill](.agents/skills/add-rule/SKILL.md) walks through this. Short version:
 
-1. Create `src/fastssv/rules/<category>/<descriptive_snake_name>.py` (no `rule_` prefix — match existing naming, e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`).
-2. In that file, define a class that subclasses `Rule` (from `fastssv.core.base`) and decorate it with `@register` (from `fastssv.core.registry`). Set `rule_id = "<category>.<snake_name>"` and a human-readable `name`. Look at any existing rule in the same category as a template.
-3. Wire the class into `src/fastssv/rules/<category>/__init__.py` — add `from .<your_file> import <YourRuleClass>` and append `"<YourRuleClass>"` to `__all__`. (No edit needed in `src/fastssv/rules/__init__.py` — it imports the category packages, not individual rules.)
-4. Add a unit test in `tests/test_rules.py` (the canonical file for rule tests) covering both passing and failing SQL.
-5. Run `uv run --frozen --no-sync pytest tests/test_rules.py -v`.
+1. Create the rule module in the package matching its category. Five categories are flat — file at `src/fastssv/rules/<category>/<snake_name>.py` (no `rule_` prefix; match existing names like `datetime_between_date_literal.py`). `domain_specific` is nested — table-specific rules live at `src/fastssv/rules/domain_specific/<table>/<table>_<snake_name>.py` (e.g. `domain_specific/measurement/measurement_cross_unit_comparison.py`); cross-cutting domain rules stay flat at `src/fastssv/rules/domain_specific/<snake_name>.py`.
+2. Subclass `Rule` (`fastssv.core.base`) and decorate with `@register` (`fastssv.core.registry`). Set `rule_id = "<category>.<snake_name>"` — 2-segment is the [documented stable format](README.md#stability) and the convention across all 6 categories. The directory nesting under `domain_specific/<table>/` is organisational only and must not appear in the id. Also set `name`, `description`, `severity`, `suggested_fix`.
+3. Wire the class into the **closest** `__init__.py`: flat categories use `src/fastssv/rules/<category>/__init__.py`; `domain_specific` table rules use `src/fastssv/rules/domain_specific/<table>/__init__.py` (the parent already re-exports via `from .<table> import *`). Add `from .<file> import <Class>` and append `"<Class>"` to `__all__`. Leave `src/fastssv/rules/__init__.py` alone — it imports category packages, not individual rules.
+4. Unit-test passing and failing SQL in `tests/test_rules.py`.
+5. `uv run --frozen --no-sync pytest tests/test_rules.py -v`.
 
 ## Changelog
 
-`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses semver from 1.0.0 onward. **Update it for every user-visible change** — new rules, rule behaviour changes, CLI/API surface changes, build/dependency changes, removed features, bug fixes — under the `## [Unreleased]` section, in the appropriate `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security` subsection. Skip purely internal changes (refactors, comment-only edits, test reshuffles) unless they alter observable behaviour.
-
-Match the existing entry style: a bold-prefixed lead-in summarising what changed, followed by a short paragraph explaining the context, the previous behaviour, the new behaviour, and any user impact.
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semver from 1.0.0 onward. **Update `## [Unreleased]` for every user-visible change** — new rules, rule behaviour shifts, CLI/API surface, build/dependency changes, removals, fixes — under the right `### Added/Changed/Fixed/Removed/Deprecated/Security` heading. Skip purely internal changes unless they alter observable behaviour. Match the existing style: bold lead-in summarising the change, then a short paragraph on context, previous vs new behaviour, and user impact.
 
 ## After making changes
 
-Before reporting a task complete — for **every** kind of change, including code changes, not just docs/config:
+For every kind of change, before reporting done:
 
-1. **Sweep the repo for stale references — code, docs, config, CI, and Docker alike.** Whenever you rename or remove anything that other code or text might still mention — a public function, class, module, parameter, `rule_id`, severity, exception type, CLI flag, command, dependency, config key, file, or feature — grep the whole tree for the old name and update every surviving hit. Don't stop when your direct edit compiles or your immediate test passes; actively review the existing code and prose for downstream effects. Cover the call sites and tests in `src/` and `tests/`, scripts under `scripts/` and snippets under `examples/`, prose and code blocks under `docs/`, the `README.md`, the `## [Unreleased]` block in `CHANGELOG.md`, `AGENTS.md` (and its `CLAUDE.md` symlink), the GitHub Actions workflows under `.github/workflows/`, and `deploy/Dockerfile` + `deploy/docker-compose.yml`. The same applies to behaviour changes that don't rename anything: if you change a function's contract, default, or returned shape, walk every caller and update assumptions, comments, docstrings, and tests that still describe the old shape. Stale references rot silently — they look correct until the next reader follows a dead link, copies a command that no longer exists, or imports a symbol that has moved.
-2. **Run the pre-commit hooks** with `uvx prek run --all-files` (or `uvx prek run` to scope to staged files only). [Prek](https://github.com/j178/prek) is a faster, drop-in reimplementation of `pre-commit`; it reads the project's native [`prek.toml`](https://prek.j178.dev/configuration/) (the precedence is `prek.toml` > `.pre-commit-config.yaml`, and this repo only ships the TOML form). The hooks defined there cover trailing whitespace, end-of-file fixers, YAML/TOML validity, merge-conflict markers, large-file guards, and `ruff check --fix` + `ruff format`. Fix anything they flag before handing the change back.
-3. **Double-check that the change doesn't break anything end-to-end — backend *and* frontend.** A green `pytest tests/ -v` run is necessary but not sufficient: the test suite covers the CLI, rule engine, and JSON API, but the FastAPI web UI in `src/fastssv/api/ui.py` (Jinja templates under `src/fastssv/api/templates/`, htmx + CSS assets under `src/fastssv/api/static/`) only has thin smoke tests. For any change that touches `src/fastssv/api/`, dependencies, the deploy bundle, or anything that could plausibly affect request handling or asset serving, also boot the service locally — `uv run --frozen --no-sync fastssv serve --reload` — and click through the index, the rules listing, and a sample SQL validation in the browser to confirm templates render, static assets load, and validation results stream back as expected. If a change is too sweeping to verify visually, say so explicitly in the handoff rather than implying the UI was checked.
+1. **Sweep for stale references.** Whenever you rename or remove a public symbol, `rule_id`, severity, exception, CLI flag, command, dependency, config key, file, or feature — grep the whole tree and update every hit. Cover `src/`, `tests/`, `scripts/`, `examples/`, `docs/`, `README.md`, `## [Unreleased]` in `CHANGELOG.md`, `AGENTS.md` (and the `CLAUDE.md` symlink), `.github/workflows/`, `deploy/Dockerfile`, `deploy/docker-compose.yml`. Same applies to behaviour changes that don't rename anything: walk every caller, comment, docstring, and test still describing the old contract. Stale references rot silently.
+2. **Run pre-commit hooks**: `uvx prek run --all-files` (or `uvx prek run` for staged files). [Prek](https://github.com/j178/prek) reads [`prek.toml`](https://prek.j178.dev/configuration/) — trailing whitespace, EOL, YAML/TOML validity, merge markers, large-file guard, `ruff check --fix`, `ruff format`. Fix anything flagged.
+3. **Verify end-to-end — backend AND frontend.** Green `pytest` is necessary but not sufficient: the API web UI (`src/fastssv/api/ui.py`, Jinja templates under `src/fastssv/api/templates/`, htmx + CSS under `src/fastssv/api/static/`) only has thin smoke tests. For changes touching `src/fastssv/api/`, dependencies, the deploy bundle, or anything that could affect request handling or asset serving — boot locally with `uv run --frozen --no-sync fastssv serve --reload` and click through index, rules listing, and a sample SQL validation. If you can't verify the UI, say so explicitly in the handoff.
 
 ## Conventions
 
-- **Use `uv sync` / `uv add` for dependency work — never `uv pip install`.** CI workflows and the Dockerfile all use lockfile-respecting `uv sync --frozen`. `uv pip` is treated as a compatibility shim only.
-- Prefer editing existing files over creating new ones.
-- Keep `[project.optional-dependencies]` extras grouped: `dev`, `docs`, `api`. New optional groups go alongside.
-- The `[api]` extra uses `fastapi[standard]`, which transitively pulls `uvicorn[standard]`, `jinja2`, `python-multipart`, and `httpx`. Don't re-add those as top-level entries — let FastAPI manage them. Only add deps FastAPI does not pull in (current additions: `gunicorn`, `slowapi`, `pydantic-settings`).
-- The API's `cors_origins` setting accepts either an empty string, a comma-separated list, or a JSON list (see the `field_validator` in `src/fastssv/api/config.py`). Don't undo that tolerance — `pydantic-settings>=2` would otherwise crash on the empty-string default that `deploy/docker-compose.yml` passes through.
+- **`uv sync` / `uv add` only — never `uv pip install`.** CI and Docker use `uv sync --frozen`; `uv pip` is a compat shim.
+- Edit existing files over creating new ones.
+- `[project.optional-dependencies]` extras grouped: `dev`, `docs`, `api`. New optional groups go alongside.
+- The `[api]` extra uses `fastapi[standard]`, which transitively pulls `uvicorn[standard]`, `jinja2`, `python-multipart`, and `httpx`. Don't re-add those at the top level — let FastAPI manage them. Only add deps FastAPI doesn't pull in (current additions: `gunicorn`, `slowapi`, `pydantic-settings`).
+- The API's `cors_origins` setting accepts an empty string, a comma-separated list, or a JSON list (see the `field_validator` in `src/fastssv/api/config.py`). Don't undo that tolerance — `pydantic-settings>=2` would otherwise crash on the empty-string default that `deploy/docker-compose.yml` passes through.
 
 ## Cross-tool layout
 
-`AGENTS.md` is the canonical project-wide agent file (per the [agents.md](https://agents.md/) spec). Tool-specific entry points alias into it via tracked symlinks so every contributor sees the same content regardless of which agent they use:
+`AGENTS.md` is the canonical project-wide agent file ([agents.md](https://agents.md/) spec). Tool-specific entry points alias into the shared assets via tracked symlinks so every contributor sees the same content regardless of which agent they use:
 
 - `CLAUDE.md` → `AGENTS.md` (Claude Code)
-- `.claude/<file>` → `.agents/<file>` (per-file, when `.agents/` gains shared skills/prompts)
+- `.claude/<file>` → `.agents/<file>` for individual shared assets
+- `.claude/skills/<name>` → `../../.agents/skills/<name>` for skills
 
-Personal preferences (your own permission allowlist, ad-hoc env vars) belong in `.claude/settings.local.json`, which stays gitignored. Shared, team-level Claude Code settings go in `.claude/settings.json`.
+Personal preferences (your own permission allowlist, ad-hoc env vars) belong in `.claude/settings.local.json`, which is gitignored. Shared, team-level Claude Code settings go in `.claude/settings.json`.
 
-When you add a new shared agent asset (skill, prompt, slash-command snippet), put the source-of-truth file in `.agents/<name>` and add a symlink at `.claude/<name>` so Claude Code finds it:
+To add a shared agent asset: put the source-of-truth in `.agents/<name>` (or `.agents/skills/<name>/SKILL.md` for skills following the [agentskills.io](https://agentskills.io) format that [`tiangolo/library-skills`](https://github.com/tiangolo/library-skills) builds on), then symlink:
 
 ```sh
 ln -s ../.agents/<name> .claude/<name>
+ln -s ../../.agents/skills/<name> .claude/skills/<name>
 ```
 
-(Contributors on Windows need WSL, "Developer Mode" enabled, or `git config core.symlinks true` plus admin rights for the symlinks to materialise correctly.)
+(Windows contributors: WSL, "Developer Mode" enabled, or `git config core.symlinks true` plus admin rights.)
