@@ -25868,7 +25868,7 @@ class TestRelationshipBooleanComparison:
     def _run_rule(self, sql: str) -> list:
         """Run the relationship boolean comparison rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("domain_specific.vocabulary.relationship_boolean_comparison")()
+        rule = get_rule("domain_specific.vocabulary_relationship_boolean_comparison")()
         return rule.validate(sql)
 
     def test_omop_150_string_true_violation(self) -> None:
@@ -26029,7 +26029,7 @@ class TestNoteNlpSnippetMisuse:
     def _run_rule(self, sql: str) -> list:
         """Run the note NLP snippet misuse rule."""
         from fastssv.core.registry import get_rule
-        rule = get_rule("domain_specific.note.note_nlp_snippet_misuse")()
+        rule = get_rule("domain_specific.note_nlp_snippet_misuse")()
         return rule.validate(sql)
 
     def test_omop_152_snippet_equality_violation(self) -> None:

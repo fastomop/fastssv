@@ -9,6 +9,36 @@ between minor versions.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: two `domain_specific` rule IDs renamed to match the
+  documented 2-segment `<category>.<rule_name>` format.** Two legacy
+  rules predated the convention and used a 3-segment id derived from
+  their table subpackage:
+
+  | Old `rule_id` | New `rule_id` |
+  | --- | --- |
+  | `domain_specific.note.note_nlp_snippet_misuse` | `domain_specific.note_nlp_snippet_misuse` |
+  | `domain_specific.vocabulary.relationship_boolean_comparison` | `domain_specific.vocabulary_relationship_boolean_comparison` |
+
+  The README documents `<category>.<rule_name>` as the stable format,
+  and pre-1.0 minor releases explicitly allow breaking rule-set changes
+  (see the "Stability" section), so these are normalised in this
+  release rather than left to fester. The `vocabulary` rule's source
+  file was also renamed
+  `vocabulary/relationship_boolean_comparison.py` →
+  `vocabulary/vocabulary_relationship_boolean_comparison.py` so its
+  filename matches the new id and the table-prefix convention used by
+  every other nested `domain_specific` rule (`measurement_*.py`,
+  `drug_*.py`, `visit_*.py`, …). **Anyone calling
+  `get_rule("domain_specific.note.note_nlp_snippet_misuse")` or
+  `get_rule("domain_specific.vocabulary.relationship_boolean_comparison")`
+  must update to the new ids** — there is no compatibility shim.
+  Saved JSON validation reports that reference the old ids will need
+  to be regenerated. Documentation in
+  [`docs/rules_reference.md`](docs/rules_reference.md) and the rule's
+  unit tests in `tests/test_rules.py` were updated in lockstep.
+
 ### Added
 
 - **`SECURITY.md` with a private-reporting policy.** New file at the repo

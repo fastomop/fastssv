@@ -32,7 +32,7 @@ If no category fits cleanly, prefer the closest existing one over inventing a ne
 
 Naming: descriptive snake_case **without** a `rule_` prefix (e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`). For nested `domain_specific` rules, the filename conventionally **starts with the table name** (`measurement_cross_unit_comparison.py`, `drug_days_supply_validation.py`) so the rule reads cleanly when the file is opened in isolation. Class name: PascalCase ending in `Rule`.
 
-`rule_id` is always `<category>.<snake_name>` — the directory nesting under `domain_specific` is purely organisational and **does not** appear in the id (e.g. `domain_specific.measurement_cross_unit_comparison`, not `domain_specific.measurement.cross_unit_comparison`).
+`rule_id` is `<category>.<snake_name>` — the [documented stable format](../../../README.md#stability) and the convention across all 6 categories. The directory nesting under `domain_specific/<table>/` is organisational only and **does not** appear in the id (e.g. `domain_specific.measurement_cross_unit_comparison`, not `domain_specific.measurement.cross_unit_comparison`).
 
 Template:
 
