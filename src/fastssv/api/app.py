@@ -10,15 +10,15 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from fastssv.api.config import Settings, get_settings
 from fastssv.api.models import ErrorResponse
+from fastssv.api.ratelimit import configure_rate_limit, limiter
 from fastssv.api.routes import router
 from fastssv.api.ui import mount_static, router as ui_router
 from fastssv.core.logging import JSONFormatter
@@ -45,14 +45,56 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Allows the FastAPI Swagger UI at /docs (CSS/JS from cdn.jsdelivr.net,
+# favicon from fastapi.tiangolo.com) and our same-origin htmx UI. Inline
+# scripts/styles are permitted because base.html seeds the theme
+# attribute inline before CSS loads (avoids a flash of unstyled colour)
+# and Swagger UI also uses inline init scripts.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+def _request_is_https(request: Request) -> bool:
+    """Report the *original* scheme.
+
+    When uvicorn runs behind a proxy and gunicorn's --forwarded-allow-ips
+    trusts that proxy, ProxyHeadersMiddleware rewrites ``request.url.scheme``
+    from ``X-Forwarded-Proto``. Without that trust we'd be reading the
+    inner-loop scheme, so this falls back to inspecting the
+    ``x-forwarded-proto`` header only when the peer header is present —
+    HSTS is consequently NOT sent on plain HTTP, which avoids pinning
+    browsers to https before TLS is in place.
+    """
+    return request.url.scheme == "https"
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        response.headers.setdefault("Permissions-Policy", "interest-cohort=()")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "interest-cohort=(), camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+        response.headers.setdefault("Content-Security-Policy", _CSP)
+        if _request_is_https(request):
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
         return response
 
 
@@ -146,7 +188,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     _configure_logging(settings.log_level)
 
-    limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit])
+    # The shared limiter lives in fastssv.api.ratelimit so route decorators
+    # can attach to it at import time. Per-app the only thing that varies is
+    # the configured limit string, which is published into the module so the
+    # callable limit_value on @limiter.limit() picks it up at request time.
+    configure_rate_limit(settings.rate_limit)
 
     app = FastAPI(
         title="FastSSV API",
@@ -162,6 +208,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # SlowAPIMiddleware is still added so 429 responses include the
+    # X-RateLimit-* headers slowapi injects, but with no default_limits set
+    # on the limiter only routes carrying @limiter.limit() are throttled —
+    # /v1/health, /v1/rules, /static/*, and the HTML pages are exempt.
     app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_sql_bytes + 4096)
     app.add_middleware(SecurityHeadersMiddleware)

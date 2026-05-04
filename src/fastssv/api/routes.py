@@ -23,6 +23,7 @@ from fastssv.api.models import (
     ValidationResponse,
     Violation,
 )
+from fastssv.api.ratelimit import limiter, rate_limit_value
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
 from fastssv.core.registry import get_all_rules
@@ -46,6 +47,7 @@ def _category_from_rule_id(rule_id: str) -> str:
     response_model=ValidationResponse,
     summary="Validate an OMOP SQL query",
 )
+@limiter.limit(rate_limit_value)
 async def validate(req: ValidationRequest, request: Request) -> ValidationResponse:
     settings: Settings = request.app.state.settings
     sql_bytes = len(req.sql.encode("utf-8"))

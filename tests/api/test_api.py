@@ -172,7 +172,74 @@ def test_security_headers_present(client: TestClient):
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
     assert resp.headers["X-Frame-Options"] == "DENY"
     assert "Referrer-Policy" in resp.headers
-    assert "Strict-Transport-Security" in resp.headers
+    assert "Content-Security-Policy" in resp.headers
+    assert "Cross-Origin-Opener-Policy" in resp.headers
+    assert "Cross-Origin-Resource-Policy" in resp.headers
+
+
+def test_csp_allows_swagger_cdn(client: TestClient):
+    resp = client.get("/v1/health")
+    csp = resp.headers["Content-Security-Policy"]
+    # Swagger UI loads CSS/JS from cdn.jsdelivr.net and a favicon from
+    # fastapi.tiangolo.com — both must be reachable for /docs to render.
+    assert "https://cdn.jsdelivr.net" in csp
+    assert "https://fastapi.tiangolo.com" in csp
+    assert "frame-ancestors 'none'" in csp
+
+
+def test_hsts_suppressed_on_plain_http(client: TestClient):
+    # TestClient defaults to http://testserver — HSTS should NOT be sent
+    # because pinning a browser to https before TLS is in place would lock
+    # users out of any plain-http development or misconfigured deploy.
+    resp = client.get("/v1/health")
+    assert "Strict-Transport-Security" not in resp.headers
+
+
+def test_hsts_emitted_on_https():
+    # Simulate the request having reached us over https — same scheme
+    # uvicorn's ProxyHeadersMiddleware would surface from a trusted
+    # X-Forwarded-Proto upstream.
+    settings = Settings(
+        max_sql_bytes=1024,
+        parse_timeout_seconds=2.0,
+        rate_limit="1000/minute",
+        cors_origins=[],
+        log_level="WARNING",
+    )
+    https_client = TestClient(create_app(settings), base_url="https://testserver")
+    resp = https_client.get("/v1/health")
+    assert resp.headers.get("Strict-Transport-Security", "").startswith("max-age=")
+
+
+def test_health_is_not_rate_limited():
+    # Fresh app with a tiny limit so the validate endpoint trips fast,
+    # but /v1/health has no @limiter.limit decorator and must stay 200.
+    settings = Settings(
+        max_sql_bytes=1024,
+        parse_timeout_seconds=2.0,
+        rate_limit="2/minute",
+        cors_origins=[],
+        log_level="WARNING",
+    )
+    client = TestClient(create_app(settings))
+    for _ in range(20):
+        assert client.get("/v1/health").status_code == 200
+
+
+def test_validate_is_rate_limited():
+    # Same fresh app — /v1/validate carries the limit decorator and the
+    # third hit within the window should be 429.
+    settings = Settings(
+        max_sql_bytes=1024,
+        parse_timeout_seconds=2.0,
+        rate_limit="2/minute",
+        cors_origins=[],
+        log_level="WARNING",
+    )
+    client = TestClient(create_app(settings))
+    body = {"sql": "SELECT person_id FROM person", "dialect": "postgres"}
+    statuses = [client.post("/v1/validate", json=body).status_code for _ in range(4)]
+    assert 429 in statuses, statuses
 
 
 def test_request_id_echoed(client: TestClient):

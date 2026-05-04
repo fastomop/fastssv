@@ -24,6 +24,7 @@ from slowapi.util import get_remote_address
 
 from fastssv import validate_sql_structured
 from fastssv.api.config import Settings
+from fastssv.api.ratelimit import limiter, rate_limit_value
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
 from fastssv.core.registry import get_all_rules
@@ -151,6 +152,7 @@ async def rules_page(request: Request):
 
 
 @router.post("/ui/validate", response_class=HTMLResponse, include_in_schema=False)
+@limiter.limit(rate_limit_value)
 async def ui_validate(
     request: Request,
     sql: str = Form(...),

@@ -9,6 +9,45 @@ between minor versions.
 
 ## [Unreleased]
 
+### Security
+
+- **Rate limiter is now per-route and proxy-aware.** The previous
+  `default_limits=[settings.rate_limit]` on `SlowAPIMiddleware` applied
+  the same per-IP budget to every endpoint — including `/v1/health` (the
+  Docker `HEALTHCHECK` target) and `/static/*` — and bucketed every
+  client to one IP whenever the container ran behind a reverse proxy
+  (because `request.client.host` resolved to the proxy peer). Net
+  effect: one abuser could exhaust the global budget and trip the
+  healthcheck → orchestrator restart loop. The limit now lives on
+  `/v1/validate` and `/ui/validate` only via `@limiter.limit(...)`
+  decorators in `fastssv.api.routes` and `fastssv.api.ui`. The limiter
+  itself moved to a new `fastssv.api.ratelimit` module so route
+  decorators can attach to it at import time. To recover the real
+  client identity behind a proxy, set the new `FORWARDED_ALLOW_IPS`
+  env var to the proxy's CIDR — gunicorn passes it to uvicorn's
+  `ProxyHeadersMiddleware`, which rewrites `request.client.host` from
+  the leftmost `X-Forwarded-For` and `request.url.scheme` from
+  `X-Forwarded-Proto`. Default `127.0.0.1` matches a same-host sidecar
+  proxy. `deploy/.env.example` and `deploy/docker-compose.yml`
+  document the variable.
+
+- **`SecurityHeadersMiddleware` now sets a Content-Security-Policy and
+  emits HSTS only over HTTPS.** The middleware previously left CSP
+  unset, so any tampering with the public CDN (`cdn.jsdelivr.net`) that
+  ships Swagger UI assets would execute in our origin; it also sent
+  `Strict-Transport-Security` unconditionally, including on plain HTTP,
+  which would pin browsers to https before TLS termination was in
+  place. The new CSP allows the Swagger CDN explicitly (`script-src`,
+  `style-src`, `font-src` include `https://cdn.jsdelivr.net`) plus the
+  FastAPI favicon host (`img-src https://fastapi.tiangolo.com`) while
+  keeping everything else same-origin and locking `frame-ancestors` to
+  `'none'`. HSTS is now conditioned on `request.url.scheme == "https"`,
+  which is correct after the proxy-trust fix above. Two new headers,
+  `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Resource-Policy: same-site`, harden the page isolation
+  contract; `Permissions-Policy` was widened to also deny `camera`,
+  `microphone`, `geolocation`, and `payment`.
+
 ### Changed
 
 - **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single
