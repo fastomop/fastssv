@@ -263,6 +263,7 @@ def _is_incomplete_select(tree: exp.Expression) -> bool:
     return not (has_expressions or has_from)
 
 
+@lru_cache(maxsize=128)
 def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Expression]], Optional[str]]:
     """Parse SQL and return list of statement trees.
 
@@ -272,6 +273,14 @@ def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Ex
     like ``select``, free text like ``hello world``, etc.) — sqlglot's parser
     is lenient and will happily return an ``Alias`` or empty ``Select`` for
     such input; callers almost always want this treated as a parse error.
+
+    Result is ``lru_cache``-d on ``(sql, dialect)``. ``validate_sql_structured``
+    plus every registered rule call this with the same arguments, so a single
+    request would otherwise re-parse the same SQL ~150× via ``sqlglot.parse``.
+    Caching is safe only because rules treat the returned AST as read-only —
+    if you ever introduce mutation in a rule, drop the cache or deep-copy
+    the trees. ``maxsize`` is bounded to keep memory predictable when callers
+    push large SQL bodies.
 
     Args:
         sql: The SQL string to parse

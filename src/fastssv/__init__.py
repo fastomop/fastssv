@@ -269,15 +269,109 @@ def validate_sql_structured(
     return violations
 
 
-# Category validation functions
-from .rules import (
-    validate_anti_patterns,
-    validate_concept_standardization,
-    validate_data_quality,
-    validate_domain_specific,
-    validate_joins,
-    validate_temporal,
-)
+# Category validation helpers — legacy string-error API. Prefer
+# `validate_sql(..., validators=<category>)` or `validate_sql_structured`
+# in new code; these wrappers exist for backwards compatibility.
+def _validate_category_strings(sql: str, category: str, dialect: str = "postgres") -> List[str]:
+    from fastssv.core.helpers import parse_sql
+
+    _, parse_error = parse_sql(sql, dialect)
+    if parse_error:
+        return [parse_error]
+
+    results: List[str] = []
+    for rule_cls in get_rules_by_category(category):
+        rule = rule_cls()
+        for v in rule.validate(sql, dialect):
+            prefix = "Warning: " if v.severity == Severity.WARNING else ""
+            results.append(f"{prefix}{v.message}")
+    return results
+
+
+def validate_anti_patterns(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate OMOP query anti-patterns.
+
+    Detects common anti-patterns including:
+    - String-based concept identification
+    - Improper type concept usage
+    - Context-dependent vocabulary lookups
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "anti_patterns", dialect)
+
+
+def validate_concept_standardization(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate concept standardization rules.
+
+    Enforces:
+    - Standard concept usage
+    - Hierarchy expansion
+    - Invalid reason checks
+    - Domain validation
+    - Source concept handling
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "concept_standardization", dialect)
+
+
+def validate_data_quality(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate data quality rules.
+
+    Checks:
+    - Schema validation
+    - Unmapped concept handling
+    - Negative concept ID validation
+    - Column type validation
+    - Data quality issues
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "data_quality", dialect)
+
+
+def validate_domain_specific(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate domain-specific rules.
+
+    Table-specific validation for:
+    - Condition, drug, measurement, observation
+    - Person, procedure, visit, death domains
+    - Cardinality awareness
+    - Field validation
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "domain_specific", dialect)
+
+
+def validate_joins(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate join rules.
+
+    Validates:
+    - Foreign key relationships
+    - Join path correctness
+    - Concept relationship direction
+    - Cross-table linkage requirements
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "joins", dialect)
+
+
+def validate_temporal(sql: str, dialect: str = "postgres") -> List[str]:
+    """Validate temporal rules.
+
+    Validates:
+    - Date logic
+    - Observation period constraints
+    - Temporal consistency across clinical events
+    - NULL handling for date columns
+
+    Returns list of error/warning messages.
+    """
+    return _validate_category_strings(sql, "temporal", dialect)
+
 
 __all__ = [
     # Main API
