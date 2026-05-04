@@ -11,6 +11,18 @@ between minor versions.
 
 ### Changed
 
+- **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single
+  `validate_sql_structured` call dispatches to ~150 registered rules,
+  each of which calls `parse_sql(sql, dialect)` independently — so the
+  same SQL was being tokenised and parsed by `sqlglot.parse` dozens of
+  times per request. Caching collapses that to one parse per unique
+  (sql, dialect) pair (measured 73 hits / 74 calls = 98.6% hit ratio
+  on a representative validation). `maxsize=128` keeps the cache
+  bounded; the function's contract is unchanged. Safe because rules
+  treat the returned AST as read-only — a sweep of `rules/` and
+  `core/` confirmed no AST mutation. If you ever introduce mutation in
+  a rule, drop the cache or deep-copy the trees.
+
 - **`domain_specific/` layout normalised; off-pattern rules moved into
   table subpackages.** Three rules previously lived flat at the top of
   `src/fastssv/rules/domain_specific/` despite being table-specific,
