@@ -50,4 +50,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; \
 sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{__import__(\"os\").environ.get(\"PORT\",\"8000\")}/v1/health', timeout=3).status == 200 else 1)"
 
-CMD ["sh", "-c", "gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-8000} --access-logfile - --error-logfile - --timeout 30 --graceful-timeout 30 fastssv.api.app:app"]
+# --forwarded-allow-ips controls which peers gunicorn (and through it,
+# uvicorn's ProxyHeadersMiddleware) trusts to set X-Forwarded-For and
+# X-Forwarded-Proto. Defaults to 127.0.0.1 (a same-host reverse proxy
+# such as nginx/caddy in another container on the same docker network
+# typically presents as 127.0.0.1 only when host networking is used —
+# bridged setups need the proxy's actual subnet, e.g. "172.16.0.0/12").
+# Set to "*" only if you fully control the inbound network path; trusting
+# a header from an untrusted source lets clients spoof their identity.
+CMD ["sh", "-c", "gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-8000} --access-logfile - --error-logfile - --timeout 30 --graceful-timeout 30 --forwarded-allow-ips ${FORWARDED_ALLOW_IPS:-127.0.0.1} fastssv.api.app:app"]

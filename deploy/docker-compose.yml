@@ -21,6 +21,11 @@ services:
       FASTSSV_API_PARSE_TIMEOUT_SECONDS: "${FASTSSV_API_PARSE_TIMEOUT_SECONDS:-5}"
       FASTSSV_API_CORS_ORIGINS: "${FASTSSV_API_CORS_ORIGINS:-}"
       WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
+      # Trusted proxy CIDR for gunicorn's --forwarded-allow-ips. Without
+      # this, request.client.host stays the proxy IP (so rate limiting
+      # buckets every user into one bucket) and request.url.scheme stays
+      # http (so HSTS is suppressed even when there is TLS upstream).
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
     restart: unless-stopped
     healthcheck:
       test:
