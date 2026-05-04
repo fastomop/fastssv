@@ -9,6 +9,18 @@ between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- **Python 3.14 added to the supported version matrix.** CI now exercises
+  3.10, 3.11, 3.12, 3.13, and 3.14 on every push, and the PyPI
+  `Programming Language :: Python :: 3.14` classifier advertises the new
+  ceiling on `pypi.org/project/fastssv`. Python 3.14 went stable on
+  2025-10-07; with `requires-python = ">=3.10"` already covering it, the
+  only remaining gaps were test coverage and the published metadata, both
+  of which this change closes. No source or dependency changes were
+  required — `sqlglot` and the rest of the runtime tree already resolve
+  on 3.14.
+
 ### Changed
 
 - **Pre-commit configuration migrated from `.pre-commit-config.yaml` to
