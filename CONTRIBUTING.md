@@ -53,14 +53,14 @@ We follow the spirit of the Linux kernel's [coding-assistants](https://docs.kern
   Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]
   ```
 
-  Examples:
+  The square brackets above are the kernel docs' "optional placeholder" notation (matching shell-style usage), not literal characters — the emitted trailer has bare, space-separated tool names. Examples:
 
   ```
   Assisted-by: Claude:claude-opus-4-7
-  Assisted-by: Codex:gpt-5 ruff sqlglot-debug
+  Assisted-by: Codex:gpt-5 sqlglot-debug
   ```
 
-  `AGENT_NAME` is the agent or tool name; `MODEL_VERSION` is the specific model; bracketed tools are optional specialised analysis aids. **Don't list general developer tools** (git, ruff, gcc, your editor) — those are noise.
+  `AGENT_NAME` is the agent or tool name; `MODEL_VERSION` is the specific model; trailing tools are optional specialised analysis aids (e.g. a custom `sqlglot` traversal helper, coccinelle, sparse). **Don't list general developer tools** (git, ruff, gcc, your editor) — those are noise.
 
 - **Disclose the prompts and the scope** in the commit message body (or the PR description if multiple commits share context):
   - What was AI-assisted vs. hand-written?

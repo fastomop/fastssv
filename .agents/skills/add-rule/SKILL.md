@@ -14,7 +14,7 @@ FastSSV rules are one-rule-per-file Python modules under `src/fastssv/rules/<cat
 | `anti_patterns` | Common mistakes / patterns to avoid (e.g. filtering by `concept_name`, missing vocabulary qualifier) |
 | `concept_standardization` | Standard-concept enforcement, domain validation, concept-relationship direction |
 | `data_quality` | Generic SQL/data hygiene (NULLs, duplicates, unbounded scans) that still rides on OMOP shape |
-| `domain_specific` | Rules tied to a specific OMOP domain (drug, condition, measurement…) |
+| `domain_specific` | Rules tied to a specific OMOP domain table (drug, condition, measurement, …) or cross-cutting domain logic |
 | `joins` | Join-shape and join-key correctness across OMOP tables |
 | `temporal` | Time-window, observation-period, era-overlap, datetime literal handling |
 
@@ -22,7 +22,17 @@ If no category fits cleanly, prefer the closest existing one over inventing a ne
 
 ## 2. Create the rule file
 
-Path: `src/fastssv/rules/<category>/<snake_name>.py`. Naming: descriptive snake_case **without** a `rule_` prefix (e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`). Class name: PascalCase ending in `Rule`.
+**File location depends on the category.** Five categories are flat (one rule per file, directly under the category package). `domain_specific` is the exception: it has nested table-specific subpackages so per-table rules can be grouped, while still keeping cross-cutting domain rules at the top level.
+
+| Category | Layout | Path for a new rule |
+| --- | --- | --- |
+| `anti_patterns`, `concept_standardization`, `data_quality`, `joins`, `temporal` | flat | `src/fastssv/rules/<category>/<snake_name>.py` |
+| `domain_specific` (table-specific rule, e.g. measurement, drug, condition, person, procedure, observation, visit, death, specimen, cohort, cost, episode, visit_detail, location, vocabulary, note) | nested | `src/fastssv/rules/domain_specific/<table>/<table>_<snake_name>.py` |
+| `domain_specific` (cross-cutting, not tied to one table — e.g. `event_cardinality_validation.py`, `event_field_polymorphic_resolution.py`, `dose_era_cross_unit_comparison.py`) | flat (top level) | `src/fastssv/rules/domain_specific/<snake_name>.py` |
+
+Naming: descriptive snake_case **without** a `rule_` prefix (e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`). For nested `domain_specific` rules, the filename conventionally **starts with the table name** (`measurement_cross_unit_comparison.py`, `drug_days_supply_validation.py`) so the rule reads cleanly when the file is opened in isolation. Class name: PascalCase ending in `Rule`.
+
+`rule_id` is always `<category>.<snake_name>` — the directory nesting under `domain_specific` is purely organisational and **does not** appear in the id (e.g. `domain_specific.measurement_cross_unit_comparison`, not `domain_specific.measurement.cross_unit_comparison`).
 
 Template:
 
@@ -38,6 +48,7 @@ from typing import List
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
 from fastssv.core.registry import register
 
 
@@ -64,19 +75,37 @@ class <Name>Rule(Rule):
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        # Parse with fastssv.core.helpers.parse_sql when you need an AST.
-        # Use sqlglot.exp nodes for traversal; reuse helpers in fastssv.core.helpers
-        # (extract_aliases, resolve_table_col, is_string_literal, …) before reinventing.
+        trees, _err = parse_sql(sql, dialect)
+        if not trees:
+            return violations
+        for tree in trees:
+            # Swap exp.Select for the node type your rule targets, then
+            # implement the check. Reuse helpers from fastssv.core.helpers
+            # (extract_aliases, resolve_table_col, is_string_literal,
+            # normalize_name, …) before hand-rolling AST walks. Emit
+            # violations with self.create_violation(...).
+            for _node in tree.find_all(exp.Select):
+                pass
         return violations
 ```
+
+The scaffold above is **F401-clean** — every import has a use site (`exp.Select` in `find_all`, `parse_sql` in the body, the rest in the class definition). Strip the inner `for _node` loop only when you've replaced it with your real check; deleting the import without deleting its only use will break ruff.
 
 The `rule_id` MUST be `<category>.<snake_name>` and match the file name. The category prefix is what `get_rules_by_category()` keys on.
 
 Look at a sibling rule in the same category as a working template before writing from scratch — naming, helper usage, and message tone are all consistent within a category.
 
-## 3. Wire it into the category package
+## 3. Wire it into the closest `__init__.py`
 
-Edit `src/fastssv/rules/<category>/__init__.py`:
+The `@register` decorator only fires when the module is imported, so the rule's package `__init__.py` must import the class. **Pick the closest `__init__.py` to the file you just created**:
+
+| Where the rule file lives | `__init__.py` to edit |
+| --- | --- |
+| `src/fastssv/rules/<category>/<snake_name>.py` (flat categories) | `src/fastssv/rules/<category>/__init__.py` |
+| `src/fastssv/rules/domain_specific/<table>/<table>_<snake_name>.py` | `src/fastssv/rules/domain_specific/<table>/__init__.py` (the parent already re-exports the table subpackage via `from .<table> import *`) |
+| `src/fastssv/rules/domain_specific/<snake_name>.py` (top-level cross-cutting) | `src/fastssv/rules/domain_specific/__init__.py` |
+
+Add the import:
 
 ```python
 from .<snake_name> import <Name>Rule
