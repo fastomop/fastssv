@@ -9,6 +9,33 @@ between minor versions.
 
 ## [Unreleased]
 
+### Removed
+
+- **`viz` and `langfuse` optional-dependency groups dropped from
+  `pyproject.toml`.** Neither group was imported anywhere in `src/` or
+  `tests/` — `matplotlib`, `networkx`, `langfuse`, and `dotenv` had been
+  declared as optional extras (`fastssv[viz]`, `fastssv[langfuse]`) but
+  carried no runtime or test usage to support them. The empty placeholders
+  invited contributors to assume an integration existed that did not, and
+  bloated the lockfile resolution. Anyone who was relying on `pip install
+  fastssv[viz]` or `[langfuse]` to pull these libraries will need to install
+  them directly. The corresponding AGENTS.md guidance and the `[viz]`
+  lower-bound note have been removed.
+
+### Changed
+
+- **`api` extra slimmed by switching to `fastapi[standard]`.** The group
+  now reads `fastapi[standard]>=0.115`, `gunicorn`, `slowapi`,
+  `pydantic-settings`. The previously explicit `uvicorn[standard]`,
+  `jinja2`, `python-multipart` entries are gone — `fastapi[standard]`
+  pulls all three (plus `httpx`, `email-validator`, `fastapi-cli`)
+  transitively, so listing them at the top level was redundant and risked
+  drifting out of sync with FastAPI's own pins. `httpx` was likewise
+  removed from the `dev` extra; `tests/api/` consumes it via
+  `fastapi.testclient.TestClient`, which now resolves through the `api`
+  extra that CI already installs alongside `dev`. No user-visible API
+  behaviour change; install footprint is roughly equivalent.
+
 ### Added
 
 - **Python 3.14 added to the supported version matrix.** CI now exercises
