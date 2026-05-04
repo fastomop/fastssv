@@ -284,8 +284,9 @@ between minor versions.
   `max_sql_bytes` cap of 100 000 bytes could pin an API worker for
   ~7 s. The helper has been rewritten as a single linear scan over the
   string (no regex, no backtracking), and a regression test in
-  `tests/test_integration.py` asserts the 60 KB payload now returns in
-  under a second. No change to observable splitting behaviour.
+  `tests/test_integration.py` asserts the helper scales linearly
+  (doubling input ≈ doubles runtime, not quadruples). No change to
+  observable splitting behaviour.
 
 ## [0.2.0] - 2026-04-30
 

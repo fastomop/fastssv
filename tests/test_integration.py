@@ -137,15 +137,30 @@ class TestParseErrorSurface:
     def test_split_sql_statements_unclosed_block_comment_is_not_polynomial(self) -> None:
         # Regression for CodeQL py/polynomial-redos: the prior regex-based
         # `_has_sql_content` was O(N²) on inputs of the form "/*" + "a/*"*N
-        # (open comment never closes). At ~60 KB the old code took ~2.5 s;
-        # the linear scan returns in milliseconds.
+        # (open comment never closes). Asserting on the scaling ratio rather
+        # than a wall-clock cutoff so the test isn't flaky on slow CI runners:
+        # under O(N) time should ~double when input doubles; under O(N²) it
+        # would ~quadruple.
         import time
 
         from fastssv.core.helpers import split_sql_statements
 
-        payload = "/*" + ("a/*" * 20_000)
-        start = time.perf_counter()
-        result = split_sql_statements(payload)
-        elapsed = time.perf_counter() - start
-        assert result == []
-        assert elapsed < 1.0, f"split_sql_statements took {elapsed:.2f}s on a 60 KB unclosed-comment input"
+        def _time_split(reps: int) -> float:
+            payload = "/*" + ("a/*" * reps)
+            # Best-of-3 to drop scheduler noise; the linear scan is the
+            # bottleneck so the minimum is the most meaningful measurement.
+            best = float("inf")
+            for _ in range(3):
+                start = time.perf_counter()
+                assert split_sql_statements(payload) == []
+                best = min(best, time.perf_counter() - start)
+            return best
+
+        small = _time_split(50_000)
+        large = _time_split(100_000)
+        ratio = large / small
+        assert ratio < 3.0, (
+            f"split_sql_statements scaled {ratio:.2f}x for 2x input "
+            f"(small={small * 1000:.1f}ms, large={large * 1000:.1f}ms); "
+            "expected ~2x for linear, ~4x for quadratic."
+        )
