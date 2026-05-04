@@ -9,6 +9,18 @@ between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- **`ty` added as an advisory type-checker in the `[dev]` extra.**
+  [ty](https://docs.astral.sh/ty/) is Astral's pre-release type-checker
+  (currently 0.0.x, beta — diagnostics and rule IDs may shift between
+  versions). It is installed alongside the rest of the dev tooling via
+  `uv sync --frozen --extra dev` and invoked with
+  `uv run --frozen --no-sync ty check src/ tests/`. The checker is **advisory
+  only**: there is no CI gate and no prek hook, so existing diagnostics do
+  not block contributions. Anyone wanting to tighten the loop later can wire
+  it into `tests.yml` or `prek.toml` once the diagnostic baseline is clean.
+
 ### Changed
 
 - **Pre-commit configuration migrated from `.pre-commit-config.yaml` to

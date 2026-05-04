@@ -27,6 +27,7 @@ uv sync --frozen --extra docs               # if working on the docs site
 | Tests + coverage    | `uv run --frozen --no-sync pytest tests/ --cov`               |
 | Lint                | `uvx ruff check src/ tests/`                                  |
 | Auto-format         | `uvx ruff format src/ tests/`                                 |
+| Type-check (advisory) | `uv run --frozen --no-sync ty check src/ tests/`            |
 | Build sdist + wheel | `uv build`                                                    |
 | Serve docs locally  | `uv run --frozen --no-sync zensical serve`                    |
 | Build container     | `docker compose -f deploy/docker-compose.yml build`           |
