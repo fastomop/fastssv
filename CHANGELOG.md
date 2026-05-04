@@ -9,6 +9,46 @@ between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- **`CONTRIBUTING.md` with an explicit AI-assisted PR policy.** The new
+  file at the repo root sets the contract for both human-authored and
+  AI-assisted contributions. AI-assisted PRs are welcome subject to two
+  standards: (1) Linux-kernel-style disclosure and accountability —
+  human submitter signs the DCO, an `Assisted-by: AGENT_NAME:MODEL_VERSION`
+  trailer per the kernel's [`coding-assistants`](https://docs.kernel.org/process/coding-assistants.html)
+  format, prompts and scope disclosed in the commit body, and reviewers
+  applying scrutiny in proportion to how much was machine-generated; and
+  (2) any agent skills shipped under `.agents/skills/` follow the
+  [agentskills.io](https://agentskills.io) format that
+  [`tiangolo/library-skills`](https://github.com/tiangolo/library-skills)
+  builds on (a `SKILL.md` with YAML frontmatter inside a
+  `.agents/skills/<name>/` directory). Drive-by, undisclosed, or
+  undefendable machine output ("AI slop") will be closed.
+
+- **`add-rule` skill under `.agents/skills/add-rule/`.** A self-contained
+  walkthrough for adding a new validation rule — category selection, file
+  layout, the `Rule` + `@register` template, category `__init__.py` wiring,
+  test expectations, and pre-flight commands. Symlinked at
+  `.claude/skills/add-rule` so Claude Code (which does not yet read
+  `.agents/`) picks it up. AGENTS.md now points to the skill from the
+  "Adding a validation rule" section instead of duplicating the steps.
+
+### Changed
+
+- **`AGENTS.md` rewritten for higher signal-to-token ratio.** The agent
+  guidance file at the repo root has been condensed from ~11 KB of prose
+  paragraphs to ~5.6 KB of bullets and tables, while preserving every
+  load-bearing rule (uv-only workflow, `[api]` extra transitive-dep rule,
+  `cors_origins` validator caveat, post-change stale-reference sweep,
+  `prek` hook list, UI smoke-test requirement for `src/fastssv/api/`
+  changes, `[tool.ruff]` ignore set, coverage gate, cross-tool layout).
+  The `## Cross-tool layout` section also documents the new
+  `.claude/skills/<name>` → `.agents/skills/<name>` symlink convention
+  and points at the new `CONTRIBUTING.md` for the AI-assisted PR policy.
+  The `CLAUDE.md` symlink picks up the rewrite automatically. No code or
+  runtime change.
+
 ### Removed
 
 - **`viz` and `langfuse` optional-dependency groups dropped from

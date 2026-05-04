@@ -9,7 +9,10 @@ This directory pairs with the root [`AGENTS.md`](../AGENTS.md), which is the pro
 For each shared asset placed here, create a symlink under the appropriate tool-specific directory so that tool finds it. For Claude Code:
 
 ```sh
-ln -s ../.agents/<file> .claude/<file>
+ln -s ../.agents/<file> .claude/<file>                    # individual asset
+ln -s ../../.agents/skills/<name> .claude/skills/<name>   # skill directory
 ```
+
+Skills under `skills/<name>/SKILL.md` follow the [agentskills.io](https://agentskills.io) format that [`tiangolo/library-skills`](https://github.com/tiangolo/library-skills) builds on — see [`CONTRIBUTING.md`](../CONTRIBUTING.md#ai-assisted-contributions) for the full standard.
 
 The directory is intentionally tracked even when sparse so the convention is visible to new contributors.

@@ -130,7 +130,7 @@ The service ships body-size limits, parse-timeout, rate limiting, strict CORS, s
 | JSON report format | [docs/json_output.md](docs/json_output.md) |
 | Logging | [docs/logging.md](docs/logging.md) |
 
-For contributing, see [AGENTS.md](AGENTS.md). Release notes live in [CHANGELOG.md](CHANGELOG.md).
+For contributing, see [CONTRIBUTING.md](CONTRIBUTING.md) (PR policy and the AI-assisted PR rules) and [AGENTS.md](AGENTS.md) (build, test, and conventions). Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
 ## Stability
 
