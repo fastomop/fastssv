@@ -15,7 +15,7 @@
 
 A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 154 rules, no database connection, deterministic.
 
-📖 **Full documentation: <https://fastomop.github.io/fastSSV/>**
+📖 **Full documentation: <https://fastomop.github.io/fastssv/>**
 
 ---
 

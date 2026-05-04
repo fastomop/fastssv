@@ -1,7 +1,7 @@
 [project]
 site_name = "FastSSV Documentation"
 site_description = "Fast Semantic Static Validator — semantic validation framework for OMOP CDM SQL queries"
-site_url = "https://fastomop.github.io/fastSSV/"
+site_url = "https://fastomop.github.io/fastssv/"
 repo_name = "fastomop/fastSSV"
 repo_url = "https://github.com/fastomop/fastSSV"
 edit_uri = "edit/main/docs/"
