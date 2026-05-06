@@ -7,6 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -166,6 +167,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_sql_bytes + 4096)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIDMiddleware)
+
+    if settings.behind_proxy:
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
     if settings.cors_allow_origins():
         app.add_middleware(

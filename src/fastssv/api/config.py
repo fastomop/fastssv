@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # the validator below runs.
     cors_origins: Annotated[List[str], NoDecode] = Field(default_factory=list)
     log_level: str = Field(default="INFO")
+    behind_proxy: bool = Field(default=False)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
