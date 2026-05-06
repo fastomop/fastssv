@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "feature/mph-ghcr-build"
   workflow_dispatch:
 
 jobs:
