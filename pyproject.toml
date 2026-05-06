@@ -1,6 +1,6 @@
 [project]
 name = "fastssv"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fast Semantic Static Validator - A semantic validation framework for OMOP CDM SQL queries"
 readme = "README.md"
 license = {text = "Apache-2.0"}
