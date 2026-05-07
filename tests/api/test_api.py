@@ -21,6 +21,9 @@ def client() -> TestClient:
         rate_limit="1000/minute",
         cors_origins=[],
         log_level="WARNING",
+        # Explicit so the test is deterministic regardless of any local
+        # `.env` that might enable MCP for dev convenience.
+        mcp_enabled=False,
     )
     app = create_app(settings)
     return TestClient(app)

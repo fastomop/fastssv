@@ -24,29 +24,29 @@ By default, FastSSV logs to stderr with INFO level:
 
 ```bash
 # Simple validation with default logging
-fastssv query.sql
+uv run fastssv query.sql
 ```
 
 ### Enable Debug Logging
 
 ```bash
 # CLI argument
-fastssv query.sql --log-level DEBUG
+uv run fastssv query.sql --log-level DEBUG
 
 # Or environment variable
 export FASTSSV_LOG_LEVEL=DEBUG
-fastssv query.sql
+uv run fastssv query.sql
 ```
 
 ### Log to File
 
 ```bash
 # CLI argument
-fastssv query.sql --log-file logs/validation.log
+uv run fastssv query.sql --log-file logs/validation.log
 
 # Or environment variable
 export FASTSSV_LOG_FILE=logs/validation.log
-fastssv query.sql
+uv run fastssv query.sql
 ```
 
 ---
@@ -79,7 +79,7 @@ FASTSSV_LOG_FORMAT=detailed
 Override environment variables:
 
 ```bash
-fastssv query.sql \
+uv run fastssv query.sql \
   --log-level DEBUG \
   --log-file logs/debug.log \
   --log-format json
@@ -185,16 +185,16 @@ Output:
 
 ```bash
 # Default INFO logging to console
-fastssv query.sql
+uv run fastssv query.sql
 
 # Debug logging
-fastssv query.sql --log-level DEBUG
+uv run fastssv query.sql --log-level DEBUG
 
 # Log to file
-fastssv query.sql --log-file logs/validation.log
+uv run fastssv query.sql --log-file logs/validation.log
 
 # JSON logs for production
-fastssv query.sql --log-format json --log-file logs/validation.json
+uv run fastssv query.sql --log-format json --log-file logs/validation.json
 ```
 
 ### What's Logged
@@ -226,7 +226,7 @@ The CLI logs:
 When validating multiple queries:
 
 ```bash
-fastssv queries.sql --log-level INFO
+uv run fastssv queries.sql --log-level INFO
 ```
 
 Output:
@@ -349,7 +349,7 @@ Collect logs in centralized systems:
 Example: Send JSON logs to Elasticsearch:
 
 ```bash
-fastssv query.sql --log-format json | \
+uv run fastssv query.sql --log-format json | \
   while read line; do
     curl -X POST "http://localhost:9200/fastssv-logs/_doc" \
          -H 'Content-Type: application/json' \
@@ -380,7 +380,7 @@ cat logs/fastssv.json | jq 'select(.duration_ms > 1000)'
 ### Example 1: Debug Mode with File Logging
 
 ```bash
-fastssv complex_query.sql \
+uv run fastssv complex_query.sql \
   --log-level DEBUG \
   --log-file logs/debug.log \
   --log-format detailed
@@ -393,7 +393,7 @@ export FASTSSV_LOG_LEVEL=INFO
 export FASTSSV_LOG_FORMAT=json
 export FASTSSV_LOG_FILE=logs/production.json
 
-fastssv batch_queries.sql
+uv run fastssv batch_queries.sql
 ```
 
 ### Example 3: Python API with Custom Logger

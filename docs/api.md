@@ -5,7 +5,7 @@ optional — the core library and CLI work without it. Install with the `api`
 extra:
 
 ```bash
-pip install "fastssv[api]"
+uv add "fastssv[api]"
 ```
 
 This pulls in `fastapi`, `uvicorn[standard]`, `gunicorn`, `slowapi`, and
@@ -18,23 +18,23 @@ This pulls in `fastapi`, `uvicorn[standard]`, `gunicorn`, `slowapi`, and
 There are two supported "one command" paths. Both launch the JSON API **and**
 the HTMX web UI from the same process (they're mounted on the same app).
 
-### `fastssv serve` — host Python
+### `uv run fastssv serve` — host Python
 
 Works for local dev, demos, and single-VM production. No Docker required.
 
 ```bash
-fastssv serve                       # dev: uvicorn, host 127.0.0.1, port 8000
-fastssv serve --reload              # + auto-reload on code changes
-fastssv serve --host 0.0.0.0 --port 9000
-fastssv serve --prod                # gunicorn + 2 uvicorn workers
-fastssv serve --prod --workers 4    # tune worker count
+uv run fastssv serve                       # dev: uvicorn, host 127.0.0.1, port 8000
+uv run fastssv serve --reload              # + auto-reload on code changes
+uv run fastssv serve --host 0.0.0.0 --port 9000
+uv run fastssv serve --prod                # gunicorn + 2 uvicorn workers
+uv run fastssv serve --prod --workers 4    # tune worker count
 ```
 
 Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
 rule registry once at startup (~154 rules, sub-second).
 
-The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`pip install "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
+The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`uv add "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
 
 ### `docker compose up` — containerized
 
@@ -50,7 +50,7 @@ Environment variables set in `deploy/docker-compose.yml` override the defaults
 (log level, rate limit, body-size cap, parse timeout, CORS origins, worker
 count). See the comments in that file or the Configuration section below.
 
-The container runs the same gunicorn command as `fastssv serve --prod`,
+The container runs the same gunicorn command as `uv run fastssv serve --prod`,
 uses a non-root user, mounts a read-only root filesystem, and ships a
 healthcheck against `/v1/health`.
 

@@ -7,13 +7,13 @@ FastSSV exposes its validator as a [Model Context Protocol](https://modelcontext
 The endpoint is gated by the optional `[mcp]` extra. The Docker image bundled in `deploy/` already includes it.
 
 ```sh
-pip install "fastssv[api,mcp]"
-fastssv serve  # MCP at http://localhost:8000/mcp/
+uv add "fastssv[api,mcp]"
+uv run fastssv serve  # MCP at http://localhost:8000/mcp/
 ```
 
 **The MCP endpoint is opt-in.** `FASTSSV_API_MCP_ENABLED` defaults to `false` everywhere — in-code, in `deploy/docker-compose.yml`, and in `deploy/.env.example`. A deployment that doesn't think about MCP gets no MCP endpoint, by design (it's unauthenticated at the application layer; defaulting it on would be a footgun). To enable it, set `FASTSSV_API_MCP_ENABLED=true` in your env.
 
-If `FASTSSV_API_MCP_ENABLED=true` but the `mcp` extra is missing, the app logs `mcp_extra_not_installed` at startup and skips the mount.
+If `FASTSSV_API_MCP_ENABLED=true` but the `mcp` extra is missing, the app raises `RuntimeError` at startup with a clear install hint — the misconfiguration fails loudly so non-interactive deployments (CI, docker) can't silently boot without `/mcp`.
 
 ## Tool
 

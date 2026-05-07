@@ -93,11 +93,12 @@ For every kind of change, before reporting done:
 ## Conventions
 
 - **`uv sync` / `uv add` only — never `uv pip install`.** CI and Docker use `uv sync --frozen`; `uv pip` is a compat shim.
+- **End-user docs are uv-native too** — `README.md`, `docs/index.md`, `docs/api.md`, `docs/mcp.md`, `docs/plugin_architecture.md` use `uv add "fastssv[…]"` + `uv run fastssv …` for install + run examples. No `pip install`, no `uv tool install` (global PATH), no `uv pip install` (compat shim). Historical `CHANGELOG.md` entries describing earlier releases keep their original wording — don't rewrite history.
 - Edit existing files over creating new ones.
 - `[project.optional-dependencies]` extras grouped: `dev`, `docs`, `api`, `mcp`. New optional groups go alongside.
 - The `[api]` extra uses `fastapi[standard]`, which transitively pulls `uvicorn[standard]`, `jinja2`, `python-multipart`, and `httpx`. Don't re-add those at the top level — let FastAPI manage them. Only add deps FastAPI doesn't pull in (current additions: `gunicorn`, `slowapi`, `pydantic-settings`).
 - The API's `cors_origins` setting accepts an empty string, a comma-separated list, or a JSON list (see the `field_validator` in `src/fastssv/api/config.py`). Don't undo that tolerance — `pydantic-settings>=2` would otherwise crash on the empty-string default that `deploy/docker-compose.yml` passes through. The same `_parse_origin_list` validator is reused for `mcp_allowed_origins`.
-- The `[mcp]` extra is independent of `[api]`; the MCP server is mounted by `api/app.py` only when both `mcp_enabled=True` and the `mcp` package import succeeds. Without the extra, the app logs `mcp_extra_not_installed` and runs without the `/mcp` mount — never let that path raise.
+- The `[mcp]` extra is independent of `[api]`. The MCP server is mounted by `api/app.py` only when `settings.mcp_enabled=True` AND the `mcp` package imports successfully. If the operator opts in (`FASTSSV_API_MCP_ENABLED=true`) but the extra isn't installed, `_maybe_build_mcp_app` raises `RuntimeError` at startup so the misconfiguration fails loudly in non-interactive deployments (CI/docker) instead of silently booting without `/mcp`. Don't revert that to a warning-and-skip path. Regression guard: `tests/api/test_mcp.py::test_mcp_enabled_but_extra_missing_raises`.
 - Middleware ordering in `api/app.py` is load-bearing: `MCPOriginMiddleware` short-circuits with a 403 on disallowed Origins, so it MUST be registered *before* (and therefore inside) `SecurityHeadersMiddleware` and `RequestIDMiddleware` so those wrap the rejection response. There's a regression test in `tests/api/test_mcp.py::test_origin_disallowed_returns_403`.
 
 ## Cross-tool layout

@@ -53,9 +53,11 @@ any SQL linter and fail any replication attempt.
 
 ## Quick start
 
+From inside a uv project (`uv init` first if you don't have one):
+
 ```bash
-pip install fastssv
-fastssv path/to/query.sql
+uv add fastssv
+uv run fastssv path/to/query.sql
 ```
 
 For local development:

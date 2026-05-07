@@ -1,13 +1,13 @@
 # JSON output format
 
-`fastssv <path>` writes a structured JSON report to disk and prints a one-line summary to the terminal. The report is the canonical machine-readable contract for CI integrations, dashboards, and any downstream tool that needs to consume validation results.
+`uv run fastssv <path>` writes a structured JSON report to disk and prints a one-line summary to the terminal. The report is the canonical machine-readable contract for CI integrations, dashboards, and any downstream tool that needs to consume validation results.
 
 ## Quick reference
 
 ```bash
-fastssv query.sql                       # writes output/validation_report.json
-fastssv query.sql --output report.json  # custom path
-fastssv query.sql --combined            # multi-statement input → single combined report
+uv run fastssv query.sql                       # writes output/validation_report.json
+uv run fastssv query.sql --output report.json  # custom path
+uv run fastssv query.sql --combined            # multi-statement input → single combined report
 ```
 
 **Exit codes**
@@ -206,7 +206,7 @@ for v in report.get("errors", []) + report.get("warnings", []):
 ### Shell + jq
 
 ```bash
-fastssv query.sql --output report.json
+uv run fastssv query.sql --output report.json
 
 # All violations across both severities
 jq '(.errors // []) + (.warnings // []) | .[] | "[\(.rule_id)] \(.issue)"' report.json

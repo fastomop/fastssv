@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     # no MCP endpoint. Operators flip FASTSSV_API_MCP_ENABLED=true explicitly
     # when they want it (and have configured a reverse proxy to gate it).
     # The `mcp` extra must also be installed for the mount to actually happen;
-    # if it's missing the app logs a warning at startup and skips the mount.
+    # if the operator opts in but the extra is missing,
+    # api/app.py:_maybe_build_mcp_app raises RuntimeError at startup so the
+    # misconfiguration fails loudly in CI/docker rather than silently booting
+    # without /mcp.
     mcp_enabled: bool = Field(default=False)
     mcp_allowed_origins: Annotated[List[str], NoDecode] = Field(default_factory=list)
     # Reserved knob for future OAuth 2.1 conformance. Today only "none" is

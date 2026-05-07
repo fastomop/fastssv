@@ -40,8 +40,12 @@ between minor versions.
   gate `/mcp` at the reverse proxy (oauth2-proxy, mTLS, network ACLs).
   The `[mcp]` extra is added to `deploy/Dockerfile` and the new env vars
   are wired through `deploy/docker-compose.yml` and `deploy/.env.example`.
-  When the `mcp` package is missing at runtime the app logs a warning
-  and skips the mount, so an `[api]`-only install still works.
+  When `FASTSSV_API_MCP_ENABLED=true` but the `mcp` package is missing,
+  `_maybe_build_mcp_app` raises `RuntimeError` at startup so the
+  misconfiguration fails loudly in non-interactive deployments (CI,
+  docker) instead of silently booting without `/mcp`. With the toggle
+  off (the default) and the `mcp` package missing, the app boots
+  normally — `[api]`-only installs still work.
 
 ### Changed
 
