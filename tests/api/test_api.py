@@ -21,6 +21,9 @@ def client() -> TestClient:
         rate_limit="1000/minute",
         cors_origins=[],
         log_level="WARNING",
+        # Explicit so the test is deterministic regardless of any local
+        # `.env` that might enable MCP for dev convenience.
+        mcp_enabled=False,
     )
     app = create_app(settings)
     return TestClient(app)
@@ -33,6 +36,9 @@ def test_health_returns_ok_and_rules_count(client: TestClient):
     assert body["status"] == "ok"
     assert body["rules_loaded"] > 0
     assert "version" in body
+    # The default `client` fixture leaves MCP off; this guards against the
+    # field disappearing or flipping its default in HealthResponse.
+    assert body["mcp_mounted"] is False
 
 
 def test_validate_valid_query_returns_no_errors(client: TestClient):

@@ -9,6 +9,44 @@ between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP (Model Context Protocol) Streamable HTTP endpoint at `/mcp`.** A
+  new optional `[mcp]` extra (`uv add fastssv[mcp]`) brings in the
+  official `mcp` Python SDK and mounts a stateless Streamable HTTP server
+  alongside the existing FastAPI app. One tool is exposed: `validate_sql`
+  (wraps `validate_sql_structured` with the same statement-split, strict
+  mode and timeout behaviour as `/v1/validate`). Rule discovery happens
+  via the `rule_id` returned on each violation, or the existing
+  `/v1/rules` HTTP endpoint and `docs/rules_reference.md` — there is no
+  separate `list_rules` MCP tool, since a static catalog is a poor fit
+  for the tool primitive (it's the wrong primitive — resources would be
+  better — and the `rule_id`s the model needs are surfaced in
+  `validate_sql` results). The endpoint is built per the
+  [2025-11-25 spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http)
+  in stateless mode (`stateless_http=True`, `json_response=True`), so no
+  session store or SSE resumption layer is required. New env vars:
+  `FASTSSV_API_MCP_ENABLED` (default `false` — opt-in because the endpoint
+  is unauthenticated at the application layer),
+  `FASTSSV_API_MCP_ALLOWED_ORIGINS` (CSV/JSON list, enforced by a dedicated
+  middleware that 403s requests with a present-but-unlisted `Origin` —
+  per the spec's DNS-rebinding mitigation), and `FASTSSV_API_MCP_AUTH_MODE`
+  (reserved Literal pinned to `"none"`; widening it later is how we'd opt
+  into OAuth 2.1 without churning the env-var name). **Authentication is
+  intentionally unauthenticated at the application layer** — the [MCP
+  authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+  is OPTIONAL, and FastSSV's stateless validation surface has no
+  per-user resources, so the deployment expectation is that operators
+  gate `/mcp` at the reverse proxy (oauth2-proxy, mTLS, network ACLs).
+  The `[mcp]` extra is added to `deploy/Dockerfile` and the new env vars
+  are wired through `deploy/docker-compose.yml` and `deploy/.env.example`.
+  When `FASTSSV_API_MCP_ENABLED=true` but the `mcp` package is missing,
+  `_maybe_build_mcp_app` raises `RuntimeError` at startup so the
+  misconfiguration fails loudly in non-interactive deployments (CI,
+  docker) instead of silently booting without `/mcp`. With the toggle
+  off (the default) and the `mcp` package missing, the app boots
+  normally — `[api]`-only installs still work.
+
 ### Changed
 
 - **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single
@@ -240,6 +278,17 @@ between minor versions.
   example that referenced a nonexistent `validate_anti_patterns` symbol.
 
 ### Fixed
+
+- **`deploy/.env.example` documents `FASTSSV_API_BEHIND_PROXY`.** The
+  reverse-proxy toggle added with HTTPS support is wired through
+  `deploy/docker-compose.yml` (compose-level default `true`) and read by
+  `Settings.behind_proxy` in `src/fastssv/api/config.py` (in-code default
+  `false`), but it was missing from `deploy/.env.example`. Operators
+  copying the example file as a config reference now see the variable,
+  what it does (trust `X-Forwarded-*` from an upstream TLS terminator so
+  generated URLs reflect the external scheme/host), and the
+  compose-vs-code default split. No behaviour change — purely a
+  documentation gap fix.
 
 - **Documentation correctness pass.** Multiple doc pages had drifted from the
   registry and the API surface; fixes applied across `docs/`:

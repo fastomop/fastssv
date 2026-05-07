@@ -11,7 +11,11 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: fastssv:local
-    container_name: fastssv
+    # No container_name on purpose: hardcoding it forces every parallel
+    # `docker compose up` (e.g. tests/api/test_docker_smoke.py with -p
+    # fastssv-smoke) to collide with whatever container is already running
+    # under that name. Compose will derive `<project>-fastssv-1` from the
+    # project name instead, which keeps parallel projects isolated.
     ports:
       - "${FASTSSV_PORT:-8000}:8000"
     environment:
@@ -21,6 +25,8 @@ services:
       FASTSSV_API_PARSE_TIMEOUT_SECONDS: "${FASTSSV_API_PARSE_TIMEOUT_SECONDS:-5}"
       FASTSSV_API_CORS_ORIGINS: "${FASTSSV_API_CORS_ORIGINS:-}"
       FASTSSV_API_BEHIND_PROXY: "${FASTSSV_API_BEHIND_PROXY:-true}"
+      FASTSSV_API_MCP_ENABLED: "${FASTSSV_API_MCP_ENABLED:-false}"
+      FASTSSV_API_MCP_ALLOWED_ORIGINS: "${FASTSSV_API_MCP_ALLOWED_ORIGINS:-}"
       WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
     restart: unless-stopped
     healthcheck:

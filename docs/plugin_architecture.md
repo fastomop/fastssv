@@ -246,19 +246,19 @@ class TestMyNewRule:
 
 ```bash
 # Run all rules (default)
-fastssv query.sql
+uv run fastssv query.sql
 
 # Run specific category
-fastssv query.sql --categories joins
+uv run fastssv query.sql --categories joins
 
 # Run multiple categories
-fastssv query.sql --categories joins temporal
+uv run fastssv query.sql --categories joins temporal
 
 # Run specific rule
-fastssv query.sql --rules joins.my_new_rule
+uv run fastssv query.sql --rules joins.my_new_rule
 
 # Run multiple specific rules
-fastssv query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
+uv run fastssv query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
 ```
 
 ### Python API

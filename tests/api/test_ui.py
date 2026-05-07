@@ -21,6 +21,10 @@ def client() -> TestClient:
         rate_limit="1000/minute",
         cors_origins=[],
         log_level="WARNING",
+        # Explicit so the UI tests don't pull in the FastMCP session manager
+        # via a local `.env` that happens to enable MCP — that lifespan is
+        # tested separately in tests/api/test_mcp.py.
+        mcp_enabled=False,
     )
     app = create_app(settings)
     return TestClient(app)
