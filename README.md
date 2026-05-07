@@ -118,6 +118,17 @@ fastssv serve              # http://localhost:8000 — JSON API + HTMX web UI
 
 The service ships body-size limits, parse-timeout, rate limiting, strict CORS, security headers, structured JSON logging, and a Docker image under `deploy/`. See the [HTTP API guide](docs/api.md) for endpoints, configuration, and deployment.
 
+## MCP server (optional)
+
+```bash
+pip install "fastssv[api,mcp]"
+FASTSSV_API_MCP_ENABLED=true fastssv serve   # MCP Streamable HTTP endpoint at http://localhost:8000/mcp/
+```
+
+The MCP endpoint is opt-in (`FASTSSV_API_MCP_ENABLED` defaults to `false`) because it's unauthenticated at the application layer.
+
+Mounted at `/mcp` and built per the [Streamable HTTP transport spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http) in stateless mode. One tool: `validate_sql`. The endpoint is unauthenticated at the application layer ([authorization is OPTIONAL in MCP](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)) — gate it at your reverse proxy. See [docs/mcp.md](docs/mcp.md).
+
 ## Documentation
 
 | Topic | Page |
@@ -127,6 +138,7 @@ The service ships body-size limits, parse-timeout, rate limiting, strict CORS, s
 | Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
 | Per-rule catalog (all 154) | [docs/rules_reference.md](docs/rules_reference.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
+| MCP server | [docs/mcp.md](docs/mcp.md) |
 | JSON report format | [docs/json_output.md](docs/json_output.md) |
 | Logging | [docs/logging.md](docs/logging.md) |
 

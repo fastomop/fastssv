@@ -49,6 +49,9 @@ api = [
 	"slowapi>=0.1.9",
 	"pydantic-settings>=2.5",
 ]
+mcp = [
+	"mcp>=1.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9,<0.10"]

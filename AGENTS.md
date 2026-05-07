@@ -13,8 +13,8 @@ A static, semantic validator for SQL written against the [OMOP CDM v5.4](https:/
 `requires-python = ">=3.10"`. The project uses **uv** end-to-end ([install](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```sh
-uv sync --frozen --extra dev --extra api    # full dev env
-uv sync --frozen --extra docs               # docs work
+uv sync --frozen --extra dev --extra api --extra mcp  # full dev env (API + MCP)
+uv sync --frozen --extra docs                         # docs work
 ```
 
 ## Commands
@@ -38,13 +38,17 @@ uv sync --frozen --extra docs               # docs work
 
 ```
 src/fastssv/
-  api/                FastAPI service ([api] extra) — Jinja templates, htmx UI
+  api/                FastAPI service ([api] extra) — Jinja templates, htmx UI;
+                      api/_validation.py is the shared statement-split + strict +
+                      timeout helper used by both /v1/validate and the MCP tool
+  mcp/                MCP Streamable HTTP server ([mcp] extra) — mounted by
+                      api/app.py at /mcp; one tool (validate_sql)
   core/               base Rule, registry, helpers
   rules/<category>/   validation rules; one rule per file, self-registering
   schemas/            OMOP CDM column types and standard-concept field set
 tests/                pytest (unit + api integration); rule tests in tests/test_rules.py
 docs/                 zensical source (zensical.toml at repo root)
-deploy/               Dockerfile + docker-compose for the API
+deploy/               Dockerfile + docker-compose for the API + MCP endpoint
 .github/workflows/    tests.yml, docs.yml, publish.yml
 .agents/              shared agent assets (skills, prompts) — see Cross-tool layout
 ```
@@ -84,15 +88,17 @@ For every kind of change, before reporting done:
 
 1. **Sweep for stale references.** Whenever you rename or remove a public symbol, `rule_id`, severity, exception, CLI flag, command, dependency, config key, file, or feature — grep the whole tree and update every hit. Cover `src/`, `tests/`, `scripts/`, `examples/`, `docs/`, `README.md`, `## [Unreleased]` in `CHANGELOG.md`, `AGENTS.md` (and the `CLAUDE.md` symlink), `.github/workflows/`, `deploy/Dockerfile`, `deploy/docker-compose.yml`. Same applies to behaviour changes that don't rename anything: walk every caller, comment, docstring, and test still describing the old contract. Stale references rot silently.
 2. **Run pre-commit hooks**: `uvx prek run --all-files` (or `uvx prek run` for staged files). [Prek](https://github.com/j178/prek) reads [`prek.toml`](https://prek.j178.dev/configuration/) — trailing whitespace, EOL, YAML/TOML validity, merge markers, large-file guard, `ruff check --fix`, `ruff format`. Fix anything flagged.
-3. **Verify end-to-end — backend AND frontend.** Green `pytest` is necessary but not sufficient: the API web UI (`src/fastssv/api/ui.py`, Jinja templates under `src/fastssv/api/templates/`, htmx + CSS under `src/fastssv/api/static/`) only has thin smoke tests. For changes touching `src/fastssv/api/`, dependencies, the deploy bundle, or anything that could affect request handling or asset serving — boot locally with `uv run --frozen --no-sync fastssv serve --reload` and click through index, rules listing, and a sample SQL validation. If you can't verify the UI, say so explicitly in the handoff.
+3. **Verify end-to-end — backend AND frontend.** Green `pytest` is necessary but not sufficient: the API web UI (`src/fastssv/api/ui.py`, Jinja templates under `src/fastssv/api/templates/`, htmx + CSS under `src/fastssv/api/static/`) only has thin smoke tests. For changes touching `src/fastssv/api/`, `src/fastssv/mcp/`, dependencies, the deploy bundle, or anything that could affect request handling or asset serving — boot locally with `uv run --frozen --no-sync fastssv serve --reload` and click through index, rules listing, and a sample SQL validation. For MCP changes also `curl -X POST http://localhost:8000/mcp/ -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"0"}}}'` and confirm a 200 with `serverInfo.name=fastssv` (the `/mcp` mount is a Starlette sub-app and does NOT appear in `/openapi.json` or `/docs` — that's expected). If you can't verify the UI, say so explicitly in the handoff.
 
 ## Conventions
 
 - **`uv sync` / `uv add` only — never `uv pip install`.** CI and Docker use `uv sync --frozen`; `uv pip` is a compat shim.
 - Edit existing files over creating new ones.
-- `[project.optional-dependencies]` extras grouped: `dev`, `docs`, `api`. New optional groups go alongside.
+- `[project.optional-dependencies]` extras grouped: `dev`, `docs`, `api`, `mcp`. New optional groups go alongside.
 - The `[api]` extra uses `fastapi[standard]`, which transitively pulls `uvicorn[standard]`, `jinja2`, `python-multipart`, and `httpx`. Don't re-add those at the top level — let FastAPI manage them. Only add deps FastAPI doesn't pull in (current additions: `gunicorn`, `slowapi`, `pydantic-settings`).
-- The API's `cors_origins` setting accepts an empty string, a comma-separated list, or a JSON list (see the `field_validator` in `src/fastssv/api/config.py`). Don't undo that tolerance — `pydantic-settings>=2` would otherwise crash on the empty-string default that `deploy/docker-compose.yml` passes through.
+- The API's `cors_origins` setting accepts an empty string, a comma-separated list, or a JSON list (see the `field_validator` in `src/fastssv/api/config.py`). Don't undo that tolerance — `pydantic-settings>=2` would otherwise crash on the empty-string default that `deploy/docker-compose.yml` passes through. The same `_parse_origin_list` validator is reused for `mcp_allowed_origins`.
+- The `[mcp]` extra is independent of `[api]`; the MCP server is mounted by `api/app.py` only when both `mcp_enabled=True` and the `mcp` package import succeeds. Without the extra, the app logs `mcp_extra_not_installed` and runs without the `/mcp` mount — never let that path raise.
+- Middleware ordering in `api/app.py` is load-bearing: `MCPOriginMiddleware` short-circuits with a 403 on disallowed Origins, so it MUST be registered *before* (and therefore inside) `SecurityHeadersMiddleware` and `RequestIDMiddleware` so those wrap the rejection response. There's a regression test in `tests/api/test_mcp.py::test_origin_disallowed_returns_403`.
 
 ## Cross-tool layout
 

@@ -35,6 +35,11 @@ any SQL linter and fail any replication attempt.
 
     Run FastSSV as a FastAPI service with an HTMX web UI.
 
+-   :material-link-variant: **[MCP server](mcp.md)**
+
+    Expose FastSSV's validator over the Model Context Protocol's
+    Streamable HTTP transport.
+
 -   :material-code-json: **[JSON output](json_output.md)**
 
     The structured report format for CI integration.

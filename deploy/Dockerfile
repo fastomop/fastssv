@@ -18,14 +18,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=README.md,target=README.md \
-    uv sync --frozen --no-install-project --extra api
+    uv sync --frozen --no-install-project --extra api --extra mcp
 
 COPY pyproject.toml README.md LICENSE uv.lock ./
 COPY src ./src
 
 # Project layer: install fastssv itself non-editably for a slim image.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --extra api
+    uv sync --frozen --no-editable --extra api --extra mcp
 
 
 FROM python:3.12-slim AS runtime

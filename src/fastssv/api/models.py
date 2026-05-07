@@ -87,6 +87,10 @@ class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     version: str
     rules_loaded: int
+    mcp_mounted: bool = Field(
+        default=False,
+        description="Whether the /mcp Streamable HTTP endpoint is currently mounted.",
+    )
 
 
 class ErrorResponse(BaseModel):

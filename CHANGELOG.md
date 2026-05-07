@@ -9,6 +9,40 @@ between minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP (Model Context Protocol) Streamable HTTP endpoint at `/mcp`.** A
+  new optional `[mcp]` extra (`uv add fastssv[mcp]`) brings in the
+  official `mcp` Python SDK and mounts a stateless Streamable HTTP server
+  alongside the existing FastAPI app. One tool is exposed: `validate_sql`
+  (wraps `validate_sql_structured` with the same statement-split, strict
+  mode and timeout behaviour as `/v1/validate`). Rule discovery happens
+  via the `rule_id` returned on each violation, or the existing
+  `/v1/rules` HTTP endpoint and `docs/rules_reference.md` — there is no
+  separate `list_rules` MCP tool, since a static catalog is a poor fit
+  for the tool primitive (it's the wrong primitive — resources would be
+  better — and the `rule_id`s the model needs are surfaced in
+  `validate_sql` results). The endpoint is built per the
+  [2025-11-25 spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http)
+  in stateless mode (`stateless_http=True`, `json_response=True`), so no
+  session store or SSE resumption layer is required. New env vars under
+  the `FASTSSV_API_` prefix: `MCP_ENABLED` (default `false` — opt-in
+  because the endpoint is unauthenticated at the application layer),
+  `MCP_ALLOWED_ORIGINS` (CSV/JSON list, enforced by a dedicated
+  middleware that 403s requests with a present-but-unlisted `Origin` —
+  per the spec's DNS-rebinding mitigation), and `MCP_AUTH_MODE` (reserved
+  Literal pinned to `"none"`; widening it later is how we'd opt into
+  OAuth 2.1 without churning the env-var name). **Authentication is
+  intentionally unauthenticated at the application layer** — the [MCP
+  authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+  is OPTIONAL, and FastSSV's stateless validation surface has no
+  per-user resources, so the deployment expectation is that operators
+  gate `/mcp` at the reverse proxy (oauth2-proxy, mTLS, network ACLs).
+  The `[mcp]` extra is added to `deploy/Dockerfile` and the new env vars
+  are wired through `deploy/docker-compose.yml` and `deploy/.env.example`.
+  When the `mcp` package is missing at runtime the app logs a warning
+  and skips the mount, so an `[api]`-only install still works.
+
 ### Changed
 
 - **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single

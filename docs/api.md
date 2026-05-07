@@ -34,6 +34,8 @@ Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
 rule registry once at startup (~154 rules, sub-second).
 
+The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`pip install "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
+
 ### `docker compose up` — containerized
 
 Use this for servers, CI, or when you want container isolation to match
@@ -66,6 +68,10 @@ prefix. Defaults are production-sane.
 | `FASTSSV_API_RATE_LIMIT` | `60/minute` | `slowapi`-format limit applied per client IP. |
 | `FASTSSV_API_CORS_ORIGINS` | `[]` | Comma-separated list of allowed origins. Empty = CORS disabled. |
 | `FASTSSV_API_LOG_LEVEL` | `INFO` | Root logger level (`DEBUG`/`INFO`/`WARNING`/`ERROR`). |
+| `FASTSSV_API_BEHIND_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. The compose file defaults this to `true`; in-code default is `false` for direct execution. |
+| `FASTSSV_API_MCP_ENABLED` | `false` | Mount the MCP Streamable HTTP endpoint at `/mcp` (requires the `[mcp]` extra). Opt-in because the endpoint is unauthenticated at the app layer; gate it at your reverse proxy before enabling. See [MCP server](mcp.md). |
+| `FASTSSV_API_MCP_ALLOWED_ORIGINS` | `[]` | CSV/JSON list of `Origin` values permitted on `/mcp` from a browser. Empty = closed (any present-but-unlisted Origin → 403). |
+| `FASTSSV_API_MCP_AUTH_MODE` | `none` | Reserved for future OAuth 2.1 conformance. Today pinned to `"none"`. |
 
 A `.env` file in the working directory is loaded automatically.
 
