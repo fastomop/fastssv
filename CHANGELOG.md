@@ -241,6 +241,17 @@ between minor versions.
 
 ### Fixed
 
+- **`deploy/.env.example` documents `FASTSSV_API_BEHIND_PROXY`.** The
+  reverse-proxy toggle added with HTTPS support is wired through
+  `deploy/docker-compose.yml` (compose-level default `true`) and read by
+  `Settings.behind_proxy` in `src/fastssv/api/config.py` (in-code default
+  `false`), but it was missing from `deploy/.env.example`. Operators
+  copying the example file as a config reference now see the variable,
+  what it does (trust `X-Forwarded-*` from an upstream TLS terminator so
+  generated URLs reflect the external scheme/host), and the
+  compose-vs-code default split. No behaviour change — purely a
+  documentation gap fix.
+
 - **Documentation correctness pass.** Multiple doc pages had drifted from the
   registry and the API surface; fixes applied across `docs/`:
   - **Severities corrected** for `concept_standardization.standard_concept_enforcement`,
