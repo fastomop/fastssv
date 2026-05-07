@@ -25,13 +25,13 @@ There is intentionally no `list_rules` tool: a static rule catalog is a poor fit
 
 ## Configuration
 
-All knobs are env-driven (prefix `FASTSSV_API_`); see [`deploy/.env.example`](../deploy/.env.example) for the canonical list.
+All knobs are env-driven; see [`deploy/.env.example`](../deploy/.env.example) for the canonical list.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `MCP_ENABLED` | `false` | Mount toggle (opt-in). Set to `true` to enable the endpoint. |
-| `MCP_ALLOWED_ORIGINS` | _(empty)_ | CSV or JSON list of `Origin` values permitted from a browser. Requests with no `Origin` header (curl, Claude Desktop, MCP Inspector outside a browser) always pass through; requests with a present-but-unlisted `Origin` are rejected with HTTP 403 + a JSON-RPC error body that has no `id`, per the spec's [DNS rebinding mitigation](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#security-warning). |
-| `MCP_AUTH_MODE` | `none` | Reserved knob for future OAuth 2.1 conformance. Today the Literal is pinned to `"none"`. |
+| `FASTSSV_API_MCP_ENABLED` | `false` | Mount toggle (opt-in). Set to `true` to enable the endpoint. |
+| `FASTSSV_API_MCP_ALLOWED_ORIGINS` | _(empty)_ | CSV or JSON list of `Origin` values permitted from a browser. Requests with no `Origin` header (curl, Claude Desktop, MCP Inspector outside a browser) always pass through; requests with a present-but-unlisted `Origin` are rejected with HTTP 403 + a JSON-RPC error body that has no `id`, per the spec's [DNS rebinding mitigation](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#security-warning). |
+| `FASTSSV_API_MCP_AUTH_MODE` | `none` | Reserved knob for future OAuth 2.1 conformance. Today the Literal is pinned to `"none"`. |
 
 ## Authentication and the deployment expectation
 

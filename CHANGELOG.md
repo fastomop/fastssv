@@ -25,14 +25,14 @@ between minor versions.
   `validate_sql` results). The endpoint is built per the
   [2025-11-25 spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http)
   in stateless mode (`stateless_http=True`, `json_response=True`), so no
-  session store or SSE resumption layer is required. New env vars under
-  the `FASTSSV_API_` prefix: `MCP_ENABLED` (default `false` — opt-in
-  because the endpoint is unauthenticated at the application layer),
-  `MCP_ALLOWED_ORIGINS` (CSV/JSON list, enforced by a dedicated
+  session store or SSE resumption layer is required. New env vars:
+  `FASTSSV_API_MCP_ENABLED` (default `false` — opt-in because the endpoint
+  is unauthenticated at the application layer),
+  `FASTSSV_API_MCP_ALLOWED_ORIGINS` (CSV/JSON list, enforced by a dedicated
   middleware that 403s requests with a present-but-unlisted `Origin` —
-  per the spec's DNS-rebinding mitigation), and `MCP_AUTH_MODE` (reserved
-  Literal pinned to `"none"`; widening it later is how we'd opt into
-  OAuth 2.1 without churning the env-var name). **Authentication is
+  per the spec's DNS-rebinding mitigation), and `FASTSSV_API_MCP_AUTH_MODE`
+  (reserved Literal pinned to `"none"`; widening it later is how we'd opt
+  into OAuth 2.1 without churning the env-var name). **Authentication is
   intentionally unauthenticated at the application layer** — the [MCP
   authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
   is OPTIONAL, and FastSSV's stateless validation surface has no
