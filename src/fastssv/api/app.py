@@ -199,19 +199,23 @@ def _http_error_slug(code: int) -> str:
 def _maybe_build_mcp_app(settings: Settings):
     """Build the MCP sub-app if the extra is installed and enabled.
 
-    Returns the streamable-http ASGI app or ``None``. Logs a warning when
-    the user has enabled MCP but the optional ``mcp`` package is missing.
+    Returns the streamable-http ASGI app, or ``None`` when MCP is disabled.
+    Raises ``RuntimeError`` when the user explicitly opts in via
+    ``FASTSSV_API_MCP_ENABLED=true`` but the optional ``mcp`` package is
+    missing — silently skipping the mount in non-interactive deployments
+    (CI, docker) lets misconfigured containers boot with `/mcp` absent and
+    surface the problem only when a client first tries to use it.
     """
     if not settings.mcp_enabled:
         return None
     try:
         from fastssv.mcp import build_mcp_server
-    except ImportError:
-        logger.warning(
-            "mcp_extra_not_installed",
-            extra={"hint": "install fastssv with the [mcp] extra to enable the /mcp endpoint"},
-        )
-        return None
+    except ImportError as exc:
+        raise RuntimeError(
+            "FASTSSV_API_MCP_ENABLED=true but the 'mcp' extra is not installed. "
+            "Install with `pip install 'fastssv[api,mcp]'` (or set "
+            "FASTSSV_API_MCP_ENABLED=false to disable the endpoint)."
+        ) from exc
     server = build_mcp_server(settings)
     return server.streamable_http_app()
 

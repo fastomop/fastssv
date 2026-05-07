@@ -239,3 +239,30 @@ def test_health_reflects_mcp_mounted(client: TestClient):
     resp = client.get("/v1/health")
     assert resp.status_code == 200
     assert resp.json()["mcp_mounted"] is True
+
+
+def test_mcp_enabled_but_extra_missing_raises(monkeypatch):
+    """Fail loudly at startup when MCP_ENABLED=true but the [mcp] extra is missing.
+
+    Silent skip in non-interactive deployments (CI, docker) would let
+    misconfigured containers boot with /mcp absent and surface the problem
+    only when a client first tries to use it. The startup-time RuntimeError
+    forces the operator to either install the extra or flip MCP_ENABLED off.
+    """
+    import sys
+
+    # Force the `from fastssv.mcp import build_mcp_server` line in
+    # _maybe_build_mcp_app to raise ImportError, simulating a deploy that
+    # set FASTSSV_API_MCP_ENABLED=true without installing the [mcp] extra.
+    monkeypatch.setitem(sys.modules, "fastssv.mcp", None)
+
+    settings = Settings(
+        max_sql_bytes=1024,
+        parse_timeout_seconds=2.0,
+        rate_limit="1000/minute",
+        cors_origins=[],
+        log_level="WARNING",
+        mcp_enabled=True,
+    )
+    with pytest.raises(RuntimeError, match="MCP_ENABLED=true but the 'mcp' extra is not installed"):
+        create_app(settings)
