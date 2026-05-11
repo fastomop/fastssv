@@ -5981,6 +5981,45 @@ class TestVisitOccurrenceInnerJoinValidation:
         violations = self._run_rule(sql)
         assert len(violations) == 1
 
+    def test_omop_043_void_in_non_equality_predicate_does_not_fire(self) -> None:
+        """Non-equality predicates that merely *mention* visit_occurrence_id
+        (e.g. `IS NOT NULL`, `> 0`, `BETWEEN …`) must not retrigger the
+        warning — the join key is person_id, no NULL-VOID row drop is
+        possible. An earlier draft of the gate walked every Column in the
+        ON clause and re-introduced this false positive class (regression
+        caught in code review)."""
+        sql = """
+        SELECT * FROM cohort c
+        JOIN visit_occurrence vo
+          ON c.person_id = vo.person_id
+         AND vo.visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_omop_043_void_comparison_predicate_does_not_fire(self) -> None:
+        """Same as above but with a comparison predicate rather than IS NOT NULL."""
+        sql = """
+        SELECT * FROM cohort c
+        JOIN visit_occurrence vo
+          ON c.person_id = vo.person_id
+         AND vo.visit_occurrence_id > 0
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_omop_043_void_equality_to_literal_still_fires(self) -> None:
+        """`vo.visit_occurrence_id = 12345` IS an equality with VOID on one
+        side, so the user is constraining the join through the visit-id
+        key (effectively `INNER JOIN with a specific visit`). The warning's
+        broader intent (did you mean LEFT JOIN?) still applies, so fire."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
 
 class TestDrugEraConceptClassValidation:
     """Tests for drug_era concept class validation rule (OMOP_044)."""
@@ -27347,5 +27386,37 @@ class TestLimitWithoutOrderBy:
         """`SELECT MIN(x), p.person_id` without GROUP BY is invalid standard
         SQL; conservatively we treat it as multi-row and keep the warning."""
         sql = "SELECT MIN(condition_start_date), person_id FROM condition_occurrence LIMIT 100;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_windowed_aggregate_with_limit_still_fires(self) -> None:
+        """``SUM(x) OVER (…)`` is a window function — it's *per-row*, not
+        row-collapsing, so the SELECT can return many rows and the
+        missing-ORDER-BY warning must fire. sqlglot parses windowed
+        aggregates as ``exp.Window`` wrapping the inner ``exp.AggFunc``,
+        so an earlier draft of ``_is_scalar_aggregate`` mistook the
+        inner aggregate as scalar-agg evidence and silently suppressed
+        the warning (regression caught in code review)."""
+        sql = "SELECT SUM(condition_concept_id) OVER () FROM condition_occurrence LIMIT 10;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_row_number_window_with_limit_still_fires(self) -> None:
+        """Pure window function (no inner aggregate) still triggers — the
+        per-row semantics are the same and LIMIT is meaningful."""
+        sql = (
+            "SELECT ROW_NUMBER() OVER (ORDER BY condition_concept_id) AS rn "
+            "FROM condition_occurrence LIMIT 10;"
+        )
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_windowed_aggregate_with_partition_still_fires(self) -> None:
+        """``COUNT(*) OVER (PARTITION BY …)`` produces one row per input
+        row, same as the no-frame case."""
+        sql = (
+            "SELECT COUNT(*) OVER (PARTITION BY person_id) AS pc "
+            "FROM condition_occurrence LIMIT 10;"
+        )
         violations = self._run_rule(sql)
         assert len(violations) == 1

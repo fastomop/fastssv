@@ -350,27 +350,42 @@ between minor versions.
   (where `person_id` is NOT NULL on both sides and no rows can be
   dropped due to NULL visit linkage) was therefore flagged as a
   potentially-data-losing INNER JOIN. The rule now gates on a new
-  `_join_on_uses_visit_occurrence_id` check that walks the ON clause
-  for a `visit_occurrence_id` column reference; mixed-key joins
+  `_join_on_uses_visit_occurrence_id` check that walks `exp.EQ` nodes
+  in the ON clause and only returns True when `visit_occurrence_id`
+  appears on at least one side of an *equality* (not just anywhere in
+  the ON clause — an earlier draft walked every `exp.Column` and
+  reintroduced the same false positive class via non-equality
+  predicates like `vo.visit_occurrence_id IS NOT NULL` or
+  `vo.visit_occurrence_id > 0`; caught in code review). Mixed-key joins
   (`ON co.visit_occurrence_id = vo.visit_occurrence_id AND co.person_id = vo.person_id`)
   still fire because VOID linkage is in play. The implicit/comma-join
   branch is unchanged — comma-joining `visit_occurrence` to an event
   table almost always means visit linkage and is left as a warning.
   Regression tests:
-  `tests/test_rules.py::TestVisitOccurrenceInnerJoinValidation::test_omop_043_person_id_join_to_visit_does_not_fire`
-  and `…test_omop_043_mixed_keys_still_fires`.
+  `tests/test_rules.py::TestVisitOccurrenceInnerJoinValidation::test_omop_043_person_id_join_to_visit_does_not_fire`,
+  `…test_omop_043_mixed_keys_still_fires`,
+  `…test_omop_043_void_in_non_equality_predicate_does_not_fire`,
+  `…test_omop_043_void_comparison_predicate_does_not_fire`,
+  and `…test_omop_043_void_equality_to_literal_still_fires`.
 
 - **`anti_patterns.limit_without_order_by` no longer warns on scalar
   aggregations.** A `SELECT COUNT(DISTINCT person_id) … LIMIT 1000` —
   the textbook Atlas/OHDSI patient-count shape — returns exactly one
   row, so `LIMIT N` is a no-op and the missing-`ORDER BY` warning is a
   false positive (4/5 FPs of this shape in audit sampling). The rule
-  now skips a `Select` when (a) it has no `GROUP BY` / `HAVING`, (b) at
-  least one projection contains an aggregate, and (c) no projection has
-  a bare (non-aggregated) `Column` reference. Star projections,
-  bare-column projections, and `GROUP BY`-driven multi-row results
-  continue to warn as before. Regression tests:
-  `tests/test_rules.py::TestLimitWithoutOrderBy`.
+  now skips a `Select` when (a) it has no `GROUP BY` / `HAVING`, (b) no
+  projection contains a window function (`f(...) OVER (...)`; windowed
+  aggregates are per-row, not row-collapsing), (c) at least one
+  projection contains a non-windowed aggregate, and (d) no projection
+  has a bare (non-aggregated) `Column` reference. Star projections,
+  bare-column projections, window functions, and `GROUP BY`-driven
+  multi-row results continue to warn as before. Regression tests:
+  `tests/test_rules.py::TestLimitWithoutOrderBy` (10 cases including
+  three windowed-aggregate shapes — `SUM(x) OVER ()`,
+  `ROW_NUMBER() OVER (ORDER BY …)`, and
+  `COUNT(*) OVER (PARTITION BY …)` — added after code review caught
+  an earlier draft that treated the inner `AggFunc` inside an
+  `exp.Window` as scalar-agg evidence).
 
 - **`joins.join_path_validation` now recognises IN-subquery CTE
   bridges.** The pre-existing CTE-bridge check only inspected `JOIN ON`
@@ -415,15 +430,27 @@ between minor versions.
   `joins.cohort_clinical_join_validation` (and the like) with messages
   like _"Invalid FK join between cohort and condition_occurrence:
   cohort.person_id = …"_ even though the SQL was perfectly valid. The
-  helper is now CTE-aware: an unqualified reference whose name matches
-  a CTE defined in scope is treated as the CTE; schema-qualified
-  references (`mydb.cohort`) bypass the shadow per standard SQL
-  scoping. A new `collect_cte_names(tree)` helper is exported for
-  rules that want to apply the same guard at column-resolution time.
-  `extract_aliases` is intentionally unchanged — `joins.join_path_validation`
-  and other rules with their own CTE-bridge logic depend on its current
-  bare-name semantics. Regression tests added in
-  `tests/test_helpers_cte.py` and
+  helper is now CTE-aware *per Table node*: for each unqualified
+  reference, the helper walks the reference's ancestor `Select` scopes
+  and checks each one's WITH clause; if a CTE with the matching name
+  is visible from that scope (and the reference isn't inside the CTE's
+  own body — non-recursive self-reference rule), the reference is
+  treated as the CTE. Schema-qualified references (`mydb.cohort`)
+  always bypass shadowing per standard SQL scoping. The per-node
+  walk avoids over-approximating CTE visibility: a CTE named `cohort`
+  defined inside a nested subquery does NOT shadow an outer
+  `FROM cohort` (an earlier draft of this fix used a tree-global
+  `collect_cte_names` intersection and would have silently suppressed
+  in that case — caught in code review). A new `collect_cte_names(tree)`
+  helper is also exported for callers that *do* want the tree-global
+  set (e.g. `anti_patterns.cte_shadows_omop_table`, which flags any
+  shadow no matter how nested) — its docstring is explicit about the
+  over-approximation. `extract_aliases` is intentionally unchanged —
+  `joins.join_path_validation` and other rules with their own
+  CTE-bridge logic depend on its current bare-name semantics.
+  Regression tests added in `tests/test_helpers_cte.py` (covering
+  outer-WITH shadow, schema-qualified bypass, nested-WITH non-shadow,
+  and self-reference resolution) and
   `tests/test_rules.py::TestCohortClinicalJoinValidation`.
 
 - **`deploy/.env.example` documents `FASTSSV_API_BEHIND_PROXY`.** The

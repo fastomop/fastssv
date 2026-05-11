@@ -135,24 +135,29 @@ def _is_vo_join(join: exp.Join, aliases: Dict[str, str]) -> bool:
 
 def _join_on_uses_visit_occurrence_id(join: exp.Join) -> bool:
     """True if the JOIN's ON clause references ``visit_occurrence_id`` on
-    at least one side of an equality — i.e. the linkage is actually via
-    the visit-id key.
+    at least one side of an **equality** — i.e. the linkage is actually
+    via the visit-id key.
 
     The rule's premise is "INNER JOIN on visit_occurrence_id drops rows
     where the event's visit_occurrence_id is NULL." That premise only
     applies when the JOIN key is ``visit_occurrence_id``; joining on
     ``person_id`` (or any other column) cannot trigger NULL-driven row
-    loss because those keys aren't nullable on event tables. Without
-    this gate, a perfectly safe ``cohort c JOIN visit_occurrence vo
-    ON c.person_id = vo.person_id`` would be flagged as if visits were
-    being filtered, which is a false positive.
+    loss because those keys aren't nullable on event tables.
+
+    The check is restricted to ``exp.EQ`` nodes so a non-equality
+    predicate that merely *mentions* ``visit_occurrence_id`` —
+    ``ON c.person_id = vo.person_id AND vo.visit_occurrence_id IS NOT NULL``
+    is the canonical FP shape — does not retrigger the warning. An
+    earlier draft walked every Column in the ON clause and reintroduced
+    that false positive class (caught in code review).
     """
     on = join.args.get("on")
     if on is None:
         return False
-    for col in on.find_all(exp.Column):
-        if _norm(col.name) == VISIT_OCCURRENCE_ID:
-            return True
+    for eq in on.find_all(exp.EQ):
+        for side in (eq.this, eq.expression):
+            if isinstance(side, exp.Column) and _norm(side.name) == VISIT_OCCURRENCE_ID:
+                return True
     return False
 
 

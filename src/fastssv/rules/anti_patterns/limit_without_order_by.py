@@ -91,15 +91,39 @@ def _projection_contains_bare_column(expr: exp.Expression) -> bool:
     return False
 
 
+def _projection_contains_window(expr: exp.Expression) -> bool:
+    """True if ``expr`` contains a window function (``f(...) OVER (...)``).
+
+    Window functions are *per-row* — they compute over a frame but produce
+    one output row per input row, so a SELECT with any window projection
+    cannot be a scalar aggregation no matter what aggregates appear
+    inside the OVER. sqlglot parses ``SUM(x) OVER (...)`` as an
+    ``exp.Window`` node *wrapping* an ``exp.AggFunc`` (the inner Sum),
+    so an earlier draft of ``_is_scalar_aggregate`` mistook the inner
+    aggregate as evidence of scalar-agg and suppressed the LIMIT warning
+    incorrectly (caught in code review). We treat any Window in the
+    projection as a hard veto.
+    """
+    if isinstance(expr, exp.Window):
+        return True
+    for node in expr.find_all(exp.Window):
+        if _is_inside_inner_subquery(node, expr):
+            continue
+        return True
+    return False
+
+
 def _is_scalar_aggregate(select: exp.Select) -> bool:
     """True if ``select`` provably returns exactly one row.
 
-    Scalar aggregation has no ``GROUP BY`` / ``HAVING``, at least one
-    projection contains an aggregate, and no projection has a bare
-    (non-aggregated) column reference. In that shape, ``LIMIT N`` is a
-    no-op — ordering is irrelevant — so the missing-ORDER-BY warning
-    would be a false positive. ``SELECT COUNT(DISTINCT x) FROM ... LIMIT 1000``
-    is the canonical Atlas/OHDSI pattern this skips.
+    Scalar aggregation has no ``GROUP BY`` / ``HAVING``, no window
+    functions in any projection (windowed aggregates are per-row, not
+    row-collapsing), at least one projection contains a non-windowed
+    aggregate, and no projection has a bare (non-aggregated) column
+    reference. In that shape, ``LIMIT N`` is a no-op — ordering is
+    irrelevant — so the missing-ORDER-BY warning would be a false
+    positive. ``SELECT COUNT(DISTINCT x) FROM ... LIMIT 1000`` is the
+    canonical Atlas/OHDSI pattern this skips.
     """
     if select.args.get("group") is not None:
         return False
@@ -112,6 +136,9 @@ def _is_scalar_aggregate(select: exp.Select) -> bool:
     for proj in select.expressions:
         expr = proj.this if isinstance(proj, exp.Alias) else proj
         if isinstance(expr, exp.Star):
+            return False
+        # Veto: any window function makes the SELECT non-scalar.
+        if _projection_contains_window(expr):
             return False
         if _projection_contains_agg(expr):
             has_any_agg = True
