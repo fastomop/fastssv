@@ -11,6 +11,23 @@ between minor versions.
 
 ### Added
 
+- **New rule `anti_patterns.cte_shadows_omop_table`.** Warns when a CTE's
+  alias collides with an OMOP CDM table name (`cohort`, `concept`,
+  `person`, `condition_occurrence`, `concept_relationship`, …). Naming a
+  CTE after an OMOP table is legal SQL but a real code smell: every
+  unqualified reference inside the query binds to the CTE rather than
+  the OMOP table, which (a) makes the query harder to read, (b) breaks
+  any later edit that adds a real OMOP reference, and (c) makes
+  suggested fixes from other rules unusable when applied verbatim
+  (e.g. `JOIN concept c ON …` would bind to a `concept` CTE that has
+  no `standard_concept` column). Severity: `WARNING`. The suggested
+  fix is to rename the CTE; schema-qualifying every OMOP reference is
+  offered as a fallback. Powered by the existing
+  `fastssv.schemas.CDM_COLUMN_TYPES` table set — adding a new OMOP
+  table to that source of truth automatically extends this rule's
+  coverage. Tests: `tests/test_rules.py::TestCteShadowsOmopTable`
+  (6 cases including multi-shadow and case-insensitive matching).
+
 - **MCP (Model Context Protocol) Streamable HTTP endpoint at `/mcp`.** A
   new optional `[mcp]` extra (`uv add fastssv[mcp]`) brings in the
   official `mcp` Python SDK and mounts a stateless Streamable HTTP server
@@ -48,6 +65,18 @@ between minor versions.
   normally — `[api]`-only installs still work.
 
 ### Changed
+
+- **`concept_standardization.standard_concept_enforcement`'s suggested
+  fix is now CTE-shadow-aware.** When the rule fires AND a CTE named
+  `concept` or `concept_relationship` is in scope, the message now
+  recommends the schema-qualified `JOIN omop.concept c ON …` form and
+  explicitly calls out the shadow (the old hardcoded
+  `JOIN concept c ON …` would bind to the CTE and fail at execution
+  with _"column standard_concept does not exist"_, making the fix
+  un-applyable). The default message — used when no shadow is in
+  scope — is unchanged. Regression tests:
+  `TestStandardConceptMapping::test_suggested_fix_is_schema_qualified_under_cte_shadow`
+  and `…test_suggested_fix_unchanged_without_cte_shadow`.
 
 - **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single
   `validate_sql_structured` call dispatches to ~150 registered rules,
@@ -278,6 +307,124 @@ between minor versions.
   example that referenced a nonexistent `validate_anti_patterns` symbol.
 
 ### Fixed
+
+- **`data_quality.schema_validation` is now scope-aware for column
+  resolution.** `comprehensive_schema_validation` previously resolved
+  every `Column` ref through the global `extract_aliases` dict, which
+  is a flat name -> table map. When the same alias was used across
+  CTEs (for example `omop.concept c` inside one CTE and `cond_occ c` in
+  the outer SELECT), the dict collapsed to last-write-wins and the
+  rule misattributed columns — yielding spurious errors like
+  _"Column 'person_id' does not exist in table 'concept'"_ on
+  perfectly valid SQL. The rule now walks each `Column`'s enclosing
+  `Select` scope to build a scope-local alias map (correlated outer
+  scopes are still visible; inner scopes shadow). On a representative
+  11k-query benchmark this drops `schema_validation` errors from 341
+  to 131. The new helpers (`_local_aliases`, `_resolve_column_table`)
+  are private to the rule, since the global `extract_aliases` is still
+  the right contract for rules that work on join-condition pairs.
+  Regression test:
+  `tests/test_rules.py::TestSchemaValidation::test_alias_collision_across_ctes_does_not_false_positive`.
+
+- **`data_quality.schema_validation` no longer flags `DATEDIFF` unit
+  keywords as missing columns.** sqlglot parses `DATEDIFF(day, x, y)`
+  with `day` as a `Column` node (rather than a literal/Var). Without
+  filtering, the schema check produced
+  _"Column 'day' does not exist in table 'condition_occurrence'"_ for
+  every query that used `DATEDIFF`/`DATEADD`/`DATETRUNC`/`EXTRACT` etc.
+  The rule now skips unqualified `Column` nodes whose name is a
+  recognised time-unit keyword (`day`, `month`, `year`, `hour`,
+  `minute`, …) and whose parent is one of the date-arithmetic
+  function types. Regression test:
+  `tests/test_rules.py::TestSchemaValidation::test_datediff_unit_keyword_not_treated_as_column`.
+
+- **`joins.visit_occurrence_inner_join_validation` no longer warns on
+  non-VOID join keys.** OMOP_043's premise is that an `INNER JOIN
+  visit_occurrence ON event.visit_occurrence_id = vo.visit_occurrence_id`
+  silently drops the 20–60% of clinical events with NULL
+  `visit_occurrence_id`. That premise only applies when the JOIN key is
+  actually `visit_occurrence_id` — but `_is_vo_join` previously fired
+  on any INNER JOIN that *involved* `visit_occurrence`, regardless of
+  key. The canonical cohort-builder shape
+  `cohort c JOIN visit_occurrence vo ON c.person_id = vo.person_id`
+  (where `person_id` is NOT NULL on both sides and no rows can be
+  dropped due to NULL visit linkage) was therefore flagged as a
+  potentially-data-losing INNER JOIN. The rule now gates on a new
+  `_join_on_uses_visit_occurrence_id` check that walks the ON clause
+  for a `visit_occurrence_id` column reference; mixed-key joins
+  (`ON co.visit_occurrence_id = vo.visit_occurrence_id AND co.person_id = vo.person_id`)
+  still fire because VOID linkage is in play. The implicit/comma-join
+  branch is unchanged — comma-joining `visit_occurrence` to an event
+  table almost always means visit linkage and is left as a warning.
+  Regression tests:
+  `tests/test_rules.py::TestVisitOccurrenceInnerJoinValidation::test_omop_043_person_id_join_to_visit_does_not_fire`
+  and `…test_omop_043_mixed_keys_still_fires`.
+
+- **`anti_patterns.limit_without_order_by` no longer warns on scalar
+  aggregations.** A `SELECT COUNT(DISTINCT person_id) … LIMIT 1000` —
+  the textbook Atlas/OHDSI patient-count shape — returns exactly one
+  row, so `LIMIT N` is a no-op and the missing-`ORDER BY` warning is a
+  false positive (4/5 FPs of this shape in audit sampling). The rule
+  now skips a `Select` when (a) it has no `GROUP BY` / `HAVING`, (b) at
+  least one projection contains an aggregate, and (c) no projection has
+  a bare (non-aggregated) `Column` reference. Star projections,
+  bare-column projections, and `GROUP BY`-driven multi-row results
+  continue to warn as before. Regression tests:
+  `tests/test_rules.py::TestLimitWithoutOrderBy`.
+
+- **`joins.join_path_validation` now recognises IN-subquery CTE
+  bridges.** The pre-existing CTE-bridge check only inspected `JOIN ON`
+  equalities, missing the canonical concept-set shape
+  `WHERE x_concept_id IN (SELECT concept_id FROM <vocab_cte>)` — every
+  Atlas-style cohort builder that materialises drug/condition concept
+  sets in a CTE and feeds them into `drug_exposure`/`condition_occurrence`
+  via `IN`-subquery was hit with a spurious _"Query uses 'concept' table
+  but it may not be properly joined…"_ warning (5/5 FPs of this shape
+  in audit sampling). A new private helper
+  `_has_in_subquery_bridge_to_vocab_cte` walks `exp.In` nodes whose LHS
+  is a `_concept_id` column and whose RHS subquery (`In.args["query"]`)
+  selects from a vocab CTE, treating that as a valid indirect bridge.
+  Additive — JOIN-on, comma-join WHERE, and direct-JOIN paths all
+  remain. Regression test:
+  `tests/test_rules.py::TestJoinPathValidation::test_in_subquery_bridge_to_vocab_cte_does_not_fire`.
+
+- **`joins.left_join_then_where_on_right_table` is now scope-aware.**
+  The rule previously built a tree-wide pool of "right tables that appear
+  on the right of any `LEFT JOIN`" and matched it against every `WHERE`
+  in the tree, so a `LEFT JOIN omop.concept_relationship cr` declared in
+  one CTE got cross-linked with a `WHERE cr.relationship_id = 'Maps to'`
+  living in a *different* sibling CTE that re-used the alias `cr` for an
+  ordinary `INNER JOIN` — producing spurious _"LEFT JOIN followed by
+  WHERE filtering right table column(s): concept_relationship.relationship_id"_
+  reports on standard Maps-to vocabulary plumbing. The check is now done
+  per `Select` scope: each scope's LEFT-JOIN right-tables are matched
+  only against that scope's own `WHERE`, with column resolution going
+  through a scope-local alias map (mirroring the `comprehensive_schema_validation`
+  pattern from the previous fix). True positives within a single scope
+  still fire as before. Regression tests:
+  `tests/test_rules.py::TestLeftJoinThenWhereOnRightTable::test_omop_149_alias_collision_across_ctes_does_not_false_positive`
+  and `…test_omop_149_left_join_in_inner_cte_still_fires_in_own_scope`.
+
+- **OMOP-table-targeting rules no longer false-positive on user CTEs that
+  shadow OMOP table names.** `core.helpers.has_table_reference` is the
+  gating check used by ~50 rules that key off specific OMOP tables
+  (`cohort`, `person`, `concept`, the join family, etc.) — and it
+  previously treated `WITH cohort AS (...) ... FROM cohort c` as a
+  reference to the OMOP `cohort` table, so a CTE named `cohort` with
+  its own `person_id` column would trip
+  `joins.cohort_clinical_join_validation` (and the like) with messages
+  like _"Invalid FK join between cohort and condition_occurrence:
+  cohort.person_id = …"_ even though the SQL was perfectly valid. The
+  helper is now CTE-aware: an unqualified reference whose name matches
+  a CTE defined in scope is treated as the CTE; schema-qualified
+  references (`mydb.cohort`) bypass the shadow per standard SQL
+  scoping. A new `collect_cte_names(tree)` helper is exported for
+  rules that want to apply the same guard at column-resolution time.
+  `extract_aliases` is intentionally unchanged — `joins.join_path_validation`
+  and other rules with their own CTE-bridge logic depend on its current
+  bare-name semantics. Regression tests added in
+  `tests/test_helpers_cte.py` and
+  `tests/test_rules.py::TestCohortClinicalJoinValidation`.
 
 - **`deploy/.env.example` documents `FASTSSV_API_BEHIND_PROXY`.** The
   reverse-proxy toggle added with HTTPS support is wired through

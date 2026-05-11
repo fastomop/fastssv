@@ -13,6 +13,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
+    collect_cte_names,
     has_condition,
     extract_aliases,
     extract_join_conditions,
@@ -429,11 +430,35 @@ class StandardConceptEnforcementRule(Rule):
                 if severity == Severity.ERROR:
                     message += " (Strict mode: cohort definitions must use standard concepts)"
 
+                # CTE-shadow aware suggested fix: if the user has a CTE named
+                # `concept` (or `concept_relationship`) in scope, the default
+                # `JOIN concept c ...` suggestion would resolve to that CTE
+                # — which has no `standard_concept` column — and break at
+                # execution time. Switch to the schema-qualified form and
+                # flag the shadow so the user sees the actual root cause.
+                cte_names = collect_cte_names(tree)
+                shadow = cte_names & {"concept", "concept_relationship"}
+                if shadow:
+                    shadow_list = ", ".join(sorted(shadow))
+                    suggested_fix = (
+                        "ADD: `JOIN omop.concept c ON c.concept_id = <table>.<concept_id_col>` "
+                        "AND `WHERE c.standard_concept = 'S'` to filter to standard concepts. "
+                        f"NOTE: this query has a CTE named `{shadow_list}` which shadows the OMOP "
+                        "vocabulary table — the JOIN must be schema-qualified (`omop.concept`) "
+                        "or the CTE renamed, otherwise the JOIN would bind to the CTE and the "
+                        "`standard_concept` column would not exist."
+                    )
+                else:
+                    suggested_fix = (
+                        "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` "
+                        "AND `WHERE c.standard_concept = 'S'` to filter to standard concepts."
+                    )
+
                 violations.append(
                     self.create_violation(
                         message=message,
                         severity=severity,
-                        suggested_fix="ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts.",
+                        suggested_fix=suggested_fix,
                         details={"strict_mode_escalated": severity == Severity.ERROR},
                     )
                 )

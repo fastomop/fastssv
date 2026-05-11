@@ -8,11 +8,11 @@ Source of truth is ``fastssv.schemas.CDM_COLUMN_TYPES``; this rule reads
 it through the package boundary.
 """
 
-from typing import List, Set
+from typing import Dict, List, Optional, Set
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 from fastssv.schemas import CDM_COLUMN_TYPES, get_table_columns
@@ -62,6 +62,111 @@ def _extract_subquery_aliases(tree: exp.Expression) -> Set[str]:
         if subquery.alias:
             subquery_aliases.add(_norm(subquery.alias))
     return subquery_aliases
+
+
+_TIME_UNIT_KEYWORDS = frozenset(
+    {
+        "day",
+        "days",
+        "month",
+        "months",
+        "year",
+        "years",
+        "hour",
+        "hours",
+        "minute",
+        "minutes",
+        "second",
+        "seconds",
+        "week",
+        "weeks",
+        "quarter",
+        "quarters",
+        "millisecond",
+        "milliseconds",
+        "microsecond",
+        "microseconds",
+        "nanosecond",
+        "nanoseconds",
+        "epoch",
+    }
+)
+_DATE_FN_TYPES = (
+    exp.DateDiff,
+    exp.DateAdd,
+    exp.DateSub,
+    exp.DateTrunc,
+    exp.TimestampDiff,
+    exp.TimestampAdd,
+    exp.TimestampSub,
+    exp.Extract,
+)
+
+
+def _is_time_unit_arg(column: exp.Column) -> bool:
+    """True for unqualified ``Column`` nodes that are actually unit keywords
+    (``day``, ``month`` …) inside a date function. sqlglot parses
+    ``DATEDIFF(day, x, y)`` with ``day`` as a ``Column`` node; treating it
+    as a real column reference yields false-positive
+    "Column 'day' does not exist in table …" errors.
+    """
+    if column.table:
+        return False
+    if column.name.lower() not in _TIME_UNIT_KEYWORDS:
+        return False
+    parent = column.parent
+    return isinstance(parent, _DATE_FN_TYPES)
+
+
+def _local_aliases(select: exp.Select) -> Dict[str, str]:
+    """Aliases declared by ``select``'s own FROM/JOIN — excluding tables
+    nested inside subqueries or further CTE bodies inside this scope.
+
+    Required because a query that reuses an alias across CTEs (`omop.concept c`
+    in one CTE, `cond_occ c` in the outer SELECT) collapses under the global
+    ``extract_aliases`` — last-write-wins on a flat dict — which then
+    misattributes column references and yields false-positive
+    "column does not exist in table X" errors.
+    """
+    aliases: Dict[str, str] = {}
+    from_node = select.args.get("from_") or select.args.get("from")
+    scopes = [from_node] + list(select.args.get("joins") or [])
+    for scope_node in scopes:
+        if scope_node is None:
+            continue
+        for tbl in scope_node.find_all(exp.Table):
+            # Restrict to tables whose immediate enclosing Select is `select`
+            # (i.e. not buried in a Subquery or nested SELECT inside this scope).
+            if tbl.find_ancestor(exp.Select) is not select:
+                continue
+            real = _norm(tbl.name)
+            alias = tbl.alias_or_name
+            if alias:
+                aliases[_norm(alias)] = real
+            aliases[real] = real
+    return aliases
+
+
+def _resolve_column_table(column: exp.Column) -> Optional[str]:
+    """Resolve ``column.table`` to a real table name using scope-local aliases.
+
+    Walks up enclosing ``Select`` scopes (innermost first) so correlated
+    subqueries can still see outer-scope aliases, but inner scopes shadow.
+    Returns ``None`` if no enclosing Select exists; returns the literal
+    table_ref if it isn't bound by any visible alias (the caller decides
+    whether to treat that as an unknown table).
+    """
+    table_ref = _norm(column.table) if column.table else None
+    if not table_ref:
+        return None
+
+    select = column.find_ancestor(exp.Select)
+    while select is not None:
+        local = _local_aliases(select)
+        if table_ref in local:
+            return local[table_ref]
+        select = select.find_ancestor(exp.Select)
+    return table_ref
 
 
 def _extract_select_aliases(tree: exp.Expression) -> Set[str]:
@@ -135,11 +240,13 @@ class ComprehensiveSchemaValidationRule(Rule):
             if not tree:
                 continue
 
-            # Extract CTEs, subqueries, and aliases for scope awareness
+            # Extract CTEs, subqueries, and SELECT aliases for scope awareness.
+            # Column resolution uses _resolve_column_table for scope-local lookup
+            # (the global extract_aliases is intentionally not used here — it
+            # collapses reused aliases across CTEs).
             cte_names = _extract_cte_names(tree)
             subquery_aliases = _extract_subquery_aliases(tree)
             select_aliases = _extract_select_aliases(tree)
-            table_aliases = extract_aliases(tree)
 
             # Track which tables/columns we've already reported to avoid duplicates
             reported_tables = set()
@@ -209,24 +316,26 @@ class ComprehensiveSchemaValidationRule(Rule):
                 if col_name in select_aliases:
                     continue
 
+                # Skip unit keywords that sqlglot parses as Column nodes
+                # (e.g. ``DATEDIFF(day, ...)`` -> Column(day) inside DateDiff).
+                if _is_time_unit_arg(column):
+                    continue
+
                 # Get table reference
                 table_ref = _norm(column.table) if column.table else None
 
-                # Resolve table name through aliases
+                # Resolve table name through scope-local aliases.
                 if table_ref:
-                    # Check if this is a CTE or subquery
+                    # Skip CTE / subquery references at the alias-name layer.
                     if table_ref in cte_names or table_ref in subquery_aliases:
                         continue
 
-                    if table_ref in table_aliases:
-                        resolved_table = _norm(table_aliases[table_ref])
-                        # Handle schema-qualified tables
-                        if "." in resolved_table:
-                            resolved_table = resolved_table.split(".")[-1]
-                    else:
-                        resolved_table = table_ref
+                    resolved_table = _resolve_column_table(column) or table_ref
+                    if "." in resolved_table:
+                        resolved_table = resolved_table.split(".")[-1]
 
-                    # Skip if resolved table is a CTE or subquery
+                    # After resolution, the underlying name may itself be a
+                    # CTE / subquery (alias points at one).
                     if resolved_table in cte_names or resolved_table in subquery_aliases:
                         continue
                 else:

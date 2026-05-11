@@ -319,6 +319,23 @@ def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Ex
         return None, f"Unexpected error parsing SQL: {str(e)}"
 
 
+def collect_cte_names(tree: exp.Expression) -> Set[str]:
+    """Return the set of CTE names defined in any WITH clause within ``tree``.
+
+    Used by OMOP-table-targeting rules to distinguish between an actual OMOP
+    table reference and an unqualified reference to a same-named user CTE.
+    """
+    return {normalize_name(cte.alias) for cte in tree.find_all(exp.CTE) if cte.alias}
+
+
+def _is_schema_qualified(t: exp.Table) -> bool:
+    """True if a Table node carries a schema/catalog prefix (``db.tbl`` or
+    ``catalog.db.tbl``). Schema-qualified references bypass CTE shadowing
+    per standard SQL scoping rules.
+    """
+    return bool(t.args.get("db") or t.args.get("catalog"))
+
+
 def extract_aliases(tree: exp.Expression) -> Dict[str, str]:
     """Build a mapping of alias -> real_table_name.
 
@@ -408,6 +425,10 @@ def is_numeric_literal(e: exp.Expression, value: Optional[int] = None) -> bool:
 def has_table_reference(tree: exp.Expression, table_name: str) -> bool:
     """Check if query references a table by name anywhere.
 
+    CTE-aware: an unqualified reference whose name matches a CTE defined in
+    scope is treated as the CTE, not the OMOP table. Schema-qualified
+    references (``mydb.cohort``) still count, matching standard SQL scoping.
+
     Args:
         tree: The SQL AST to search
         table_name: The table name to look for
@@ -416,7 +437,14 @@ def has_table_reference(tree: exp.Expression, table_name: str) -> bool:
         True if the table is referenced
     """
     target = normalize_name(table_name)
-    return any(normalize_name(t.name) == target for t in tree.find_all(exp.Table))
+    cte_names = collect_cte_names(tree)
+    for t in tree.find_all(exp.Table):
+        if normalize_name(t.name) != target:
+            continue
+        if target in cte_names and not _is_schema_qualified(t):
+            continue
+        return True
+    return False
 
 
 def is_in_where_or_join_clause(node: exp.Expression) -> bool:
@@ -554,6 +582,7 @@ __all__ = [
     "normalize_name",
     "parse_sql",
     "extract_aliases",
+    "collect_cte_names",
     "resolve_table_col",
     "is_string_literal",
     "is_numeric_literal",

@@ -87,12 +87,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
 
 
@@ -110,21 +105,6 @@ def _extract_cte_names(tree: exp.Expression) -> Set[str]:
     return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
 
 
-def _resolve_column(
-    column: exp.Column,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> Tuple[Optional[str], Optional[str]]:
-    table, col = resolve_table_col(column, aliases)
-    table = _norm(table)
-    col = _norm(col)
-
-    if table in cte_names:
-        return None, None
-
-    return table, col
-
-
 def _is_left_join(join: exp.Join) -> bool:
     """
     Robust LEFT JOIN detection across dialects.
@@ -135,32 +115,55 @@ def _is_left_join(join: exp.Join) -> bool:
     return (kind and _norm(kind) == "left") or (side and _norm(side) == "left")
 
 
-def _get_right_table(join: exp.Join) -> Optional[str]:
+def _local_aliases(select: exp.Select) -> Dict[str, str]:
+    """Aliases declared by ``select``'s own FROM/JOIN — excluding tables
+    nested inside subqueries or further CTE bodies inside this scope.
+
+    Mirrors the scope-local helper in ``comprehensive_schema_validation``.
+    Required because the global ``extract_aliases`` would let a LEFT JOIN
+    in one CTE alias-collide with a WHERE in another scope, producing
+    false-positive "LEFT JOIN + WHERE on right table" reports.
     """
-    Get right table or alias (no mutation of alias map).
+    aliases: Dict[str, str] = {}
+    from_node = select.args.get("from_") or select.args.get("from")
+    scopes: List[exp.Expression] = []
+    if from_node is not None:
+        scopes.append(from_node)
+    scopes.extend(select.args.get("joins") or [])
+    for scope_node in scopes:
+        for tbl in scope_node.find_all(exp.Table):
+            if tbl.find_ancestor(exp.Select) is not select:
+                continue
+            real = _norm(tbl.name) or ""
+            alias = tbl.alias_or_name
+            if alias:
+                alias_norm = _norm(alias)
+                if alias_norm:
+                    aliases[alias_norm] = real
+            if real:
+                aliases[real] = real
+    return aliases
+
+
+def _select_left_join_right_tables(select: exp.Select) -> Tuple[Set[str], Set[str]]:
+    """Return (right_aliases, right_real_names) for LEFT JOINs declared
+    directly on ``select`` — does not descend into subqueries or nested CTE
+    bodies.
     """
-    if isinstance(join.this, exp.Table):
-        return _norm(join.this.alias_or_name)
-    return None
-
-
-def _collect_left_join_right_tables(tree: exp.Expression, aliases: Dict[str, str]) -> Set[str]:
-    """Collect all right table names/aliases from LEFT JOINs."""
-    right_tables = set()
-
-    for join in tree.find_all(exp.Join):
+    right_aliases: Set[str] = set()
+    right_real_names: Set[str] = set()
+    for join in select.args.get("joins") or []:
         if not _is_left_join(join):
             continue
-
-        t = _get_right_table(join)
-        if t:
-            right_tables.add(t)
-            # Also add resolved table name if it's an alias
-            resolved = aliases.get(t)
-            if resolved and resolved != t:
-                right_tables.add(resolved)
-
-    return right_tables
+        if not isinstance(join.this, exp.Table):
+            continue
+        alias = _norm(join.this.alias_or_name)
+        real = _norm(join.this.name)
+        if alias:
+            right_aliases.add(alias)
+        if real:
+            right_real_names.add(real)
+    return right_aliases, right_real_names
 
 
 def _is_safe_null_check(node: exp.Expression) -> bool:
@@ -182,9 +185,11 @@ def _contains_or(node: exp.Expression) -> bool:
 
 
 def _collect_where_right_table_filters(
+    select: exp.Select,
     where_clause: exp.Expression,
-    right_tables: Set[str],
-    aliases: Dict[str, str],
+    right_aliases: Set[str],
+    right_real_names: Set[str],
+    local_aliases: Dict[str, str],
     cte_names: Set[str],
 ) -> List[str]:
     violations = []
@@ -205,37 +210,56 @@ def _collect_where_right_table_filters(
             continue
 
         for col in cond.find_all(exp.Column):
-            t, c = _resolve_column(col, aliases, cte_names)
-
-            if not t or not c:
+            # Columns nested inside a subquery belong to that subquery's
+            # scope — they must not be matched against THIS select's
+            # LEFT JOIN right-tables.
+            if col.find_ancestor(exp.Select) is not select:
                 continue
 
-            # Check alias or table name
-            if t in right_tables:
-                violations.append(f"{t}.{c}")
+            raw = _norm(col.table) if col.table else None
+            if not raw:
+                continue
+            if raw in cte_names:
+                continue
 
-            # Resolve alias → table
-            resolved = aliases.get(t)
-            if resolved and resolved in right_tables:
-                violations.append(f"{t}.{c}")
+            col_name = _norm(col.name)
+            if not col_name:
+                continue
+
+            resolved = local_aliases.get(raw, raw)
+            # An alias that doesn't belong to THIS select's local FROM/JOIN
+            # is either a correlated outer ref or unrelated — ignore.
+            if raw not in local_aliases:
+                continue
+
+            if raw in right_aliases or resolved in right_real_names:
+                violations.append(f"{raw}.{col_name}")
 
     return violations
 
 
-def _find_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> List[str]:
+def _find_violations(tree: exp.Expression) -> List[str]:
     issues: List[str] = []
+    cte_names = _extract_cte_names(tree)
 
-    right_tables = _collect_left_join_right_tables(tree, aliases)
+    for select in tree.find_all(exp.Select):
+        right_aliases, right_real_names = _select_left_join_right_tables(select)
+        if not right_aliases and not right_real_names:
+            continue
 
-    if not right_tables:
-        return issues
+        where = select.args.get("where")
+        if where is None:
+            continue
 
-    for where in tree.find_all(exp.Where):
-        violations = _collect_where_right_table_filters(where.this, right_tables, aliases, cte_names)
+        local = _local_aliases(select)
+        violations = _collect_where_right_table_filters(
+            select,
+            where.this,
+            right_aliases,
+            right_real_names,
+            local,
+            cte_names,
+        )
 
         if violations:
             cols = ", ".join(sorted(set(violations)))
@@ -304,10 +328,7 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
             if not tree:
                 continue
 
-            aliases = extract_aliases(tree)
-            cte_names = _extract_cte_names(tree)
-
-            issues = _find_violations(tree, aliases, cte_names)
+            issues = _find_violations(tree)
 
             for msg in issues:
                 violations.append(

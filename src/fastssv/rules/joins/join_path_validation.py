@@ -39,6 +39,46 @@ def _extract_concept_references(tree: exp.Expression, aliases: Dict[str, str]) -
     return refs
 
 
+def _has_in_subquery_bridge_to_vocab_cte(
+    tree: exp.Expression,
+    vocab_cte_names: Set[str],
+) -> bool:
+    """Recognize ``WHERE x_concept_id IN (SELECT ... FROM <vocab_cte>)`` as a
+    valid CTE-mediated bridge between clinical and vocabulary tables.
+
+    The pre-existing CTE-bridge check only inspects ``JOIN ... ON``
+    equalities (via :func:`extract_join_conditions`), which misses the
+    canonical Atlas/OHDSI shape::
+
+        WITH vocab_cte AS (SELECT concept_id FROM concept WHERE ...)
+        SELECT ... FROM drug_exposure de
+        WHERE de.drug_concept_id IN (SELECT concept_id FROM vocab_cte)
+
+    sqlglot parses ``IN (SELECT ...)`` as ``exp.In(this=Column, query=Select)``
+    — the subquery is on the ``query`` arg rather than wrapped in a
+    ``Subquery`` node, so we read it directly.
+    """
+    for in_node in tree.find_all(exp.In):
+        lhs = in_node.this
+        if not isinstance(lhs, exp.Column):
+            continue
+        col_name = normalize_name(lhs.name)
+        if not (col_name == "concept_id" or col_name.endswith("_concept_id")):
+            continue
+        subq = in_node.args.get("query")
+        if subq is None:
+            for x in in_node.args.get("expressions") or []:
+                if isinstance(x, exp.Subquery):
+                    subq = x
+                    break
+        if subq is None:
+            continue
+        for t in subq.find_all(exp.Table):
+            if normalize_name(t.name) in vocab_cte_names:
+                return True
+    return False
+
+
 def _vocab_table_used_only_in_subquery(
     tree: exp.Expression,
     table_name: str,
@@ -165,6 +205,11 @@ def _verify_concept_join_path(
     # If there are CTEs that bridge vocabulary tables to concept_ids,
     # check if those CTEs are joined to clinical tables
     if ctes_with_vocab_and_concept_id:
+        # IN-subquery bridge: `WHERE <clinical>_concept_id IN (SELECT ... FROM <vocab_cte>)`.
+        # This is the canonical Atlas/OHDSI shape and was previously missed.
+        if _has_in_subquery_bridge_to_vocab_cte(tree, ctes_with_vocab_and_concept_id):
+            return []
+
         join_conditions = extract_join_conditions(tree, aliases)
 
         for lt, lc, rt, rc in join_conditions:

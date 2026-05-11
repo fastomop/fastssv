@@ -1445,6 +1445,51 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
   gap: 0.1rem;
   flex: none;
 }
+
+/* MCP server status pill. Lives in .panel-toolbar (same row as the
+   dialect select and the "Try: …" example chips), pushed to the right
+   edge via margin-left:auto so it sits in the top-right corner above
+   the editor without competing with the title/icon buttons inside
+   the editor-bar. Uses --ok-* tokens for the on state and --muted for
+   off so the pill colors stay in sync with light/dark theme switches. */
+.mcp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  /* Slightly smaller than .chip — the pill is informational (read-only),
+     not interactive, so it should sit unobtrusively in the toolbar. The
+     explicit line-height:1 keeps the box tight even though font-size
+     matches roughly. */
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+.mcp-pill-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+}
+.mcp-pill-on {
+  color: var(--ok-fg);
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--ok-fg) 25%, transparent);
+}
+.mcp-pill-off {
+  color: var(--muted);
+  background: var(--code-bg);
+  border-color: var(--border);
+}
 .editor-title {
   margin: 0;
   font-size: 0.88rem;
