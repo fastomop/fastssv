@@ -79,15 +79,25 @@ between minor versions.
 
 - **`concept_standardization.standard_concept_enforcement`'s suggested
   fix is now CTE-shadow-aware.** When the rule fires AND a CTE named
-  `concept` or `concept_relationship` is in scope, the message now
-  recommends the schema-qualified `JOIN omop.concept c ON …` form and
-  explicitly calls out the shadow (the old hardcoded
-  `JOIN concept c ON …` would bind to the CTE and fail at execution
-  with _"column standard_concept does not exist"_, making the fix
-  un-applyable). The default message — used when no shadow is in
-  scope — is unchanged. Regression tests:
-  `TestStandardConceptMapping::test_suggested_fix_is_schema_qualified_under_cte_shadow`
-  and `…test_suggested_fix_unchanged_without_cte_shadow`.
+  `concept` or `concept_relationship` is defined **at the top level of
+  the statement**, the message now recommends the schema-qualified
+  `JOIN omop.concept c ON …` form and explicitly calls out the shadow
+  (the old hardcoded `JOIN concept c ON …` would bind to the CTE and
+  fail at execution with _"column standard_concept does not exist"_,
+  making the fix un-applyable). Scope is deliberately restricted to the
+  top-level WITH (`tree.args["with_"]`) rather than tree-global: CTEs
+  defined inside a nested subquery (IN / EXISTS / FROM-derived) are
+  lexically out of scope for a JOIN added at the outer SELECT, so the
+  generic fix is already executable in that case and emitting the
+  shadow-note would be misleading. The broader "any matching CTE
+  anywhere in the tree" signal is handled separately by
+  `anti_patterns.cte_shadows_omop_table`. The default message — used
+  when no top-level shadow is present — is unchanged. Regression tests:
+  `TestStandardConceptMapping::test_suggested_fix_is_schema_qualified_under_cte_shadow`,
+  `…test_suggested_fix_unchanged_without_cte_shadow`, and
+  `…test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery`
+  (the new case, added in response to a Copilot review flag that the
+  earlier tree-global `collect_cte_names` over-approximated scope).
 
 - **`parse_sql` is now `lru_cache`-d on `(sql, dialect)`.** A single
   `validate_sql_structured` call dispatches to ~150 registered rules,

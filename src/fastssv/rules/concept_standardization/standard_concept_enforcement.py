@@ -13,7 +13,6 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
-    collect_cte_names,
     has_condition,
     extract_aliases,
     extract_join_conditions,
@@ -431,13 +430,27 @@ class StandardConceptEnforcementRule(Rule):
                     message += " (Strict mode: cohort definitions must use standard concepts)"
 
                 # CTE-shadow aware suggested fix: if the user has a CTE named
-                # `concept` (or `concept_relationship`) in scope, the default
-                # `JOIN concept c ...` suggestion would resolve to that CTE
-                # — which has no `standard_concept` column — and break at
+                # `concept` (or `concept_relationship`) *at the top level of
+                # the statement*, the default `JOIN concept c ...` suggestion
+                # — applied at that same top level — would resolve to that
+                # CTE, which has no `standard_concept` column, and break at
                 # execution time. Switch to the schema-qualified form and
                 # flag the shadow so the user sees the actual root cause.
-                cte_names = collect_cte_names(tree)
-                shadow = cte_names & {"concept", "concept_relationship"}
+                #
+                # Scope deliberately restricted to the *top-level* WITH:
+                # CTEs defined inside a nested subquery (e.g. inside an IN /
+                # EXISTS / FROM-derived) are lexically out of scope for a
+                # JOIN added at the outer SELECT, so the generic fix is
+                # already executable in that case. The broader tree-global
+                # "any matching CTE anywhere" signal is handled by the
+                # `anti_patterns.cte_shadows_omop_table` rule independently.
+                top_with = tree.args.get("with_") or tree.args.get("with")
+                top_cte_names: Set[str] = set()
+                if top_with is not None:
+                    for top_cte in top_with.expressions or []:
+                        if top_cte.alias:
+                            top_cte_names.add(normalize_name(top_cte.alias))
+                shadow = top_cte_names & {"concept", "concept_relationship"}
                 if shadow:
                     shadow_list = ", ".join(sorted(shadow))
                     suggested_fix = (

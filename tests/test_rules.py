@@ -377,6 +377,37 @@ class TestStandardConceptMapping:
         assert "omop.concept" not in fix, fix
         assert "JOIN concept c" in fix, fix
 
+    def test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery(self) -> None:
+        """A `concept` CTE defined INSIDE a nested subquery (IN / EXISTS /
+        FROM-derived) is lexically out of scope for a JOIN added at the
+        outer SELECT, so the generic `JOIN concept c …` fix is still
+        executable. The shadow-aware branch must NOT fire here.
+
+        Earlier the rule used a tree-global `collect_cte_names(tree)` set
+        which over-approximated visibility and emitted the schema-qualified
+        + shadow-note variant even when the CTE was nested out of scope —
+        flagged in code review. The check now reads only the *top-level*
+        WITH clause (`tree.args["with_"]`).
+        """
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM omop.condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            WITH concept AS (SELECT 4112343 AS concept_id)
+            SELECT concept_id FROM concept
+        );
+        """
+        violations = rule.validate(sql)
+        assert len(violations) >= 1
+        fix = violations[0].suggested_fix
+        # Nested CTE — generic fix is fine, no schema qualification needed.
+        assert "omop.concept" not in fix, fix
+        assert "JOIN concept c" in fix, fix
+        assert "shadow" not in fix.lower(), fix
+
 
 class TestJoinPathValidation:
     """Tests for the join-path validation rule, specifically the
