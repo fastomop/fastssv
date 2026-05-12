@@ -11,22 +11,33 @@ between minor versions.
 
 ### Added
 
-- **New rule `anti_patterns.cte_shadows_omop_table`.** Warns when a CTE's
-  alias collides with an OMOP CDM table name (`cohort`, `concept`,
-  `person`, `condition_occurrence`, `concept_relationship`, …). Naming a
-  CTE after an OMOP table is legal SQL but a real code smell: every
-  unqualified reference inside the query binds to the CTE rather than
-  the OMOP table, which (a) makes the query harder to read, (b) breaks
-  any later edit that adds a real OMOP reference, and (c) makes
-  suggested fixes from other rules unusable when applied verbatim
-  (e.g. `JOIN concept c ON …` would bind to a `concept` CTE that has
-  no `standard_concept` column). Severity: `WARNING`. The suggested
-  fix is to rename the CTE; schema-qualifying every OMOP reference is
-  offered as a fallback. Powered by the existing
-  `fastssv.schemas.CDM_COLUMN_TYPES` table set — adding a new OMOP
-  table to that source of truth automatically extends this rule's
-  coverage. Tests: `tests/test_rules.py::TestCteShadowsOmopTable`
-  (6 cases including multi-shadow and case-insensitive matching).
+- **New rule `anti_patterns.cte_shadows_omop_table`.** Warns when a CTE
+  alias **or a derived-table subquery alias** collides with an OMOP CDM
+  table name (`cohort`, `concept`, `person`, `condition_occurrence`,
+  `concept_relationship`, …). Naming a CTE or `FROM (SELECT …) AS x`
+  subquery after an OMOP table is legal SQL but a real code smell: every
+  unqualified reference inside the query block binds to the local
+  construct rather than the OMOP table, which (a) makes the query harder
+  to read, (b) breaks any later edit that adds a real OMOP reference,
+  and (c) **for the CTE case specifically**, makes suggested fixes from
+  other rules unusable when applied verbatim (e.g. `JOIN concept c ON …`
+  would bind to a `concept` CTE that has no `standard_concept` column).
+  Harm (c) does NOT apply to derived-table subqueries because their
+  aliases are scope-local — sibling FROM items don't see them — so the
+  warning message for the subquery case is tuned to focus on
+  readability/edit-hazard only. Severity: `WARNING` for both kinds.
+  Anonymous subqueries (`WHERE x IN (SELECT …)`) and scalar subqueries
+  in the SELECT list (`SELECT (SELECT …) AS concept FROM t`) are
+  intentionally skipped — they don't introduce a range variable that a
+  reader has to disambiguate. The suggested fix is to rename the CTE or
+  alias; schema-qualifying every OMOP reference is offered as a
+  fallback. Powered by the existing `fastssv.schemas.CDM_COLUMN_TYPES`
+  table set — adding a new OMOP table to that source of truth
+  automatically extends this rule's coverage. Violations expose
+  `details["alias_kind"] in {"cte", "subquery"}` for downstream
+  filtering. Tests: `tests/test_rules.py::TestCteShadowsOmopTable`
+  (12 cases covering both CTE and subquery shapes, scalar-subquery and
+  anonymous-subquery exclusions, and case-insensitive matching).
 
 - **MCP (Model Context Protocol) Streamable HTTP endpoint at `/mcp`.** A
   new optional `[mcp]` extra (`uv add fastssv[mcp]`) brings in the

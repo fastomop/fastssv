@@ -27271,8 +27271,9 @@ class TestConceptNameLookup:
 
 
 class TestCteShadowsOmopTable:
-    """Tests for anti_patterns.cte_shadows_omop_table — flags CTEs that
-    re-use an OMOP CDM table name (`cohort`, `concept`, `person`, …)."""
+    """Tests for anti_patterns.cte_shadows_omop_table — flags CTEs OR
+    derived-table subquery aliases that re-use an OMOP CDM table name
+    (`cohort`, `concept`, `person`, …)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
@@ -27327,6 +27328,74 @@ class TestCteShadowsOmopTable:
         sql = "WITH CONCEPT AS (SELECT 1) SELECT * FROM CONCEPT;"
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+    # --- Derived-table subquery shadows --------------------------------
+    # The CTE-only original rule missed `FROM (SELECT …) AS concept` shapes
+    # entirely; those carry the same readability cost (a reader sees
+    # `concept.<col>` and has to trace it back to a derived table rather
+    # than OMOP `concept`). The downstream-fix-breakage harm is CTE-specific
+    # (derived-table aliases are scope-local — sibling FROM items don't see
+    # them), which is why the message for the subquery case omits the
+    # "breaks suggested fixes" framing.
+
+    def test_derived_table_subquery_aliased_to_omop_fires(self) -> None:
+        """`FROM (SELECT …) AS concept` shadows OMOP `concept`."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN (SELECT 4112343 AS concept_id) AS concept
+          ON co.condition_concept_id = concept.concept_id;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["alias_kind"] == "subquery"
+        assert violations[0].details["omop_table"] == "concept"
+        assert violations[0].severity == Severity.WARNING
+
+    def test_subquery_message_drops_downstream_fix_framing(self) -> None:
+        """The subquery message must NOT claim suggested-fix breakage —
+        that harm is CTE-specific. Sibling FROM items don't see derived-
+        table aliases, so a `JOIN concept c` introduced later resolves to
+        OMOP `concept`, not to the subquery."""
+        sql = "SELECT * FROM (SELECT 1 AS concept_id) AS concept;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        msg = violations[0].message.lower()
+        # Should explicitly describe the subquery case.
+        assert "subquery" in msg
+        # Must not reuse the CTE-specific framing.
+        assert "fixes from other rules" not in msg
+        assert "bind to the cte" not in msg
+
+    def test_scalar_subquery_in_projection_does_not_fire(self) -> None:
+        """A scalar subquery in SELECT (`SELECT (SELECT …) AS concept FROM
+        t`) is not a derived table — sqlglot puts the alias on the outer
+        `exp.Alias` wrapper, not the `Subquery` node itself. Skip those to
+        avoid noise."""
+        sql = "SELECT (SELECT COUNT(*) FROM person) AS concept FROM person;"
+        assert self._run_rule(sql) == []
+
+    def test_anonymous_in_subquery_does_not_fire(self) -> None:
+        """`WHERE x IN (SELECT …)` has no alias on the inner Subquery — nothing
+        to shadow."""
+        sql = (
+            "SELECT * FROM person "
+            "WHERE person_id IN (SELECT person_id FROM condition_occurrence);"
+        )
+        assert self._run_rule(sql) == []
+
+    def test_safe_subquery_alias_does_not_fire(self) -> None:
+        """A derived-table alias that doesn't collide with any OMOP name
+        is a perfectly fine pattern."""
+        sql = "SELECT * FROM (SELECT 4112343 AS concept_id) AS my_concepts;"
+        assert self._run_rule(sql) == []
+
+    def test_subquery_case_insensitive_match(self) -> None:
+        """`FROM (SELECT …) AS CONCEPT` still shadows the OMOP table."""
+        sql = "SELECT * FROM (SELECT 1) AS CONCEPT;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["omop_table"] == "concept"
 
 
 class TestLimitWithoutOrderBy:
