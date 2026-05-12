@@ -330,6 +330,84 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert any("STANDARD concept fields" in e for e in errors)
 
+    def test_suggested_fix_is_schema_qualified_under_cte_shadow(self) -> None:
+        """When a CTE named `concept` is in scope, the rule's suggested_fix
+        must point at `omop.concept` (or call out the shadow), because the
+        bare `JOIN concept c ON …` form would bind to the user's CTE and
+        fail at execution with `column "standard_concept" does not exist`.
+
+        Regression for the second observation in the cohort/CTE-shadow
+        audit: the helper-level gate was fixed earlier, but the rule's
+        per-violation suggested-fix message was still naive about CTE
+        shadowing.
+        """
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        WITH concept AS (SELECT 4112343 AS concept_id UNION ALL SELECT 201826)
+        SELECT co.person_id, concept.concept_id
+        FROM omop.condition_occurrence co
+        JOIN concept ON co.condition_concept_id = concept.concept_id
+        JOIN omop.drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_concept_id > 0;
+        """
+        violations = rule.validate(sql)
+        assert len(violations) >= 1
+        fix = violations[0].suggested_fix
+        assert "omop.concept" in fix, fix
+        assert "shadow" in fix.lower(), fix
+
+    def test_suggested_fix_unchanged_without_cte_shadow(self) -> None:
+        """Without a `concept` CTE in scope, the original (non-qualified)
+        suggested_fix message is preserved."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM omop.condition_occurrence co
+        JOIN omop.drug_exposure de ON co.person_id = de.person_id
+        WHERE co.condition_concept_id > 0;
+        """
+        violations = rule.validate(sql)
+        assert len(violations) >= 1
+        fix = violations[0].suggested_fix
+        # Suggestion should be the plain `JOIN concept c` form (no schema prefix).
+        assert "omop.concept" not in fix, fix
+        assert "JOIN concept c" in fix, fix
+
+    def test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery(self) -> None:
+        """A `concept` CTE defined INSIDE a nested subquery (IN / EXISTS /
+        FROM-derived) is lexically out of scope for a JOIN added at the
+        outer SELECT, so the generic `JOIN concept c …` fix is still
+        executable. The shadow-aware branch must NOT fire here.
+
+        Earlier the rule used a tree-global `collect_cte_names(tree)` set
+        which over-approximated visibility and emitted the schema-qualified
+        + shadow-note variant even when the CTE was nested out of scope —
+        flagged in code review. The check now reads only the *top-level*
+        WITH clause (`tree.args["with_"]`).
+        """
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM omop.condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            WITH concept AS (SELECT 4112343 AS concept_id)
+            SELECT concept_id FROM concept
+        );
+        """
+        violations = rule.validate(sql)
+        assert len(violations) >= 1
+        fix = violations[0].suggested_fix
+        # Nested CTE — generic fix is fine, no schema qualification needed.
+        assert "omop.concept" not in fix, fix
+        assert "JOIN concept c" in fix, fix
+        assert "shadow" not in fix.lower(), fix
+
 
 class TestJoinPathValidation:
     """Tests for the join-path validation rule, specifically the
@@ -400,6 +478,27 @@ class TestJoinPathValidation:
         violations = self._run_rule(sql)
         assert len(violations) > 0
         assert any("concept" in v.message for v in violations)
+
+    def test_in_subquery_bridge_to_vocab_cte_does_not_fire(self) -> None:
+        """A CTE that wraps the concept table to emit concept_id and is then
+        bridged to a clinical table via `WHERE x_concept_id IN (SELECT
+        concept_id FROM <cte>)` is the canonical Atlas/OHDSI cohort-builder
+        shape. The previous CTE-bridge check only inspected JOIN ON
+        equalities and missed this — emitting false-positive _"Query uses
+        'concept' table but it may not be properly joined…"_ warnings on
+        otherwise-correct concept-set queries."""
+        sql = """
+        WITH lisinopril_concepts AS (
+            SELECT c.concept_id FROM concept c
+            WHERE c.concept_name LIKE 'lisinopril 10 MG Oral Tablet%'
+              AND c.domain_id = 'Drug' AND c.standard_concept = 'S'
+        )
+        SELECT COUNT(DISTINCT de.person_id) AS patient_count
+        FROM drug_exposure de
+        WHERE de.drug_concept_id IN (SELECT concept_id FROM lisinopril_concepts)
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
 
 
 class TestUnmappedConceptHandling:
@@ -3768,6 +3867,45 @@ class TestSchemaValidation:
         violations = self._run_rule(sql)
         assert len(violations) == 0
 
+    def test_alias_collision_across_ctes_does_not_false_positive(self) -> None:
+        """Reusing alias `c` for both `omop.concept` (in one CTE) and the
+        outer-SELECT CTE `cond_occ` must resolve scope-locally, not via the
+        global flat alias dict (which last-write-wins and produces
+        spurious `Column 'person_id' does not exist in table 'concept'`).
+        """
+        sql = """
+        WITH desc_1 AS (
+            SELECT DISTINCT ca.descendant_concept_id AS concept_id
+            FROM omop.concept_ancestor ca
+            JOIN omop.concept c ON c.concept_id = ca.descendant_concept_id
+            WHERE c.standard_concept = 'S'
+        ),
+        cond_occ AS (
+            SELECT person_id, condition_start_date::date AS start_date
+            FROM omop.condition_occurrence co
+            JOIN desc_1 d ON co.condition_concept_id = d.concept_id
+        )
+        SELECT COUNT(DISTINCT c.person_id) AS patient_count
+        FROM cond_occ c
+        WHERE c.start_date IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_datediff_unit_keyword_not_treated_as_column(self) -> None:
+        """sqlglot parses ``DATEDIFF(day, x, y)`` with ``day`` as a Column
+        node. Treating it as a real column reference yielded false-positive
+        ``Column 'day' does not exist in table 'condition_occurrence'``.
+        """
+        sql = """
+        SELECT person_id
+        FROM condition_occurrence
+        GROUP BY person_id
+        HAVING DATEDIFF(day, MIN(condition_start_date), MAX(condition_start_date)) <= 1000
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
 
 class TestColumnTypeValidation:
     """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026, 105)."""
@@ -5843,6 +5981,75 @@ class TestVisitOccurrenceInnerJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    def test_omop_043_person_id_join_to_visit_does_not_fire(self) -> None:
+        """INNER JOIN to visit_occurrence on person_id (not visit_occurrence_id)
+        cannot drop rows due to NULL visit linkage — the rule's premise
+        doesn't apply. Regression for the cohort-builder shape
+        `cohort c JOIN visit_occurrence vo ON c.person_id = vo.person_id`."""
+        sql = """
+        WITH cohort AS (
+            SELECT person_id FROM condition_occurrence WHERE condition_concept_id = 4112343
+        )
+        SELECT c.person_id, COUNT(*) AS visits
+        FROM cohort c
+        JOIN visit_occurrence vo ON c.person_id = vo.person_id
+        GROUP BY c.person_id
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_omop_043_mixed_keys_still_fires(self) -> None:
+        """If the ON clause uses both visit_occurrence_id AND person_id, the
+        VOID linkage is still in play and the warning must fire."""
+        sql = """
+        SELECT co.*
+        FROM condition_occurrence co
+        JOIN visit_occurrence vo
+          ON co.visit_occurrence_id = vo.visit_occurrence_id
+         AND co.person_id = vo.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_omop_043_void_in_non_equality_predicate_does_not_fire(self) -> None:
+        """Non-equality predicates that merely *mention* visit_occurrence_id
+        (e.g. `IS NOT NULL`, `> 0`, `BETWEEN …`) must not retrigger the
+        warning — the join key is person_id, no NULL-VOID row drop is
+        possible. An earlier draft of the gate walked every Column in the
+        ON clause and re-introduced this false positive class (regression
+        caught in code review)."""
+        sql = """
+        SELECT * FROM cohort c
+        JOIN visit_occurrence vo
+          ON c.person_id = vo.person_id
+         AND vo.visit_occurrence_id IS NOT NULL
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_omop_043_void_comparison_predicate_does_not_fire(self) -> None:
+        """Same as above but with a comparison predicate rather than IS NOT NULL."""
+        sql = """
+        SELECT * FROM cohort c
+        JOIN visit_occurrence vo
+          ON c.person_id = vo.person_id
+         AND vo.visit_occurrence_id > 0
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_omop_043_void_equality_to_literal_still_fires(self) -> None:
+        """`vo.visit_occurrence_id = 12345` IS an equality with VOID on one
+        side, so the user is constraining the join through the visit-id
+        key (effectively `INNER JOIN with a specific visit`). The warning's
+        broader intent (did you mean LEFT JOIN?) still applies, so fire."""
+        sql = """
+        SELECT co.* FROM condition_occurrence co
+        JOIN visit_occurrence vo ON co.visit_occurrence_id = 12345
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
 
 
 class TestDrugEraConceptClassValidation:
@@ -11348,6 +11555,35 @@ class TestCohortClinicalJoinValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    def test_join_022_cte_named_cohort_does_not_false_positive(self) -> None:
+        """A user CTE named ``cohort`` must not be treated as the OMOP table."""
+        sql = """
+        WITH cohort AS (
+            SELECT person_id
+            FROM condition_occurrence
+            WHERE condition_concept_id = 201826
+        )
+        SELECT c.person_id, co.condition_concept_id
+        FROM cohort c
+        JOIN condition_occurrence co ON co.person_id = c.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_join_022_cte_named_cohort_with_schema_qualified_real_still_fires(self) -> None:
+        """Schema-qualified ``mydb.cohort`` references the OMOP table even when
+        a CTE named ``cohort`` is in scope (standard SQL scoping)."""
+        from fastssv.core.base import Severity
+        sql = """
+        WITH cohort AS (SELECT person_id FROM person)
+        SELECT *
+        FROM mydb.cohort rc
+        JOIN condition_occurrence co ON co.person_id = rc.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
 
 
 class TestEraForbiddenJoinValidation:
@@ -25857,6 +26093,47 @@ class TestLeftJoinThenWhereOnRightTable:
         violations = self._run_rule(sql)
         assert len(violations) == 1
 
+    def test_omop_149_alias_collision_across_ctes_does_not_false_positive(self) -> None:
+        """LEFT JOIN of `cr` lives in one CTE; a sibling CTE INNER-joins the same
+        table re-using the alias `cr` and filters `cr.relationship_id` in its own
+        WHERE. The filter belongs to the INNER-JOIN scope, not the LEFT-JOIN one,
+        so the rule must not fire — regression for scope-local resolution."""
+        sql = """
+        WITH cond_mapped AS (
+            SELECT COALESCE(cr.concept_id_2, cs.concept_id) AS standard_id
+            FROM (SELECT 1 AS concept_id) cs
+            LEFT JOIN omop.concept_relationship cr
+              ON cr.concept_id_1 = cs.concept_id
+             AND cr.relationship_id = 'Maps to'
+             AND cr.invalid_reason IS NULL
+        ),
+        drug_mapped AS (
+            SELECT cr.concept_id_2 AS concept_id
+            FROM (SELECT 2 AS concept_id) ds
+            JOIN omop.concept_relationship cr ON ds.concept_id = cr.concept_id_1
+            WHERE cr.relationship_id = 'Maps to' AND cr.invalid_reason IS NULL
+        )
+        SELECT * FROM cond_mapped cm JOIN drug_mapped dm ON cm.standard_id = dm.concept_id;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_149_left_join_in_inner_cte_still_fires_in_own_scope(self) -> None:
+        """LEFT JOIN + WHERE on its right table inside the SAME CTE must still
+        fire — scope-local refactor is only meant to stop cross-scope leakage,
+        not to silence in-scope violations."""
+        sql = """
+        WITH bad AS (
+            SELECT p.person_id
+            FROM person p
+            LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id
+            WHERE vo.visit_concept_id = 9201
+        )
+        SELECT * FROM bad;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
 
 # ==============================================================================
 # OMOP_150: Relationship Boolean Comparison Tests
@@ -27022,3 +27299,224 @@ class TestConceptNameLookup:
     def test_filter_on_concept_id_passes(self) -> None:
         sql = "SELECT * FROM concept WHERE concept_id = 201826"
         assert self._run_rule(sql) == []
+
+
+class TestCteShadowsOmopTable:
+    """Tests for anti_patterns.cte_shadows_omop_table — flags CTEs OR
+    derived-table subquery aliases that re-use an OMOP CDM table name
+    (`cohort`, `concept`, `person`, …)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.cte_shadows_omop_table")()
+        return rule.validate(sql, dialect)
+
+    def test_cte_named_cohort_fires(self) -> None:
+        sql = """
+        WITH cohort AS (SELECT person_id FROM omop.condition_occurrence)
+        SELECT * FROM cohort;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "cohort" in violations[0].message
+
+    def test_cte_named_concept_fires(self) -> None:
+        sql = """
+        WITH concept AS (SELECT 4112343 AS concept_id)
+        SELECT co.person_id FROM omop.condition_occurrence co
+        JOIN concept ON co.condition_concept_id = concept.concept_id;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "concept" in violations[0].message
+        assert violations[0].severity == Severity.WARNING
+
+    def test_safe_cte_name_does_not_fire(self) -> None:
+        sql = """
+        WITH my_concepts AS (SELECT 4112343 AS concept_id)
+        SELECT * FROM my_concepts;
+        """
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_no_cte_does_not_fire(self) -> None:
+        sql = "SELECT * FROM omop.condition_occurrence;"
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_multiple_shadows_fire_once_each(self) -> None:
+        sql = """
+        WITH cohort AS (SELECT 1), concept AS (SELECT 2)
+        SELECT * FROM cohort, concept;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 2
+        shadowed = sorted(v.details["omop_table"] for v in violations)
+        assert shadowed == ["cohort", "concept"]
+
+    def test_case_insensitive_match(self) -> None:
+        """`WITH CONCEPT AS …` shadows the OMOP `concept` table regardless of case."""
+        sql = "WITH CONCEPT AS (SELECT 1) SELECT * FROM CONCEPT;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    # --- Derived-table subquery shadows --------------------------------
+    # The CTE-only original rule missed `FROM (SELECT …) AS concept` shapes
+    # entirely; those carry the same readability cost (a reader sees
+    # `concept.<col>` and has to trace it back to a derived table rather
+    # than OMOP `concept`). The downstream-fix-breakage harm is CTE-specific
+    # (derived-table aliases are scope-local — sibling FROM items don't see
+    # them), which is why the message for the subquery case omits the
+    # "breaks suggested fixes" framing.
+
+    def test_derived_table_subquery_aliased_to_omop_fires(self) -> None:
+        """`FROM (SELECT …) AS concept` shadows OMOP `concept`."""
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN (SELECT 4112343 AS concept_id) AS concept
+          ON co.condition_concept_id = concept.concept_id;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["alias_kind"] == "subquery"
+        assert violations[0].details["omop_table"] == "concept"
+        assert violations[0].severity == Severity.WARNING
+
+    def test_subquery_message_drops_downstream_fix_framing(self) -> None:
+        """The subquery message must NOT claim suggested-fix breakage —
+        that harm is CTE-specific. Sibling FROM items don't see derived-
+        table aliases, so a `JOIN concept c` introduced later resolves to
+        OMOP `concept`, not to the subquery."""
+        sql = "SELECT * FROM (SELECT 1 AS concept_id) AS concept;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        msg = violations[0].message.lower()
+        # Should explicitly describe the subquery case.
+        assert "subquery" in msg
+        # Must not reuse the CTE-specific framing.
+        assert "fixes from other rules" not in msg
+        assert "bind to the cte" not in msg
+
+    def test_scalar_subquery_in_projection_does_not_fire(self) -> None:
+        """A scalar subquery in SELECT (`SELECT (SELECT …) AS concept FROM
+        t`) is not a derived table — sqlglot puts the alias on the outer
+        `exp.Alias` wrapper, not the `Subquery` node itself. Skip those to
+        avoid noise."""
+        sql = "SELECT (SELECT COUNT(*) FROM person) AS concept FROM person;"
+        assert self._run_rule(sql) == []
+
+    def test_anonymous_in_subquery_does_not_fire(self) -> None:
+        """`WHERE x IN (SELECT …)` has no alias on the inner Subquery — nothing
+        to shadow."""
+        sql = (
+            "SELECT * FROM person "
+            "WHERE person_id IN (SELECT person_id FROM condition_occurrence);"
+        )
+        assert self._run_rule(sql) == []
+
+    def test_safe_subquery_alias_does_not_fire(self) -> None:
+        """A derived-table alias that doesn't collide with any OMOP name
+        is a perfectly fine pattern."""
+        sql = "SELECT * FROM (SELECT 4112343 AS concept_id) AS my_concepts;"
+        assert self._run_rule(sql) == []
+
+    def test_subquery_case_insensitive_match(self) -> None:
+        """`FROM (SELECT …) AS CONCEPT` still shadows the OMOP table."""
+        sql = "SELECT * FROM (SELECT 1) AS CONCEPT;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].details["omop_table"] == "concept"
+
+
+class TestLimitWithoutOrderBy:
+    """Tests for anti_patterns.limit_without_order_by, in particular the
+    scalar-aggregate carve-out that suppresses the warning on queries that
+    provably return exactly one row (where LIMIT N is a no-op)."""
+
+    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+        rule = get_rule("anti_patterns.limit_without_order_by")()
+        return rule.validate(sql, dialect)
+
+    def test_scalar_count_with_limit_does_not_fire(self) -> None:
+        """`SELECT COUNT(DISTINCT …) FROM … LIMIT 1000` is the canonical
+        Atlas patient-count shape: the LIMIT is meaningless on a one-row
+        aggregate result and the missing-ORDER-BY warning is a FP."""
+        sql = "SELECT COUNT(DISTINCT person_id) AS patient_count FROM person LIMIT 1000;"
+        assert self._run_rule(sql) == []
+
+    def test_scalar_count_over_cte_does_not_fire(self) -> None:
+        sql = """
+        WITH matching AS (SELECT DISTINCT person_id FROM condition_occurrence)
+        SELECT COUNT(DISTINCT person_id) FROM matching LIMIT 1000;
+        """
+        assert self._run_rule(sql) == []
+
+    def test_aggregate_plus_constant_projection_does_not_fire(self) -> None:
+        """Mixed aggregate + literal projections still produce a single row."""
+        sql = "SELECT COUNT(*) AS c, 1 AS one FROM person LIMIT 100;"
+        assert self._run_rule(sql) == []
+
+    def test_group_by_with_limit_still_fires(self) -> None:
+        """GROUP BY makes the query potentially multi-row — warning stands."""
+        sql = """
+        SELECT condition_concept_id, COUNT(*) AS c
+        FROM condition_occurrence
+        GROUP BY condition_concept_id
+        LIMIT 1000;
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_bare_column_with_limit_still_fires(self) -> None:
+        """A bare column ref in the projection (no aggregate wrap) means the
+        result is multi-row — warning stands."""
+        sql = "SELECT person_id FROM person LIMIT 100;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_star_with_limit_still_fires(self) -> None:
+        """SELECT * is the textbook missing-ORDER-BY anti-pattern."""
+        sql = "SELECT * FROM person LIMIT 100;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_aggregate_mixed_with_bare_column_still_fires(self) -> None:
+        """`SELECT MIN(x), p.person_id` without GROUP BY is invalid standard
+        SQL; conservatively we treat it as multi-row and keep the warning."""
+        sql = "SELECT MIN(condition_start_date), person_id FROM condition_occurrence LIMIT 100;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_windowed_aggregate_with_limit_still_fires(self) -> None:
+        """``SUM(x) OVER (…)`` is a window function — it's *per-row*, not
+        row-collapsing, so the SELECT can return many rows and the
+        missing-ORDER-BY warning must fire. sqlglot parses windowed
+        aggregates as ``exp.Window`` wrapping the inner ``exp.AggFunc``,
+        so an earlier draft of ``_is_scalar_aggregate`` mistook the
+        inner aggregate as scalar-agg evidence and silently suppressed
+        the warning (regression caught in code review)."""
+        sql = "SELECT SUM(condition_concept_id) OVER () FROM condition_occurrence LIMIT 10;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_row_number_window_with_limit_still_fires(self) -> None:
+        """Pure window function (no inner aggregate) still triggers — the
+        per-row semantics are the same and LIMIT is meaningful."""
+        sql = (
+            "SELECT ROW_NUMBER() OVER (ORDER BY condition_concept_id) AS rn "
+            "FROM condition_occurrence LIMIT 10;"
+        )
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_windowed_aggregate_with_partition_still_fires(self) -> None:
+        """``COUNT(*) OVER (PARTITION BY …)`` produces one row per input
+        row, same as the no-frame case."""
+        sql = (
+            "SELECT COUNT(*) OVER (PARTITION BY person_id) AS pc "
+            "FROM condition_occurrence LIMIT 10;"
+        )
+        violations = self._run_rule(sql)
+        assert len(violations) == 1

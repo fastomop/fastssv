@@ -57,6 +57,14 @@
     <button type="button" class="chip" data-action="example" data-example="unknown_table">Unknown table</button>
     <button type="button" class="chip" data-action="example" data-example="multi_statement">Multiple statements</button>
   </div>
+
+  <span class="mcp-pill {% if mcp_enabled %}mcp-pill-on{% else %}mcp-pill-off{% endif %}"
+        role="status"
+        aria-label="MCP server is {{ 'enabled' if mcp_enabled else 'disabled' }}"
+        title="{% if mcp_enabled %}Model Context Protocol server is enabled and serving at {{ mcp_mount_path }}{% else %}Model Context Protocol server is disabled (set FASTSSV_API_MCP_ENABLED=true and install the [mcp] extra to enable){% endif %}">
+    <span class="mcp-pill-dot" aria-hidden="true"></span>
+    <span class="mcp-pill-label">MCP&nbsp;·&nbsp;{{ 'on' if mcp_enabled else 'off' }}</span>
+  </span>
 </div>
 
 <form id="validate-form" class="editor-form"

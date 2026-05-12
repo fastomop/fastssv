@@ -108,6 +108,10 @@ router = APIRouter(tags=["ui"])
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def index(request: Request):
     settings: Settings = request.app.state.settings
+    # `mcp_mounted` is the *truthful* signal — settings.mcp_enabled can be
+    # True at config time, but the sub-app only mounts when the optional
+    # `mcp` extra is also importable. Use the live-mount state for the pill.
+    mcp_enabled = bool(getattr(request.app.state, "mcp_mounted", False))
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -115,6 +119,8 @@ async def index(request: Request):
             "active": "validate",
             "rules_loaded": _rules_loaded(),
             "max_sql_bytes": settings.max_sql_bytes,
+            "mcp_enabled": mcp_enabled,
+            "mcp_mount_path": "/mcp" if mcp_enabled else None,
         },
     )
 

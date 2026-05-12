@@ -133,6 +133,34 @@ def _is_vo_join(join: exp.Join, aliases: Dict[str, str]) -> bool:
     return VISIT_OCCURRENCE in tables
 
 
+def _join_on_uses_visit_occurrence_id(join: exp.Join) -> bool:
+    """True if the JOIN's ON clause references ``visit_occurrence_id`` on
+    at least one side of an **equality** — i.e. the linkage is actually
+    via the visit-id key.
+
+    The rule's premise is "INNER JOIN on visit_occurrence_id drops rows
+    where the event's visit_occurrence_id is NULL." That premise only
+    applies when the JOIN key is ``visit_occurrence_id``; joining on
+    ``person_id`` (or any other column) cannot trigger NULL-driven row
+    loss because those keys aren't nullable on event tables.
+
+    The check is restricted to ``exp.EQ`` nodes so a non-equality
+    predicate that merely *mentions* ``visit_occurrence_id`` —
+    ``ON c.person_id = vo.person_id AND vo.visit_occurrence_id IS NOT NULL``
+    is the canonical FP shape — does not retrigger the warning. An
+    earlier draft walked every Column in the ON clause and reintroduced
+    that false positive class (caught in code review).
+    """
+    on = join.args.get("on")
+    if on is None:
+        return False
+    for eq in on.find_all(exp.EQ):
+        for side in (eq.this, eq.expression):
+            if isinstance(side, exp.Column) and _norm(side.name) == VISIT_OCCURRENCE_ID:
+                return True
+    return False
+
+
 def _has_intentional_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
     """
     Detect intentional filtering of visit linkage.
@@ -177,6 +205,12 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict
             continue
 
         if not _is_vo_join(join, aliases):
+            continue
+
+        # Only warn when the JOIN key is actually visit_occurrence_id. A
+        # join on person_id (or any non-VOID key) cannot drop rows due to
+        # NULL visit linkage, so the rule's premise doesn't apply.
+        if not _join_on_uses_visit_occurrence_id(join):
             continue
 
         key = join.sql()

@@ -305,6 +305,7 @@ CANONICAL_FIX_VERBS = (
     "WRAP:",
     "GROUP BY:",
     "QUALIFY:",
+    "RENAME:",
 )
 
 

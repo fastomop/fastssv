@@ -45,6 +45,108 @@ def _is_inside_existence_predicate(select: exp.Select) -> bool:
     return False
 
 
+def _is_inside_inner_subquery(node: exp.Expression, root: exp.Expression) -> bool:
+    """True if ``node`` is enclosed by an ``exp.Subquery`` that is a strict
+    descendant of ``root`` — used to scope walks to a single projection
+    expression without leaking into scalar subqueries inside it.
+    """
+    cursor = node.parent
+    while cursor is not None and cursor is not root:
+        if isinstance(cursor, exp.Subquery):
+            return True
+        cursor = cursor.parent
+    return False
+
+
+def _projection_contains_agg(expr: exp.Expression) -> bool:
+    """True if any aggregate function appears within ``expr``, ignoring
+    aggregates that live inside scalar subqueries (those don't aggregate
+    the outer SELECT's rows)."""
+    if isinstance(expr, exp.AggFunc):
+        return True
+    for node in expr.find_all(exp.AggFunc):
+        if _is_inside_inner_subquery(node, expr):
+            continue
+        return True
+    return False
+
+
+def _projection_contains_bare_column(expr: exp.Expression) -> bool:
+    """True if ``expr`` has a Column reference that is NOT wrapped by an
+    aggregate (within ``expr``) and NOT inside a scalar subquery. A bare
+    column reference makes the result multi-row, defeating scalar-agg
+    suppression."""
+    for col in expr.find_all(exp.Column):
+        if _is_inside_inner_subquery(col, expr):
+            continue
+        cursor = col.parent
+        inside_agg = False
+        while cursor is not None and cursor is not expr.parent:
+            if isinstance(cursor, exp.AggFunc):
+                inside_agg = True
+                break
+            cursor = cursor.parent
+        if not inside_agg:
+            return True
+    return False
+
+
+def _projection_contains_window(expr: exp.Expression) -> bool:
+    """True if ``expr`` contains a window function (``f(...) OVER (...)``).
+
+    Window functions are *per-row* — they compute over a frame but produce
+    one output row per input row, so a SELECT with any window projection
+    cannot be a scalar aggregation no matter what aggregates appear
+    inside the OVER. sqlglot parses ``SUM(x) OVER (...)`` as an
+    ``exp.Window`` node *wrapping* an ``exp.AggFunc`` (the inner Sum),
+    so an earlier draft of ``_is_scalar_aggregate`` mistook the inner
+    aggregate as evidence of scalar-agg and suppressed the LIMIT warning
+    incorrectly (caught in code review). We treat any Window in the
+    projection as a hard veto.
+    """
+    if isinstance(expr, exp.Window):
+        return True
+    for node in expr.find_all(exp.Window):
+        if _is_inside_inner_subquery(node, expr):
+            continue
+        return True
+    return False
+
+
+def _is_scalar_aggregate(select: exp.Select) -> bool:
+    """True if ``select`` provably returns exactly one row.
+
+    Scalar aggregation has no ``GROUP BY`` / ``HAVING``, no window
+    functions in any projection (windowed aggregates are per-row, not
+    row-collapsing), at least one projection contains a non-windowed
+    aggregate, and no projection has a bare (non-aggregated) column
+    reference. In that shape, ``LIMIT N`` is a no-op — ordering is
+    irrelevant — so the missing-ORDER-BY warning would be a false
+    positive. ``SELECT COUNT(DISTINCT x) FROM ... LIMIT 1000`` is the
+    canonical Atlas/OHDSI pattern this skips.
+    """
+    if select.args.get("group") is not None:
+        return False
+    if select.args.get("having") is not None:
+        return False
+    if not select.expressions:
+        return False
+
+    has_any_agg = False
+    for proj in select.expressions:
+        expr = proj.this if isinstance(proj, exp.Alias) else proj
+        if isinstance(expr, exp.Star):
+            return False
+        # Veto: any window function makes the SELECT non-scalar.
+        if _projection_contains_window(expr):
+            return False
+        if _projection_contains_agg(expr):
+            has_any_agg = True
+        if _projection_contains_bare_column(expr):
+            return False
+    return has_any_agg
+
+
 def _select_has_explicit_limit(select: exp.Select) -> Optional[str]:
     """Return a short SQL fragment describing the row-limiting clause if
     one is present (LIMIT, FETCH FIRST, or T-SQL TOP), else None.
@@ -137,6 +239,9 @@ class LimitWithoutOrderByRule(Rule):
                     continue
 
                 if _select_has_order_by(select):
+                    continue
+
+                if _is_scalar_aggregate(select):
                     continue
 
                 # Use the SELECT's text fingerprint so we don't double-fire

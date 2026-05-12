@@ -25,6 +25,7 @@ from .duplicate_column_alias import DuplicateColumnAliasRule
 from .top_as_synthetic_data import TopAsSyntheticDataRule
 from .null_comparison_operator import NullComparisonOperatorRule
 from .limit_without_order_by import LimitWithoutOrderByRule
+from .cte_shadows_omop_table import CteShadowsOmopTableRule
 
 __all__ = [
     "NoStringIdentificationRule",
@@ -47,4 +48,5 @@ __all__ = [
     "TopAsSyntheticDataRule",
     "NullComparisonOperatorRule",
     "LimitWithoutOrderByRule",
+    "CteShadowsOmopTableRule",
 ]

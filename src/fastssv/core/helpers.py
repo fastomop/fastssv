@@ -319,6 +319,76 @@ def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Ex
         return None, f"Unexpected error parsing SQL: {str(e)}"
 
 
+def collect_cte_names(tree: exp.Expression) -> Set[str]:
+    """Return the set of CTE names defined in any WITH clause within ``tree``.
+
+    NOTE: this is a *tree-global* aggregation — it picks up CTEs defined in
+    nested subqueries as well as the top-level WITH. That's appropriate for
+    callers that want to surface the shadow itself (e.g.
+    ``anti_patterns.cte_shadows_omop_table`` flags any matching CTE no
+    matter how nested), but it over-approximates standard SQL lexical
+    scoping: a nested CTE named ``cohort`` is *not* visible to an outer
+    ``FROM cohort``. Callers that need a per-table-node shadow check
+    should not use this set — see ``has_table_reference`` (which now
+    walks ancestor WITH clauses per Table node instead).
+    """
+    return {normalize_name(cte.alias) for cte in tree.find_all(exp.CTE) if cte.alias}
+
+
+def _is_schema_qualified(t: exp.Table) -> bool:
+    """True if a Table node carries a schema/catalog prefix (``db.tbl`` or
+    ``catalog.db.tbl``). Schema-qualified references bypass CTE shadowing
+    per standard SQL scoping rules.
+    """
+    return bool(t.args.get("db") or t.args.get("catalog"))
+
+
+def _is_descendant_of(node: exp.Expression, root: Optional[exp.Expression]) -> bool:
+    """True if ``node`` is ``root`` or anywhere in the subtree rooted at it."""
+    if root is None:
+        return False
+    cursor = node
+    while cursor is not None:
+        if cursor is root:
+            return True
+        cursor = cursor.parent
+    return False
+
+
+def _is_shadowed_by_visible_cte(table_node: exp.Table, target: str) -> bool:
+    """True if a CTE named ``target`` is defined in a WITH clause attached
+    to any ``Select`` ancestor of ``table_node`` — i.e. visible per
+    standard SQL lexical scoping. Excludes the case where ``table_node``
+    is *inside* the CTE's own body (a non-recursive CTE doesn't see
+    itself; ``WITH RECURSIVE`` is rare in OMOP analytics and would
+    require deeper handling, so the simple non-recursive rule is the
+    safe default here).
+
+    Walks up through ancestor ``Select`` scopes one at a time so that
+    a CTE defined in a nested subquery is NOT mistakenly treated as
+    shadowing an outer table reference.
+    """
+    cursor: Optional[exp.Expression] = table_node
+    while cursor is not None:
+        select = cursor.find_ancestor(exp.Select)
+        if select is None:
+            return False
+        with_clause = select.args.get("with_") or select.args.get("with")
+        if with_clause is not None:
+            for cte in with_clause.expressions or []:
+                if not cte.alias or normalize_name(cte.alias) != target:
+                    continue
+                # Self-reference: a CTE doesn't shadow Table refs that
+                # live inside its own body (standard SQL, non-recursive).
+                if _is_descendant_of(table_node, cte.this):
+                    continue
+                return True
+        # Continue walking outward — but find_ancestor includes `cursor`
+        # itself if it matches, so step PAST `select` for the next round.
+        cursor = select.parent
+    return False
+
+
 def extract_aliases(tree: exp.Expression) -> Dict[str, str]:
     """Build a mapping of alias -> real_table_name.
 
@@ -408,6 +478,18 @@ def is_numeric_literal(e: exp.Expression, value: Optional[int] = None) -> bool:
 def has_table_reference(tree: exp.Expression, table_name: str) -> bool:
     """Check if query references a table by name anywhere.
 
+    CTE-aware *per-node*: an unqualified reference whose name matches a
+    CTE visible from its lexical scope is treated as the CTE, not the
+    OMOP table. Visibility follows standard SQL scoping — a CTE is
+    visible iff it is defined in a WITH clause attached to an ancestor
+    SELECT of the reference (and the reference isn't inside the CTE's
+    own body, non-recursive case). Schema-qualified references
+    (``mydb.cohort``) always count.
+
+    The per-node check avoids a tree-global over-approximation: a CTE
+    named ``cohort`` defined inside a nested subquery does NOT shadow
+    an outer ``FROM cohort``.
+
     Args:
         tree: The SQL AST to search
         table_name: The table name to look for
@@ -416,7 +498,15 @@ def has_table_reference(tree: exp.Expression, table_name: str) -> bool:
         True if the table is referenced
     """
     target = normalize_name(table_name)
-    return any(normalize_name(t.name) == target for t in tree.find_all(exp.Table))
+    for t in tree.find_all(exp.Table):
+        if normalize_name(t.name) != target:
+            continue
+        if _is_schema_qualified(t):
+            return True
+        if _is_shadowed_by_visible_cte(t, target):
+            continue
+        return True
+    return False
 
 
 def is_in_where_or_join_clause(node: exp.Expression) -> bool:
@@ -554,6 +644,7 @@ __all__ = [
     "normalize_name",
     "parse_sql",
     "extract_aliases",
+    "collect_cte_names",
     "resolve_table_col",
     "is_string_literal",
     "is_numeric_literal",
