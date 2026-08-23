@@ -85,25 +85,26 @@ def _extract_cte_names(tree: exp.Expression) -> Set[str]:
 
 def _get_target_tables(node: exp.Expression) -> List[str]:
     """
-    Extract all target tables from a DML/DDL statement.
-    Includes primary target and any explicitly referenced tables.
+    Extract only the tables a DML/DDL statement writes to.
+
+    Tables that are merely read — the SELECT source of INSERT ... SELECT,
+    UPDATE ... FROM, DELETE ... USING, MERGE ... USING — are not targets and
+    must not be reported.
     """
     tables: List[str] = []
 
-    # Primary target (DELETE/UPDATE/INSERT/MERGE/etc.)
-    if hasattr(node, "this") and isinstance(node.this, exp.Table):
-        tables.append(str(node.this.name))
+    target = node.this
+    # INSERT INTO schema.table (cols) wraps the table in a Schema node
+    if isinstance(target, exp.Schema):
+        target = target.this
+    if isinstance(target, exp.Table):
+        tables.append(str(target.name))
 
-    # INSERT INTO schema.table (Schema node)
-    if isinstance(node, exp.Insert) and isinstance(node.this, exp.Schema):
-        if isinstance(node.this.this, exp.Table):
-            tables.append(str(node.this.this.name))
-
-    # Collect all table references
-    for table in node.find_all(exp.Table):
-        name = str(table.name)
-        if name not in tables:
-            tables.append(name)
+    # TRUNCATE TABLE a, b carries its targets in `expressions`
+    if isinstance(node, exp.TruncateTable):
+        for e in node.expressions or []:
+            if isinstance(e, exp.Table) and str(e.name) not in tables:
+                tables.append(str(e.name))
 
     return tables
 

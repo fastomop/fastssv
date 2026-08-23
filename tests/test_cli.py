@@ -42,6 +42,29 @@ def test_main_batch_multiple_queries_writes_grouped_report(tmp_path: Path, monke
     assert len(report["results"]) == 3
 
 
+def test_main_default_report_named_after_input_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sql_file = tmp_path / "my_cohort.sql"
+    sql_file.write_text("SELECT person_id FROM person;")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main([str(sql_file), "--log-level", "WARNING"])
+
+    assert rc == 0
+    assert (tmp_path / "output" / "my_cohort_report.json").exists()
+
+
+def test_main_default_report_for_stdin_is_validation_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    fake_stdin = io.StringIO("SELECT person_id FROM person;")
+    fake_stdin.isatty = lambda: False  # type: ignore[assignment]
+    monkeypatch.setattr("sys.stdin", fake_stdin)
+
+    rc = main(["--log-level", "WARNING"])
+
+    assert rc == 0
+    assert (tmp_path / "output" / "validation_report.json").exists()
+
+
 def test_main_reads_from_stdin_when_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out = tmp_path / "stdin_out.json"
     monkeypatch.chdir(tmp_path)

@@ -32,7 +32,7 @@ uv add fastssv
 ## Use it
 
 ```bash
-uv run fastssv path/to/query.sql                       # writes output/validation_report.json
+uv run fastssv path/to/query.sql                       # writes output/query_report.json
 uv run fastssv path/to/query.sql --strict              # cohort-grade enforcement
 uv run fastssv path/to/query.sql --dialect bigquery    # auto, postgres, tsql, oracle, redshift, bigquery, snowflake, databricks, duckdb
 ```
@@ -55,7 +55,7 @@ JOIN concept c ON de.drug_concept_id = c.concept_id
 WHERE c.concept_name LIKE '%aspirin%';
 ```
 
-`uv run fastssv query.sql` writes `output/validation_report.json`:
+`uv run fastssv query.sql` writes `output/query_report.json` (the report is named after the input file; stdin input falls back to `output/validation_report.json`):
 
 ```json
 {

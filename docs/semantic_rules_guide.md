@@ -33,7 +33,7 @@ print(results["category_errors"]["concept_standardization"])
 ### CLI Usage
 
 ```bash
-# Run all rules (default, outputs to output/validation_report.json)
+# Run all rules (default, outputs to output/query_report.json — named after the input file)
 fastssv query.sql
 
 # Run only concept standardization rules

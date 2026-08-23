@@ -125,6 +125,16 @@ between minor versions.
 
 ### Changed
 
+- **CLI default report path is now derived from the input file name.**
+  `fastssv <file>.sql` used to always write `output/validation_report.json`,
+  so consecutive runs on different SQL files silently overwrote each
+  other's reports. The default is now `output/<file>_report.json`
+  (e.g. `fastssv phenotype.sql` → `output/phenotype_report.json`);
+  stdin input keeps the old `output/validation_report.json` default,
+  and an explicit `--output`/`-o` still takes precedence. Existing
+  scripts that relied on the fixed default path for *file* input need
+  either `-o output/validation_report.json` or the new derived name.
+
 - **Unrendered OHDSI SqlRender templates are now detected at the
   validator entry point and short-circuited with a single WARNING.**
   Files such as `Achilles/inst/sql/sql_server/analyses/cost_distribution_template.sql`
@@ -417,6 +427,18 @@ between minor versions.
   (`ANALYZE tempResults_104`, `ANALYZE scratch.tmpach_0`).
 
 ### Fixed
+
+- **`data_quality.vocabulary_table_protection` no longer flags reads of
+  vocabulary tables inside write statements.** Target extraction previously
+  swept every table referenced under a DML node, so `INSERT INTO codesets
+  SELECT … FROM concept` — the canonical Circe cohort-SQL shape — was
+  reported as an INSERT *on* `concept`, and `UPDATE … FROM concept` /
+  `MERGE … USING concept` misfired the same way. The rule now reports only
+  the actual write target (`INSERT`/`UPDATE`/`DELETE`/`MERGE` primary
+  target, plus each table listed in a multi-table `TRUNCATE`). Statements
+  that genuinely write to a vocabulary table are unaffected. Regression
+  tests cover the read-only INSERT…SELECT, UPDATE…FROM, and a MERGE whose
+  write target is a vocabulary table.
 
 - **`concept_standardization.standard_concept_enforcement`: the
   specific-literal-filter suppression is now evaluated per field class.**

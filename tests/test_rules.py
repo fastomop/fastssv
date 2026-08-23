@@ -8216,6 +8216,42 @@ class TestVocabularyTableProtection:
         violations = self._run_rule(sql)
         assert len(violations) == 0
 
+    def test_omop_081_insert_select_reading_vocab_passes(self) -> None:
+        """Regression: INSERT ... SELECT that only READS a vocabulary table must
+        not fire — the write target is the codeset table, not concept. This is
+        the canonical Circe cohort-SQL shape (INSERT INTO Codesets SELECT ...
+        FROM concept) and previously produced a false positive because target
+        extraction swept every table under the Insert node."""
+        sql = """
+        INSERT INTO Codesets (codeset_id, concept_id)
+        SELECT 0 as codeset_id, c.concept_id
+        FROM (SELECT DISTINCT I.concept_id FROM cdm.concept I
+              WHERE I.concept_id IN (192671)) c
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_081_update_from_vocab_source_passes(self) -> None:
+        """UPDATE whose FROM clause reads concept (target is non-vocab) passes."""
+        sql = """
+        UPDATE staging_events se
+        SET domain_id = c.domain_id
+        FROM concept c
+        WHERE se.concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_081_merge_into_vocab_still_fails(self) -> None:
+        """MERGE with a vocabulary table as the WRITE target must still fire."""
+        sql = """
+        MERGE INTO concept t USING staging s ON t.concept_id = s.concept_id
+        WHEN MATCHED THEN UPDATE SET concept_name = s.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "MERGE" in violations[0].message
+
     def test_omop_081_all_vocabulary_tables_protected(self) -> None:
         """All vocabulary tables should be protected."""
         vocabulary_tables = [

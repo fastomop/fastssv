@@ -228,8 +228,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         "-o",
-        default="output/validation_report.json",
-        help="Output JSON report file path (default: output/validation_report.json).",
+        default=None,
+        help=(
+            "Output JSON report file path (default: output/<input-file-name>_report.json, "
+            "or output/validation_report.json when reading from stdin)."
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -249,6 +252,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Log format (default: detailed, or FASTSSV_LOG_FORMAT env var).",
     )
     args = parser.parse_args(args_list)
+
+    # Derive the default report path from the input file name so runs on
+    # different files don't overwrite each other's reports.
+    if args.output is None:
+        if args.sql_file:
+            args.output = str(Path("output") / f"{Path(args.sql_file).stem}_report.json")
+        else:
+            args.output = "output/validation_report.json"
 
     # Setup logging
     logger = setup_logging(
