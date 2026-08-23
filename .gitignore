@@ -68,3 +68,6 @@ scripts/
 
 # MkDocs build output
 site/
+
+# Local-only experiment materials (kept off GitHub)
+experiments/
