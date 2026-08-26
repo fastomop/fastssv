@@ -86,6 +86,9 @@ CLINICAL_TABLES: Set[str] = {
 }
 
 PERSON_ID = "person_id"
+# visit_occurrence_id / visit_detail_id are unique keys of a single person's visit: an equi-join on them cannot
+# cross patients, so it links the tables as surely as person_id does.
+LINK_COLUMNS = {PERSON_ID, "visit_occurrence_id", "visit_detail_id"}
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -252,7 +255,7 @@ def _extract_using_edges(
         elif isinstance(using, exp.Identifier):
             cols = {_norm(using.name)}
 
-        if PERSON_ID in cols and isinstance(join.this, exp.Table):
+        if cols & LINK_COLUMNS and isinstance(join.this, exp.Table):
             right_alias = join.this.alias_or_name
             for left_alias in seen_tables:
                 edges.append((left_alias, right_alias))
@@ -281,7 +284,7 @@ def _build_graph(
         lt, lc = resolve_table_col(left, aliases)
         rt, rc = resolve_table_col(right, aliases)
 
-        if _norm(lc) != PERSON_ID or _norm(rc) != PERSON_ID:
+        if _norm(lc) != _norm(rc) or _norm(lc) not in LINK_COLUMNS:
             continue
 
         if not lt or not rt:
@@ -393,6 +396,11 @@ def _detect_violations(
         return [(list(clinical_aliases.keys()), [])]
 
     graph = _build_graph(conditions, using_edges, aliases, clinical_aliases, cte_names)
+    # Orphan-FK checks (`LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+    # WHERE vo.visit_occurrence_id IS NULL`) link the tables on the FK by design — 8/8 expert findings.
+    for a, b in _antijoin_edges(outermost_select, clinical_aliases):
+        graph.setdefault(a, set()).add(b)
+        graph.setdefault(b, set()).add(a)
 
     # Check connectivity among clinical aliases only
     # CTEs are intermediate constructs - we only care if final clinical tables are connected
@@ -407,6 +415,32 @@ def _detect_violations(
 
 
 # --- Rule ------------------------------------------------------------------
+
+
+def _antijoin_edges(select: exp.Select, clinical_aliases: Dict[str, str]) -> List[Tuple[str, str]]:
+    """Edges for outer joins whose right side is tested `IS NULL` in WHERE (anti-join / orphan check)."""
+    where = select.args.get("where")
+    null_tested = set()
+    if where is not None:
+        for is_node in where.find_all(exp.Is):
+            if isinstance(is_node.this, exp.Column) and isinstance(is_node.expression, exp.Null) and is_node.this.table:
+                null_tested.add(_norm(is_node.this.table))
+    edges: List[Tuple[str, str]] = []
+    for join in select.args.get("joins", []) or []:
+        if (join.side or "").upper() not in {"LEFT", "RIGHT", "FULL"} or not isinstance(join.this, exp.Table):
+            continue
+        right = _norm(join.this.alias_or_name)
+        if right not in null_tested:
+            continue
+        on = join.args.get("on")
+        if on is None:
+            continue
+        for eq in on.find_all(exp.EQ):
+            if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
+                a, b = _norm(eq.this.table), _norm(eq.expression.table)
+                if a and b and a in clinical_aliases and b in clinical_aliases and a != b:
+                    edges.append((a, b))
+    return edges
 
 
 @register

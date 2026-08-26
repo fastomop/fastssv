@@ -196,6 +196,99 @@ def _filters_via_concept_ancestor(
     return False
 
 
+def _concept_ancestor_derived_sources(tree: exp.Expression) -> Set[str]:
+    """Names of CTEs / derived tables whose rows come from ``concept_ancestor`` (every SELECT branch projects
+    ``descendant_concept_id`` / ``ancestor_concept_id`` — aliased or not — or is a literal-only SELECT such as
+    ``UNION SELECT 19078106``). Such a codeset is standard by CDM definition, exactly like the direct
+    ``IN (SELECT descendant_concept_id FROM concept_ancestor ...)`` form. This shape — ``WITH drug1 AS (SELECT
+    descendant_concept_id AS concept_id FROM concept_ancestor WHERE ancestor_concept_id = N) ... JOIN drug1`` —
+    was the single most frequent warning on LLM-written OMOP SQL."""
+    out: Set[str] = set()
+    named: List[Tuple[str, exp.Expression]] = []
+    for cte in tree.find_all(exp.CTE):
+        if cte.alias:
+            named.append((normalize_name(cte.alias), cte.this))
+    for sub in tree.find_all(exp.Subquery):
+        if sub.alias:
+            named.append((normalize_name(sub.alias), sub.this))
+    for name, body in named:
+        branches = [body.this, body.expression] if isinstance(body, exp.Union) else [body]
+        # flatten nested unions
+        stack, selects = list(branches), []
+        while stack:
+            b = stack.pop()
+            if isinstance(b, exp.Union):
+                stack.extend([b.this, b.expression])
+            elif isinstance(b, exp.Select):
+                selects.append(b)
+        if not selects:
+            continue
+        ok = True
+        from_ancestor = False
+        for sel in selects:
+            tables = {normalize_name(t.name) for t in sel.find_all(exp.Table)}
+            if not tables:  # literal-only branch (SELECT 19078106)
+                ok &= all(
+                    isinstance(e.unalias() if isinstance(e, exp.Alias) else e, exp.Literal) for e in sel.expressions
+                )
+                continue
+            if tables != {"concept_ancestor"}:
+                ok = False
+                break
+            from_ancestor = True
+            projected = [e.unalias() if isinstance(e, exp.Alias) else e for e in sel.expressions]
+            ok &= all(
+                isinstance(e, exp.Column) and normalize_name(e.name) in {"descendant_concept_id", "ancestor_concept_id"}
+                for e in projected
+            )
+        if ok and from_ancestor:
+            out.add(name)
+    return out
+
+
+def _uses_concept_ancestor_derived_source(
+    tree: exp.Expression, aliases: Dict[str, str], standard_fields: Set[Tuple[str, str]]
+) -> bool:
+    """A standard *_concept_id column is joined (EQ) or filtered (IN subquery) against a concept_ancestor-derived
+    codeset — transitively standard, so `standard_concept = 'S'` would be redundant."""
+    sources = _concept_ancestor_derived_sources(tree)
+    if not sources:
+        return False
+    aliases_to_source = {normalize_name(a): normalize_name(t) for a, t in aliases.items() if t}
+    for a, t in list(aliases_to_source.items()):
+        if t in sources:
+            aliases_to_source[a] = t
+
+    def is_source_col(col: exp.Column) -> bool:
+        tbl = normalize_name(col.table) if col.table else None
+        return bool(tbl) and (tbl in sources or aliases_to_source.get(tbl) in sources)
+
+    tables_in_scope = {normalize_name(t) for t in aliases.values() if t}
+
+    def is_standard_col(col: exp.Column) -> bool:
+        t, c = resolve_table_col(col, aliases)
+        if not c:
+            return False
+        if t:
+            return (normalize_name(t), normalize_name(c)) in standard_fields
+        # unqualified (e.g. `WHERE drug_concept_id IN (...)` inside a single-table CTE): accept when exactly one
+        # table in scope owns that standard field
+        return len([tb for tb in tables_in_scope if (tb, normalize_name(c)) in standard_fields]) == 1
+
+    for eq in tree.find_all(exp.EQ):
+        l, r = eq.this, eq.expression
+        if isinstance(l, exp.Column) and isinstance(r, exp.Column):
+            if (is_standard_col(l) and is_source_col(r)) or (is_standard_col(r) and is_source_col(l)):
+                return True
+    for node in tree.find_all(exp.In):
+        if node.expressions or not isinstance(node.this, exp.Column) or not is_standard_col(node.this):
+            continue
+        sub = node.args.get("query")
+        if sub is not None and {normalize_name(t.name) for t in sub.find_all(exp.Table)} & sources:
+            return True
+    return False
+
+
 def _has_chained_join_to_concept_ancestor_via_concept(
     tree: exp.Expression,
     aliases: Dict[str, str],
@@ -465,8 +558,12 @@ class StandardConceptEnforcementRule(Rule):
             has_concept_ancestor_chain = _has_chained_join_to_concept_ancestor_via_concept(
                 tree, aliases, standard_fields
             )
+            has_concept_ancestor_source = _uses_concept_ancestor_derived_source(tree, aliases, standard_fields)
             any_concept_ancestor = (
-                has_concept_ancestor_filter or has_concept_ancestor_join or has_concept_ancestor_chain
+                has_concept_ancestor_filter
+                or has_concept_ancestor_join
+                or has_concept_ancestor_chain
+                or has_concept_ancestor_source
             )
 
             # --- Branch 1: source-concept fire (always-on, default + strict) ---
@@ -515,7 +612,11 @@ class StandardConceptEnforcementRule(Rule):
                     has_standard_enforcement or has_maps_to or has_specific_standard_filter or any_concept_ancestor
                 )
             else:
-                fires_standard = vocab_in_scope and not (has_standard_enforcement or any_concept_ancestor)
+                # An explicit literal concept-id filter on the standard field (`c.concept_id IN (974166, …)`) is a
+                # deliberate choice of concepts; asking for `standard_concept = 'S'` on top adds nothing.
+                fires_standard = vocab_in_scope and not (
+                    has_standard_enforcement or any_concept_ancestor or has_specific_standard_filter
+                )
 
             if not fires_standard:
                 continue

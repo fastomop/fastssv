@@ -90,8 +90,9 @@ def _has_aggregation(select: exp.Select) -> bool:
         return True
     if select.args.get("distinct"):
         return True
-    AGG = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
-    return any(isinstance(node, AGG) for node in select.expressions)
+    # Look through aliases and expression wrappers: `COUNT(DISTINCT p.person_id) AS n` is an aggregate
+    # even though the projection node is an Alias.
+    return any(node.find(exp.AggFunc) is not None for node in select.expressions)
 
 
 @register

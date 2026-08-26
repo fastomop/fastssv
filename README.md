@@ -6,14 +6,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-155-orange)
+![Rules](https://img.shields.io/badge/rules-157-orange)
 ![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
 
 **OMOP SQL that runs without errors can still be analytically wrong.**
 
-A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 155 rules, no database connection, deterministic.
+A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 157 rules, no database connection, deterministic.
 
 📖 **Full documentation: <https://fastomop.github.io/fastssv/>**
 
@@ -140,7 +140,7 @@ Mounted at `/mcp` and built per the [Streamable HTTP transport spec](https://mod
 | Architecture overview | [docs/architecture.md](docs/architecture.md) |
 | Plugin system / writing a rule | [docs/plugin_architecture.md](docs/plugin_architecture.md) |
 | Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
-| Per-rule catalog (all 155) | [docs/rules_reference.md](docs/rules_reference.md) |
+| Per-rule catalog (all 157) | [docs/rules_reference.md](docs/rules_reference.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
 | MCP server | [docs/mcp.md](docs/mcp.md) |
 | JSON report format | [docs/json_output.md](docs/json_output.md) |

@@ -196,12 +196,28 @@ def _predicate_join_tables(
       rather than silently picking a side).
     """
     outer_select = predicate.find_ancestor(exp.Select)
+    local_alias_names: set = set()
+    if outer_select is not None:
+        from_node = outer_select.args.get("from_") or outer_select.args.get("from")
+        for scope_node in [from_node, *(outer_select.args.get("joins") or [])]:
+            src = getattr(scope_node, "this", None) if scope_node is not None else None
+            if isinstance(src, exp.Table):
+                local_alias_names.add(_norm(src.alias_or_name))
+                local_alias_names.add(_norm(src.name))
+            elif isinstance(src, exp.Subquery) and src.alias:
+                local_alias_names.add(_norm(src.alias))
     omop_scope = {t for t in scope_tables if t in CDM_COLUMN_TYPES}
     non_omop_scope = scope_tables - omop_scope
 
     tables: set = set()
     for col in predicate.find_all(exp.Column):
         if col.find_ancestor(exp.Select) is not outer_select:
+            continue
+        # A column bound in an ENCLOSING scope (correlated subquery: `d1.person_id = p.person_id` inside EXISTS)
+        # anchors the comma-joined table to the outer row — that is a join, not a Cartesian product
+        # (17/17 agent-corpus findings of this rule were this shape, Study 1).
+        if col.table and _norm(col.table) not in local_alias_names:
+            tables.add("<outer>")
             continue
         t, c = resolve_table_col(col, aliases)
         if t:
@@ -288,8 +304,9 @@ def _unjoined_comma_tables(
     connected: set = set()
     for clause in _all_predicate_clauses(select):
         for pred in clause.find_all(_JOIN_PREDICATE_TYPES):
-            pred_tables = _predicate_join_tables(pred, aliases, scope_set) & scope_set
-            if len(pred_tables) < 2:
+            all_tables = _predicate_join_tables(pred, aliases, scope_set)
+            pred_tables = all_tables & scope_set
+            if len(pred_tables) < 2 and not (pred_tables and "<outer>" in all_tables):
                 continue
             for c in comma_tables:
                 if _norm(c) in pred_tables:

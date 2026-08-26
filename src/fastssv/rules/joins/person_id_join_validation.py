@@ -139,6 +139,12 @@ def _detect_invalid_person_id_joins(
         if lc_norm in using_cols and rc_norm in using_cols:
             continue
 
+        # cohort.subject_id IS the person key of a cohort (CDM v5.4 results schema), and pipeline temp tables
+        # carry the same column by convention — joining it to person_id is canonical, not an error.
+
+        if {lc_norm, rc_norm} == {"person_id", "subject_id"}:
+            continue
+
         # --- Detect invalid person_id joins --------------------------------
 
         left_is_pid = _is_person_id(lc_norm)

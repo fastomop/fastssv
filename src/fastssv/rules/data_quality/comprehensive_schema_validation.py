@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Set
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.helpers import is_schema_qualified, normalize_name, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 from fastssv.core.validation_context import get_validation_context
@@ -133,7 +133,10 @@ def _is_time_unit_arg(column: exp.Column) -> bool:
     return isinstance(parent, _DATE_FN_TYPES)
 
 
-def _local_aliases(select: exp.Select) -> Dict[str, str]:
+_CTE_BOUND = "<cte>"  # alias resolves to a CTE, so its columns are unknowable — never validated against the CDM
+
+
+def _local_aliases(select: exp.Select, cte_names: Set[str]) -> Dict[str, str]:
     """Aliases declared by ``select``'s own FROM/JOIN — excluding tables
     nested inside subqueries or further CTE bodies inside this scope.
 
@@ -154,7 +157,10 @@ def _local_aliases(select: exp.Select) -> Dict[str, str]:
             # (i.e. not buried in a Subquery or nested SELECT inside this scope).
             if tbl.find_ancestor(exp.Select) is not select:
                 continue
-            real = _norm(tbl.name)
+            # `omop.drug_exposure de` inside `WITH drug_exposure AS (...)` is the physical table — a CTE
+            # shadows unqualified names only — so its columns must still be checked.
+            name = _norm(tbl.name)
+            real = _CTE_BOUND if (name in cte_names and not is_schema_qualified(tbl)) else name
             alias = tbl.alias_or_name
             if alias:
                 aliases[_norm(alias)] = real
@@ -162,7 +168,38 @@ def _local_aliases(select: exp.Select) -> Dict[str, str]:
     return aliases
 
 
-def _resolve_column_table(column: exp.Column) -> Optional[str]:
+def _local_sources(select: exp.Select, cte_names: Set[str], subquery_aliases: Set[str], local_tables: Set[str]):
+    """Sources in ``select``'s own FROM/JOIN: (CDM tables, has_unknown_source).
+
+    ``has_unknown_source`` is True when the scope reads from anything whose columns we cannot know — a CTE, a
+    derived table, a temp/pipeline table, or a non-CDM table. An unqualified column in such a scope may belong to
+    that source, so attributing it to the one CDM table in scope is a guess that produced 3,405 + 645 false
+    "column does not exist" findings on expert pipeline SQL.
+    """
+    cdm: Set[str] = set()
+    unknown = False
+    from_node = select.args.get("from_") or select.args.get("from")
+    for scope_node in [from_node, *(select.args.get("joins") or [])]:
+        if scope_node is None:
+            continue
+        src = scope_node.this if not isinstance(scope_node, exp.Table) else scope_node
+        if isinstance(src, exp.Table):
+            name = _norm(src.name)
+            if (
+                (name in cte_names and not is_schema_qualified(src))
+                or name in subquery_aliases
+                or name in local_tables
+                or not _is_valid_table(name)
+            ):
+                unknown = True
+            else:
+                cdm.add(name)
+        else:  # Subquery, Values, table function, lateral ... — a derived source
+            unknown = True
+    return cdm, unknown
+
+
+def _resolve_column_table(column: exp.Column, cte_names: Set[str]) -> Optional[str]:
     """Resolve ``column.table`` to a real table name using scope-local aliases.
 
     Walks up enclosing ``Select`` scopes (innermost first) so correlated
@@ -177,7 +214,7 @@ def _resolve_column_table(column: exp.Column) -> Optional[str]:
 
     select = column.find_ancestor(exp.Select)
     while select is not None:
-        local = _local_aliases(select)
+        local = _local_aliases(select, cte_names)
         if table_ref in local:
             return local[table_ref]
         select = select.find_ancestor(exp.Select)
@@ -319,6 +356,11 @@ class ComprehensiveSchemaValidationRule(Rule):
                 # Skip CTEs - they're query-scoped tables, not physical tables
                 if table_name in cte_names:
                     continue
+                # T-SQL temp tables (#name / ##name) are session-scoped pipeline objects, never CDM tables.
+                if table_name.startswith("#") or (
+                    isinstance(table.this, exp.Identifier) and table.this.args.get("temporary")
+                ):
+                    continue  # sqlglot strips the `#` and marks the identifier temporary=True
 
                 # Skip subquery aliases - they're derived tables
                 if table_name in subquery_aliases:
@@ -368,8 +410,8 @@ class ComprehensiveSchemaValidationRule(Rule):
             # Validate all column references (only from physical tables)
             for column in tree.find_all(exp.Column):
                 col_name = _norm(column.name)
-                if not col_name:
-                    continue
+                if not col_name or col_name == "*" or isinstance(column.this, exp.Star):
+                    continue  # `alias.*` parses as a Column named "*"
 
                 # Skip SELECT clause aliases - they're derived expressions, not physical columns
                 if col_name in select_aliases:
@@ -394,32 +436,45 @@ class ComprehensiveSchemaValidationRule(Rule):
                     if table_ref in local_tables:
                         continue
 
-                    resolved_table = _resolve_column_table(column) or table_ref
+                    resolved_table = _resolve_column_table(column, cte_names) or table_ref
                     if "." in resolved_table:
                         resolved_table = resolved_table.split(".")[-1]
 
-                    # After resolution, the underlying name may itself be a
-                    # CTE / subquery (alias points at one).
-                    if resolved_table in cte_names or resolved_table in subquery_aliases:
+                    # After resolution, the alias may point at a CTE or subquery.
+                    if resolved_table == _CTE_BOUND or resolved_table in subquery_aliases:
                         continue
                     if resolved_table in local_tables:
                         continue
                 else:
-                    # No table qualifier - try to infer from context (single table in FROM)
-                    physical_tables = []
-                    for t in tree.find_all(exp.Table):
-                        t_name = _norm(t.name)
-                        if t_name and t_name not in cte_names and t_name not in subquery_aliases:
-                            if _is_valid_table(t_name):
-                                physical_tables.append(t_name)
-
-                    # If there's exactly one physical table, assume it's that one
-                    if len(physical_tables) == 1:
-                        resolved_table = physical_tables[0]
+                    # No table qualifier: infer from the column's OWN scope (its enclosing SELECT's FROM/JOIN,
+                    # then outer scopes for correlated references) — never from the whole statement, which would
+                    # pull in an INSERT/CREATE target and attribute SELECT-side columns to it.
+                    scope = column.find_ancestor(exp.Select)
+                    resolved_table = None
+                    if scope is None:
+                        # No SELECT (UPDATE/DELETE/VALUES): the statement's target is the only possible source.
+                        physical_tables = [
+                            _norm(t.name)
+                            for t in tree.find_all(exp.Table)
+                            if _norm(t.name) not in cte_names
+                            and _norm(t.name) not in subquery_aliases
+                            and _is_valid_table(_norm(t.name))
+                        ]
+                        if len(physical_tables) == 1:
+                            resolved_table = physical_tables[0]
                     else:
-                        # Can't determine table, skip validation
+                        while scope is not None:
+                            cdm_tables, unknown = _local_sources(scope, cte_names, subquery_aliases, local_tables)
+                            if unknown:
+                                break  # the column may come from a source whose columns we cannot know
+                            if len(cdm_tables) == 1:
+                                resolved_table = next(iter(cdm_tables))
+                                break
+                            if cdm_tables:
+                                break  # ambiguous among several CDM tables
+                            scope = scope.find_ancestor(exp.Select)
+                    if resolved_table is None:
                         continue
-
                 # Skip if table is invalid (already reported)
                 if not _is_valid_table(resolved_table):
                     continue

@@ -393,6 +393,16 @@ def _is_shadowed_by_visible_cte(table_node: exp.Table, target: str) -> bool:
     return False
 
 
+def is_schema_qualified(table_node: exp.Table) -> bool:
+    """True when the reference carries a schema/catalog prefix (``omop.drug_exposure``).
+
+    Such a reference names the physical table even where a CTE of the same name is in scope — standard SQL
+    scoping shadows *unqualified* names only. Rules that skip CTE-named tables must consult this first, or they
+    silently stop checking the real table: AI-written OMOP SQL names CTEs after CDM tables constantly.
+    """
+    return _is_schema_qualified(table_node)
+
+
 def extract_aliases(tree: exp.Expression) -> Dict[str, str]:
     """Build a mapping of alias -> real_table_name.
 
@@ -476,6 +486,9 @@ _SQLRENDER_POSITIONAL_PATTERNS = (
 )
 
 
+_CURLY_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
+
+
 def looks_like_unrendered_template(sql: str) -> bool:
     """True when ``sql`` looks like an unrendered OHDSI SqlRender template.
 
@@ -503,9 +516,16 @@ def looks_like_unrendered_template(sql: str) -> bool:
     practice OHDSI templates almost always include at least one
     embedded or dotted placeholder.
     """
-    if not sql or "@" not in sql:
+    if not sql:
         return False
     stripped = _TEMPLATE_NOISE_RE.sub(" ", sql)
+    # Python-format / Jinja-style `{placeholder}` where a literal or identifier should be. Identifier-only braces
+    # cannot be ODBC escapes (`{fn ...}`, `{d '...'}`), JSON, or struct syntax, all of which contain more than a
+    # bare identifier. Study-1 blind sample: an agent query with `{naproxen_sodium_220mg_tablet_id}` passed clean.
+    if _CURLY_PLACEHOLDER_RE.search(stripped):
+        return True
+    if "@" not in sql:
+        return False
     return any(p.search(stripped) for p in _SQLRENDER_POSITIONAL_PATTERNS)
 
 
@@ -803,3 +823,78 @@ __all__ = [
     "has_condition",
     "extract_join_conditions",
 ]
+
+
+def select_scope_tables(select: exp.Select) -> set:
+    """Base tables read by ``select``'s own FROM/JOIN (normalised names). Excludes derived sources and anything in
+    nested scopes; INSERT/CREATE targets are never inside a Select, so they are excluded by construction."""
+    out = set()
+    from_node = select.args.get("from_") or select.args.get("from")
+    for scope_node in [from_node, *(select.args.get("joins") or [])]:
+        if scope_node is None:
+            continue
+        src = scope_node.this if not isinstance(scope_node, exp.Table) else scope_node
+        if isinstance(src, exp.Table) and src.name:
+            out.add(normalize_name(src.name))
+    return out
+
+
+def select_local_aliases(select: exp.Select) -> Dict[str, str]:
+    """alias/name → base table for ``select``'s own FROM/JOIN sources. Derived sources map to their own alias.
+    Unlike ``extract_aliases`` (tree-global) this cannot be confused by an alias reused in a nested scope."""
+    out: Dict[str, str] = {}
+    from_node = select.args.get("from_") or select.args.get("from")
+    for scope_node in [from_node, *(select.args.get("joins") or [])]:
+        if scope_node is None:
+            continue
+        src = scope_node.this if not isinstance(scope_node, exp.Table) else scope_node
+        if isinstance(src, exp.Table) and src.name:
+            out[normalize_name(src.alias_or_name)] = normalize_name(src.name)
+        elif isinstance(src, exp.Subquery) and src.alias:
+            out[normalize_name(src.alias)] = normalize_name(src.alias)
+    return out
+
+
+def select_is_profiling_read(select: exp.Select, table: str, key_columns: Set[str]) -> bool:
+    """A SELECT that surveys ``table`` rather than analysing it: a `LIMIT`-only peek with no WHERE, an aggregate-only
+    projection, or an aggregate grouped solely by the table's own columns (distribution by type / month / key).
+    Such reads count every row on purpose; requiring an analytic filter on them is a false positive."""
+    local = select_local_aliases(select)
+    if normalize_name(table) not in local.values():
+        return False
+    if select.args.get("limit") is not None and select.args.get("where") is None:
+        return True
+    exprs = select.expressions
+    if not exprs:
+        return False
+
+    def is_agg_or_const(e: exp.Expression) -> bool:
+        return e.find(exp.AggFunc) is not None or e.find(exp.Column, exp.Star) is None
+
+    group = select.args.get("group")
+    if group is None:
+        return all(is_agg_or_const(e) for e in exprs)
+    if not any(e.find(exp.AggFunc) is not None for e in exprs):
+        return False
+    single_source = len(local) == 1
+    for col in group.find_all(exp.Column):
+        owner = (
+            local.get(normalize_name(col.table))
+            if col.table
+            else (next(iter(local.values())) if single_source else None)
+        )
+        if owner != normalize_name(table) and normalize_name(col.name) not in key_columns:
+            return False
+    return True
+
+
+def tables_co_used(tree: exp.Expression, table_a: str, table_b: str) -> bool:
+    """True when some single SELECT scope reads BOTH tables. Whole-statement presence (`has_table_reference` for
+    each) over-fires on UNION branches, separate derived tables and INSERT targets that merely mention a table —
+    the "co-use blindness" class of expert-corpus false positives."""
+    a, b = normalize_name(table_a), normalize_name(table_b)
+    for select in tree.find_all(exp.Select):
+        scope = select_scope_tables(select)
+        if a in scope and b in scope:
+            return True
+    return False

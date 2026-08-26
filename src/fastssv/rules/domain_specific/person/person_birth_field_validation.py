@@ -124,6 +124,36 @@ def _is_birth_field(col: exp.Column, aliases: Dict[str, str]) -> Optional[str]:
     return col_norm
 
 
+def _birth_year_expression(node: exp.Expression, aliases: Dict[str, str]) -> Optional[str]:
+    """`EXTRACT(YEAR FROM birth_datetime)`, `YEAR(birth_datetime)` and `DATE_PART('year', birth_datetime)` are the
+    person's birth year just as much as `year_of_birth` is (Study-1 blind sample: 74 unflagged agent queries used
+    this shape with implausible literals). Returns "year_of_birth" when `node` is such an expression."""
+    col: Optional[exp.Expression] = None
+    if isinstance(node, exp.Extract) and str(node.this).strip("'\"").lower() == "year":
+        col = node.expression
+    elif isinstance(node, exp.Year):
+        col = node.this
+    elif isinstance(node, exp.Anonymous) and node.name.lower() == "date_part" and len(node.expressions) == 2:
+        part = node.expressions[0]
+        if isinstance(part, exp.Literal) and part.this.lower() == "year":
+            col = node.expressions[1]
+    if not isinstance(col, exp.Column):
+        return None
+    table, col_name = resolve_table_col(col, aliases)
+    if _norm(col_name) != "birth_datetime":
+        return None
+    if table and _norm(table) != "person":
+        return None
+    return "year_of_birth"
+
+
+def _birth_field_of(node: exp.Expression, aliases: Dict[str, str]) -> Optional[str]:
+    """Birth field named by a column or by a year-extraction over birth_datetime."""
+    if isinstance(node, exp.Column):
+        return _is_birth_field(node, aliases)
+    return _birth_year_expression(node, aliases)
+
+
 def _extract_int(node: exp.Expression) -> Optional[int]:
     """Extract integer value from literal (including negative numbers)."""
     if isinstance(node, exp.Neg):
@@ -171,10 +201,7 @@ def _find_violations(
             pairs = [(node.this, node.expression), (node.expression, node.this)]
 
             for col_node, val_node in pairs:
-                if not isinstance(col_node, exp.Column):
-                    continue
-
-                field_name = _is_birth_field(col_node, aliases)
+                field_name = _birth_field_of(col_node, aliases)
                 if not field_name:
                     continue
 
@@ -196,10 +223,7 @@ def _find_violations(
         # --- BETWEEN ---
         elif isinstance(node, exp.Between):
             col_node = node.this
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            field_name = _is_birth_field(col_node, aliases)
+            field_name = _birth_field_of(col_node, aliases)
             if not field_name:
                 continue
 
@@ -237,10 +261,7 @@ def _find_violations(
         # --- IN ---
         elif isinstance(node, exp.In):
             col_node = node.this
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            field_name = _is_birth_field(col_node, aliases)
+            field_name = _birth_field_of(col_node, aliases)
             if not field_name:
                 continue
 

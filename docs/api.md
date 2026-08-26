@@ -32,7 +32,7 @@ uv run fastssv serve --prod --workers 4    # tune worker count
 
 Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
-rule registry once at startup (~155 rules, sub-second).
+rule registry once at startup (~157 rules, sub-second).
 
 The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`uv add "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
 
@@ -181,7 +181,7 @@ metadata, filter by category, etc.
 **Response (200):**
 ```json
 {
-  "total": 155,
+  "total": 157,
   "rules": [
     {
       "rule_id": "anti_patterns.ambiguous_column_reference",

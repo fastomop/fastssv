@@ -36,7 +36,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
     extract_aliases,
-    has_table_reference,
+    tables_co_used,
     normalize_name,
     parse_sql,
     resolve_table_col,
@@ -135,9 +135,7 @@ class VisitDetailVisitOccurrenceReferenceRule(Rule):
         for tree in trees:
             if not tree:
                 continue
-            if not has_table_reference(tree, VISIT_DETAIL):
-                continue
-            if not has_table_reference(tree, VISIT_OCCURRENCE):
+            if not tables_co_used(tree, VISIT_DETAIL, VISIT_OCCURRENCE):
                 continue
 
             aliases = extract_aliases(tree)

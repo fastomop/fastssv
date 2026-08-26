@@ -11,6 +11,27 @@ between minor versions.
 
 ### Added
 
+- **`temporal.date_diff_interval_comparison` (ERROR).** On PostgreSQL,
+  Redshift and DuckDB, `DATE − DATE` is an integer number of days, so
+  comparing it with an `INTERVAL` literal (`ABS(a.x_date − b.y_date) <=
+  INTERVAL '30 days'`) is a type error that fails at execution. This shape
+  was the most common crash in LLM-written OMOP SQL in the feedback study
+  and was unflagged by the frozen rule set. Timestamp differences and
+  dialects where `DATE − DATE` is not an integer are not flagged.
+- **`concept_standardization.concept_literal_without_hierarchy` (WARNING).**
+  A clinical `*_concept_id` filtered on literal concept ids while the
+  query never touches `concept_ancestor` — an ingredient- or class-level
+  literal matches almost no records, silently returning zero patients.
+  Advisory: exact-concept queries are legitimate (fires on 0.65% of
+  distinct expert statements, mostly QueryLibrary one-concept examples).
+- **MCP `validate_sql` gains `include_warnings` (default `false`).** The
+  agent-facing tool now returns error-severity findings only unless asked;
+  `warning_count` is still reported. In the feedback study, warnings fed
+  to an LLM caused revision churn and correct→wrong edits (intent-dependent
+  advice such as observation-period anchoring) without improving
+  correctness, while errors-only feedback matched or beat the full report
+  on every model. The HTTP API and CLI are unchanged.
+
 - **Per-rule exception isolation, surfaced as `meta.rule_execution_error`.**
   Previously every execution loop (`validate_sql`,
   `validate_sql_structured`, the legacy category helpers) called
@@ -426,7 +447,86 @@ between minor versions.
   Tests: `tests/test_parse_sql.py::test_real_sql_parses_cleanly`
   (`ANALYZE tempResults_104`, `ANALYZE scratch.tmpach_0`).
 
+### Changed
+
+- **`concept_standardization.standard_concept_enforcement`'s suggested
+  fix is now CTE-shadow-aware.** When the rule fires AND a CTE named
+  `concept` or `concept_relationship` is defined **at the top level of
+  the statement**, the message now recommends the schema-qualified
+  `JOIN omop.concept c ON …` form and explicitly calls out the shadow
+  (the old hardcoded `JOIN concept c ON …` would bind to the CTE and
+  fail at execution with _"column standard_concept does not exist"_,
+  making the fix un-applyable). Scope is deliberately restricted to the
+  top-level WITH (`tree.args["with_"]`) rather than tree-global: CTEs
+  defined inside a nested subquery (IN / EXISTS / FROM-derived) are
+  lexically out of scope for a JOIN added at the outer SELECT, so the
+  generic fix is already executable in that case and emitting the
+  shadow-note would be misleading. The broader "any matching CTE
+  anywhere in the tree" signal is handled separately by
+  `anti_patterns.cte_shadows_omop_table`. The default message — used
+  when no top-level shadow is present — is unchanged. Regression tests:
+  `TestStandardConceptMapping::test_suggested_fix_is_schema_qualified_under_cte_shadow`,
+  `…test_suggested_fix_unchanged_without_cte_shadow`, and
+  `…test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery`
+  (the new case, added in response to a Copilot review flag that the
+  earlier tree-global `collect_cte_names` over-approximated scope).
+
 ### Fixed
+
+- **Schema resolver: unqualified columns resolve in their own scope.**
+  `data_quality.schema_validation` inferred the table of an unqualified
+  column from *every* table in the statement, so in `INSERT INTO cohort
+  (...) SELECT person_id, start_date FROM #final_cohort` the SELECT-side
+  columns were attributed to the INSERT target and reported as missing
+  (3,405 findings on one Circe footer in Study 1), and columns selected
+  from a derived table or CTE were attributed to the one CDM table joined
+  next to it (645 findings). Resolution now uses the column's enclosing
+  SELECT (then outer scopes for correlated references) and is skipped
+  when that scope reads from any source whose columns are unknown (CTE,
+  derived table, temp or non-CDM table). `alias.*` is no longer treated
+  as a column named `*` (98 findings), and T-SQL temp tables
+  (`#name`, flagged `temporary` by the parser) are never reported as
+  missing CDM tables. Genuine missing columns on single-table or
+  qualified references are still reported.
+- **`joins.person_id_join_validation` accepts `subject_id`.**
+  `person_id = cohort.subject_id` (and the same column on cohort-derived
+  temp tables) is the CDM's own cohort linkage, not a mismatched key —
+  174 false positives on expert SQL. Other mismatches (`person_id =
+  visit_occurrence_id`) are still flagged.
+- **`temporal.observation_period_anchoring` fires on absolute calendar
+  windows only.** A clinical date compared with a date literal,
+  parameter or current-date function still warns; a date compared with
+  *another* event date (co-occurrence windows, washout/follow-up
+  arithmetic, `DATEDIFF`/`INTERVAL` between events) no longer does, and
+  cohort-scoped queries (a `cohort` table joined) are exempt because
+  cohort entries are generated inside observation periods. In the
+  feedback study this warning was the largest source of revision churn
+  and correct→wrong edits; on LLM-written queries it now fires on 0–1%
+  instead of 26–29%, while every absolute-window case still fires.
+- **`concept_standardization.standard_concept_enforcement` recognises
+  codeset CTEs.** A CTE or derived table built from `concept_ancestor`
+  (`WITH x AS (SELECT descendant_concept_id AS concept_id FROM
+  concept_ancestor WHERE ancestor_concept_id = N UNION SELECT N)`) joined
+  or `IN`-filtered against a standard `*_concept_id` is standard by CDM
+  definition — exactly like the direct subquery form the rule already
+  exempted. Literal-only CTEs are not treated as codesets.
+
+- **Cardinality warnings no longer fire on de-duplicated queries.**
+  `domain_specific.condition_occurrence_cardinality_validation` (and the
+  generic event-cardinality rule) missed aggregates hidden behind an alias
+  — `COUNT(DISTINCT p.person_id) AS n` — and warned about fan-out on
+  queries that already counted distinct persons (38 of 38 such firings in
+  the feedback study were false observations). Aggregates are now detected
+  through aliases and wrappers.
+- **`domain_specific.person_birth_field_validation` covers year
+  extraction.** `EXTRACT(YEAR FROM birth_datetime)`, `YEAR(birth_datetime)`
+  and `DATE_PART('year', birth_datetime)` compared or ranged against an
+  implausible year are now flagged like `year_of_birth`; 74 agent queries
+  with future birth years had passed unflagged (Study 1 blind sample).
+- **Unrendered `{placeholder}` templates are detected.** Identifier-only
+  curly-brace placeholders (`drug_concept_id = {naproxen_id}`) now trigger
+  `meta.unrendered_sqlrender_template` like `@param` placeholders do; ODBC
+  escapes and JSON literals are not affected.
 
 - **`data_quality.vocabulary_table_protection` no longer flags reads of
   vocabulary tables inside write statements.** Target extraction previously
@@ -530,32 +630,6 @@ between minor versions.
   FROM cdm.persn` still errors on the misspelled `persn`. Regression
   guard: `tests/test_rules.py::TestSchemaValidation::test_ctas_target_not_validated_as_omop_table`
   and `…::test_ctas_still_validates_source_tables`.
-
-### Changed
-
-- **`concept_standardization.standard_concept_enforcement`'s suggested
-  fix is now CTE-shadow-aware.** When the rule fires AND a CTE named
-  `concept` or `concept_relationship` is defined **at the top level of
-  the statement**, the message now recommends the schema-qualified
-  `JOIN omop.concept c ON …` form and explicitly calls out the shadow
-  (the old hardcoded `JOIN concept c ON …` would bind to the CTE and
-  fail at execution with _"column standard_concept does not exist"_,
-  making the fix un-applyable). Scope is deliberately restricted to the
-  top-level WITH (`tree.args["with_"]`) rather than tree-global: CTEs
-  defined inside a nested subquery (IN / EXISTS / FROM-derived) are
-  lexically out of scope for a JOIN added at the outer SELECT, so the
-  generic fix is already executable in that case and emitting the
-  shadow-note would be misleading. The broader "any matching CTE
-  anywhere in the tree" signal is handled separately by
-  `anti_patterns.cte_shadows_omop_table`. The default message — used
-  when no top-level shadow is present — is unchanged. Regression tests:
-  `TestStandardConceptMapping::test_suggested_fix_is_schema_qualified_under_cte_shadow`,
-  `…test_suggested_fix_unchanged_without_cte_shadow`, and
-  `…test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery`
-  (the new case, added in response to a Copilot review flag that the
-  earlier tree-global `collect_cte_names` over-approximated scope).
-
-### Fixed
 
 - **`data_quality.schema_validation` is now scope-aware for column
   resolution.** `comprehensive_schema_validation` previously resolved
@@ -719,6 +793,113 @@ between minor versions.
   generated URLs reflect the external scheme/host), and the
   compose-vs-code default split. No behaviour change — purely a
   documentation gap fix.
+
+- **`data_quality.schema_validation` keeps checking a table when a CTE
+  shares its name.** A CTE shadows an *unqualified* name only, but the
+  rule tested every reference against a flat set of CTE aliases, so
+  `WITH drug_exposure AS (…) SELECT de.invalid_reason FROM
+  omop.drug_exposure de` silently skipped column checking on the real
+  table — `drug_exposure` was "a CTE". AI-written OMOP SQL names CTEs
+  after CDM tables constantly, so this cost sensitivity on exactly the
+  corpus the rule matters most for. Alias binding now treats a name as
+  CTE-bound only when the reference carries no schema/catalog prefix
+  (new public helper `core.helpers.is_schema_qualified`). The
+  *table-existence* check stays name-based on purpose: a CTE name is
+  never an OMOP table wherever it is defined, and Circe emits
+  `codesets` / `qualified_events` in every generated cohort. Regression
+  guards: `tests/test_rules.py::TestScopeAndProvenanceFixes::
+  test_schema_qualified_table_checked_inside_same_named_cte`,
+  `…::test_unqualified_reference_still_shadowed_by_cte`,
+  `…::test_cte_name_never_reported_as_missing_table`.
+- **`anti_patterns.comma_separated_cross_join` recognises correlated
+  subqueries.** `EXISTS (SELECT 1 FROM drug_exposure d1, drug_exposure d2
+  WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id …)`
+  anchors every comma-joined table to the outer row, which is a join, not
+  a Cartesian product. The predicate analysis previously resolved
+  `p.person_id` through the tree-global alias map, found `person` outside
+  the subquery's own FROM list and counted each `drug_exposure` as
+  unjoined. A column whose alias is not bound in the subquery's own
+  FROM/JOIN now counts as an edge to the enclosing scope. 17/17 agent-corpus
+  findings of this rule (Study 1) were this shape; all now pass, and the
+  genuine `FROM a, b WHERE a.x = 1` case still fires.
+- **`joins.cohort_clinical_join_validation` no longer flags INSERT targets,
+  unrelated CTEs, or the `cohort → person → clinical` bridge written with
+  an unqualified `subject_id`.** Three separate over-fires: (i) `INSERT INTO
+  cohort SELECT … FROM condition_occurrence` counted the write target as an
+  unjoined cohort source (24/24 expert findings in Study 1); (ii) a CTE
+  profiling `observation_period` and another CTE reading `cohort` were
+  treated as co-used even though no SELECT reads both; (iii)
+  `cohort INNER JOIN person ON subject_id = person.person_id INNER JOIN
+  observation_period ON observation_period.person_id = person.person_id`
+  lost the bridge because the bare `subject_id` resolved to no table. The
+  rule now excludes write targets, only considers clinical tables read in
+  the same SELECT scope as a cohort source (base table or derived
+  `… AS cohort`), and attributes an unqualified `subject_id` to the cohort
+  side. 16 → 0 distinct expert statements.
+- **`joins.clinical_person_id_linkage_validation` accepts foreign-key joins
+  to the same visit.** `condition_occurrence co JOIN visit_occurrence vo ON
+  co.visit_occurrence_id = vo.visit_occurrence_id` cannot cross patients —
+  a visit belongs to exactly one person — but the connectivity graph only
+  admitted `person_id = person_id` edges (plus orphan-FK anti-join checks
+  from an earlier fix). Equi-joins on `visit_occurrence_id` and
+  `visit_detail_id` now link the tables too. 8 → 0 distinct expert
+  statements; joins on dates or unrelated columns still fire. Two tests
+  that asserted the old premise were inverted with the rationale inline.
+- **`anti_patterns.type_concept_id_misuse` distinguishes provenance filters
+  from clinical ones.** The rule exists to catch a clinical concept written
+  into a `*_type_concept_id` column (`condition_type_concept_id = 201826`),
+  yet it fired on every filter of that column, including
+  `drug_type_concept_id IN (38000175, 38000180, 43542356)` — restricting a
+  query to a data source, which the rule's own docstring lists as
+  legitimate. A comparison whose literals are all type ids of the
+  column's own family — the shared 32810–32882 block or the legacy block
+  for that domain — is now ignored; a clinical concept id, or a legacy id
+  from another domain's block (`condition_type_concept_id = 38000280`, an
+  observation type — the rule's one adjudicated true positive in Study 1),
+  still errors. Completeness metrics
+  (`SUM(CASE WHEN x_type_concept_id IS NULL …)`) and outer-join label
+  lookups were already exempt. 8 → 0 distinct expert statements. Existing
+  tests that used provenance ids as the "misuse" value now use clinical
+  concept ids.
+- **`temporal.end_before_start_validation` recognises data-quality probes.**
+  `SELECT COUNT(*) FROM condition_occurrence WHERE condition_end_date <
+  condition_start_date` counts bad rows on purpose — the Achilles shape is
+  `SELECT 411 AS analysis_id, CAST(NULL AS VARCHAR(255)) AS stratum_1, …,
+  COUNT(co1.person_id)`. An aggregate-only projection (constants allowed,
+  `SELECT *` not) with no GROUP BY is no longer flagged. 3 → 0 expert
+  statements.
+- **`data_quality.episode_requires_concept_filter` and
+  `data_quality.fact_relationship_requires_relationship_concept_filter`
+  skip profiling reads.** `SELECT * FROM fact_relationship WHERE (0 = 1)`
+  (dbplyr schema probe, parenthesised), `SELECT fact_relationship.* FROM
+  fact_relationship LIMIT 1`, Achilles 3001 (`COUNT(*) … GROUP BY
+  relationship_concept_id`), Achilles 2320 (episodes per month) and
+  CdmOnboarding's per-type counts all survey the table deliberately. A
+  SELECT whose own FROM/JOIN reads the table is now exempt when it is a
+  `LIMIT`-only peek with no WHERE, an aggregate-only projection, or an
+  aggregate grouped solely by the table's own columns; the decision is
+  made in the reading scope, so an outer query consuming the profile does
+  not disqualify it. `SELECT * FROM fact_relationship` and a GROUP BY on a
+  joined table's column still fire. 8 → 0 and 4 → 0 expert statements.
+- **`data_quality.canonical_string_value_validation` only checks columns
+  that resolve to an OMOP table.** Matching by column name alone flagged
+  `domain_id`, `vocabulary_id` and `standard_concept` values on CTEs and
+  result tables that happen to reuse the names (18 distinct expert
+  statements, 0 true positives). The column must now resolve to a CDM table
+  in scope. 18 → 0.
+- **`joins.death_visit_occurrence_join_validation` and
+  `domain_specific.visit_detail_visit_occurrence_reference` require
+  co-use in one SELECT scope.** Both gated on whole-statement presence of
+  the two tables, so UNION branches, separate derived tables and INSERT
+  targets that merely mention both were flagged. They now use the shared
+  `tables_co_used` helper. 7 → 0 and 4 → 1 expert statements; the survivor
+  (FeatureExtraction's per-person `visit_detail × visit_occurrence` pairing)
+  is a legitimate flag.
+- **Shared helpers.** `core.helpers` gains `select_local_aliases` (alias →
+  base table for one SELECT's own FROM/JOIN, immune to alias reuse across
+  scopes) and `select_is_profiling_read` (the peek / aggregate-only /
+  grouped-by-own-columns test above), alongside the earlier
+  `select_scope_tables` / `tables_co_used`.
 
 ## [0.3.0] - 2026-05-06
 

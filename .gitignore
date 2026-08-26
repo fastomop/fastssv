@@ -71,3 +71,10 @@ site/
 
 # Local-only experiment materials (kept off GitHub)
 experiments/
+studies/
+
+# Study reproduction kits: raw per-statement reports are bulky and rebuildable
+# (referenced by checksum from each run_meta.json); derived tables are tracked.
+studies/*/results/*/raw/
+studies/*/adjudication/raw/
+studies/*/adjudication/second_rater/labels/

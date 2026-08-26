@@ -72,13 +72,12 @@ def test_validate_empty_sql_rejected(client: TestClient):
     assert resp.status_code == 422
 
 
+# A vocabulary join without a standard-concept filter (and without concept_ancestor) — still a warning
+# under the narrowed rule; escalates to an error in strict mode.
 _STRICT_ESCALATION_SQL = """
-WITH cc AS (
-    SELECT descendant_concept_id AS concept_id FROM concept_ancestor
-    WHERE ancestor_concept_id IN (320128)
-)
-SELECT person_id FROM condition_occurrence co
-WHERE co.condition_concept_id IN (SELECT concept_id FROM cc)
+SELECT co.person_id FROM condition_occurrence co
+JOIN concept c ON c.concept_id = co.condition_concept_id
+WHERE c.concept_name LIKE '%diabetes%'
 """
 
 

@@ -235,6 +235,18 @@ def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
         if _is_in_or(node):
             continue
 
+        # `SELECT COUNT(*) ... WHERE end < start` is a data-quality probe counting bad rows, not a reversed
+        # filter — an aggregate-only projection (constants allowed: Achilles `411 AS analysis_id, CAST(NULL ...)`)
+        # with no GROUP BY marks it.
+        sel = node.find_ancestor(exp.Select)
+        if (
+            sel is not None
+            and sel.expressions
+            and not sel.args.get("group")
+            and all(e.find(exp.AggFunc) is not None or e.find(exp.Column, exp.Star) is None for e in sel.expressions)
+        ):
+            continue
+
         # --- Column-to-column comparison (critical fix) ---
         if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE)):
             if isinstance(node.left, exp.Column) and isinstance(node.right, exp.Column):

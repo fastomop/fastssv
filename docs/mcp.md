@@ -17,9 +17,11 @@ If `FASTSSV_API_MCP_ENABLED=true` but the `mcp` extra is missing, the app raises
 
 ## Tool
 
-### `validate_sql(sql, dialect="auto", strict=False)`
+### `validate_sql(sql, dialect="auto", strict=False, include_warnings=False)`
 
 Static validation of an OMOP CDM SQL submission. Wraps [`fastssv.validate_sql_structured`](api.md) with the same statement-split, strict-mode and parse-timeout behaviour as `POST /v1/validate`. Returns a structured payload (aggregate `is_valid`/`error_count`/`warning_count`, flattened `errors` and `warnings`, and a per-statement `results` array).
+
+By default the `warnings` lists are empty and only error-severity findings are returned (`warning_count` still tells you how many warnings exist); pass `include_warnings=true` for the full report. Rationale: in the feedback-loop study, an LLM given warnings revised more, sometimes turned correct queries wrong by following intent-dependent advice (e.g. observation-period anchoring), and ended no more correct than with errors alone — the error tier is the validator's *assertion*, the warning tier its *advice*, and an autonomous agent should act on the former.
 
 There is intentionally no `list_rules` tool: a static rule catalog is a poor fit for the tool primitive (the JSON-RPC `tools/list` already advertises `validate_sql`, and every violation comes back with its `rule_id`). For an enumerable catalog use the existing HTTP endpoint `GET /v1/rules` or [`docs/rules_reference.md`](rules_reference.md).
 

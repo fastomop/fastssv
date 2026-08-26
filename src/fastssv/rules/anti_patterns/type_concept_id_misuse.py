@@ -93,6 +93,45 @@ def _is_join_to_concept_for_labeling(node: exp.Expression, col: exp.Column, alia
     return False
 
 
+# The OMOP "Type Concept" vocabulary: the current 32810–32882 block is shared by every domain; the legacy blocks are
+# per domain, so a legacy id from another domain's block (`condition_type_concept_id = 38000280`, an observation
+# type) is a wrong-family filter that returns zero rows.
+# A filter whose literals are all type ids of the column's own family is a provenance filter, the documented
+# legitimate use, not a clinical concept smuggled into a type column (the misuse this rule exists for).
+_SHARED_TYPE_RANGES = ((0, 0), (32810, 32882))
+_LEGACY_TYPE_RANGES = {
+    "condition_type_concept_id": ((38000183, 38000250), (44786627, 44786629)),
+    "drug_type_concept_id": ((38000175, 38000182), (43542355, 43542358), (44787730, 44787730)),
+    "procedure_type_concept_id": ((38000251, 38000275), (44786630, 44786631)),
+    "observation_type_concept_id": ((38000276, 38000282), (45905770, 45905770)),
+    "measurement_type_concept_id": ((44818701, 44818704), (45754805, 45754908)),
+    "visit_type_concept_id": ((44818517, 44818522),),
+    "device_type_concept_id": ((44818705, 44818707),),
+    "note_type_concept_id": ((44814637, 44814645),),
+    "death_type_concept_id": ((38003565, 38003569),),
+}
+
+
+def _in_ranges(value: int, ranges) -> bool:
+    return any(lo <= value <= hi for lo, hi in ranges)
+
+
+def _is_own_family_type_literal(column: str, node: exp.Expression) -> bool:
+    if not (isinstance(node, exp.Literal) and not node.is_string):
+        return False
+    try:
+        value = int(node.this)
+    except ValueError:
+        return False
+    return _in_ranges(value, _SHARED_TYPE_RANGES) or _in_ranges(value, _LEGACY_TYPE_RANGES.get(column, ()))
+
+
+def _compared_literals(node: exp.Expression) -> List[exp.Expression]:
+    if isinstance(node, exp.In):
+        return list(node.expressions)
+    return [node.expression] if node.expression is not None else []
+
+
 def _find_type_concept_id_misuse(
     tree: exp.Expression, aliases: Dict[str, str]
 ) -> List[Tuple[str, str, str, str, exp.Column]]:
@@ -112,6 +151,16 @@ def _find_type_concept_id_misuse(
                 normalized_col = normalize_name(col)
 
                 if normalized_col in TYPE_CONCEPT_ID_COLUMNS:
+                    # Completeness metrics (`SUM(CASE WHEN x_type_concept_id IS NULL ...)`) and outer-join label
+                    # lookups (`LEFT JOIN concept ON ... AND x_type_concept_id != 0`) filter nothing.
+                    if node.find_ancestor(exp.Case, exp.AggFunc) is not None:
+                        continue
+                    enclosing_join = node.find_ancestor(exp.Join)
+                    if enclosing_join is not None and (enclosing_join.side or "").upper() in {"LEFT", "RIGHT", "FULL"}:
+                        continue
+                    literals = _compared_literals(node)
+                    if literals and all(_is_own_family_type_literal(normalized_col, v) for v in literals):
+                        continue
                     # Determine context
                     context = "WHERE clause"
                     severity = "error"  # Default: cohort definition misuse
