@@ -70,6 +70,35 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert errors == []
 
+    def test_standard_filter_does_not_suppress_source_warning(self) -> None:
+        """A literal filter on a *standard* concept column must not silence
+        the source-concept warning — 'specific concepts chosen' intent only
+        extends to the field class the filter targets."""
+        from fastssv.core.registry import get_rule
+
+        sql = """
+        SELECT co.condition_source_concept_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (201826)
+        """
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        violations = rule.validate(sql, "postgres")
+        assert any(v.details.get("issue") == "source_concept_not_mapped" for v in violations)
+
+    def test_source_filter_still_suppresses_source_warning(self) -> None:
+        """A literal filter on the source field itself signals explicit
+        source-value intent and keeps suppressing the warning."""
+        from fastssv.core.registry import get_rule
+
+        sql = """
+        SELECT co.condition_source_concept_id
+        FROM condition_occurrence co
+        WHERE co.condition_source_concept_id IN (44836914)
+        """
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        violations = rule.validate(sql, "postgres")
+        assert not any(v.details.get("issue") == "source_concept_not_mapped" for v in violations)
+
     def test_query_with_maps_to_relationship(self) -> None:
         """Query with 'Maps to' relationship should pass."""
         sql = """
@@ -83,15 +112,41 @@ class TestStandardConceptMapping:
         main_errors = [e for e in errors if not e.startswith("Warning:")]
         assert main_errors == []
 
-    def test_query_without_standard_enforcement(self) -> None:
-        """Query using standard fields without enforcement should fail."""
+    def test_default_mode_trusts_etl_on_bare_concept_id(self) -> None:
+        """Default-mode redesign (CDM v5.4-aligned): bare ``<event>_concept_id``
+        references without a vocabulary-table join are trusted — the CDM
+        spec requires the ETL to populate these with standard concepts,
+        and every OHDSI analytical tool (Achilles, Atlas-generated SQL,
+        HADES) writes SQL this way. The rule used to fire here with
+        WARNING severity; that produced 119 false positives on a single
+        OHDSI Achilles batch and obscured genuine issues. Strict mode
+        still fires on the same pattern — see
+        ``test_strict_mode_fires_on_bare_concept_id``.
+        """
         sql = """
         SELECT co.condition_concept_id
         FROM condition_occurrence co
         """
         errors = validate_standard_concept_mapping(sql)
-        assert len(errors) > 0
-        assert any("STANDARD concept fields" in e for e in errors)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_strict_mode_fires_on_bare_concept_id(self) -> None:
+        """Strict-mode preservation: the original broad check remains
+        available for ETL validation / new-dataset distrust. Same SQL as
+        the default-mode test, opt-in via ``with_strict_mode``."""
+        from fastssv.core.registry import get_rule
+        from fastssv.core.validation_context import with_strict_mode
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.condition_concept_id
+        FROM condition_occurrence co
+        """
+        with with_strict_mode(True):
+            violations = rule.validate(sql)
+        assert len(violations) == 1
+        assert "STANDARD concept fields" in violations[0].message
+        assert violations[0].severity == Severity.ERROR  # strict mode escalates
 
     def test_query_with_standard_concept_in_join_on(self) -> None:
         """Query with standard_concept = 'S' in JOIN ON should pass."""
@@ -130,7 +185,9 @@ class TestStandardConceptMapping:
         WHERE co.condition_concept_id IN (SELECT concept_id FROM risk_cond_concepts)
         """
         errors = validate_standard_concept_mapping(sql)
-        assert any("STANDARD concept fields" in e for e in errors)
+        # A codeset CTE built from concept_ancestor is standard by CDM definition, exactly like the direct
+        # `IN (SELECT descendant_concept_id FROM concept_ancestor ...)` form: the warning no longer fires.
+        assert not any("STANDARD concept fields" in e for e in errors)
 
     def test_literal_filter_on_standard_field_still_suppresses(self) -> None:
         """A literal filter on the actual standard concept field is intent signal —
@@ -184,10 +241,12 @@ class TestStandardConceptMapping:
         errors = validate_standard_concept_mapping(sql)
         assert all("STANDARD concept fields" not in e for e in errors)
 
-    def test_subquery_from_unrelated_table_still_fires(self) -> None:
-        """Suppression must be specific to concept_ancestor, not any subquery.
-        `<col> IN (SELECT some_id FROM some_other_table)` carries no standard-
-        concept guarantee."""
+    def test_subquery_from_unrelated_table_silent_in_default_mode(self) -> None:
+        """``<col> IN (SELECT … FROM custom_lookup_table)`` — no vocabulary
+        table in scope, so default mode trusts the ETL on
+        ``condition_concept_id``. The pattern carries no standard-concept
+        guarantee (subquery isn't from concept_ancestor) so strict mode
+        does still fire, see the next test."""
         sql = """
         SELECT co.person_id
         FROM condition_occurrence co
@@ -196,7 +255,27 @@ class TestStandardConceptMapping:
         )
         """
         errors = validate_standard_concept_mapping(sql)
-        assert any("STANDARD concept fields" in e for e in errors)
+        assert all("STANDARD concept fields" not in e for e in errors)
+
+    def test_subquery_from_unrelated_table_fires_in_strict_mode(self) -> None:
+        """Strict-mode preservation of the concept_ancestor-specificity
+        guard: the IN-subquery-from-unrelated-table pattern carries no
+        standard-concept guarantee, and strict mode flags it."""
+        from fastssv.core.registry import get_rule
+        from fastssv.core.validation_context import with_strict_mode
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        WHERE co.condition_concept_id IN (
+            SELECT concept_id FROM custom_lookup_table
+        )
+        """
+        with with_strict_mode(True):
+            violations = rule.validate(sql)
+        assert len(violations) == 1
+        assert "STANDARD concept fields" in violations[0].message
 
     def test_inline_join_to_concept_ancestor_descendant_suppresses(self) -> None:
         """The JOIN form of the cohort idiom — equally idiomatic in OHDSI:
@@ -328,7 +407,10 @@ class TestStandardConceptMapping:
         WHERE condition_concept_id IN (SELECT concept_id FROM risk_concepts)
         """
         errors = validate_standard_concept_mapping(sql)
-        assert any("STANDARD concept fields" in e for e in errors)
+        # A codeset CTE built from concept_ancestor is standard by CDM definition, exactly like the direct
+        # `IN (SELECT descendant_concept_id FROM concept_ancestor ...)` form: the warning no longer fires
+        # (post-Study-2 change; this shape was the most frequent warning on LLM-written OMOP SQL).
+        assert not any("STANDARD concept fields" in e for e in errors)
 
     def test_suggested_fix_is_schema_qualified_under_cte_shadow(self) -> None:
         """When a CTE named `concept` is in scope, the rule's suggested_fix
@@ -360,15 +442,18 @@ class TestStandardConceptMapping:
 
     def test_suggested_fix_unchanged_without_cte_shadow(self) -> None:
         """Without a `concept` CTE in scope, the original (non-qualified)
-        suggested_fix message is preserved."""
+        suggested_fix message is preserved. SQL must touch a vocabulary
+        table (``concept`` here) to trigger the default-mode firing path —
+        the rule no longer fires on bare ``condition_concept_id`` filters
+        without vocab joins."""
         from fastssv.core.registry import get_rule
 
         rule = get_rule("concept_standardization.standard_concept_enforcement")()
         sql = """
         SELECT co.person_id
         FROM omop.condition_occurrence co
-        JOIN omop.drug_exposure de ON co.person_id = de.person_id
-        WHERE co.condition_concept_id > 0;
+        JOIN omop.concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.vocabulary_id = 'SNOMED';
         """
         violations = rule.validate(sql)
         assert len(violations) >= 1
@@ -376,6 +461,126 @@ class TestStandardConceptMapping:
         # Suggestion should be the plain `JOIN concept c` form (no schema prefix).
         assert "omop.concept" not in fix, fix
         assert "JOIN concept c" in fix, fix
+
+    # ---- Source concept enforcement (always-on, default + strict) ----
+
+    def test_source_concept_id_without_mapping_fires(self) -> None:
+        """``*_source_concept_id`` is the CDM's pre-mapping layer and may
+        be non-standard. Using it analytically without a ``Maps to``
+        mapping or a specific literal filter mixes vocabulary layers and
+        produces non-reproducible cohorts."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id, co.condition_source_concept_id
+        FROM condition_occurrence co
+        WHERE co.person_id > 0
+        """
+        violations = rule.validate(sql)
+        assert len(violations) == 1
+        assert "source concept-id" in violations[0].message.lower()
+        assert violations[0].severity == Severity.WARNING
+
+    def test_source_concept_id_with_maps_to_suppresses(self) -> None:
+        """``JOIN concept_relationship cr ON cr.concept_id_1 = source_col
+        AND cr.relationship_id = 'Maps to'`` is the canonical OMOP fix.
+        Once the user has wired that up, no more warning."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT cr.concept_id_2 AS mapped_standard
+        FROM condition_occurrence co
+        JOIN concept_relationship cr
+          ON cr.concept_id_1 = co.condition_source_concept_id
+         AND cr.relationship_id = 'Maps to'
+        """
+        assert rule.validate(sql) == []
+
+    def test_source_concept_id_with_specific_literal_filter_suppresses(self) -> None:
+        """Filtering the source column by literal IDs is explicit
+        source-value intent — the user has chosen specific source codes
+        and doesn't need standard-mapping enforcement."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = "SELECT * FROM condition_occurrence WHERE condition_source_concept_id = 4112343"
+        assert rule.validate(sql) == []
+
+    def test_source_concept_id_fires_independently_of_standard_fields(self) -> None:
+        """A query that uses *both* a source concept (unmapped) and a
+        bare standard concept (no vocab context) should warn on the
+        source concept regardless of the standard-concept default-mode
+        suppression. The two branches are independent."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.condition_concept_id, co.condition_source_concept_id
+        FROM condition_occurrence co
+        """
+        violations = rule.validate(sql)
+        # Only the source-concept warning should fire — standard-concept
+        # branch is suppressed in default mode without a vocab join.
+        assert len(violations) == 1
+        assert "source concept-id" in violations[0].message.lower()
+
+    # ---- Vocabulary-context firing on standard concepts (default mode) ----
+
+    def test_vocabulary_join_without_standard_filter_fires_in_default_mode(self) -> None:
+        """When the query already joins to ``concept`` (or
+        ``concept_ancestor`` / ``concept_relationship``), the result rows
+        span the standardness hierarchy unless the join filters by
+        ``standard_concept = 'S'``. Default mode fires here even though
+        it trusts the ETL on bare ``<event>_concept_id`` references —
+        vocabulary context is the high-stakes case."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.vocabulary_id = 'SNOMED'
+        """
+        violations = rule.validate(sql)
+        assert len(violations) == 1
+        assert "vocabulary tables" in violations[0].message.lower()
+        assert violations[0].severity == Severity.WARNING
+
+    def test_vocabulary_join_with_standard_filter_passes_in_default_mode(self) -> None:
+        """Vocabulary context + explicit ``standard_concept = 'S'`` filter
+        — the canonical correct pattern."""
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        SELECT co.person_id
+        FROM condition_occurrence co
+        JOIN concept c ON co.condition_concept_id = c.concept_id
+        WHERE c.vocabulary_id = 'SNOMED' AND c.standard_concept = 'S'
+        """
+        assert rule.validate(sql) == []
+
+    def test_achilles_visit_concept_id_stratification_silent_in_default_mode(self) -> None:
+        """The OHDSI Achilles ``tmpach_200``-style query: groups by
+        ``visit_concept_id``, no vocabulary join. CDM v5.4 spec
+        guarantees ``visit_concept_id`` is a standard concept; Achilles
+        trusts the ETL and re-checking is redundant. Default mode must
+        stay silent — this was the canonical false-positive class.
+        """
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("concept_standardization.standard_concept_enforcement")()
+        sql = """
+        CREATE TABLE scratch.tmpach_200 AS
+        SELECT vo.visit_concept_id, COUNT(DISTINCT vo.person_id) AS n
+        FROM cdm.visit_occurrence vo
+        JOIN cdm.observation_period op ON vo.person_id = op.person_id
+        GROUP BY vo.visit_concept_id
+        """
+        assert rule.validate(sql) == []
 
     def test_suggested_fix_unchanged_when_concept_cte_is_nested_subquery(self) -> None:
         """A `concept` CTE defined INSIDE a nested subquery (IN / EXISTS /
@@ -416,6 +621,7 @@ class TestJoinPathValidation:
 
     def _run_rule(self, sql: str) -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.join_path_validation")()
         return rule.validate(sql)
 
@@ -654,8 +860,8 @@ class TestObservationPeriodAnchoring:
         WHERE de.drug_exposure_start_date > co.condition_start_date
         """
         errors = self._validate_temporal(sql)
-        assert len(errors) > 0
-        assert any("observation_period" in e for e in errors)
+        # Event-to-event comparison (relative window): no longer a trigger — design change after Study 2.
+        assert errors == []
 
     def test_no_temporal_constraints_should_not_trigger(self) -> None:
         """Query without temporal constraints should not trigger the rule."""
@@ -695,7 +901,23 @@ class TestObservationPeriodAnchoring:
         )
         """
         errors = self._validate_temporal(sql)
-        assert len(errors) > 0
+        # Washout arithmetic between two events is a relative window: not a trigger since Study 2.
+        assert errors == []
+
+    def test_absolute_calendar_window_still_fires(self) -> None:
+        sql = """
+        SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co
+        WHERE co.condition_start_date BETWEEN DATE '2018-01-01' AND DATE '2018-12-31'
+        """
+        assert len(self._validate_temporal(sql)) > 0
+
+    def test_cohort_scoped_query_exempt(self) -> None:
+        sql = """
+        SELECT COUNT(DISTINCT co.person_id) FROM cohort c
+        JOIN condition_occurrence co ON co.person_id = c.subject_id
+        WHERE co.condition_start_date >= DATE '2018-01-01'
+        """
+        assert self._validate_temporal(sql) == []
 
     def test_vocabulary_only_query_should_not_require_observation_period(self) -> None:
         """Regression: concept-discovery queries over vocabulary tables have no
@@ -1390,6 +1612,7 @@ class TestMeasurementUnitValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_unit_validation")()
         return rule.validate(sql, dialect)
 
@@ -1508,6 +1731,7 @@ class TestMeasurementCrossUnitComparison:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_cross_unit_comparison")()
         return rule.validate(sql, dialect)
 
@@ -1647,6 +1871,7 @@ class TestFutureInformationLeakage:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.future_information_leakage")()
         return rule.validate(sql, dialect)
 
@@ -1806,6 +2031,7 @@ class TestTypeConceptIdMisuse:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.type_concept_id_misuse")()
         return rule.validate(sql, dialect)
 
@@ -1813,7 +2039,7 @@ class TestTypeConceptIdMisuse:
         """Filtering on condition_type_concept_id should error."""
         sql = """
         SELECT * FROM condition_occurrence
-        WHERE condition_type_concept_id = 32817
+        WHERE condition_type_concept_id = 201826
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1825,7 +2051,7 @@ class TestTypeConceptIdMisuse:
         """Filtering on drug_type_concept_id should error."""
         sql = """
         SELECT * FROM drug_exposure
-        WHERE drug_type_concept_id = 38000177
+        WHERE drug_type_concept_id = 1112807
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1847,7 +2073,7 @@ class TestTypeConceptIdMisuse:
         """Filtering with IN clause on measurement_type_concept_id should error."""
         sql = """
         SELECT * FROM measurement
-        WHERE measurement_type_concept_id IN (32817, 32818)
+        WHERE measurement_type_concept_id IN (3004249, 3012888)
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1857,7 +2083,7 @@ class TestTypeConceptIdMisuse:
         """Using comparison operators on procedure_type_concept_id should error."""
         sql = """
         SELECT * FROM procedure_occurrence
-        WHERE procedure_type_concept_id != 32817
+        WHERE procedure_type_concept_id != 4030018
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1879,7 +2105,7 @@ class TestTypeConceptIdMisuse:
         SELECT condition_type_concept_id, COUNT(*)
         FROM condition_occurrence
         GROUP BY condition_type_concept_id
-        HAVING condition_type_concept_id = 32817
+        HAVING condition_type_concept_id = 201826
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1928,8 +2154,8 @@ class TestTypeConceptIdMisuse:
         SELECT co.*, de.*
         FROM condition_occurrence co
         JOIN drug_exposure de ON co.person_id = de.person_id
-        WHERE co.condition_type_concept_id = 32817
-        AND de.drug_type_concept_id = 38000177
+        WHERE co.condition_type_concept_id = 201826
+        AND de.drug_type_concept_id = 1112807
         """
         violations = self._run_rule(sql)
         assert len(violations) >= 2
@@ -1938,7 +2164,7 @@ class TestTypeConceptIdMisuse:
         """OMOP_158: Filtering on note_type_concept_id should error."""
         sql = """
         SELECT * FROM note
-        WHERE note_type_concept_id = 44814637
+        WHERE note_type_concept_id = 4180186
         """
         violations = self._run_rule(sql)
         assert len(violations) > 0
@@ -1970,6 +2196,7 @@ class TestEraTableStandardConcepts:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.era_table_standard_concepts")()
         return rule.validate(sql, dialect)
 
@@ -2081,6 +2308,7 @@ class TestConceptRelationshipRequiresRelationshipId:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_relationship_requires_relationship_id")()
         return rule.validate(sql, dialect)
 
@@ -2241,6 +2469,7 @@ class TestConceptDomainValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.concept_domain_validation")()
         return rule.validate(sql, dialect)
 
@@ -2329,6 +2558,7 @@ class TestConceptDomainValidation:
     def test_no_domain_filter_warns_for_main_tables(self) -> None:
         """No domain filter on main clinical tables should trigger WARNING."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT de.*, c.concept_name
         FROM drug_exposure de
@@ -2827,8 +3057,7 @@ class TestConceptDomainValidation:
         assert violations[0].severity.name == "ERROR"
         assert "admitted_from_concept_id" in violations[0].message.lower()
         assert "condition" in violations[0].message.lower()
-        assert ("'Visit' OR 'Place of Service'" in violations[0].message or
-                "Visit" in violations[0].message)
+        assert "'Visit' OR 'Place of Service'" in violations[0].message or "Visit" in violations[0].message
 
     def test_omop_103_discharged_to_with_wrong_domain_fires(self) -> None:
         """visit_occurrence.discharged_to_concept_id with Drug domain should error (OMOP_103)."""
@@ -2910,6 +3139,7 @@ class TestObservationValueAsStringNumericComparison:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.observation_value_as_string_numeric_comparison")()
         return rule.validate(sql, dialect)
 
@@ -3111,6 +3341,7 @@ class TestObservationValueAsConceptConfusion:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.observation_value_as_concept_confusion")()
         return rule.validate(sql, dialect)
 
@@ -3225,6 +3456,7 @@ class TestSourceConceptIdWarning:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.source_concept_id_warning")()
         return rule.validate(sql, dialect)
 
@@ -3491,8 +3723,28 @@ class TestSchemaValidation:
     def _run_rule(self, sql: str) -> list:
         """Run schema validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.schema_validation")()
         return rule.validate(sql)
+
+    def test_insert_target_not_flagged(self) -> None:
+        """INSERT targets are write targets, not references — Achilles
+        writes into results/scratch tables that are never CDM tables.
+        Covers all three sqlglot shapes: qualified, with a column list
+        (Insert(this=Schema(this=Table))), and unqualified."""
+        for sql in (
+            "INSERT INTO scratch.tempresults SELECT person_id FROM person",
+            "INSERT INTO results.achilles_results (n) SELECT person_id FROM person",
+            "INSERT INTO tempresults SELECT person_id FROM person",
+        ):
+            assert self._run_rule(sql) == [], sql
+
+    def test_insert_select_body_still_validated(self) -> None:
+        """Skipping the INSERT *target* must not skip tables read in the
+        SELECT body."""
+        violations = self._run_rule("INSERT INTO tempresults SELECT x FROM bogus_table")
+        assert len(violations) == 1
+        assert "bogus_table" in violations[0].message
 
     # OMOP_023: death_id column doesn't exist in death table
     def test_omop_023_death_id_column_does_not_exist(self) -> None:
@@ -3906,6 +4158,74 @@ class TestSchemaValidation:
         violations = self._run_rule(sql)
         assert violations == []
 
+    def test_ctas_target_not_validated_as_omop_table(self) -> None:
+        """``CREATE TABLE … AS SELECT`` defines its target — the target name
+        isn't a reference, so it shouldn't be required to exist in OMOP.
+        Regression: OHDSI Achilles emits ``CREATE TABLE scratch.tmpach_N AS
+        SELECT … FROM cdm.<omop_table>`` and the validator previously flagged
+        the scratch target as a nonexistent OMOP table.
+        """
+        sql = (
+            "CREATE TABLE scratch.tmpach_0 AS "
+            "SELECT 0 AS analysis_id, COUNT(distinct person_id) AS count_value "
+            "FROM cdm.person"
+        )
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_ctas_still_validates_source_tables(self) -> None:
+        """Skipping CTAS targets must not also skip the SELECT source — a
+        misspelled source table should still error.
+        """
+        sql = "CREATE TABLE scratch.tmpach_0 AS SELECT person_id FROM cdm.persn"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "persn" in violations[0].message
+
+    def test_analyze_target_not_flagged(self) -> None:
+        """``ANALYZE <table>`` is a planner-stats maintenance op against a
+        table the SQL itself created earlier in the batch. The target
+        shouldn't be checked against OMOP — same shape as the CTAS-target
+        skip.
+        """
+        sql = "ANALYZE tempResults_104"
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_drop_table_target_not_flagged(self) -> None:
+        """Same rationale applies to ``DROP TABLE`` of a scratch table."""
+        sql = "DROP TABLE scratch.tempResults_104"
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_cross_statement_scope_combined_input(self) -> None:
+        """When the rule sees multiple statements at once (combined-mode
+        invocation), a table created earlier in the same input must be
+        treated as known for downstream references — Achilles emits
+        ``CREATE TABLE scratch.tempResults_104 AS …; SELECT … FROM
+        tempResults_104;`` and the downstream SELECT must not flag
+        ``tempResults_104`` as a missing OMOP table.
+        """
+        sql = (
+            "CREATE TABLE scratch.tempResults_104 AS SELECT person_id FROM cdm.person;\nSELECT * FROM tempResults_104;"
+        )
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_cross_statement_scope_via_context(self) -> None:
+        """Per-statement validation (CLI/API batch mode) calls the rule once
+        per statement, so cross-statement scope must come from
+        ``ValidationContext.local_tables`` rather than the input itself.
+        """
+        from fastssv.core.validation_context import with_local_tables
+
+        sql = "SELECT * FROM tempResults_104"
+        # Outside the context: still unknown (real OMOP misspelling case).
+        assert len(self._run_rule(sql)) == 1
+        # Inside the context: treated as known.
+        with with_local_tables(frozenset({"tempresults_104"})):
+            assert self._run_rule(sql) == []
+
 
 class TestColumnTypeValidation:
     """Tests for column type validation rule (OMOP_004, 005, 024, 025, 026, 105)."""
@@ -3913,6 +4233,7 @@ class TestColumnTypeValidation:
     def _run_rule(self, sql: str) -> list:
         """Run column type validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.column_type_validation")()
         return rule.validate(sql)
 
@@ -4075,6 +4396,7 @@ class TestObservationPeriodDateRangeLogic:
     def _run_rule(self, sql: str) -> list:
         """Run observation_period date range logic rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.observation_period_date_range_logic")()
         return rule.validate(sql)
 
@@ -4185,6 +4507,7 @@ class TestVisitOutpatientSameDayValidation:
     def _run_rule(self, sql: str) -> list:
         """Run visit outpatient same-day validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.visit_outpatient_same_day_validation")()
         return rule.validate(sql)
 
@@ -4307,6 +4630,7 @@ class TestVisitEventTemporalValidation:
     def _run_rule(self, sql: str) -> list:
         """Run visit event temporal validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.visit_event_temporal_validation")()
         return rule.validate(sql)
 
@@ -4458,42 +4782,78 @@ class TestVisitEventTemporalValidation:
 
 
 class TestVisitDetailVisitOccurrenceReference:
-    """Tests for visit_detail visit_occurrence reference rule (CLIN_044)."""
+    """Tests for visit_detail / visit_occurrence linkage rule (CLIN_044).
+
+    The rule fires only when both tables are referenced but not joined on
+    ``visit_occurrence_id``. Detail-only analyses (Achilles 1303/1306/1313)
+    are intentionally allowed — visit_detail carries its own person_id and
+    dates, and column-on-wrong-table mistakes are caught by
+    ``data_quality.schema_validation`` instead.
+    """
 
     def _run_rule(self, sql: str) -> list:
-        """Run visit_detail visit_occurrence reference rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.visit_detail_visit_occurrence_reference")()
         return rule.validate(sql)
 
-    # CLIN_044: visit_detail should reference visit_occurrence for context
-
-    def test_clin_044_visit_detail_alone_warns(self) -> None:
-        """visit_detail without visit_occurrence should warn (CLIN_044)."""
+    def test_clin_044_visit_detail_alone_passes(self) -> None:
+        """Detail-only query (Achilles-style) must not fire."""
         sql = """
         SELECT person_id, visit_detail_start_date
         FROM visit_detail
         WHERE visit_detail_concept_id = 32037
         """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-        assert "visit_detail" in violations[0].message.lower()
-        assert "visit_occurrence" in violations[0].message.lower()
+        assert self._run_rule(sql) == []
 
-    def test_clin_044_visit_detail_with_join_passes(self) -> None:
-        """visit_detail with visit_occurrence JOIN should pass (CLIN_044)."""
+    def test_clin_044_visit_detail_count_alone_passes(self) -> None:
+        """Aggregating visit_detail alone is fine — counting detail rows is a real analysis."""
+        assert self._run_rule("SELECT COUNT(*) FROM visit_detail") == []
+
+    def test_clin_044_visit_detail_with_other_tables_passes(self) -> None:
+        """Joining visit_detail to person without visit_occurrence is fine."""
+        sql = """
+        SELECT vd.*, p.gender_concept_id
+        FROM visit_detail vd
+        JOIN person p ON vd.person_id = p.person_id
+        WHERE vd.visit_detail_concept_id = 32037
+        """
+        assert self._run_rule(sql) == []
+
+    def test_clin_044_distinct_concept_count_per_person_passes(self) -> None:
+        """Achilles analysis 1303: count distinct vd concepts per person, observation-period scoped."""
+        sql = """
+        WITH rawData(person_id, count_value) AS (
+            SELECT vd.person_id, COUNT(DISTINCT vd.visit_detail_concept_id) AS count_value
+            FROM visit_detail vd
+            JOIN observation_period op ON vd.person_id = op.person_id
+              AND vd.visit_detail_start_date >= op.observation_period_start_date
+              AND vd.visit_detail_start_date <= op.observation_period_end_date
+            GROUP BY vd.person_id
+        )
+        SELECT MIN(count_value), MAX(count_value) FROM rawData
+        """
+        assert self._run_rule(sql) == []
+
+    def test_clin_044_proper_join_passes(self) -> None:
         sql = """
         SELECT vd.person_id, vd.visit_detail_start_date, vo.visit_concept_id
         FROM visit_detail vd
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         WHERE vd.visit_detail_concept_id = 32037
         """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
+        assert self._run_rule(sql) == []
 
-    def test_clin_044_visit_detail_with_subquery_passes(self) -> None:
-        """visit_detail with visit_occurrence subquery should pass (CLIN_044)."""
+    def test_clin_044_comma_cross_join_with_where_passes(self) -> None:
+        """Old-style comma cross-join with WHERE linkage still counts."""
+        sql = """
+        SELECT vd.*, vo.*
+        FROM visit_detail vd, visit_occurrence vo
+        WHERE vd.visit_occurrence_id = vo.visit_occurrence_id
+        """
+        assert self._run_rule(sql) == []
+
+    def test_clin_044_subquery_with_visit_occurrence_id_passes(self) -> None:
         sql = """
         SELECT * FROM visit_detail
         WHERE visit_occurrence_id IN (
@@ -4501,49 +4861,9 @@ class TestVisitDetailVisitOccurrenceReference:
             WHERE visit_concept_id = 9201
         )
         """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
+        assert self._run_rule(sql) == []
 
-    def test_clin_044_visit_detail_with_other_tables_warns(self) -> None:
-        """visit_detail with other tables but no visit_occurrence should warn (CLIN_044)."""
-        sql = """
-        SELECT vd.*, p.gender_concept_id
-        FROM visit_detail vd
-        JOIN person p ON vd.person_id = p.person_id
-        WHERE vd.visit_detail_concept_id = 32037
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-    def test_clin_044_no_visit_detail_passes(self) -> None:
-        """Query without visit_detail should pass (CLIN_044)."""
-        sql = """
-        SELECT * FROM visit_occurrence WHERE visit_concept_id = 9201
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_clin_044_visit_detail_count_without_context_warns(self) -> None:
-        """Aggregating visit_detail without visit_occurrence should warn (CLIN_044)."""
-        sql = """
-        SELECT COUNT(*) FROM visit_detail
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_clin_044_visit_detail_with_visit_occurrence_from_passes(self) -> None:
-        """visit_detail with visit_occurrence in FROM should pass (CLIN_044)."""
-        sql = """
-        SELECT vd.*, vo.*
-        FROM visit_detail vd, visit_occurrence vo
-        WHERE vd.visit_occurrence_id = vo.visit_occurrence_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_clin_044_complex_query_with_visit_occurrence_passes(self) -> None:
-        """Complex query with visit_occurrence in subquery should pass (CLIN_044)."""
+    def test_clin_044_correlated_exists_passes(self) -> None:
         sql = """
         SELECT vd.person_id, vd.visit_detail_start_date
         FROM visit_detail vd
@@ -4553,8 +4873,32 @@ class TestVisitDetailVisitOccurrenceReference:
               AND vo.visit_concept_id = 9201
         )
         """
+        assert self._run_rule(sql) == []
+
+    def test_clin_044_wrong_join_key_fires(self) -> None:
+        """Joining on person_id alone fans rows out within a person — the bug we now catch."""
+        sql = """
+        SELECT vd.*, vo.*
+        FROM visit_detail vd
+        JOIN visit_occurrence vo ON vd.person_id = vo.person_id
+        """
         violations = self._run_rule(sql)
-        assert len(violations) == 0
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+        assert "visit_occurrence_id" in violations[0].message
+
+    def test_clin_044_cross_join_no_link_fires(self) -> None:
+        """visit_detail + visit_occurrence with no linking predicate at all is a cartesian — error."""
+        sql = """
+        SELECT vd.visit_detail_id, vo.visit_occurrence_id
+        FROM visit_detail vd, visit_occurrence vo
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_clin_044_no_visit_detail_passes(self) -> None:
+        assert self._run_rule("SELECT * FROM visit_occurrence WHERE visit_concept_id = 9201") == []
 
 
 class TestVisitDetailDatesWithinParentVisit:
@@ -4563,6 +4907,7 @@ class TestVisitDetailDatesWithinParentVisit:
     def _run_rule(self, sql: str) -> list:
         """Run visit_detail dates within parent visit rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.visit_detail_dates_within_parent_visit")()
         return rule.validate(sql)
 
@@ -4689,6 +5034,7 @@ class TestVisitDetailJoinValidation:
     def _run_rule(self, sql: str) -> list:
         """Run visit_detail join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.visit_detail_join_validation")()
         return rule.validate(sql)
 
@@ -4799,6 +5145,7 @@ class TestStandardConceptValueValidation:
     def _run_rule(self, sql: str) -> list:
         """Run standard_concept value validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.standard_concept_value_validation")()
         return rule.validate(sql)
 
@@ -4931,6 +5278,7 @@ class TestCostTableDomainValidation:
     def _run_rule(self, sql: str) -> list:
         """Run cost table domain validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.cost_table_domain_validation")()
         return rule.validate(sql)
 
@@ -5056,11 +5404,126 @@ class TestCostTableDomainValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
+    # --- CAST/Paren-wrapped literal recognition (OHDSI cross-dialect templates) ---
+
+    def test_omop_038_cast_wrapped_literal_recognised(self) -> None:
+        """Achilles 1502 shape: ``CAST('Drug' AS TEXT)`` is the literal."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = CAST('Drug' AS TEXT)
+        """
+        assert self._run_rule(sql) == []
+
+    def test_omop_038_cast_wrapped_literal_wrong_domain_still_flagged(self) -> None:
+        """A wrapped-but-wrong domain literal must still produce a mismatch."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = CAST('Procedure' AS VARCHAR(255))
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "Cost domain mismatch" in violations[0].message
+
+    def test_omop_038_paren_wrapped_literal_recognised(self) -> None:
+        """``cost_domain_id = ('Drug')`` should pass — Paren peels too."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = ('Drug')
+        """
+        assert self._run_rule(sql) == []
+
+    def test_omop_038_in_clause_cast_values_recognised(self) -> None:
+        """``IN (CAST('Drug' AS TEXT))`` should pass — peel each IN value."""
+        sql = """
+        SELECT * FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id IN (CAST('Drug' AS TEXT), CAST('drug' AS TEXT))
+        """
+        assert self._run_rule(sql) == []
+
+
+class TestCostEventIdPolymorphicResolution:
+    """Tests for domain_specific.cost_event_id_polymorphic_resolution."""
+
+    def _run_rule(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("domain_specific.cost_event_id_polymorphic_resolution")()
+        return rule.validate(sql)
+
+    def test_join_without_domain_filter_fires(self) -> None:
+        sql = """
+        SELECT c.cost_id, de.drug_concept_id
+        FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert violations[0].severity.name == "ERROR"
+
+    def test_join_with_bare_literal_filter_passes(self) -> None:
+        sql = """
+        SELECT c.cost_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = 'Drug'
+        """
+        assert self._run_rule(sql) == []
+
+    def test_join_with_cast_wrapped_filter_passes(self) -> None:
+        """Achilles 1502 shape: ``CAST('Drug' AS TEXT)`` counts as the filter."""
+        sql = """
+        SELECT c.cost_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = CAST('Drug' AS TEXT)
+        """
+        assert self._run_rule(sql) == []
+
+    def test_join_with_paren_wrapped_filter_passes(self) -> None:
+        sql = """
+        SELECT c.cost_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id = ('Drug')
+        """
+        assert self._run_rule(sql) == []
+
+    def test_join_with_in_clause_cast_values_passes(self) -> None:
+        sql = """
+        SELECT c.cost_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id IN (CAST('Drug' AS TEXT))
+        """
+        assert self._run_rule(sql) == []
+
+    def test_join_with_non_string_in_list_still_fires(self) -> None:
+        """An IN list with no string literal is NOT a domain filter —
+        ``cost_domain_id IN (1, 2)`` must not silence the rule."""
+        sql = """
+        SELECT c.cost_id FROM cost c
+        JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+        WHERE c.cost_domain_id IN (1, 2)
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+
+    def test_no_cost_table_passes(self) -> None:
+        assert self._run_rule("SELECT * FROM drug_exposure WHERE drug_concept_id = 1") == []
+
+    def test_cost_event_id_in_select_only_passes(self) -> None:
+        """cost_event_id only in SELECT (not WHERE/JOIN) should not fire."""
+        sql = "SELECT cost_event_id FROM cost"
+        assert self._run_rule(sql) == []
+
+
 class TestCostCurrencyConceptId:
     """Tests for OMOP_112: cost_currency_concept_id_for_multi_currency."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.cost_currency_concept_id")()
         return rule.validate(sql, dialect)
 
@@ -5251,6 +5714,7 @@ class TestCostPaidIngredientCostDrugSpecific:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.cost_paid_ingredient_cost_drug_specific")()
         return rule.validate(sql, dialect="postgres")
 
@@ -5466,6 +5930,7 @@ class TestCdmSourceClinicalJoin:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.singleton_metadata_clinical_join")()
         return rule.validate(sql, dialect="postgres")
 
@@ -5625,6 +6090,7 @@ class TestSpecimenSourceIdNotSpecimenId:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.specimen_source_id_not_specimen_id")()
         return rule.validate(sql, dialect="postgres")
 
@@ -5746,6 +6212,7 @@ class TestCareSiteJoinValidation:
     def _run_rule(self, sql: str) -> list:
         """Run care_site join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.care_site_join_validation")()
         return rule.validate(sql)
 
@@ -5855,6 +6322,7 @@ class TestVisitOccurrenceInnerJoinValidation:
     def _run_rule(self, sql: str) -> list:
         """Run visit_occurrence INNER JOIN validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.visit_occurrence_inner_join_validation")()
         return rule.validate(sql)
 
@@ -6057,6 +6525,7 @@ class TestDrugEraConceptClassValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.drug_era_concept_class_validation")()
         return rule.validate(sql, dialect)
 
@@ -6196,6 +6665,7 @@ class TestNegativeConceptIdValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.negative_concept_id_validation")()
         return rule.validate(sql, dialect)
 
@@ -6296,6 +6766,7 @@ class TestDrugExposureQuantityMisuse:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.drug_exposure_quantity_misuse")()
         return rule.validate(sql, dialect)
 
@@ -6425,6 +6896,7 @@ class TestSourceToConceptMapValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.source_to_concept_map_validation")()
         return rule.validate(sql, dialect)
 
@@ -6570,6 +7042,7 @@ class TestPrecedingVisitOccurrenceValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.preceding_visit_occurrence_validation")()
         return rule.validate(sql, dialect)
 
@@ -6609,6 +7082,7 @@ class TestPrecedingVisitOccurrenceValidation:
         # Should have 2 warnings (OMOP_404): missing person_id and temporal constraints
         assert len(violations) == 2
         from fastssv.core.base import Severity
+
         assert all(v.severity == Severity.WARNING for v in violations)
 
     def test_omop_059_left_join_correct_passes(self) -> None:
@@ -6623,6 +7097,7 @@ class TestPrecedingVisitOccurrenceValidation:
         # Should have 2 warnings (OMOP_404): missing person_id and temporal constraints
         assert len(violations) == 2
         from fastssv.core.base import Severity
+
         assert all(v.severity == Severity.WARNING for v in violations)
 
     def test_omop_059_reversed_join_order_fails(self) -> None:
@@ -6670,6 +7145,7 @@ class TestPrecedingVisitOccurrenceValidation:
         # Should have 2 warnings (OMOP_404): missing person_id and temporal constraints
         assert len(violations) == 2
         from fastssv.core.base import Severity
+
         assert all(v.severity == Severity.WARNING for v in violations)
 
     def test_omop_059_join_to_person_table_fails(self) -> None:
@@ -6723,6 +7199,7 @@ class TestPrecedingVisitOccurrenceValidation:
         assert "person_id" in person_id_warnings[0].message
         assert "same patient" in person_id_warnings[0].message.lower()
         from fastssv.core.base import Severity
+
         assert person_id_warnings[0].severity == Severity.WARNING
 
     def test_omop_404_missing_temporal_constraint_warns(self) -> None:
@@ -6741,6 +7218,7 @@ class TestPrecedingVisitOccurrenceValidation:
         assert "temporal" in violations[0].message.lower() or "visit_end_date" in violations[0].message.lower()
         assert "chronological" in violations[0].message.lower()
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.WARNING
 
     def test_omop_404_complete_join_with_all_constraints_passes(self) -> None:
@@ -6820,6 +7298,7 @@ class TestPrecedingVisitOccurrenceValidation:
         assert len(violations) == 1
         assert "visit_detail" in violations[0].message.lower()
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
 
@@ -6828,6 +7307,7 @@ class TestNullableEndDateNullHandling:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.nullable_end_date_null_handling")()
         return rule.validate(sql, dialect)
 
@@ -7194,6 +7674,7 @@ class TestDrugStrengthNumeratorDenominatorForConcentration:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.drug_strength_numerator_denominator_for_concentration")()
         return rule.validate(sql, dialect="postgres")
 
@@ -7541,6 +8022,7 @@ class TestDrugExposureSigParsing:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.drug_exposure_sig_parsing")()
         return rule.validate(sql, dialect)
 
@@ -7692,6 +8174,7 @@ class TestVocabularyTableProtection:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.vocabulary_table_protection")()
         return rule.validate(sql, dialect)
 
@@ -7793,13 +8276,55 @@ class TestVocabularyTableProtection:
         violations = self._run_rule(sql)
         assert len(violations) == 0
 
+    def test_omop_081_insert_select_reading_vocab_passes(self) -> None:
+        """Regression: INSERT ... SELECT that only READS a vocabulary table must
+        not fire — the write target is the codeset table, not concept. This is
+        the canonical Circe cohort-SQL shape (INSERT INTO Codesets SELECT ...
+        FROM concept) and previously produced a false positive because target
+        extraction swept every table under the Insert node."""
+        sql = """
+        INSERT INTO Codesets (codeset_id, concept_id)
+        SELECT 0 as codeset_id, c.concept_id
+        FROM (SELECT DISTINCT I.concept_id FROM cdm.concept I
+              WHERE I.concept_id IN (192671)) c
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_081_update_from_vocab_source_passes(self) -> None:
+        """UPDATE whose FROM clause reads concept (target is non-vocab) passes."""
+        sql = """
+        UPDATE staging_events se
+        SET domain_id = c.domain_id
+        FROM concept c
+        WHERE se.concept_id = c.concept_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 0
+
+    def test_omop_081_merge_into_vocab_still_fails(self) -> None:
+        """MERGE with a vocabulary table as the WRITE target must still fire."""
+        sql = """
+        MERGE INTO concept t USING staging s ON t.concept_id = s.concept_id
+        WHEN MATCHED THEN UPDATE SET concept_name = s.concept_name
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "MERGE" in violations[0].message
+
     def test_omop_081_all_vocabulary_tables_protected(self) -> None:
         """All vocabulary tables should be protected."""
         vocabulary_tables = [
-            "concept", "concept_relationship", "concept_ancestor",
-            "concept_synonym", "vocabulary", "domain",
-            "concept_class", "relationship", "drug_strength",
-            "source_to_concept_map"
+            "concept",
+            "concept_relationship",
+            "concept_ancestor",
+            "concept_synonym",
+            "vocabulary",
+            "domain",
+            "concept_class",
+            "relationship",
+            "drug_strength",
+            "source_to_concept_map",
         ]
 
         for table in vocabulary_tables:
@@ -7814,6 +8339,7 @@ class TestProviderJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.provider_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -7940,6 +8466,7 @@ class TestCareSiteIdJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.care_site_id_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8076,6 +8603,7 @@ class TestCareSiteLocationJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.care_site_location_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8201,6 +8729,7 @@ class TestPersonLocationJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.person_location_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8326,6 +8855,7 @@ class TestProviderCareSiteJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.provider_care_site_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8451,6 +8981,7 @@ class TestClinicalVisitDetailJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.clinical_visit_detail_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8597,6 +9128,7 @@ class TestConceptPrimaryKeyJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -8772,6 +9304,7 @@ class TestConceptAliasReuseValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_alias_reuse_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9038,6 +9571,7 @@ class TestConceptVocabularyJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_vocabulary_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9187,6 +9721,7 @@ class TestConceptDomainJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_domain_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9203,6 +9738,7 @@ class TestConceptDomainJoinValidation:
     def test_join_012_incorrect_concept_id_to_domain_concept_id(self) -> None:
         """Joining concept_id to domain_concept_id should warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept c
@@ -9215,6 +9751,7 @@ class TestConceptDomainJoinValidation:
     def test_join_012_incorrect_domain_id_to_domain_name(self) -> None:
         """Joining domain_id to domain_name should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept c
@@ -9227,6 +9764,7 @@ class TestConceptDomainJoinValidation:
     def test_join_012_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM domain d
@@ -9297,6 +9835,7 @@ class TestConceptDomainJoinValidation:
     def test_join_012_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name
         FROM concept c
@@ -9334,6 +9873,7 @@ class TestConceptConceptClassJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_concept_class_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9350,6 +9890,7 @@ class TestConceptConceptClassJoinValidation:
     def test_join_013_incorrect_concept_id_to_concept_class_concept_id(self) -> None:
         """Joining concept_id to concept_class_concept_id should warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept c
@@ -9362,6 +9903,7 @@ class TestConceptConceptClassJoinValidation:
     def test_join_013_incorrect_concept_class_id_to_concept_class_name(self) -> None:
         """Joining concept_class_id to concept_class_name should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept c
@@ -9374,6 +9916,7 @@ class TestConceptConceptClassJoinValidation:
     def test_join_013_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept_class cc
@@ -9415,6 +9958,7 @@ class TestConceptConceptClassJoinValidation:
     def test_join_013_incorrect_with_schema(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name
         FROM cdm.concept c
@@ -9446,6 +9990,7 @@ class TestConceptConceptClassJoinValidation:
     def test_join_013_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name
         FROM concept c
@@ -9496,6 +10041,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_relationship_relationship_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9512,6 +10058,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_incorrect_concept_id_1_to_relationship_concept_id(self) -> None:
         """Joining concept_id_1 to relationship_concept_id should warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept_relationship cr
@@ -9524,6 +10071,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_incorrect_concept_id_2_to_relationship_concept_id(self) -> None:
         """Joining concept_id_2 to relationship_concept_id should warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept_relationship cr
@@ -9535,6 +10083,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_incorrect_relationship_id_to_relationship_name(self) -> None:
         """Joining relationship_id to relationship_name should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept_relationship cr
@@ -9547,6 +10096,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_reversed_join_order(self) -> None:
         """Reversed incorrect join should also warn."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM relationship r
@@ -9588,6 +10138,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_incorrect_with_schema(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT cr.*, r.relationship_name
         FROM cdm.concept_relationship cr
@@ -9619,6 +10170,7 @@ class TestConceptRelationshipRelationshipJoinValidation:
     def test_join_014_multiple_joins_mixed(self) -> None:
         """Multiple joins with one wrong should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT cr.*, r.relationship_name
         FROM concept_relationship cr
@@ -9671,6 +10223,7 @@ class TestConceptAncestorNameResolutionValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_ancestor_name_resolution")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9699,6 +10252,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_incorrect_descendant_uses_ancestor_id(self) -> None:
         """Alias says 'descendant_name' but joins on ancestor_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name AS descendant_name
         FROM concept_ancestor ca
@@ -9713,6 +10267,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_incorrect_ancestor_uses_descendant_id(self) -> None:
         """Alias says 'ancestor_name' but joins on descendant_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name AS ancestor_name
         FROM concept_ancestor ca
@@ -9749,6 +10304,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_incorrect_parent_uses_descendant(self) -> None:
         """Alias says 'parent_name' but joins on descendant_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name AS parent_name
         FROM concept_ancestor ca
@@ -9761,6 +10317,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_incorrect_child_uses_ancestor(self) -> None:
         """Alias says 'child_name' but joins on ancestor_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name AS child_name
         FROM concept_ancestor ca
@@ -9786,6 +10343,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_both_joins_one_incorrect(self) -> None:
         """Joining to concept twice with one incorrect should error once."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT
             c_ancestor.concept_name AS ancestor_name,
@@ -9801,6 +10359,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_concept_code_column(self) -> None:
         """Should work for concept_code as well as concept_name."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_code AS descendant_code
         FROM concept_ancestor ca
@@ -9823,6 +10382,7 @@ class TestConceptAncestorNameResolutionValidation:
     def test_join_016_reversed_join_order(self) -> None:
         """Reversed join order should still detect violations."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c.concept_name AS descendant_name
         FROM concept c
@@ -9848,6 +10408,7 @@ class TestConceptRelationshipConceptJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_relationship_concept_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -9868,6 +10429,7 @@ class TestConceptRelationshipConceptJoinValidation:
     def test_join_017_incorrect_swapped_source_target(self) -> None:
         """Swapped source/target joins should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT
           c_source.concept_name AS source_name,
@@ -9896,6 +10458,7 @@ class TestConceptRelationshipConceptJoinValidation:
     def test_join_017_incorrect_swapped_numbered_aliases(self) -> None:
         """Swapped c1/c2 should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c1.concept_name, c2.concept_name
         FROM concept_relationship cr
@@ -9946,6 +10509,7 @@ class TestConceptRelationshipConceptJoinValidation:
     def test_join_017_incorrect_one_swapped(self) -> None:
         """Only one join swapped should error once."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c_source.concept_name, c_target.concept_name
         FROM concept_relationship cr
@@ -9992,6 +10556,7 @@ class TestConceptRelationshipConceptJoinValidation:
     def test_join_017_with_standard_keyword(self) -> None:
         """'standard' keyword should suggest concept_id_2."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT c_standard.concept_name
         FROM concept_relationship cr
@@ -10017,6 +10582,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.drug_exposure_drug_strength_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -10037,6 +10603,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_incorrect_drug_exposure_id_join(self) -> None:
         """Joining on drug_exposure_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de
@@ -10050,6 +10617,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_incorrect_person_id_join(self) -> None:
         """Joining on person_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de
@@ -10062,6 +10630,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_incorrect_route_concept_id_join(self) -> None:
         """Joining on route_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de
@@ -10074,6 +10643,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_incorrect_both_sides_wrong(self) -> None:
         """Wrong columns on both sides should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de
@@ -10096,6 +10666,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_strength ds
@@ -10118,6 +10689,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cdm.drug_exposure de
@@ -10140,6 +10712,7 @@ class TestDrugExposureDrugStrengthJoinValidation:
     def test_join_018_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de, drug_strength ds
@@ -10190,6 +10763,7 @@ class TestNoteNlpNoteJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.note_nlp_note_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -10211,6 +10785,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_incorrect_note_nlp_id_join(self) -> None:
         """Joining on note_nlp_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn
@@ -10224,6 +10799,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_incorrect_both_sides_wrong(self) -> None:
         """Wrong columns on both sides should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn
@@ -10246,6 +10822,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note n
@@ -10268,6 +10845,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cdm.note_nlp nn
@@ -10290,6 +10868,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn, note n
@@ -10347,6 +10926,7 @@ class TestNoteNlpNoteJoinValidation:
     def test_join_019_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn, note n
@@ -10362,6 +10942,7 @@ class TestNoteNlpOffsetIsCharacterPosition:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.note_nlp_offset_is_character_position")()
         return rule.validate(sql, dialect="postgres")
 
@@ -10370,6 +10951,7 @@ class TestNoteNlpOffsetIsCharacterPosition:
     def test_gap_012_offset_in_join_condition(self) -> None:
         """Should flag offset used in JOIN."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn
@@ -10384,6 +10966,7 @@ class TestNoteNlpOffsetIsCharacterPosition:
     def test_gap_012_offset_greater_than_numeric(self) -> None:
         """Should flag offset > numeric without CAST."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp
@@ -10646,6 +11229,7 @@ class TestNoteNlpTermModifiersIsFreeText:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect="postgres")
 
@@ -10654,6 +11238,7 @@ class TestNoteNlpTermModifiersIsFreeText:
     def test_gap_014_join_to_concept(self) -> None:
         """Should flag term_modifiers joined to concept.concept_id."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn
@@ -10668,6 +11253,7 @@ class TestNoteNlpTermModifiersIsFreeText:
     def test_gap_014_join_to_concept_reversed(self) -> None:
         """Should flag concept.concept_id joined to term_modifiers."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM concept c
@@ -10680,6 +11266,7 @@ class TestNoteNlpTermModifiersIsFreeText:
     def test_gap_014_general_join(self) -> None:
         """Should flag term_modifiers used in any JOIN."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM note_nlp nn1
@@ -10692,6 +11279,7 @@ class TestNoteNlpTermModifiersIsFreeText:
     def test_gap_014_cast_to_int(self) -> None:
         """Should flag CAST(term_modifiers AS INT)."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT CAST(term_modifiers AS INT)
         FROM note_nlp
@@ -10883,6 +11471,7 @@ class TestNoteNlpNlpDateForTemporalFiltering:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.note_nlp_nlp_date_for_temporal_filtering")()
         return rule.validate(sql, dialect="postgres")
 
@@ -11130,6 +11719,7 @@ class TestDeathVisitOccurrenceJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.death_visit_occurrence_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -11151,6 +11741,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_incorrect_death_date_join(self) -> None:
         """Temporal join using death_date should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d
@@ -11164,6 +11755,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_incorrect_death_datetime_join(self) -> None:
         """Temporal join using death_datetime should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d
@@ -11176,6 +11768,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_incorrect_concept_id_join(self) -> None:
         """Joining death_type_concept_id to visit_concept_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d
@@ -11188,6 +11781,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_incorrect_multiple_wrong_columns(self) -> None:
         """Wrong columns on both sides should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d
@@ -11210,6 +11804,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM visit_occurrence vo
@@ -11232,6 +11827,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cdm.death d
@@ -11254,6 +11850,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_implicit_join_where_clause_incorrect(self) -> None:
         """Incorrect implicit join in WHERE clause should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d, visit_occurrence vo
@@ -11310,6 +11907,7 @@ class TestDeathVisitOccurrenceJoinValidation:
     def test_join_021_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM death d, visit_occurrence vo
@@ -11335,6 +11933,7 @@ class TestCohortClinicalJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.cohort_clinical_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -11355,6 +11954,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_incorrect_subject_id_to_pk(self) -> None:
         """Joining subject_id to condition_occurrence_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c
@@ -11368,6 +11968,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_incorrect_cohort_definition_id_to_person_id(self) -> None:
         """Joining cohort_definition_id to person_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c
@@ -11390,6 +11991,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_incorrect_subject_id_to_visit_occurrence_id(self) -> None:
         """Joining subject_id to visit_occurrence_id should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c
@@ -11413,6 +12015,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_reversed_join_order_incorrect(self) -> None:
         """Incorrect reversed join order should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_exposure de
@@ -11435,6 +12038,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_with_schema_qualification_incorrect(self) -> None:
         """Schema-qualified incorrect join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cdm.cohort c
@@ -11457,6 +12061,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_implicit_join_incorrect(self) -> None:
         """Incorrect implicit join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c, observation o
@@ -11483,6 +12088,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_multiple_clinical_tables_one_wrong(self) -> None:
         """Multiple clinical tables with one wrong join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c
@@ -11517,6 +12123,7 @@ class TestCohortClinicalJoinValidation:
     def test_join_022_missing_join_condition(self) -> None:
         """Tables present but not joined should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cohort c, condition_occurrence co
@@ -11575,6 +12182,7 @@ class TestCohortClinicalJoinValidation:
         """Schema-qualified ``mydb.cohort`` references the OMOP table even when
         a CTE named ``cohort`` is in scope (standard SQL scoping)."""
         from fastssv.core.base import Severity
+
         sql = """
         WITH cohort AS (SELECT person_id FROM person)
         SELECT *
@@ -11591,6 +12199,7 @@ class TestEraForbiddenJoinValidation:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.era_forbidden_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -11623,6 +12232,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_drug_era_to_visit_occurrence(self) -> None:
         """Joining drug_era to visit_occurrence should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_era de
@@ -11637,6 +12247,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_condition_era_to_visit_detail(self) -> None:
         """Joining condition_era to visit_detail should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM condition_era ce
@@ -11650,6 +12261,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_dose_era_to_provider(self) -> None:
         """Joining dose_era to provider should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM dose_era de
@@ -11663,6 +12275,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_drug_era_to_care_site(self) -> None:
         """Joining drug_era to care_site should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_era de
@@ -11676,6 +12289,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_reversed_join_order(self) -> None:
         """Reversed join order should still error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM visit_occurrence vo
@@ -11688,6 +12302,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_with_schema_qualification(self) -> None:
         """Schema-qualified forbidden join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM cdm.condition_era ce
@@ -11700,6 +12315,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_implicit_join_where_clause(self) -> None:
         """Implicit join in WHERE clause should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_era de, visit_occurrence vo
@@ -11712,6 +12328,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_with_date_overlap_still_wrong(self) -> None:
         """Even with date overlap, era to visit join should error."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_era de
@@ -11726,6 +12343,7 @@ class TestEraForbiddenJoinValidation:
     def test_join_024_multiple_forbidden_joins(self) -> None:
         """Multiple forbidden joins should produce multiple errors."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT *
         FROM drug_era de
@@ -11804,6 +12422,7 @@ class TestPersonIdJoinValidation:
     def _run_rule(self, sql: str):
         """Run person_id join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.person_id_join_validation")()
         return rule.validate(sql)
 
@@ -11994,6 +12613,7 @@ class TestVisitOccurrenceIdJoinValidation:
     def _run_rule(self, sql: str):
         """Run visit_occurrence_id join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.visit_occurrence_id_join_validation")()
         return rule.validate(sql)
 
@@ -12184,6 +12804,7 @@ class TestClinicalPkCrossJoinValidation:
     def _run_rule(self, sql: str):
         """Run clinical PK cross-join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.clinical_pk_cross_join_validation")()
         return rule.validate(sql)
 
@@ -12383,6 +13004,7 @@ class TestConceptSynonymJoinValidation:
     def _run_rule(self, sql: str):
         """Run concept synonym join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.concept_synonym_join_validation")()
         return rule.validate(sql)
 
@@ -12541,6 +13163,7 @@ class TestPayerPlanPeriodJoinValidation:
     def _run_rule(self, sql: str):
         """Run payer plan period join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.payer_plan_period_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -12747,6 +13370,7 @@ class TestFactRelationshipJoinValidation:
     def _run_rule(self, sql: str):
         """Run fact relationship join validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.fact_relationship_join_validation")()
         return rule.validate(sql, dialect="postgres")
 
@@ -12972,6 +13596,7 @@ class TestPersonBirthFieldValidation:
     def test_clin_006_year_in_future(self) -> None:
         """year_of_birth in the future should trigger WARNING."""
         from datetime import datetime
+
         future_year = datetime.now().year + 10
         sql = f"SELECT * FROM person WHERE year_of_birth = {future_year}"
         violations = self._run_rule(sql)
@@ -13008,6 +13633,7 @@ class TestPersonBirthFieldValidation:
         assert "month_of_birth" in violations[0].message
         assert "13" in violations[0].message
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_clin_007_month_zero(self) -> None:
@@ -13056,6 +13682,7 @@ class TestPersonBirthFieldValidation:
         assert "day_of_birth" in violations[0].message
         assert "32" in violations[0].message
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_clin_008_day_zero(self) -> None:
@@ -13467,6 +14094,7 @@ class TestEndBeforeStartValidation:
         assert "impossible" in violations[0].message.lower()
         assert "condition_occurrence" in violations[0].message
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_clin_011_condition_start_gte_end_lt(self) -> None:
@@ -13672,6 +14300,7 @@ class TestEndBeforeStartValidation:
         assert "impossible" in violations[0].message.lower()
         assert "payer_plan_period" in violations[0].message
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_omop_401_payer_plan_period_start_gte_end_lt(self) -> None:
@@ -13740,6 +14369,7 @@ class TestEndBeforeStartValidation:
         assert "impossible" in violations[0].message.lower()
         assert "device_exposure" in violations[0].message
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_omop_526_device_exposure_start_gte_end_lt(self) -> None:
@@ -13859,6 +14489,7 @@ class TestDeathDateBeforeBirthValidation:
     def _run_rule(self, sql: str) -> list:
         """Run death date before birth validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.death_date_before_birth_validation")()
         return rule.validate(sql)
 
@@ -13946,6 +14577,7 @@ class TestDeathDateInFutureValidation:
     def _run_rule(self, sql: str) -> list:
         """Run death date in future validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.death_date_in_future_validation")()
         return rule.validate(sql)
 
@@ -14022,6 +14654,7 @@ class TestDeathCauseSourceConceptValidation:
     def _run_rule(self, sql: str) -> list:
         """Run death cause source concept validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.death_cause_source_concept_validation")()
         return rule.validate(sql)
 
@@ -14107,6 +14740,7 @@ class TestClinicalEventDateInFutureValidation:
     def _run_rule(self, sql: str) -> list:
         """Run clinical event date in future validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.clinical_event_date_in_future_validation")()
         return rule.validate(sql)
 
@@ -14310,6 +14944,7 @@ class TestClinicalEventDateBefore1900Validation:
     def _run_rule(self, sql: str) -> list:
         """Run clinical event date before 1900 validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.clinical_event_date_before_1900_validation")()
         return rule.validate(sql)
 
@@ -14872,6 +15507,7 @@ class TestProcedureOccurrenceQuantitySemantics:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.procedure_occurrence_quantity_semantics")()
         return rule.validate(sql, dialect)
 
@@ -15007,6 +15643,7 @@ class TestMeasurementOperatorConceptValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_operator_concept_validation")()
         return rule.validate(sql, dialect)
 
@@ -15118,6 +15755,7 @@ class TestMeasurementRangeLowHighValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_range_low_high_validation")()
         return rule.validate(sql, dialect)
 
@@ -15270,6 +15908,7 @@ class TestMeasurementValueAsNumberAndConceptValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_value_as_number_and_concept_validation")()
         return rule.validate(sql, dialect)
 
@@ -15392,6 +16031,7 @@ class TestMeasurementDuplicateDetection:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.measurement_duplicate_detection")()
         return rule.validate(sql, dialect)
 
@@ -15597,6 +16237,7 @@ class TestClinicalPersonIdLinkageValidation:
     def _run_rule(self, sql: str) -> list:
         """Run clinical person_id linkage validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("joins.clinical_person_id_linkage_validation")()
         return rule.validate(sql)
 
@@ -15716,8 +16357,9 @@ class TestClinicalPersonIdLinkageValidation:
         JOIN drug_exposure de ON co.visit_occurrence_id = de.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        # Joined on visit_occurrence_id, not person_id
-        assert len(violations) == 1
+        # Both rows point at the same visit, and a visit belongs to exactly one person: the FK join links the
+        # patients as surely as person_id does (5/5 residual expert findings were this shape, Study 1).
+        assert violations == []
 
     def test_clin_055_measurement_observation_no_linkage_fires(self):
         """Test other clinical table combinations."""
@@ -15737,8 +16379,8 @@ class TestClinicalPersonIdLinkageValidation:
         JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
         """
         violations = self._run_rule(sql)
-        # Both are clinical tables but joined on visit_occurrence_id, not person_id
-        assert len(violations) == 1
+        # visit_detail.visit_occurrence_id → visit_occurrence is the canonical parent link; no cross-patient risk.
+        assert violations == []
 
     def test_clin_055_death_person_join_fires(self):
         """Test death table joined to person without person_id."""
@@ -15757,6 +16399,7 @@ class TestConditionOccurrenceCardinalityValidation:
     def _run_rule(self, sql: str) -> list:
         """Run condition occurrence cardinality validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.condition_occurrence_cardinality_validation")()
         return rule.validate(sql)
 
@@ -15774,6 +16417,18 @@ class TestConditionOccurrenceCardinalityValidation:
         assert len(violations) == 1
         assert "multiple" in violations[0].message.lower()
         assert "group by" in violations[0].message.lower()
+
+    def test_clin_056_aliased_count_distinct_passes(self):
+        """`COUNT(DISTINCT p.person_id) AS n` de-duplicates persons; the alias must not hide the aggregate
+        (Study 2: 38/38 firings on such queries were false observations)."""
+        sql = """
+        SELECT COUNT(DISTINCT c.person_id) AS person_count
+        FROM condition_occurrence c
+        JOIN person p ON c.person_id = p.person_id
+        JOIN concept_ancestor ca ON c.condition_concept_id = ca.descendant_concept_id
+        WHERE ca.ancestor_concept_id = 439777
+        """
+        assert self._run_rule(sql) == []
 
     def test_clin_056_with_group_by_passes(self):
         """Test that GROUP BY aggregation passes."""
@@ -15915,6 +16570,7 @@ class TestDrugExposureCardinalityValidation:
     def _run_rule(self, sql: str) -> list:
         """Run drug exposure cardinality validation rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.drug_exposure_cardinality_validation")()
         return rule.validate(sql)
 
@@ -16092,6 +16748,7 @@ class TestDrugExposureCardinalityValidation:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 0
+
 
 """Unit tests for vocabulary validation rules."""
 
@@ -16292,6 +16949,7 @@ class TestConceptCodeRequiresVocabularyId:
 # VOCAB_002: Concept Ancestor Rollup Direction
 # =============================================================================
 
+
 def _run_concept_ancestor_rollup_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the concept_ancestor rollup direction rule."""
     from fastssv.core.registry import get_rule
@@ -16371,6 +17029,7 @@ class TestConceptAncestorRollupDirection:
 # =============================================================================
 # VOCAB_003: Maps To Target Standard Validation
 # =============================================================================
+
 
 def _run_maps_to_target_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the maps_to_target_standard_validation rule."""
@@ -16513,6 +17172,7 @@ class TestMapsToTargetStandardValidation:
 # =============================================================================
 # VOCAB_004 & VOCAB_005: Vocabulary ID Validation (Case Sensitivity & Hyphens)
 # =============================================================================
+
 
 def _run_vocabulary_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the vocabulary_id validation rule, returning messages and suggested fixes combined.
@@ -16776,6 +17436,7 @@ class TestVocabularyIdCaseSensitivity:
 # VOCAB_006: domain_id case sensitivity
 # ============================================================================
 
+
 def _run_domain_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the domain_id validation rule, returning messages and suggested fixes combined.
 
@@ -16999,6 +17660,7 @@ class TestDomainIdCaseSensitivity:
 # VOCAB_007: concept_class_id case sensitivity
 # =============================================================================
 
+
 def _run_concept_class_case_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the concept_class_id validation rule, returning messages and suggested fixes combined.
 
@@ -17211,6 +17873,7 @@ class TestConceptClassIdCaseSensitivity:
 # VOCAB_008: concept_ancestor max_levels_of_separation misuse
 # =============================================================================
 
+
 def _run_max_levels_misuse_rule(sql: str, dialect: str = "postgres") -> list:
     """Run the max_levels misuse rule, returning full violations."""
     from fastssv.core.registry import get_rule
@@ -17406,6 +18069,7 @@ class TestConceptAncestorMaxLevelsMisuse:
 # VOCAB_014: Concept Ancestor Cross-Domain Validation
 # =============================================================================
 
+
 def _run_cross_domain_rule(sql: str, dialect: str = "postgres") -> list:
     """Run the concept_ancestor cross-domain rule, returning violations."""
     from fastssv.core.registry import get_rule
@@ -17588,6 +18252,7 @@ class TestConceptAncestorCrossDomain:
 # =============================================================================
 # VOCAB_009: Standard Concept NULL Handling
 # =============================================================================
+
 
 def _run_standard_concept_null_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the standard_concept null handling rule, returning messages."""
@@ -17784,6 +18449,7 @@ class TestStandardConceptNullHandling:
 # VOCAB_013: Multiple Maps To Targets Not Handled
 # =============================================================================
 
+
 def _run_multiple_maps_to_rule(sql: str, dialect: str = "postgres") -> list[str]:
     """Run the multiple maps to targets rule, returning messages."""
     from fastssv.core.registry import get_rule
@@ -17955,12 +18621,14 @@ class TestStandardConceptOrWithClassification:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.standard_concept_or_with_classification")()
         return rule.validate(sql, dialect="postgres")
 
     def test_violation_or_pattern_both_s_and_c(self) -> None:
         """VIOLATION: OR pattern with both 'S' and 'C'."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT concept_id, concept_name
         FROM concept
@@ -17975,6 +18643,7 @@ class TestStandardConceptOrWithClassification:
     def test_violation_in_clause_both_s_and_c(self) -> None:
         """VIOLATION: IN clause with both 'S' and 'C'."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT concept_id
         FROM concept
@@ -18175,12 +18844,14 @@ class TestConceptAncestorSelfIncludeRedundancy:
 
     def _run_rule(self, sql: str):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.concept_ancestor_self_include_redundancy")()
         return rule.validate(sql, dialect="postgres")
 
     def test_violation_union_explicit_anchor(self) -> None:
         """VIOLATION: UNION with explicit anchor concept."""
         from fastssv.core.base import Severity
+
         sql = """
         SELECT concept_id
         FROM concept
@@ -18437,6 +19108,7 @@ class TestSourceConceptIdStandardFilter:
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.source_concept_id_standard_filter")()
         return rule.validate(sql, dialect)
 
@@ -18681,6 +19353,7 @@ class TestDomainVocabularyValidation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.domain_vocabulary_validation")()
         return rule.validate(sql, dialect)
 
@@ -19076,6 +19749,7 @@ class TestDomainVocabularyValidation:
 # Unit Vocabulary Validation Tests (VOCAB_028)
 # =============================================================================
 
+
 class TestUnitVocabularyValidation:
     """Test suite for VOCAB_028: unit_concept_id vocabulary validation."""
 
@@ -19377,6 +20051,7 @@ class TestUnitVocabularyValidation:
 # =============================================================================
 # Concept Relationship Transitive Misuse Tests (VOCAB_034)
 # =============================================================================
+
 
 class TestConceptRelationshipTransitiveMisuse:
     """Test suite for VOCAB_034: concept_relationship transitive misuse detection."""
@@ -20926,6 +21601,7 @@ class TestDestructiveOperationsOnClinicalTables:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.destructive_operations_on_clinical_tables")()
         return rule.validate(sql, dialect)
 
@@ -20937,6 +21613,7 @@ class TestDestructiveOperationsOnClinicalTables:
         assert "DELETE" in violations[0].message
         assert "measurement" in violations[0].message.lower()
         from fastssv.core.base import Severity
+
         assert violations[0].severity == Severity.ERROR
 
     def test_gap_004_update_on_condition_occurrence_violation(self) -> None:
@@ -21084,17 +21761,89 @@ class TestDestructiveOperationsOnClinicalTables:
         assert len(violations) == 1
         assert "visit_detail" in violations[0].message.lower()
 
+    # --- Local-shadow exemption (Achilles 2004 pattern) ---
+
+    def test_gap_004_drop_locally_defined_shadow_passes(self) -> None:
+        """``CREATE TEMP TABLE death AS …`` earlier in the batch shadows the
+        OMOP name; the matching ``DROP TABLE death`` later is dropping the
+        scratch table, not the clinical one. The CLI/API populates
+        ``local_tables`` for exactly this cross-statement case."""
+        from fastssv.core.validation_context import with_local_tables
+
+        with with_local_tables(frozenset({"death"})):
+            assert self._run_rule("DROP TABLE death;") == []
+
+    def test_gap_004_drop_protected_without_shadow_still_fires(self) -> None:
+        """No local CREATE in the batch → no shadow → genuine bug → fire."""
+        assert len(self._run_rule("DROP TABLE death;")) == 1
+
+    def test_gap_004_schema_qualified_drop_still_fires_even_with_shadow(self) -> None:
+        """A schema qualifier (``cdm.death``) is unambiguous: that's the
+        real OMOP table, even if the batch also defines a local ``death``."""
+        from fastssv.core.validation_context import with_local_tables
+
+        with with_local_tables(frozenset({"death"})):
+            violations = self._run_rule("DROP TABLE cdm.death;")
+            assert len(violations) == 1
+            assert "death" in violations[0].message.lower()
+
+    def test_gap_004_insert_into_locally_defined_shadow_passes(self) -> None:
+        """The exemption isn't DROP-specific — INSERT into a shadowed name
+        is INSERT into the scratch table."""
+        from fastssv.core.validation_context import with_local_tables
+
+        with with_local_tables(frozenset({"death"})):
+            assert self._run_rule("INSERT INTO death (person_id) VALUES (1);") == []
+
+    def test_gap_004_schema_qualified_create_does_not_shadow(self) -> None:
+        """``CREATE TABLE backup.death AS …`` earlier in the batch defines
+        ``backup.death`` — the unqualified ``DELETE FROM death`` still hits
+        the clinical table on the search path and must keep firing. The
+        broad ``local_tables`` set (used by the schema rule) contains the
+        stripped name, but the destructive rule gates on the
+        ``local_unqualified_tables`` subset, which excludes it."""
+        from fastssv.core.validation_context import with_local_tables
+
+        with with_local_tables(frozenset({"death"}), unqualified_names=frozenset()):
+            violations = self._run_rule("DELETE FROM death;")
+            assert len(violations) == 1
+            assert "death" in violations[0].message.lower()
+
+    def test_gap_004_end_to_end_batch_collectors(self) -> None:
+        """End-to-end with the real collectors, as the CLI/API wire them:
+        a TEMP create shadows its DROP, a schema-qualified create does not
+        shadow an unqualified DELETE of the same base name."""
+        from fastssv.core.helpers import (
+            collect_locally_defined_tables,
+            collect_locally_defined_unqualified_tables,
+        )
+        from fastssv.core.validation_context import with_local_tables
+
+        batch = (
+            "CREATE TEMPORARY TABLE death AS SELECT DISTINCT person_id FROM cdm.death;\n"
+            "CREATE TABLE backup_schema.measurement AS SELECT * FROM cdm.measurement;\n"
+        )
+        local = collect_locally_defined_tables(batch)
+        unqualified = collect_locally_defined_unqualified_tables(batch)
+        with with_local_tables(local, unqualified):
+            assert self._run_rule("DROP TABLE death;") == []
+            violations = self._run_rule("DELETE FROM measurement;")
+            assert len(violations) == 1
+            assert "measurement" in violations[0].message.lower()
+
 
 # =============================================================================
 # GAP_005: Datetime BETWEEN with Date Literal Tests
 # =============================================================================
 
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
 
@@ -21105,38 +21854,51 @@ class TestDatetimeBetweenDateLiteral:
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
+
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
+
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
+
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
+
+
 class TestDatetimeBetweenDateLiteral:
     """Tests for temporal.datetime_between_date_literal rule (GAP_005)."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         """Helper to run the rule on SQL and return violations."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("temporal.datetime_between_date_literal")()
         return rule.validate(sql, dialect)
 
@@ -21349,6 +22111,7 @@ class TestNoStringIdentification:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.no_string_identification")()
         return rule.validate(sql, dialect)
 
@@ -21763,6 +22526,7 @@ class TestCommaSeparatedCrossJoin:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.comma_separated_cross_join")()
         return rule.validate(sql, dialect)
 
@@ -21875,6 +22639,129 @@ class TestCommaSeparatedCrossJoin:
         violations = self._run_rule(sql)
         # measurement is not joined to co or de
         assert len(violations) > 0
+
+    # --- Theta-join / function-wrapped column recognition ---
+
+    def test_gap_035_range_predicate_counts_as_join(self) -> None:
+        """OHDSI Achilles joins event tables to time windows via range
+        predicates (`event_date BETWEEN window_start AND window_end`).
+        These are real joins — the rule must not flag them as Cartesian.
+        """
+        sql = """
+        SELECT * FROM measurement m, observation_period op
+        WHERE m.person_id = op.person_id
+          AND m.measurement_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_inequality_join_recognised(self) -> None:
+        """Same idea via `<=` / `>=` instead of BETWEEN."""
+        sql = """
+        SELECT * FROM measurement m, observation_period op
+        WHERE op.observation_period_start_date <= m.measurement_date
+          AND op.observation_period_end_date >= m.measurement_date
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_function_wrapped_join_columns(self) -> None:
+        """`EXTRACT(YEAR FROM op1.x) <= t1.y` — both columns are real
+        references, just wrapped in an EXTRACT call. The rule must see
+        through function wrappers."""
+        sql = """
+        SELECT 1
+        FROM cdm.person p1
+        INNER JOIN cdm.observation_period op1 ON p1.person_id = op1.person_id
+        , condition_occurrence t1
+        WHERE EXTRACT(YEAR FROM op1.observation_period_start_date) <= EXTRACT(YEAR FROM t1.condition_start_date)
+          AND EXTRACT(YEAR FROM op1.observation_period_end_date) >= EXTRACT(YEAR FROM t1.condition_start_date)
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_comma_table_connected_via_inner_join_target(self) -> None:
+        """Achilles 116 shape: the comma-joined table is connected to the
+        scope through an INNER JOIN target (`observation_period`), not
+        directly to the FROM table (`person`). The rule must consider all
+        scope tables — not just other comma-set members — when checking
+        connectivity.
+        """
+        sql = """
+        SELECT 1
+        FROM cdm.person p1
+        INNER JOIN cdm.observation_period op1 ON p1.person_id = op1.person_id
+        , condition_occurrence t1
+        WHERE op1.observation_period_start_date <= t1.condition_start_date
+          AND op1.observation_period_end_date >= t1.condition_start_date
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_on_clause_provides_connectivity(self) -> None:
+        """ON-clause predicates of explicit JOINs count too — a comma table
+        connected only via an INNER JOIN's ON predicate (rare but legal)
+        must not flag."""
+        sql = """
+        SELECT 1
+        FROM cdm.person p
+        INNER JOIN condition_occurrence co ON co.measurement_date = p.year_of_birth
+        , drug_exposure de
+        WHERE de.person_id = co.person_id
+        """
+        # de is connected to co via WHERE; should pass.
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_three_way_one_unjoined_still_fires(self) -> None:
+        """When 2-of-3 comma tables are joined but the third is dangling,
+        the rule must still fire (and ideally name the offender)."""
+        sql = """
+        SELECT * FROM condition_occurrence a, drug_exposure b, measurement c
+        WHERE a.person_id = b.person_id
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        # The unjoined table 'measurement' should appear in the message.
+        assert "measurement" in violations[0].message.lower()
+
+    # --- Unqualified-column attribution against the schema catalogue ---
+
+    def test_gap_035_achilles_1410_unqualified_scratch_columns(self) -> None:
+        """Achilles 1410: comma-joins a per-month scratch table and overlaps
+        ``payer_plan_period`` against its ``obs_month_start``/``obs_month_end``.
+        Achilles writes those scratch-table columns unqualified, which used
+        to false-fire — the rule now resolves them against the schema
+        catalogue (no OMOP scope table owns them → must be the lone
+        non-OMOP scope table)."""
+        sql = """
+        SELECT 1410 AS analysis_id, COUNT(DISTINCT p1.person_id) AS count_value
+        FROM person p1
+            INNER JOIN payer_plan_period ppp1 ON p1.person_id = ppp1.person_id
+            , temp_dates_1410
+        WHERE ppp1.payer_plan_period_start_date <= obs_month_start
+          AND ppp1.payer_plan_period_end_date   >= obs_month_end
+        GROUP BY obs_month
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_unqualified_resolves_to_unique_omop_owner(self) -> None:
+        """An unqualified column that exists on exactly one scope table is
+        attributed to that table — so the predicate counts as a join."""
+        sql = """
+        SELECT 1
+        FROM measurement m, observation_period
+        WHERE measurement_date BETWEEN observation_period_start_date AND observation_period_end_date
+          AND m.person_id = observation_period.person_id
+        """
+        assert self._run_rule(sql) == []
+
+    def test_gap_035_ambiguous_unqualified_column_still_fires(self) -> None:
+        """``person_id`` is on every clinical table; without a qualifier or
+        any other linking predicate the rule must NOT silently accept the
+        join — the ambiguous case stays loud."""
+        sql = """
+        SELECT * FROM condition_occurrence, drug_exposure
+        WHERE person_id = 42
+        """
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "drug_exposure" in violations[0].message.lower()
 
 
 # --- GAP_036: UNION vs UNION ALL for Clinical Events ---
@@ -22427,7 +23314,6 @@ class TestVisitDetailAdmittedDischargedDomain:
         assert len(violations) == 0
 
 
-
 # --- GAP_040: Attribute Definition Invalid Join ---
 
 
@@ -22562,6 +23448,7 @@ class TestEpisodeRequiresConceptFilter:
     def _run_rule(self, sql: str) -> list:
         """Run episode requires concept filter rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.episode_requires_concept_filter")()
         return rule.validate(sql)
 
@@ -22782,14 +23669,13 @@ class TestEpisodeRequiresConceptFilter:
         assert len(violations) == 1
 
 
-
-
 class TestFactRelationshipRequiresRelationshipConceptFilter:
     """Tests for fact_relationship_requires_relationship_concept_filter rule (OMOP_250, OMOP_507)."""
 
     def _run_rule(self, sql: str) -> list:
         """Run fact relationship requires relationship concept filter rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.fact_relationship_requires_relationship_concept_filter")()
         return rule.validate(sql)
 
@@ -22909,6 +23795,7 @@ class TestFactRelationshipValidConcepts:
     def _run_rule(self, sql: str) -> list:
         """Run fact relationship valid concepts rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.fact_relationship_valid_concepts")()
         return rule.validate(sql)
 
@@ -23134,6 +24021,7 @@ class TestFactRelationshipNoSelfReference:
     def _run_rule(self, sql: str) -> list:
         """Run fact relationship no self-reference rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.fact_relationship_no_self_reference")()
         return rule.validate(sql)
 
@@ -23293,7 +24181,6 @@ class TestFactRelationshipNoSelfReference:
         assert len(violations) == 1
 
 
-
 class TestLocationStateZipNotJoinedToConcept:
     """Tests for location.state/zip patterns under data_quality.free_text_column_misuse.
 
@@ -23304,6 +24191,7 @@ class TestLocationStateZipNotJoinedToConcept:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
@@ -23457,6 +24345,7 @@ class TestConditionOccurrenceStopReasonIsFreeText:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
@@ -23616,6 +24505,7 @@ class TestDrugExposureLotNumberIsFreeText:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.free_text_column_misuse")()
         return rule.validate(sql, dialect)
 
@@ -23770,6 +24660,7 @@ class TestNoDistinctOnPrimaryKeyColumn:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.no_distinct_on_primary_key_column")()
         return rule.validate(sql, dialect)
 
@@ -23929,6 +24820,7 @@ class TestCohortDefinitionSyntaxNotExecutableSql:
     def _run_rule(self, sql: str) -> list:
         """Run cohort_definition_syntax not executable SQL rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.cohort_definition_syntax_not_executable_sql")()
         return rule.validate(sql)
 
@@ -24100,6 +24992,7 @@ class TestMetadataClinicalJoin:
     def _run_rule(self, sql: str) -> list:
         """Run singleton metadata clinical join rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.singleton_metadata_clinical_join")()
         return rule.validate(sql)
 
@@ -24259,6 +25152,7 @@ class TestConceptSynonymLanguageConceptId:
     def _run_rule(self, sql: str) -> list:
         """Run concept_synonym language_concept_id rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("concept_standardization.concept_synonym_language_concept_id")()
         return rule.validate(sql)
 
@@ -24397,6 +25291,7 @@ class TestHavingWithoutGroupBy:
     def _run_rule(self, sql: str) -> list:
         """Run having without group by rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.having_without_group_by")()
         return rule.validate(sql)
 
@@ -24563,6 +25458,7 @@ class TestDeathJoinToPersonNotToClinicalEvent:
     def _run_rule(self, sql: str) -> list:
         """Run death join rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.death_join_to_person_not_to_clinical_event")()
         return rule.validate(sql)
 
@@ -24712,11 +25608,13 @@ class TestDeathJoinToPersonNotToClinicalEvent:
 # OMOP_135: Cost Payer Plan Period ID Join
 # =============================================================================
 
+
 class TestCostPayerPlanPeriodIdJoin:
     """Tests for OMOP_135: cost_payer_plan_period_id_join rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.cost_payer_plan_period_id_join")()
         return rule.validate(sql, dialect)
 
@@ -24864,11 +25762,13 @@ class TestCostPayerPlanPeriodIdJoin:
 # OMOP_138: Episode Parent ID Self Join
 # =============================================================================
 
+
 class TestEpisodeParentIdSelfJoin:
     """Tests for OMOP_138: episode_parent_id_self_join rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.episode_parent_id_self_join")()
         return rule.validate(sql, dialect)
 
@@ -25029,11 +25929,13 @@ class TestEpisodeParentIdSelfJoin:
 # OMOP_139: Episode Event No Person ID
 # =============================================================================
 
+
 class TestEpisodeEventNoPersonId:
     """Tests for OMOP_139: episode_event_no_person_id rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.episode_event_no_person_id")()
         return rule.validate(sql, dialect)
 
@@ -25188,11 +26090,13 @@ class TestEpisodeEventNoPersonId:
 # OMOP_141: Observation Value As Columns Mutually Contextual
 # =============================================================================
 
+
 class TestObservationValueAsColumnsMutuallyContextual:
     """Tests for OMOP_141: observation_value_as_columns_mutually_contextual rule."""
 
     def _run_rule(self, sql: str, dialect: str = "postgres"):
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.observation_value_as_columns_mutually_contextual")()
         return rule.validate(sql, dialect)
 
@@ -25957,7 +26861,7 @@ class TestLeftJoinThenWhereOnRightTable:
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert ("state" in violations[0].message or "city" in violations[0].message)
+        assert "state" in violations[0].message or "city" in violations[0].message
 
     def test_omop_149_qualified_column_violation(self) -> None:
         """OMOP_149: Qualified right table column in WHERE should warn."""
@@ -26139,12 +27043,14 @@ class TestLeftJoinThenWhereOnRightTable:
 # OMOP_150: Relationship Boolean Comparison Tests
 # ==============================================================================
 
+
 class TestRelationshipBooleanComparison:
     """Test relationship.is_hierarchical and defines_ancestry boolean validation."""
 
     def _run_rule(self, sql: str) -> list:
         """Run the relationship boolean comparison rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.vocabulary_relationship_boolean_comparison")()
         return rule.validate(sql)
 
@@ -26300,12 +27206,14 @@ class TestRelationshipBooleanComparison:
 # OMOP_152: Note NLP Snippet Misuse Tests
 # ==============================================================================
 
+
 class TestNoteNlpSnippetMisuse:
     """Test note_nlp.snippet and lexical_variant misuse detection."""
 
     def _run_rule(self, sql: str) -> list:
         """Run the note NLP snippet misuse rule."""
         from fastssv.core.registry import get_rule
+
         rule = get_rule("domain_specific.note_nlp_snippet_misuse")()
         return rule.validate(sql)
 
@@ -26462,6 +27370,7 @@ class TestConceptIdStringComparison:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.concept_id_string_comparison")()
         return rule.validate(sql, dialect)
 
@@ -27187,6 +28096,7 @@ class TestIncorrectPercentileCalculation:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("data_quality.incorrect_percentile_calculation")()
         return rule.validate(sql, dialect)
 
@@ -27231,6 +28141,7 @@ class TestTopAsSyntheticData:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.rules.anti_patterns.top_as_synthetic_data import TopAsSyntheticDataRule
+
         return TopAsSyntheticDataRule().validate(sql, dialect)
 
     def test_tsql_top_with_row_number_flags(self) -> None:
@@ -27258,6 +28169,7 @@ class TestNullComparisonOperator:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.rules.anti_patterns.null_comparison_operator import NullComparisonOperatorRule
+
         return NullComparisonOperatorRule().validate(sql, dialect)
 
     def test_equals_null_flags(self) -> None:
@@ -27282,6 +28194,7 @@ class TestConceptNameLookup:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.rules.anti_patterns.concept_name_lookup import ConceptNameLookupRule
+
         return ConceptNameLookupRule().validate(sql, dialect)
 
     def test_concept_name_equality_in_join_flags(self) -> None:
@@ -27308,6 +28221,7 @@ class TestCteShadowsOmopTable:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.cte_shadows_omop_table")()
         return rule.validate(sql, dialect)
 
@@ -27409,10 +28323,7 @@ class TestCteShadowsOmopTable:
     def test_anonymous_in_subquery_does_not_fire(self) -> None:
         """`WHERE x IN (SELECT …)` has no alias on the inner Subquery — nothing
         to shadow."""
-        sql = (
-            "SELECT * FROM person "
-            "WHERE person_id IN (SELECT person_id FROM condition_occurrence);"
-        )
+        sql = "SELECT * FROM person WHERE person_id IN (SELECT person_id FROM condition_occurrence);"
         assert self._run_rule(sql) == []
 
     def test_safe_subquery_alias_does_not_fire(self) -> None:
@@ -27436,6 +28347,7 @@ class TestLimitWithoutOrderBy:
 
     def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
         from fastssv.core.registry import get_rule
+
         rule = get_rule("anti_patterns.limit_without_order_by")()
         return rule.validate(sql, dialect)
 
@@ -27504,19 +28416,533 @@ class TestLimitWithoutOrderBy:
     def test_row_number_window_with_limit_still_fires(self) -> None:
         """Pure window function (no inner aggregate) still triggers — the
         per-row semantics are the same and LIMIT is meaningful."""
-        sql = (
-            "SELECT ROW_NUMBER() OVER (ORDER BY condition_concept_id) AS rn "
-            "FROM condition_occurrence LIMIT 10;"
-        )
+        sql = "SELECT ROW_NUMBER() OVER (ORDER BY condition_concept_id) AS rn FROM condition_occurrence LIMIT 10;"
         violations = self._run_rule(sql)
         assert len(violations) == 1
 
     def test_windowed_aggregate_with_partition_still_fires(self) -> None:
         """``COUNT(*) OVER (PARTITION BY …)`` produces one row per input
         row, same as the no-frame case."""
-        sql = (
-            "SELECT COUNT(*) OVER (PARTITION BY person_id) AS pc "
-            "FROM condition_occurrence LIMIT 10;"
-        )
+        sql = "SELECT COUNT(*) OVER (PARTITION BY person_id) AS pc FROM condition_occurrence LIMIT 10;"
         violations = self._run_rule(sql)
         assert len(violations) == 1
+
+
+class TestDuplicateColumnAlias:
+    """Tests for `anti_patterns.duplicate_column_alias`."""
+
+    def _run_rule(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("anti_patterns.duplicate_column_alias")()
+        return rule.validate(sql)
+
+    def test_real_duplicate_expression_fires(self) -> None:
+        """Two columns computing the same non-trivial expression with
+        different aliases is the canonical copy-paste bug."""
+        sql = "SELECT person_id AS pid_a, person_id AS pid_b FROM person;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "pid_a" in violations[0].message
+        assert "pid_b" in violations[0].message
+
+    def test_typed_null_placeholders_suppressed(self) -> None:
+        """``CAST(NULL AS …)`` placeholders padding a fixed-schema CTAS /
+        INSERT target (OHDSI Achilles result-table idiom) must not be
+        flagged: differing aliases map to distinct destination columns,
+        not copy-paste duplication.
+        """
+        sql = (
+            "CREATE TABLE scratch.tmpach_0 AS "
+            "SELECT 0 AS analysis_id, "
+            "CAST('synpuf' AS VARCHAR(255)) AS stratum_1, "
+            "CAST(NULL AS VARCHAR(255)) AS stratum_4, "
+            "CAST(NULL AS VARCHAR(255)) AS stratum_5, "
+            "COUNT(distinct person_id) AS count_value "
+            "FROM cdm.person"
+        )
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_bare_null_placeholders_suppressed(self) -> None:
+        """Untyped bare ``NULL`` placeholders are the same idiom."""
+        sql = "SELECT person_id, NULL AS a, NULL AS b FROM person;"
+        violations = self._run_rule(sql)
+        assert violations == []
+
+    def test_null_suppression_does_not_mask_real_duplicates(self) -> None:
+        """When the same SELECT mixes NULL padding with a real duplicate,
+        the NULL group is suppressed but the real duplicate still fires.
+        """
+        sql = "SELECT NULL AS pad_a, NULL AS pad_b, COUNT(*) AS c_one, COUNT(*) AS c_two FROM person;"
+        violations = self._run_rule(sql)
+        assert len(violations) == 1
+        assert "c_one" in violations[0].message
+        assert "c_two" in violations[0].message
+
+
+class TestPersonYearOfBirthAgeArithmetic:
+    """Tests for `domain_specific.year_of_birth_age_arithmetic`."""
+
+    def _run_rule(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        rule = get_rule("domain_specific.year_of_birth_age_arithmetic")()
+        return rule.validate(sql)
+
+    def test_cutoff_comparison_fires(self) -> None:
+        """High-stakes pattern: age computed from year_of_birth and then
+        compared to an integer cutoff. Off-by-one near the cutoff is a
+        real semantic error and must surface."""
+        sql = """
+        SELECT *
+        FROM person p
+        JOIN condition_occurrence co ON p.person_id = co.person_id
+        WHERE EXTRACT(YEAR FROM co.condition_start_date) - p.year_of_birth >= 65
+        """
+        v = self._run_rule(sql)
+        assert len(v) == 1
+        assert "year_of_birth" in v[0].message.lower()
+
+    def test_raw_age_projection_fires(self) -> None:
+        """Raw age projected as a stratum value (Achilles' default pattern
+        when not binning): off-by-one propagates into downstream usage, so
+        the warning is genuine."""
+        sql = """
+        SELECT EXTRACT(YEAR FROM op1.observation_period_start_date) - p1.year_of_birth AS age
+        FROM cdm.person p1
+        JOIN cdm.observation_period op1 ON p1.person_id = op1.person_id
+        """
+        assert len(self._run_rule(sql)) == 1
+
+    def test_decade_bin_suppressed(self) -> None:
+        """FLOOR((... - year_of_birth) / 10) is the Achilles decade-bin
+        idiom. Year-precision error is absorbed by the bucket width; one
+        person near a decade boundary slides between adjacent buckets,
+        which doesn't affect the analysis at population scale.
+        """
+        sql = """
+        SELECT FLOOR((EXTRACT(YEAR FROM vd.visit_detail_start_date) - p.year_of_birth) / 10) AS age_bucket
+        FROM cdm.person p
+        JOIN cdm.visit_detail vd ON p.person_id = vd.person_id
+        """
+        assert self._run_rule(sql) == []
+
+    def test_five_year_bin_suppressed(self) -> None:
+        """Quintile-width binning has the same harm-absorbing property as
+        decade bins; suppression threshold is N >= 5."""
+        sql = """
+        SELECT FLOOR((co.condition_start_date::INT - p.year_of_birth) / 5) AS five_year_band
+        FROM person p, condition_occurrence co
+        WHERE co.person_id = p.person_id
+        """
+        assert self._run_rule(sql) == []
+
+    def test_three_year_bin_still_fires(self) -> None:
+        """Narrow bins (N < 5) can't absorb year-level rounding the same way
+        — a one-year shift can still flip the bucket for a non-trivial
+        fraction of the cohort. Keep firing."""
+        sql = """
+        SELECT FLOOR((EXTRACT(YEAR FROM co.condition_start_date) - p.year_of_birth) / 3) AS narrow_band
+        FROM cdm.person p
+        JOIN cdm.condition_occurrence co ON p.person_id = co.person_id
+        """
+        assert len(self._run_rule(sql)) == 1
+
+    def test_achilles_116_decade_bin_suppressed(self) -> None:
+        """Concrete Achilles regression: the original `tmpach_116` query
+        that prompted the context-tier fix.
+        """
+        sql = """
+        CREATE TABLE scratch.tmpach_116 AS
+        SELECT floor((t1.obs_year - p1.year_of_birth)/10) AS stratum_3
+        FROM cdm.person p1, condition_occurrence t1
+        WHERE t1.person_id = p1.person_id
+        """
+        assert self._run_rule(sql) == []
+
+
+class TestPersonBirthYearExtractShape:
+    """Study-1 blind sample: 74 agent queries filtered `EXTRACT(YEAR FROM birth_datetime) = <future year>` unflagged."""
+
+    def _run(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule("domain_specific.person_birth_field_validation")().validate(sql)
+
+    def test_extract_year_from_birth_datetime_future_year_fires(self):
+        sql = "SELECT COUNT(DISTINCT person_id) FROM person WHERE EXTRACT(YEAR FROM birth_datetime) = 2091;"
+        v = self._run(sql)
+        assert len(v) == 1 and "year_of_birth" in v[0].message
+
+    def test_date_part_year_alias_fires(self):
+        sql = "SELECT COUNT(*) FROM person p WHERE DATE_PART('year', p.birth_datetime) BETWEEN 2088 AND 2103;"
+        assert len(self._run(sql)) >= 1  # one finding per implausible bound
+
+    def test_extract_year_plausible_passes(self):
+        sql = "SELECT COUNT(*) FROM person WHERE EXTRACT(YEAR FROM birth_datetime) = 1991;"
+        assert self._run(sql) == []
+
+    def test_extract_year_from_other_date_ignored(self):
+        sql = "SELECT COUNT(*) FROM condition_occurrence WHERE EXTRACT(YEAR FROM condition_start_date) = 2091;"
+        assert self._run(sql) == []
+
+
+class TestCurlyPlaceholderTemplate:
+    """Unrendered `{placeholder}` templates are flagged like unrendered `@param` templates."""
+
+    def test_curly_placeholder_flagged(self):
+        from fastssv.core.helpers import looks_like_unrendered_template
+
+        assert looks_like_unrendered_template("SELECT 1 FROM drug_exposure WHERE drug_concept_id = {naproxen_id};")
+
+    def test_odbc_escape_and_json_not_flagged(self):
+        from fastssv.core.helpers import looks_like_unrendered_template
+
+        assert not looks_like_unrendered_template("SELECT {fn CONCAT('a','b')}, {d '2020-01-01'} FROM person;")
+        assert not looks_like_unrendered_template("""SELECT '{"a": 1}'::json FROM person;""")
+
+
+class TestDateDiffIntervalComparison:
+    def _run(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule("temporal.date_diff_interval_comparison")().validate(sql, dialect)
+
+    def test_date_minus_date_vs_interval_fires(self):
+        sql = (
+            "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
+            "WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'"
+        )
+        v = self._run(sql)
+        assert len(v) == 1 and "integer" in v[0].message
+
+    def test_aggregate_date_diff_vs_interval_fires(self):
+        sql = (
+            "SELECT person_id FROM condition_occurrence GROUP BY person_id "
+            "HAVING (MAX(condition_start_date) - MIN(condition_start_date)) <= INTERVAL '1000 days'"
+        )
+        assert len(self._run(sql)) == 1
+
+    def test_greatest_minus_least_vs_interval_fires(self):
+        sql = (
+            "SELECT 1 FROM events WHERE GREATEST(a_date, b_date, c_date) - LEAST(a_date, b_date, c_date) "
+            "<= INTERVAL '30 days'"
+        )
+        assert len(self._run(sql)) == 1
+
+    def test_integer_days_passes(self):
+        sql = (
+            "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
+            "WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30"
+        )
+        assert self._run(sql) == []
+
+    def test_timestamp_diff_vs_interval_passes(self):
+        sql = (
+            "SELECT 1 FROM condition_occurrence a JOIN condition_occurrence b ON a.person_id = b.person_id "
+            "WHERE (a.condition_start_datetime - b.condition_start_datetime) <= INTERVAL '30 days'"
+        )
+        assert self._run(sql) == []
+
+    def test_non_integer_day_dialect_silent(self):
+        sql = "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE (a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'"
+        assert self._run(sql, "bigquery") == []
+
+
+class TestConceptLiteralWithoutHierarchy:
+    def _run(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule("concept_standardization.concept_literal_without_hierarchy")().validate(sql)
+
+    def test_literal_drug_concept_fires(self):
+        assert (
+            len(self._run("SELECT COUNT(DISTINCT person_id) FROM drug_exposure WHERE drug_concept_id = 1125315")) == 1
+        )
+
+    def test_in_list_fires_once(self):
+        assert (
+            len(
+                self._run(
+                    "SELECT COUNT(DISTINCT person_id) FROM condition_occurrence WHERE condition_concept_id IN (257012, 432867)"
+                )
+            )
+            == 1
+        )
+
+    def test_concept_ancestor_expansion_passes(self):
+        sql = (
+            "SELECT COUNT(DISTINCT de.person_id) FROM drug_exposure de JOIN concept_ancestor ca "
+            "ON de.drug_concept_id = ca.descendant_concept_id WHERE ca.ancestor_concept_id = 1125315"
+        )
+        assert self._run(sql) == []
+
+    def test_demographic_concept_ignored(self):
+        assert self._run("SELECT COUNT(*) FROM person WHERE gender_concept_id = 8507") == []
+
+
+class TestSchemaValidationScopeResolution:
+    """Study 1 §1.2: 91% of expert-corpus false positives were resolver defects — INSERT-target attribution,
+    derived-table/CTE column attribution, and `alias.*` parsed as a column named `*`."""
+
+    def _run(self, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule("data_quality.schema_validation")().validate(sql, dialect)
+
+    def test_insert_select_columns_not_attributed_to_target(self):
+        sql = (
+            "INSERT INTO cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date) "
+            "SELECT 5 AS cohort_definition_id, person_id, start_date, end_date FROM #final_cohort CO;"
+        )
+        assert self._run(sql, "tsql") == []
+
+    def test_unqualified_column_with_derived_source_not_attributed_to_cdm_table(self):
+        sql = (
+            "SELECT p.person_id, first_dx FROM (SELECT person_id, MIN(condition_start_date) AS first_dx "
+            "FROM condition_occurrence GROUP BY person_id) t JOIN person p ON p.person_id = t.person_id "
+            "WHERE first_dx > DATE '2020-01-01';"
+        )
+        assert self._run(sql) == []
+
+    def test_qualified_star_not_a_column(self):
+        sql = "SELECT p.*, co.condition_concept_id FROM person p JOIN condition_occurrence co ON co.person_id = p.person_id;"
+        assert self._run(sql) == []
+
+    def test_temp_table_not_reported_as_missing_cdm_table(self):
+        assert self._run("SELECT person_id FROM #cohort_stage;", "tsql") == []
+
+    def test_genuine_missing_column_single_table_still_flagged(self):
+        v = self._run("SELECT birth_date FROM person;")
+        assert len(v) == 1 and "birth_date" in v[0].message
+
+    def test_genuine_missing_column_qualified_still_flagged(self):
+        v = self._run("SELECT p.birth_date FROM person p JOIN condition_occurrence co ON co.person_id = p.person_id;")
+        assert len(v) == 1
+
+    def test_unqualified_ambiguous_between_cdm_tables_skipped(self):
+        sql = "SELECT birth_date FROM person p JOIN condition_occurrence co ON co.person_id = p.person_id;"
+        assert self._run(sql) == []
+
+    def test_correlated_subquery_resolves_outer_scope(self):
+        sql = (
+            "SELECT person_id FROM person p WHERE EXISTS (SELECT 1 FROM condition_occurrence co "
+            "WHERE co.person_id = p.person_id AND condition_start_date > DATE '2020-01-01');"
+        )
+        assert self._run(sql) == []
+
+
+class TestPersonIdJoinSubjectIdWhitelist:
+    def _run(self, sql: str) -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule("joins.person_id_join_validation")().validate(sql)
+
+    def test_cohort_subject_id_join_allowed(self):
+        assert self._run("SELECT COUNT(*) FROM cohort c JOIN person p ON p.person_id = c.subject_id;") == []
+
+    def test_temp_subject_id_join_allowed(self):
+        assert self._run("SELECT COUNT(*) FROM temp_target_age t JOIN person p ON p.person_id = t.subject_id;") == []
+
+    def test_person_id_to_visit_id_still_flagged(self):
+        sql = "SELECT COUNT(*) FROM person p JOIN visit_occurrence v ON p.person_id = v.visit_occurrence_id;"
+        assert len(self._run(sql)) == 1
+
+
+class TestScopeAndProvenanceFixes:
+    """Study 1 §1.2 false-positive classes: correlation, write targets, transform provenance, co-use blindness,
+    deliberate DQ idioms, orphan-FK checks."""
+
+    def _run(self, rid: str, sql: str, dialect: str = "postgres") -> list:
+        from fastssv.core.registry import get_rule
+
+        return get_rule(rid)().validate(sql, dialect)
+
+    def test_cross_join_correlated_exists_is_connected(self):
+        sql = (
+            "SELECT COUNT(DISTINCT p.person_id) FROM person p WHERE EXISTS ("
+            "SELECT 1 FROM drug_exposure d1, drug_exposure d2 "
+            "WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id "
+            "AND d1.drug_concept_id = 1 AND d2.drug_concept_id = 2)"
+        )
+        assert self._run("anti_patterns.comma_separated_cross_join", sql) == []
+
+    def test_cross_join_still_fires_when_truly_unjoined(self):
+        sql = "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de"
+        assert len(self._run("anti_patterns.comma_separated_cross_join", sql)) == 1
+
+    def test_cohort_insert_target_not_a_join_requirement(self):
+        sql = (
+            "INSERT INTO cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date) "
+            "SELECT 1, co.person_id, co.condition_start_date, co.condition_end_date FROM condition_occurrence co"
+        )
+        assert self._run("joins.cohort_clinical_join_validation", sql) == []
+
+    def test_cohort_bad_join_key_still_fires(self):
+        sql = "SELECT COUNT(*) FROM cohort c JOIN condition_occurrence co ON c.cohort_definition_id = co.person_id"
+        assert len(self._run("joins.cohort_clinical_join_validation", sql)) >= 1
+
+    def test_canonical_string_on_derived_table_not_flagged(self):
+        sql = (
+            "WITH og AS (SELECT concept_id, LOWER(domain_id) AS domain_id FROM concept) "
+            "SELECT COUNT(*) FROM og WHERE og.domain_id = 'condition'"
+        )
+        assert self._run("data_quality.canonical_string_value_validation", sql) == []
+
+    def test_canonical_string_on_cdm_column_still_flagged(self):
+        sql = "SELECT COUNT(*) FROM concept c WHERE c.domain_id = 'condition'"
+        assert len(self._run("data_quality.canonical_string_value_validation", sql)) == 1
+
+    def test_type_concept_completeness_metric_not_flagged(self):
+        sql = (
+            "SELECT SUM(CASE WHEN drug_type_concept_id IS NULL OR drug_type_concept_id = 0 THEN 1 ELSE 0 END) "
+            "FROM drug_exposure"
+        )
+        assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
+
+    def test_type_concept_where_filter_still_fires(self):
+        sql = "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id = 1112807"
+        assert len(self._run("anti_patterns.type_concept_id_misuse", sql)) == 1
+
+    def test_type_concept_provenance_valued_filter_not_flagged(self):
+        # 32817 (EHR) / 38000177 (Prescription written) are Type Concept vocabulary ids: restricting a query to a
+        # data source is the documented legitimate use, not a clinical concept smuggled into a type column.
+        for sql in (
+            "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id = 32817",
+            "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id IN (38000175, 38000180, 43542356)",
+        ):
+            assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
+
+    def test_type_concept_wrong_family_legacy_id_still_fires(self):
+        # 38000280 is an *observation* type: on condition_occurrence it matches nothing (agent census A2153-1).
+        sql = "SELECT person_id FROM condition_occurrence WHERE condition_type_concept_id = 38000280"
+        assert len(self._run("anti_patterns.type_concept_id_misuse", sql)) == 1
+        sql = "SELECT person_id FROM condition_occurrence WHERE condition_type_concept_id IN (38000183, 38000199)"
+        assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
+
+    def test_end_before_start_probe_with_constant_columns_not_flagged(self):
+        sql = (
+            "SELECT 411 AS analysis_id, CAST(NULL AS VARCHAR(255)) AS stratum_1, COUNT(co1.person_id) AS count_value "
+            "FROM condition_occurrence co1 WHERE co1.condition_end_date < co1.condition_start_date"
+        )
+        assert self._run("temporal.end_before_start_validation", sql) == []
+
+    def test_end_before_start_select_star_still_fires(self):
+        sql = "SELECT * FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
+        assert len(self._run("temporal.end_before_start_validation", sql)) >= 1
+
+    def test_fact_relationship_profiling_reads_not_flagged(self):
+        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
+        for sql in (
+            "SELECT * FROM fact_relationship q16 WHERE (0 = 1)",
+            "SELECT fact_relationship.* FROM fact_relationship LIMIT 1",
+            "SELECT fr.relationship_concept_id, COUNT(*) FROM fact_relationship fr GROUP BY fr.relationship_concept_id",
+        ):
+            assert self._run(rid, sql) == [], sql
+
+    def test_episode_profiling_reads_not_flagged(self):
+        rid = "data_quality.episode_requires_concept_filter"
+        for sql in (
+            "SELECT episode_type_concept_id, COUNT(*) FROM episode GROUP BY episode_type_concept_id",
+            "SELECT EXTRACT(YEAR FROM ep.episode_start_date) AS y, COUNT(ep.person_id) FROM episode ep "
+            "JOIN observation_period op ON ep.person_id = op.person_id GROUP BY EXTRACT(YEAR FROM ep.episode_start_date)",
+            "SELECT p.gender_concept_id, ep.n FROM person p JOIN (SELECT person_id, episode_concept_id, COUNT(*) AS n "
+            "FROM episode GROUP BY person_id, episode_concept_id) ep ON p.person_id = ep.person_id",
+        ):
+            assert self._run(rid, sql) == [], sql
+
+    def test_episode_grouped_by_foreign_column_still_fires(self):
+        rid = "data_quality.episode_requires_concept_filter"
+        sql = (
+            "SELECT p.gender_concept_id, COUNT(*) FROM episode ep JOIN person p ON ep.person_id = p.person_id "
+            "GROUP BY p.gender_concept_id"
+        )
+        assert len(self._run(rid, sql)) == 1
+
+    def test_linkage_via_shared_visit_fk_not_flagged(self):
+        sql = (
+            "SELECT co.person_id FROM condition_occurrence co INNER JOIN visit_occurrence vo "
+            "ON co.visit_occurrence_id = vo.visit_occurrence_id WHERE vo.visit_concept_id IN (9201, 9203)"
+        )
+        assert self._run("joins.clinical_person_id_linkage_validation", sql) == []
+
+    def test_cohort_clinical_transitive_via_person_unqualified_subject_id(self):
+        sql = (
+            "SELECT COUNT(*) FROM (SELECT subject_id, MIN(cohort_start_date) AS cohort_start_date FROM cohort "
+            "WHERE cohort_definition_id = 1 GROUP BY subject_id) cohort INNER JOIN person ON subject_id = person.person_id "
+            "INNER JOIN observation_period ON observation_period.person_id = person.person_id "
+            "AND observation_period_start_date <= cohort_start_date"
+        )
+        assert self._run("joins.cohort_clinical_join_validation", sql) == []
+
+    def test_cohort_clinical_separate_ctes_not_flagged(self):
+        sql = (
+            "WITH obs AS (SELECT person_id, MIN(observation_period_start_date) AS s FROM observation_period GROUP BY person_id), "
+            "coh AS (SELECT MAX(cohort_end_date) AS m FROM cohort) SELECT obs.person_id, coh.m FROM obs, coh"
+        )
+        assert self._run("joins.cohort_clinical_join_validation", sql) == []
+
+    def test_cohort_clinical_unjoined_same_scope_still_fires(self):
+        sql = "SELECT c.subject_id FROM cohort c JOIN observation_period op ON op.person_id = 1"
+        assert len(self._run("joins.cohort_clinical_join_validation", sql)) >= 1
+
+    def test_end_before_start_probe_not_flagged(self):
+        sql = "SELECT COUNT(*) FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
+        assert self._run("temporal.end_before_start_validation", sql) == []
+
+    def test_end_before_start_filter_still_fires(self):
+        sql = "SELECT co.person_id FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
+        assert len(self._run("temporal.end_before_start_validation", sql)) >= 1
+
+    def test_death_visit_in_separate_union_branches_not_flagged(self):
+        sql = "SELECT 'death' AS t, COUNT(*) FROM death UNION ALL SELECT 'visit' AS t, COUNT(*) FROM visit_occurrence"
+        assert self._run("joins.death_visit_occurrence_join_validation", sql) == []
+
+    def test_visit_detail_visit_in_separate_branches_not_flagged(self):
+        sql = "SELECT COUNT(*) FROM visit_detail UNION ALL SELECT COUNT(*) FROM visit_occurrence"
+        assert self._run("domain_specific.visit_detail_visit_occurrence_reference", sql) == []
+
+    def test_episode_whole_table_diagnostic_not_flagged(self):
+        sql = "SELECT episode_concept_id, COUNT(*) FROM episode GROUP BY episode_concept_id"
+        assert self._run("data_quality.episode_requires_concept_filter", sql) == []
+
+    def test_fact_relationship_constant_false_probe_not_flagged(self):
+        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
+        assert self._run(rid, "SELECT * FROM fact_relationship WHERE FALSE") == []
+
+    def test_fact_relationship_unfiltered_still_fires(self):
+        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
+        assert len(self._run(rid, "SELECT * FROM fact_relationship")) == 1
+
+    def test_schema_qualified_table_checked_inside_same_named_cte(self):
+        # A CTE shadows an UNQUALIFIED name only: `omop.drug_exposure` is still the physical table, and
+        # AI-written OMOP SQL names CTEs after CDM tables constantly.
+        sql = (
+            "WITH drug_exposure AS (SELECT de.invalid_reason FROM omop.drug_exposure de) "
+            "SELECT * FROM drug_exposure"
+        )
+        v = self._run("data_quality.schema_validation", sql)
+        assert len(v) == 1
+        assert "invalid_reason" in v[0].message and "drug_exposure" in v[0].message
+
+    def test_unqualified_reference_still_shadowed_by_cte(self):
+        for sql in (
+            "WITH drug_exposure AS (SELECT 1 AS invalid_reason) SELECT invalid_reason FROM drug_exposure",
+            "WITH person AS (SELECT 1 AS made_up) SELECT made_up FROM person",
+            "WITH codesets AS (SELECT 1 AS concept_id) SELECT concept_id FROM codesets",
+        ):
+            assert self._run("data_quality.schema_validation", sql) == [], sql
+
+    def test_cte_name_never_reported_as_missing_table(self):
+        # The table-existence check stays name-based: a CTE name is not an OMOP table wherever it is defined
+        # (Circe emits `codesets`, `qualified_events` and friends in every generated cohort).
+        sql = "WITH qualified_events AS (SELECT 1 AS event_id) SELECT event_id FROM qualified_events"
+        assert self._run("data_quality.schema_validation", sql) == []
+
+    def test_orphan_fk_check_not_flagged_by_linkage_rule(self):
+        sql = (
+            "SELECT COUNT(*) FROM condition_occurrence co LEFT JOIN visit_occurrence vo "
+            "ON co.visit_occurrence_id = vo.visit_occurrence_id WHERE vo.visit_occurrence_id IS NULL"
+        )
+        assert self._run("joins.clinical_person_id_linkage_validation", sql) == []

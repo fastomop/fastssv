@@ -4,13 +4,16 @@ Two files only:
 
 - ``cdm_column_types`` — canonical per-table ``{column: type}`` map plus
   the derived column-name view (``CDM_COLUMNS``) and helper accessors.
-- ``semantic_schema`` — the set of (table, column) pairs that must hold
-  standard concept ids.
+- ``semantic_schema`` — concept-field declarations: standard concept-id
+  fields (CDM-guaranteed standard), source concept-id fields (pre-mapping
+  layer, may be non-standard), and vocabulary tables (joins to these mean
+  the query is doing hierarchy/lookup work).
 
-Earlier revisions also shipped ``cdm_columns``, ``cdm_schema``,
-``concept_class_id_canonical``, ``SOURCE_CONCEPT_FIELDS``, and
-``SOURCE_VOCABS``. They were retired in [Unreleased] because no rule
-consumed them; see CHANGELOG for details.
+Earlier revisions also shipped ``cdm_columns``, ``cdm_schema`` and
+``concept_class_id_canonical``; they were retired because no rule
+consumed them. ``SOURCE_CONCEPT_FIELDS`` and ``VOCABULARY_TABLES`` were
+re-introduced in [Unreleased] for the redesigned standard-concept
+enforcement rule (see CHANGELOG for the OMOP-spec rationale).
 """
 
 from .cdm_column_types import (
@@ -27,7 +30,11 @@ from .cdm_column_types import (
     get_column_type,
     get_table_columns,
 )
-from .semantic_schema import STANDARD_CONCEPT_FIELDS
+from .semantic_schema import (
+    SOURCE_CONCEPT_FIELDS,
+    STANDARD_CONCEPT_FIELDS,
+    VOCABULARY_TABLES,
+)
 
 __all__ = [
     "CDM_COLUMN_TYPES",
@@ -43,4 +50,6 @@ __all__ = [
     "TIMESTAMP",
     "FLOAT",
     "STANDARD_CONCEPT_FIELDS",
+    "SOURCE_CONCEPT_FIELDS",
+    "VOCABULARY_TABLES",
 ]

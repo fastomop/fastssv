@@ -154,7 +154,13 @@ def _extract_temporal_constraints(
 
         # Extract columns involved in the comparison
         columns_in_node = list(node.find_all(exp.Column))
-
+        # Only ABSOLUTE constraints anchor to an observation window: a clinical date compared with a calendar
+        # literal / parameter / function of the current date. A date compared with ANOTHER date column
+        # (event-to-event windows, washout/follow-up arithmetic) relates two recorded facts of the same
+        # person; anchoring it is a modelling choice, not an error, and warning on it was the largest source
+        # of feedback churn and correct→wrong edits (convention conflict with the reference).
+        if sum(1 for c in columns_in_node if _is_date_column(normalize_name(c.name))) != 1:
+            continue
         for col in columns_in_node:
             col_name = normalize_name(col.name)
 
@@ -324,8 +330,13 @@ class ObservationPeriodAnchoringRule(Rule):
             # Extract temporal constraints
             temporal_constraints = _extract_temporal_constraints(tree, aliases)
             has_temporal_constraints = len(temporal_constraints) > 0
-
-            has_washout_logic = _has_washout_or_followup_logic(tree)
+            # Relative windows (DATEDIFF / INTERVAL between two events) no longer trigger — see
+            # _extract_temporal_constraints (design change after Study 2).
+            has_washout_logic = False
+            # Cohort-scoped queries are observation-anchored by construction (cohort entries are generated
+            # inside observation periods), so a further anchor is redundant.
+            if any(normalize_name(t.name).endswith("cohort") for t in tree.find_all(exp.Table)):
+                continue
 
             # If query has temporal constraints or date logic but no observation_period, warn.
             # Gate: skip vocabulary-only queries. Anchoring to observation_period requires

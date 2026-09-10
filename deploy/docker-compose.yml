@@ -21,10 +21,13 @@ services:
     environment:
       FASTSSV_API_LOG_LEVEL: "${FASTSSV_API_LOG_LEVEL:-INFO}"
       FASTSSV_API_RATE_LIMIT: "${FASTSSV_API_RATE_LIMIT:-60/minute}"
+      FASTSSV_API_RATE_LIMIT_STORAGE_URI: "${FASTSSV_API_RATE_LIMIT_STORAGE_URI:-}"
       FASTSSV_API_MAX_SQL_BYTES: "${FASTSSV_API_MAX_SQL_BYTES:-100000}"
       FASTSSV_API_PARSE_TIMEOUT_SECONDS: "${FASTSSV_API_PARSE_TIMEOUT_SECONDS:-5}"
+      FASTSSV_API_MAX_CONCURRENT_VALIDATIONS: "${FASTSSV_API_MAX_CONCURRENT_VALIDATIONS:-8}"
       FASTSSV_API_CORS_ORIGINS: "${FASTSSV_API_CORS_ORIGINS:-}"
       FASTSSV_API_BEHIND_PROXY: "${FASTSSV_API_BEHIND_PROXY:-true}"
+      FASTSSV_API_TRUSTED_PROXY_HOSTS: "${FASTSSV_API_TRUSTED_PROXY_HOSTS:-*}"
       FASTSSV_API_MCP_ENABLED: "${FASTSSV_API_MCP_ENABLED:-false}"
       FASTSSV_API_MCP_ALLOWED_ORIGINS: "${FASTSSV_API_MCP_ALLOWED_ORIGINS:-}"
       WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
@@ -42,3 +45,10 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    # Cgroup ceilings: a runaway parse (sqlglot is CPU-bound and cannot be
+    # cancelled mid-parse) or a fork bomb is contained by the kernel rather
+    # than taking the host down. Sized for the 2-worker default; scale
+    # mem/cpus with WEB_CONCURRENCY.
+    mem_limit: "${FASTSSV_MEM_LIMIT:-1g}"
+    cpus: "${FASTSSV_CPUS:-2.0}"
+    pids_limit: 256

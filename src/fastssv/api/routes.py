@@ -41,6 +41,8 @@ async def validate(req: ValidationRequest, request: Request) -> ValidationRespon
         req.strict,
         settings,
         client=get_remote_address(request),
+        request_id=getattr(request.state, "request_id", None),
+        limiter=getattr(request.app.state, "validation_limiter", None),
     )
 
 

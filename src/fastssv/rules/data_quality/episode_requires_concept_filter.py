@@ -71,6 +71,8 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
+    select_is_profiling_read,
+    select_scope_tables,
     extract_aliases,
     is_in_where_or_join_clause,
     normalize_name,
@@ -240,6 +242,18 @@ def _episode_event_has_valid_path(tree: exp.Expression) -> bool:
 # --- Rule ------------------------------------------------------------------
 
 
+def _is_whole_table_diagnostic(tree: exp.Expression) -> bool:
+    """Every SELECT whose own FROM/JOIN reads episode is a profiling read: aggregate-only, or an aggregate grouped
+    by episode's own columns (per-type, per-month, per-person counts). Judged in the reading scope so an outer
+    query that merely consumes the profile does not disqualify it (Achilles 2320, CdmOnboarding, DashboardExport)."""
+    reads = [sel for sel in tree.find_all(exp.Select) if EPISODE in select_scope_tables(sel)]
+    if not reads:
+        return False
+    return all(
+        select_is_profiling_read(sel, EPISODE, {"episode_concept_id", "episode_type_concept_id"}) for sel in reads
+    )
+
+
 @register
 class EpisodeRequiresConceptFilterRule(Rule):
     rule_id = "data_quality.episode_requires_concept_filter"
@@ -289,6 +303,9 @@ class EpisodeRequiresConceptFilterRule(Rule):
             if not uses_episode and not uses_episode_event:
                 continue
 
+            # Whole-table diagnostics — per-domain counts or a mapping-completeness `GROUP BY episode_concept_id`.
+            if _is_whole_table_diagnostic(tree):
+                continue
             has_filter = _has_episode_filter(tree, aliases)
 
             if uses_episode_event and not uses_episode:

@@ -34,6 +34,7 @@ from fastssv.core.helpers import (
     parse_sql,
     resolve_table_col,
     is_in_where_or_join_clause,
+    unwrap_cast,
 )
 from fastssv.core.patch import add as patch_add, locate
 from fastssv.core.registry import register
@@ -161,15 +162,18 @@ def _collect_domain_filters(
 
             result.setdefault(alias, set())
 
-            # EQ
-            if isinstance(node, exp.EQ) and isinstance(val, exp.Literal):
-                result[alias].add(normalize_name(val.this))
+            # EQ — peel CAST/Paren so Achilles-style `CAST('Drug' AS TEXT)` is recognised.
+            if isinstance(node, exp.EQ):
+                inner = unwrap_cast(val) if val is not None else val
+                if isinstance(inner, exp.Literal):
+                    result[alias].add(normalize_name(inner.this))
 
-            # IN
+            # IN — same CAST/Paren peeling per value.
             if isinstance(node, exp.In):
                 for v in node.expressions or []:
-                    if isinstance(v, exp.Literal):
-                        result[alias].add(normalize_name(v.this))
+                    inner = unwrap_cast(v)
+                    if isinstance(inner, exp.Literal):
+                        result[alias].add(normalize_name(inner.this))
 
     return result
 

@@ -6,14 +6,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-154-orange)
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Rules](https://img.shields.io/badge/rules-157-orange)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
 
 **OMOP SQL that runs without errors can still be analytically wrong.**
 
-A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 154 rules, no database connection, deterministic.
+A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 157 rules, no database connection, deterministic.
 
 📖 **Full documentation: <https://fastomop.github.io/fastssv/>**
 
@@ -32,7 +32,7 @@ uv add fastssv
 ## Use it
 
 ```bash
-uv run fastssv path/to/query.sql                       # writes output/validation_report.json
+uv run fastssv path/to/query.sql                       # writes output/query_report.json
 uv run fastssv path/to/query.sql --strict              # cohort-grade enforcement
 uv run fastssv path/to/query.sql --dialect bigquery    # auto, postgres, tsql, oracle, redshift, bigquery, snowflake, databricks, duckdb
 ```
@@ -55,7 +55,7 @@ JOIN concept c ON de.drug_concept_id = c.concept_id
 WHERE c.concept_name LIKE '%aspirin%';
 ```
 
-`uv run fastssv query.sql` writes `output/validation_report.json`:
+`uv run fastssv query.sql` writes `output/query_report.json` (the report is named after the input file; stdin input falls back to `output/validation_report.json`):
 
 ```json
 {
@@ -140,7 +140,7 @@ Mounted at `/mcp` and built per the [Streamable HTTP transport spec](https://mod
 | Architecture overview | [docs/architecture.md](docs/architecture.md) |
 | Plugin system / writing a rule | [docs/plugin_architecture.md](docs/plugin_architecture.md) |
 | Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
-| Per-rule catalog (all 154) | [docs/rules_reference.md](docs/rules_reference.md) |
+| Per-rule catalog (all 157) | [docs/rules_reference.md](docs/rules_reference.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
 | MCP server | [docs/mcp.md](docs/mcp.md) |
 | JSON report format | [docs/json_output.md](docs/json_output.md) |
@@ -150,7 +150,7 @@ For contributing, see [CONTRIBUTING.md](CONTRIBUTING.md) (PR policy and the AI-a
 
 ## Stability
 
-Pre-1.0 (`0.x.y`). The Python API (`validate_sql_structured`, `validate_sql`, `RuleViolation`, `Severity`, the registry helpers) and the `rule_id` format `<category>.<rule_name>` are stable. The exact rule set, violation wording, and individual severities may change between minor versions as rules are calibrated against real OHDSI corpora. Pin to a minor version (`fastssv>=0.2,<0.3`) and review [CHANGELOG.md](CHANGELOG.md) before upgrading.
+Pre-1.0 (`0.x.y`). The Python API (`validate_sql_structured`, `validate_sql`, `RuleViolation`, `Severity`, the registry helpers) and the `rule_id` format `<category>.<rule_name>` are stable. The exact rule set, violation wording, and individual severities may change between minor versions as rules are calibrated against real OHDSI corpora. Pin to a minor version (`fastssv>=0.3,<0.4`) and review [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
 ## License
 

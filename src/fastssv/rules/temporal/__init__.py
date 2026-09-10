@@ -15,7 +15,10 @@ from .death_date_in_future_validation import DeathDateInFutureValidationRule
 from .clinical_event_date_in_future_validation import ClinicalEventDateInFutureValidationRule
 from .datetime_between_date_literal import DatetimeBetweenDateLiteralRule
 
+from .date_diff_interval_comparison import DateDiffIntervalComparisonRule
+
 __all__ = [
+    "DateDiffIntervalComparisonRule",
     "ObservationPeriodAnchoringRule",
     "FutureInformationLeakageRule",
     "ObservationPeriodDateRangeLogicRule",

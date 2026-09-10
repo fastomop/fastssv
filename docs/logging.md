@@ -139,7 +139,7 @@ FASTSSV_LOG_FORMAT=simple fastssv query.sql
 Output:
 ```
 INFO: Starting validation: 245 characters, dialect=postgres
-INFO: Validation complete: 154 rules, 2 errors, 3 warnings
+INFO: Validation complete: 155 rules, 2 errors, 3 warnings
 ```
 
 ### Detailed Format (Default)
@@ -153,8 +153,8 @@ FASTSSV_LOG_FORMAT=detailed fastssv query.sql
 Output:
 ```
 2026-04-20 19:30:15 - fastssv.cli - INFO - Starting validation: 245 characters, dialect=postgres
-2026-04-20 19:30:15 - fastssv - INFO - Running all 154 rules
-2026-04-20 19:30:15 - fastssv - INFO - Validation complete: 154 rules, 2 errors, 3 warnings
+2026-04-20 19:30:15 - fastssv - INFO - Running all 155 rules
+2026-04-20 19:30:15 - fastssv - INFO - Validation complete: 155 rules, 2 errors, 3 warnings
 ```
 
 ### JSON Format
@@ -168,8 +168,8 @@ FASTSSV_LOG_FORMAT=json fastssv query.sql
 Output:
 ```json
 {"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv.cli", "message": "Starting validation: 245 characters, dialect=postgres"}
-{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Running all 154 rules"}
-{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Validation complete: 154 rules, 2 errors, 3 warnings", "violation_count": 5}
+{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Running all 155 rules"}
+{"timestamp": "2026-04-20 19:30:15", "level": "INFO", "logger": "fastssv", "message": "Validation complete: 155 rules, 2 errors, 3 warnings", "violation_count": 5}
 ```
 
 **Benefits:**
@@ -284,14 +284,16 @@ logger.error("Validation failed")
 The CLI's `log_validation_complete` and `log_rule_execution` helpers
 already attach `duration_ms` as a structured field on the log record.
 With `FASTSSV_LOG_FORMAT=json`, those values appear in the structured
-output:
+output. Any field passed via `extra=` is serialized, not a fixed
+allowlist — the API's `request_id`, `sql_hash`, `dialect`, and friends
+all land in the JSON line:
 
 ```json
 {
   "timestamp": "2026-04-20 19:30:15",
   "level": "INFO",
   "logger": "fastssv.cli",
-  "message": "Validation complete: 154 rules, 2 errors, 3 warnings",
+  "message": "Validation complete: 155 rules, 2 errors, 3 warnings",
   "duration_ms": 125.45,
   "violation_count": 5
 }

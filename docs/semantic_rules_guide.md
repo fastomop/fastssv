@@ -33,7 +33,7 @@ print(results["category_errors"]["concept_standardization"])
 ### CLI Usage
 
 ```bash
-# Run all rules (default, outputs to output/validation_report.json)
+# Run all rules (default, outputs to output/query_report.json — named after the input file)
 fastssv query.sql
 
 # Run only concept standardization rules
@@ -498,7 +498,7 @@ if not error:
 
 FastSSV's semantic validation system provides:
 
-- **154 registered rules across 6 categories** validating OMOP CDM v5.4 constraints
+- **155 registered rules across 6 categories** validating OMOP CDM v5.4 constraints
 - **Plugin architecture** for easy extension — see [Plugin system](plugin_architecture.md)
 - **Schema-driven validation** anchored in `schemas/cdm_column_types.py` (table → {column → type}) and `schemas/semantic_schema.py` (`STANDARD_CONCEPT_FIELDS`)
 - **Flexible API** supporting filtering by `categories=[...]` or `rule_ids=[...]`

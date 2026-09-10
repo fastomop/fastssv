@@ -72,6 +72,7 @@ from fastssv.core.helpers import (
     resolve_table_col,
 )
 from fastssv.core.registry import register
+from fastssv.schemas import CDM_COLUMN_TYPES
 
 
 # --- Constants -------------------------------------------------------------
@@ -144,55 +145,187 @@ def _get_comma_separated_tables(tree: exp.Expression) -> List[tuple]:
     return comma_groups
 
 
+# Predicate-shaped nodes that can semantically connect two tables.
+# Equi-join is the common case but range / interval-overlap joins (theta
+# joins) are normal in temporal OMOP queries — joining events to time
+# windows, observation periods, or eras — and used to false-positive the
+# rule because the original walk only looked at ``exp.EQ`` with bare
+# ``Column`` operands. ``In`` is included for the rare ``a.x IN (b.y, b.z)``
+# semi-join shape; subqueries inside ``In`` have their own scope so the
+# outer-scope table extraction doesn't pick them up as joins.
+_JOIN_PREDICATE_TYPES = (
+    exp.EQ,
+    exp.NEQ,
+    exp.LT,
+    exp.LTE,
+    exp.GT,
+    exp.GTE,
+    exp.Between,
+    exp.In,
+)
+
+
+def _predicate_join_tables(
+    predicate: exp.Expression,
+    aliases: Dict[str, str],
+    scope_tables: set,
+) -> set:
+    """Real table names referenced anywhere inside ``predicate``.
+
+    Uses ``find_all(exp.Column)`` rather than checking direct operands so
+    function-wrapped columns are seen — ``EXTRACT(YEAR FROM op1.x) <=
+    t1.y`` references both ``op1`` and ``t1`` and counts as a join. Only
+    columns whose enclosing ``Select`` is the predicate's own scope are
+    included so a correlated subquery's inner columns don't blur the
+    outer-scope join check.
+
+    Unqualified columns are attributed against the schema catalogue so
+    Achilles-style queries (``WHERE ppp.start_date <= obs_month_start``,
+    where ``obs_month_start`` lives on a comma-joined scratch table) are
+    recognised as theta-joins instead of false-firing as Cartesians:
+
+    * Exactly one scope table owns the column in ``CDM_COLUMN_TYPES`` →
+      attribute to that table.
+    * No OMOP scope table owns it, and exactly one scope table is
+      non-OMOP (a CTE, scratch / temp table, or derived view) →
+      attribute to that one. SQL's name-resolution discipline guarantees
+      the unqualified column must come from *some* scope table, and the
+      catalogue rules out every OMOP candidate, so the lone non-OMOP
+      table is the only resolution.
+    * Otherwise leave it unattributed (ambiguous resolutions stay loud
+      rather than silently picking a side).
+    """
+    outer_select = predicate.find_ancestor(exp.Select)
+    local_alias_names: set = set()
+    if outer_select is not None:
+        from_node = outer_select.args.get("from_") or outer_select.args.get("from")
+        for scope_node in [from_node, *(outer_select.args.get("joins") or [])]:
+            src = getattr(scope_node, "this", None) if scope_node is not None else None
+            if isinstance(src, exp.Table):
+                local_alias_names.add(_norm(src.alias_or_name))
+                local_alias_names.add(_norm(src.name))
+            elif isinstance(src, exp.Subquery) and src.alias:
+                local_alias_names.add(_norm(src.alias))
+    omop_scope = {t for t in scope_tables if t in CDM_COLUMN_TYPES}
+    non_omop_scope = scope_tables - omop_scope
+
+    tables: set = set()
+    for col in predicate.find_all(exp.Column):
+        if col.find_ancestor(exp.Select) is not outer_select:
+            continue
+        # A column bound in an ENCLOSING scope (correlated subquery: `d1.person_id = p.person_id` inside EXISTS)
+        # anchors the comma-joined table to the outer row — that is a join, not a Cartesian product
+        # (17/17 agent-corpus findings of this rule were this shape, Study 1).
+        if col.table and _norm(col.table) not in local_alias_names:
+            tables.add("<outer>")
+            continue
+        t, c = resolve_table_col(col, aliases)
+        if t:
+            tables.add(_norm(t))
+            continue
+        cname = _norm(c)
+        if not cname:
+            continue
+        owners = {ot for ot in omop_scope if cname in CDM_COLUMN_TYPES[ot]}
+        if len(owners) == 1:
+            tables.add(next(iter(owners)))
+        elif not owners and len(non_omop_scope) == 1:
+            tables.add(next(iter(non_omop_scope)))
+    return tables
+
+
+def _scope_tables(select: exp.Select) -> List[str]:
+    """Real table names of every FROM / JOIN target in this Select scope
+    (regardless of join kind). Includes ``INNER JOIN`` / ``LEFT JOIN`` /
+    explicit ``CROSS JOIN`` targets — anything an alias might resolve to."""
+    out: List[str] = []
+    from_node = select.find(exp.From)
+    if from_node and isinstance(from_node.this, exp.Table):
+        out.append(from_node.this.name)
+    for j in select.args.get("joins", []) or []:
+        if isinstance(j.this, exp.Table):
+            out.append(j.this.name)
+    return out
+
+
+def _comma_only_tables(select: exp.Select) -> List[str]:
+    """The subset of join targets with no explicit ``ON`` clause (i.e. comma
+    joins). These are the ones at risk of producing a Cartesian product
+    when no predicate elsewhere connects them to the rest of the scope.
+    The FROM table is never considered "comma-only" — it's the anchor
+    other tables join TO."""
+    out: List[str] = []
+    for j in select.args.get("joins", []) or []:
+        if j.args.get("kind") is None and j.args.get("on") is None:
+            if isinstance(j.this, exp.Table):
+                out.append(j.this.name)
+    return out
+
+
+def _all_predicate_clauses(select: exp.Select) -> List[exp.Expression]:
+    """Boolean clauses where a join predicate can live: WHERE plus every
+    explicit JOIN's ON clause. A comma-joined table is connected if any
+    of these mention it alongside another scope table — the original
+    rule only inspected WHERE, which missed setups where an explicit
+    INNER JOIN's ON clause linked the chain together."""
+    clauses: List[exp.Expression] = []
+    where = select.args.get("where")
+    if where:
+        clauses.append(where)
+    for j in select.args.get("joins", []) or []:
+        on = j.args.get("on")
+        if on:
+            clauses.append(on)
+    return clauses
+
+
+def _unjoined_comma_tables(
+    select: exp.Select,
+    comma_tables: List[str],
+    aliases: Dict[str, str],
+) -> List[str]:
+    """Return the subset of ``comma_tables`` that lack any predicate
+    connecting them to another table in the SELECT's scope.
+
+    A "predicate" here is any binary comparison (``=``, ``!=``, ``<``,
+    ``<=``, ``>``, ``>=``), ``BETWEEN``, or ``IN`` whose column
+    references span at least two distinct scope tables, one of which is
+    the comma-joined table under test. Function-wrapped columns
+    (``EXTRACT(YEAR FROM x)``, ``CAST(x AS …)``) count — the test runs
+    over every column in the predicate via ``find_all``.
+
+    Returns ``[]`` when every comma-joined table is properly anchored
+    (the common case post-fix). Returns the offenders by name when at
+    least one is genuinely unjoined.
+    """
+    if not comma_tables:
+        return []
+    scope_set = {_norm(t) for t in _scope_tables(select)}
+    connected: set = set()
+    for clause in _all_predicate_clauses(select):
+        for pred in clause.find_all(_JOIN_PREDICATE_TYPES):
+            all_tables = _predicate_join_tables(pred, aliases, scope_set)
+            pred_tables = all_tables & scope_set
+            if len(pred_tables) < 2 and not (pred_tables and "<outer>" in all_tables):
+                continue
+            for c in comma_tables:
+                if _norm(c) in pred_tables:
+                    connected.add(_norm(c))
+    return [c for c in comma_tables if _norm(c) not in connected]
+
+
 def _has_join_condition_in_where(
     select: exp.Select,
     tables: List[str],
     aliases: Dict[str, str],
 ) -> bool:
-    """Check if WHERE clause has column-to-column equality joining the tables.
-
-    Args:
-        select: The specific SELECT node (not the whole tree) to check
-        tables: List of comma-separated table names
-        aliases: Table alias mapping
+    """Back-compat wrapper retained so external callers (and tests) that
+    import this name still work. ``True`` means "no Cartesian risk" —
+    every comma-joined table in this Select scope is connected to
+    something else.
     """
-
-    # Normalize table names for comparison
-    table_set = {_norm(t) for t in tables}
-
-    # Find WHERE clause in this specific SELECT (not nested subqueries)
-    where = select.args.get("where")
-    if not where:
-        return False
-
-    # Look for column = column equalities
-    for eq in where.find_all(exp.EQ):
-        left = eq.this
-        right = eq.expression
-
-        # Both sides must be columns
-        if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
-            continue
-
-        # Resolve table names for both columns
-        left_table, _ = resolve_table_col(left, aliases)
-        right_table, _ = resolve_table_col(right, aliases)
-
-        # Skip if we can't resolve table names
-        if not left_table or not right_table:
-            continue
-
-        # Normalize
-        left_table_norm = _norm(left_table)
-        right_table_norm = _norm(right_table)
-
-        # Check if this equality joins two of our comma-separated tables
-        if left_table_norm in table_set and right_table_norm in table_set:
-            if left_table_norm != right_table_norm:
-                # Found a join condition between different tables
-                return True
-
-    return False
+    comma_only = _comma_only_tables(select)
+    return not _unjoined_comma_tables(select, comma_only, aliases)
 
 
 # --- Rule ------------------------------------------------------------------
@@ -209,7 +342,13 @@ class CommaSeparatedCrossJoinRule(Rule):
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: comma-separated FROM with explicit JOIN ... ON. Example: change `FROM a, b WHERE a.x = b.x` to `FROM a JOIN b ON a.x = b.x`."
+    suggested_fix = (
+        "ADD: a predicate connecting these tables (typically on `person_id`, "
+        "sometimes `visit_occurrence_id` when both sides sit inside the same encounter), "
+        "or write `CROSS JOIN` explicitly if the Cartesian product is intentional. "
+        "Range / interval-overlap predicates (e.g. `start_date <= window_end "
+        "AND end_date >= window_start`) count as joins too — the rule recognises them."
+    )
     long_description = (
         "Comma-join syntax (FROM a, b) predates the explicit JOIN...ON form "
         "introduced in SQL-92 and is still common in analysts who come from "
@@ -266,36 +405,43 @@ class CommaSeparatedCrossJoinRule(Rule):
             comma_groups = _get_comma_separated_tables(tree)
 
             for select, tables in comma_groups:
-                # Check if any are large clinical tables
+                # Check if any are large clinical tables — small reference
+                # / vocabulary cross joins aren't query-killers and aren't
+                # worth flagging.
                 has_large_table = any(_is_large_clinical_table(t) for t in tables)
-
                 if not has_large_table:
-                    # Skip if no large clinical tables (e.g., vocabulary table cross joins)
                     continue
 
-                # Check if there's a join condition in WHERE (scope-aware)
-                has_join = _has_join_condition_in_where(select, tables, aliases)
+                # Per-table connectivity: which comma-joined tables lack a
+                # predicate linking them to something else in scope? The
+                # check inspects both WHERE *and* every explicit JOIN's ON
+                # clause, and accepts theta-joins / function-wrapped
+                # columns — so `op1.start_date <= t1.window_end` is a join.
+                comma_only = _comma_only_tables(select)
+                unjoined = _unjoined_comma_tables(select, comma_only, aliases)
+                if not unjoined:
+                    continue
 
-                if not has_join:
-                    # Violation: comma-separated tables with no join condition
-                    table_list = ", ".join(tables)
-
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                f"Comma-separated FROM clause with large clinical tables "
-                                f"({table_list}) but no join condition in WHERE clause. "
-                                f"This creates a Cartesian product that can generate billions "
-                                f"of rows and crash the query."
-                            ),
-                            severity=self.severity,
-                            suggested_fix=self.suggested_fix,
-                            details={
-                                "issue": "comma_separated_cross_join",
-                                "tables": tables,
-                            },
-                        )
+                table_list = ", ".join(tables)
+                unjoined_list = ", ".join(unjoined)
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Comma-separated FROM clause with large clinical tables "
+                            f"({table_list}); no predicate connects "
+                            f"{unjoined_list} to the rest of the FROM/JOIN scope. "
+                            f"This creates a Cartesian product that can generate billions "
+                            f"of rows and crash the query."
+                        ),
+                        severity=self.severity,
+                        suggested_fix=self.suggested_fix,
+                        details={
+                            "issue": "comma_separated_cross_join",
+                            "tables": tables,
+                            "unjoined_tables": unjoined,
+                        },
                     )
+                )
 
         return violations
 

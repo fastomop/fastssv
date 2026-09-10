@@ -55,6 +55,8 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
+    select_is_profiling_read,
+    select_scope_tables,
     extract_aliases,
     is_in_where_or_join_clause,
     normalize_name,
@@ -227,6 +229,19 @@ def _has_relationship_filter(tree: exp.Expression, aliases: Dict[str, str]) -> b
 # --- Rule ------------------------------------------------------------------
 
 
+def _has_constant_false_where(tree: exp.Expression) -> bool:
+    for where in tree.find_all(exp.Where):
+        cond = where.this
+        while isinstance(cond, exp.Paren):
+            cond = cond.this
+        if isinstance(cond, exp.Boolean) and not cond.this:
+            return True
+        if isinstance(cond, exp.EQ) and isinstance(cond.this, exp.Literal) and isinstance(cond.expression, exp.Literal):
+            if cond.this.this != cond.expression.this:
+                return True
+    return False
+
+
 @register
 class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
     rule_id = "data_quality.fact_relationship_requires_relationship_concept_filter"
@@ -270,6 +285,19 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
             aliases = extract_aliases(tree)
 
             if not has_table_reference(tree, FACT_RELATIONSHIP):
+                continue
+
+            # `SELECT * FROM fact_relationship WHERE FALSE` (dbplyr zero-row schema probe) analyses nothing.
+
+            if _has_constant_false_where(tree):
+                continue
+            # `SELECT ... LIMIT 1` peeks and `COUNT(*) ... GROUP BY relationship_concept_id` inventories survey the
+            # table on purpose (Achilles analysis 3001, CDMConnector probes).
+            if all(
+                select_is_profiling_read(sel, FACT_RELATIONSHIP, {"relationship_concept_id"})
+                for sel in tree.find_all(exp.Select)
+                if FACT_RELATIONSHIP in select_scope_tables(sel)
+            ):
                 continue
 
             has_filter = _has_relationship_filter(tree, aliases)

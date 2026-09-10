@@ -51,13 +51,14 @@ Correct patterns (read-only):
     INSERT INTO my_analysis_table SELECT * FROM condition_occurrence
 """
 
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
+from fastssv.core.validation_context import get_validation_context
 
 
 # --- Constants -------------------------------------------------------------
@@ -95,47 +96,37 @@ def _is_protected_table(table_name: Optional[str]) -> bool:
     return _norm(table_name) in PROTECTED_TABLES
 
 
-def _extract_target_tables(statement: exp.Expression) -> Set[str]:
-    """
-    Extract target tables for destructive operations.
-    Only extracts the table being modified, not tables in subqueries.
-    """
-    tables: Set[str] = set()
+def _extract_target_tables(statement: exp.Expression) -> Set[Tuple[str, str]]:
+    """Extract destructive-target tables as ``(name, db)`` pairs.
 
-    if isinstance(statement, (exp.Delete, exp.Update)):
-        # DELETE FROM table, UPDATE table
-        # statement.this is the Table
-        if statement.this:
-            if isinstance(statement.this, exp.Table):
-                tables.add(statement.this.name)
-            elif hasattr(statement.this, "name"):
-                tables.add(statement.this.name)
+    ``db`` is the schema qualifier as written (``"cdm"`` for
+    ``cdm.death``, empty string for an unqualified ``death``). The
+    qualifier is what lets the caller distinguish a real OMOP reference
+    from a session-local scratch table that happens to share the name;
+    sqlglot already exposes both via ``exp.Table.name`` / ``.db``.
+    """
+    tables: Set[Tuple[str, str]] = set()
+
+    def _add(node: exp.Expression) -> None:
+        if isinstance(node, exp.Table):
+            tables.add((node.name, node.db or ""))
+        elif hasattr(node, "name") and node.name:
+            tables.add((node.name, ""))
+
+    if isinstance(statement, (exp.Delete, exp.Update)) and statement.this:
+        _add(statement.this)
 
     elif isinstance(statement, exp.TruncateTable):
-        # TRUNCATE TABLE table
-        # Uses expressions list for table(s)
-        if statement.expressions:
-            for table_expr in statement.expressions:
-                if isinstance(table_expr, exp.Table):
-                    tables.add(table_expr.name)
+        for table_expr in statement.expressions or []:
+            _add(table_expr)
 
     elif isinstance(statement, exp.Insert):
-        # INSERT INTO table
-        # statement.this is a Schema, Schema.this is the Table
+        # INSERT INTO table — statement.this is a Schema whose .this is the Table.
         if statement.this and hasattr(statement.this, "this"):
-            table_expr = statement.this.this
-            if isinstance(table_expr, exp.Table):
-                tables.add(table_expr.name)
-            elif hasattr(table_expr, "name"):
-                tables.add(table_expr.name)
+            _add(statement.this.this)
 
-    elif isinstance(statement, (exp.Drop, exp.Alter)):
-        # DROP TABLE table, ALTER TABLE table
-        if statement.this:
-            if isinstance(statement.this, exp.Table):
-                tables.add(statement.this.name)
-            elif hasattr(statement.this, "name"):
-                tables.add(statement.this.name)
+    elif isinstance(statement, (exp.Drop, exp.Alter)) and statement.this:
+        _add(statement.this)
 
     return tables
 
@@ -205,10 +196,29 @@ class DestructiveOperationsOnClinicalTablesRule(Rule):
 
             statements.extend(tree.find_all(DESTRUCTIVE_STATEMENT_TYPES))
 
+            # Only tables created UNQUALIFIED (or TEMP) in the batch can
+            # shadow a protected name. ``local_tables`` (the broader set
+            # the schema rule uses) also contains names from
+            # schema-qualified creates like ``CREATE TABLE backup.death``
+            # — those define ``backup.death``, so an unqualified
+            # ``DELETE FROM death`` still hits the clinical table on the
+            # search path and must keep firing.
+            shadow_tables = get_validation_context().local_unqualified_tables
+
             for stmt in statements:
                 target_tables = _extract_target_tables(stmt)
 
-                protected = {t for t in target_tables if _is_protected_table(t)}
+                # An unqualified target whose name was introduced earlier in
+                # the same batch by an unqualified CREATE [TEMP] TABLE /
+                # CREATE VIEW shadows the protected OMOP name — it's the
+                # analyst's own scratch table, not clinical data.
+                # Schema-qualified targets (e.g. ``cdm.death``) always
+                # count as the real table.
+                protected = {
+                    name
+                    for name, db in target_tables
+                    if _is_protected_table(name) and (db or _norm(name) not in shadow_tables)
+                }
 
                 if not protected:
                     continue

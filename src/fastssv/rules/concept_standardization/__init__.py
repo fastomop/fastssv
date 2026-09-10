@@ -23,7 +23,10 @@ from .unit_vocabulary_validation import UnitVocabularyValidationRule
 from .concept_class_id_ingredient_for_drug_grouping import ConceptClassIdIngredientForDrugGroupingRule
 from .concept_synonym_language_concept_id import ConceptSynonymLanguageConceptIdRule
 
+from .concept_literal_without_hierarchy import ConceptLiteralWithoutHierarchyRule
+
 __all__ = [
+    "ConceptLiteralWithoutHierarchyRule",
     "StandardConceptEnforcementRule",
     "InvalidReasonEnforcementRule",
     "EraTableStandardConceptsRule",

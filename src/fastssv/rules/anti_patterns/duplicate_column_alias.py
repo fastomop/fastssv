@@ -62,6 +62,27 @@ def _normalize_expression(expr: exp.Expression) -> str:
     return sql_str
 
 
+def _is_null_placeholder(expr: exp.Expression) -> bool:
+    """True if ``expr`` is ``NULL`` or ``CAST(NULL AS <type>)``.
+
+    Wide-table INSERT / CTAS patterns (notably OHDSI Achilles, which
+    funnels every analysis through ``achilles_results`` /
+    ``achilles_results_dist`` — fixed-schema tables with five
+    ``stratum_N`` slots and nine distribution columns) pad unused
+    columns with typed NULL placeholders so each per-analysis
+    ``SELECT`` is union-compatible with the shared destination
+    schema. Differing aliases then map to distinct target columns —
+    not copy-paste duplication. Suppressing this case keeps the rule
+    useful for real copy-paste of meaningful expressions
+    (``COUNT(*) AS a, COUNT(*) AS b``).
+    """
+    if isinstance(expr, exp.Null):
+        return True
+    if isinstance(expr, exp.Cast) and isinstance(expr.this, exp.Null):
+        return True
+    return False
+
+
 def _find_duplicate_column_aliases(tree: exp.Expression) -> List[tuple]:
     """Find duplicate column expressions with different aliases.
 
@@ -84,6 +105,11 @@ def _find_duplicate_column_aliases(tree: exp.Expression) -> List[tuple]:
             else:
                 # For non-aliased expressions, use the SQL representation as the "alias"
                 alias = actual_expr.sql()
+
+            # NULL / typed-NULL placeholders are idiomatic padding for
+            # fixed-schema INSERT/CTAS targets — not copy-paste bugs.
+            if _is_null_placeholder(actual_expr):
+                continue
 
             # Normalize the expression for comparison
             normalized = _normalize_expression(actual_expr)

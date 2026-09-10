@@ -5,7 +5,7 @@
 ## Quick reference
 
 ```bash
-uv run fastssv query.sql                       # writes output/validation_report.json
+uv run fastssv query.sql                       # writes output/query_report.json (named after the input file)
 uv run fastssv query.sql --output report.json  # custom path
 uv run fastssv query.sql --combined            # multi-statement input → single combined report
 ```

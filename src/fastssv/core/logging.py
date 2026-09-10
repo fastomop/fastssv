@@ -29,8 +29,23 @@ FORMATS = {
 }
 
 
+# Attributes every LogRecord carries by default (plus the two the logging
+# machinery adds lazily). Anything on the record outside this set arrived
+# via ``extra=`` and belongs in the JSON output.
+_RESERVED_LOG_RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {
+    "message",
+    "asctime",
+    "taskName",
+}
+
+
 class JSONFormatter(logging.Formatter):
-    """Custom JSON formatter for structured logging."""
+    """Custom JSON formatter for structured logging.
+
+    Every field passed via ``extra=`` is serialized into the JSON line
+    (request_id, sql_hash, dialect, …), not just a fixed allowlist —
+    otherwise request-ID correlation across log lines is impossible.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
@@ -41,13 +56,14 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Add extra fields if present
-        if hasattr(record, "duration_ms"):
-            log_data["duration_ms"] = record.duration_ms
-        if hasattr(record, "rule_id"):
-            log_data["rule_id"] = record.rule_id
-        if hasattr(record, "violation_count"):
-            log_data["violation_count"] = record.violation_count
+        for key, value in record.__dict__.items():
+            if key in _RESERVED_LOG_RECORD_ATTRS or key in log_data:
+                continue
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError):
+                value = repr(value)
+            log_data[key] = value
 
         # Add exception info if present
         if record.exc_info:

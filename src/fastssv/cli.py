@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Sequence
 
 from fastssv import validate_sql_structured
 from fastssv.core.base import RuleViolation, Severity
+from fastssv.core.helpers import (
+    collect_locally_defined_tables,
+    collect_locally_defined_unqualified_tables,
+)
 from fastssv.core.helpers import detect_dialect as _auto_detect_dialect
 from fastssv.core.helpers import split_sql_statements
 from fastssv.core.logging import (
@@ -207,14 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--categories",
         nargs="*",
         choices=[
-            "analytics",
             "anti_patterns",
             "concept_standardization",
             "data_quality",
             "domain_specific",
             "joins",
-            "performance",
-            "schema",
             "temporal",
         ],
         help="Rule categories to run (default: all).",
@@ -227,8 +228,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         "-o",
-        default="output/validation_report.json",
-        help="Output JSON report file path (default: output/validation_report.json).",
+        default=None,
+        help=(
+            "Output JSON report file path (default: output/<input-file-name>_report.json, "
+            "or output/validation_report.json when reading from stdin)."
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -249,6 +253,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(args_list)
 
+    # Derive the default report path from the input file name so runs on
+    # different files don't overwrite each other's reports.
+    if args.output is None:
+        if args.sql_file:
+            args.output = str(Path("output") / f"{Path(args.sql_file).stem}_report.json")
+        else:
+            args.output = "output/validation_report.json"
+
     # Setup logging
     logger = setup_logging(
         level=args.log_level,
@@ -257,13 +269,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     logger.debug(f"FastSSV CLI started with args: {vars(args)}")
 
-    # Read SQL input
+    # Read SQL input. OSError covers the missing/unreadable-file family;
+    # surface it as a one-line message + exit code 2 (usage/input error)
+    # rather than a raw traceback.
     try:
         sql = _clean_llm_output(_read_sql(args.sql_file))
-        logger.info(f"Read SQL input: {len(sql)} characters from {args.sql_file or 'stdin'}")
-    except Exception as e:
+    except (OSError, UnicodeDecodeError) as e:
         logger.error(f"Failed to read SQL input: {e}")
-        raise
+        print(f"error: cannot read SQL from {args.sql_file or 'stdin'}: {e}", file=sys.stderr)
+        return 2
+    logger.info(f"Read SQL input: {len(sql)} characters from {args.sql_file or 'stdin'}")
 
     # Split into queries
     queries = _split_queries(sql)
@@ -276,16 +291,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info(f"Auto-detected dialect: {dialect}")
         print(f"Auto-detected dialect: {dialect}")
 
-    # Set validation context for strict mode
+    # Set validation context for strict mode + cross-statement scope.
+    # Seed ``local_tables`` from the *whole* input — when the CLI iterates
+    # per-statement validation below, the schema rule still needs to know
+    # which scratch tables were created earlier in the batch (Achilles
+    # writes ``CREATE TABLE scratch.tempResults_N AS …`` once, then queries
+    # ``tempResults_N`` from many later statements).
     from fastssv.core.validation_context import ValidationContext, set_validation_context
 
+    local_tables = collect_locally_defined_tables(sql, dialect)
+    local_unqualified = collect_locally_defined_unqualified_tables(sql, dialect)
+    if local_tables:
+        logger.info(f"Detected {len(local_tables)} locally-defined tables across the batch")
+
+    context = ValidationContext(
+        strict_mode=args.strict,
+        dialect=dialect,
+        local_tables=local_tables,
+        local_unqualified_tables=local_unqualified,
+    )
+    set_validation_context(context)
     if args.strict:
-        set_validation_context(ValidationContext(strict_mode=True, dialect=dialect))
         logger.info("Strict mode enabled")
         print("Strict mode enabled: best-practice warnings escalated to errors")
     else:
         # Default mode: best practices are warnings, only correctness issues are errors
-        set_validation_context(ValidationContext(strict_mode=False, dialect=dialect))
         logger.info("Default validation mode (best practices = WARNING, correctness = ERROR)")
 
     if len(queries) <= 1 or args.combined:

@@ -232,11 +232,32 @@ def _is_target_column(col: exp.Column, aliases: Dict[str, str]) -> Optional[str]
     """If ``col`` resolves to a registered target column, return its
     normalized name. Otherwise None.
     """
-    _, col_name = resolve_table_col(col, aliases)
+    table, col_name = resolve_table_col(col, aliases)
     norm = _norm(col_name)
-    if norm in TARGETS:
+    if norm not in TARGETS:
+        return None
+    # Provenance: the literal is only checkable against a column that IS the CDM vocabulary column. A same-named
+    # column on a derived / intermediate table (`og_* ... LOWER(domain_id) AS domain_id`) carries transformed
+    # values — 90/90 findings of this rule on expert SQL were that shape.
+    from fastssv.schemas import CDM_COLUMNS
+
+    cdm_tables = {_norm(t) for t in CDM_COLUMNS}
+    if table:
+        return norm if _norm(table) in cdm_tables else None
+    select = col.find_ancestor(exp.Select)
+    if select is None:
         return norm
-    return None
+    from fastssv.core.helpers import select_scope_tables
+
+    scope = select_scope_tables(select)
+    derived = any(
+        not isinstance((j.this if not isinstance(j, exp.Table) else j), exp.Table)
+        for j in [select.args.get("from_") or select.args.get("from"), *(select.args.get("joins") or [])]
+        if j is not None
+    )
+    if derived or not scope or not scope <= cdm_tables:
+        return None
+    return norm
 
 
 def _is_wrapped_in_function(node: exp.Column) -> bool:

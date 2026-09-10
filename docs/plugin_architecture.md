@@ -290,14 +290,14 @@ for v in violations:
 Current registered category counts (see [rules_reference.md](rules_reference.md)
 for the full list):
 
-- `anti_patterns`: 20
+- `anti_patterns`: 21
 - `concept_standardization`: 18
 - `data_quality`: 22
 - `domain_specific`: 48
 - `joins`: 36
 - `temporal`: 10
 
-**Total: 154**
+**Total: 155**
 
 Representative examples from the current public categories:
 

@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from slowapi.util import get_remote_address
 
 from fastssv import validate_sql_structured
+from fastssv.api._validation import ValidationCapacityError, run_bounded
 from fastssv.api.config import Settings
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
@@ -194,11 +195,32 @@ async def ui_validate(
 
     statements = split_sql_statements(sql) or [sql]
 
+    request_id = getattr(request.state, "request_id", None)
+
+    # Same per-worker concurrency bound as /v1/validate: a timed-out parse
+    # keeps its thread busy, so refuse new work instead of pinning the pool.
+    # run_bounded holds the permit until the worker thread finishes.
+    limiter = getattr(request.app.state, "validation_limiter", None)
+
     started = time.perf_counter()
     try:
-        per_query = await asyncio.wait_for(
-            asyncio.to_thread(_validate_each, statements, dialect),
+        per_query = await run_bounded(
+            _validate_each,
+            statements,
+            dialect,
+            limiter=limiter,
             timeout=settings.parse_timeout_seconds,
+        )
+    except ValidationCapacityError:
+        logger.warning(
+            "ui_validation_capacity_exceeded",
+            extra={"sql_hash": _sql_hash(sql), "client": get_remote_address(request), "request_id": request_id},
+        )
+        return _render_results(
+            request,
+            error="Server busy.",
+            detail="Validation capacity is exhausted; retry in a moment.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     except asyncio.TimeoutError:
         logger.warning(
@@ -208,6 +230,7 @@ async def ui_validate(
                 "dialect": dialect,
                 "query_count": len(statements),
                 "client": get_remote_address(request),
+                "request_id": request_id,
             },
         )
         return _render_results(
@@ -217,7 +240,7 @@ async def ui_validate(
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
     except Exception:
-        logger.exception("ui_validation_error")
+        logger.exception("ui_validation_error", extra={"request_id": request_id})
         return _render_results(
             request,
             error="Internal error.",
@@ -295,6 +318,7 @@ async def ui_validate(
             "warnings": total_warnings,
             "duration_ms": round(duration_ms, 2),
             "client": get_remote_address(request),
+            "request_id": request_id,
         },
     )
 

@@ -50,6 +50,45 @@ def _is_year_of_birth_column(col: exp.Column, aliases: dict) -> bool:
     return real_tables == {PERSON}
 
 
+def _is_in_coarse_age_bin(sub: exp.Sub, min_bin: int = 5) -> bool:
+    """True iff ``sub`` sits inside ``FLOOR((...)/N)`` with N >= min_bin.
+
+    Off-by-one from year-only age arithmetic only matters when it can
+    change the *outcome* of the analysis. Coarse age binning (decade
+    groups, five-year groups) absorbs the error — at most one person
+    near a bucket boundary slides between adjacent buckets, swamped by
+    everyone else in the bin. OHDSI Achilles emits exactly this idiom
+    for age-distribution stratification: ``FLOOR((event_year -
+    year_of_birth) / 10) AS stratum_N``. Suppressing the warning here
+    keeps the rule firing on the patterns that genuinely matter:
+    cutoff comparisons (``>= 65``) and raw-age projections whose
+    downstream use is unknown.
+
+    The walk is intentionally lenient about ``Paren`` wrappers between
+    ``Floor`` and ``Div`` so dialect-specific formatting differences
+    don't smuggle the FP back in. ``find_ancestor`` is OK because we
+    re-verify the direct ``Floor → Div → numerator → Sub`` chain
+    before suppressing.
+    """
+    floor_anc = sub.find_ancestor(exp.Floor)
+    if floor_anc is None:
+        return False
+    inner = floor_anc.this
+    while isinstance(inner, exp.Paren):
+        inner = inner.this
+    if not isinstance(inner, exp.Div):
+        return False
+    if not any(node is sub for node in inner.this.walk()):
+        return False
+    denom = inner.expression
+    if not isinstance(denom, exp.Literal) or denom.is_string:
+        return False
+    try:
+        return int(denom.this) >= min_bin
+    except (ValueError, TypeError):
+        return False
+
+
 def _is_year_extracting_expr(node: exp.Expression) -> bool:
     """True if ``node`` is a YEAR-returning expression: EXTRACT(YEAR FROM ...),
     YEAR(...), DATE_PART('year', ...), or a 4-digit year literal.
@@ -165,6 +204,14 @@ class PersonYearOfBirthAgeArithmeticRule(Rule):
                     isinstance(other_side, exp.Column) and not _is_year_of_birth_column(other_side, aliases)
                 )
                 if not fires:
+                    continue
+
+                # Context tier: if the age expression is wrapped in a
+                # coarse age bucket (FLOOR((...)/N) with N >= 5),
+                # year-precision error is absorbed by the binning and
+                # the warning is noise. Keep firing on raw projections
+                # and cutoff comparisons.
+                if _is_in_coarse_age_bin(sub):
                     continue
 
                 key = sub.sql()

@@ -144,7 +144,7 @@ def test_validate_sql_tool_matches_direct_validator(client: TestClient):
             "method": "tools/call",
             "params": {
                 "name": "validate_sql",
-                "arguments": {"sql": bad_sql, "dialect": "postgres", "strict": False},
+                "arguments": {"sql": bad_sql, "dialect": "postgres", "strict": False, "include_warnings": True},
             },
         },
         session_id=sid,
@@ -165,6 +165,32 @@ def test_validate_sql_tool_matches_direct_validator(client: TestClient):
     direct_ids = sorted(v.rule_id for v in direct)
     mcp_ids = sorted(v["rule_id"] for v in structured["errors"] + structured["warnings"])
     assert mcp_ids == direct_ids
+
+
+def test_validate_sql_tool_omits_warnings_by_default(client: TestClient):
+    """Agent-facing default: errors only (warnings caused churn and correct→wrong edits in the feedback study);
+    warning_count still reports that warnings exist."""
+    sql = (
+        "SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co "
+        "WHERE co.condition_start_date > DATE '2020-01-01';"
+    )  # warning-only query (observation-period anchoring)
+    sid = _initialize(client)
+    resp = _post(
+        client,
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "validate_sql", "arguments": {"sql": sql, "dialect": "postgres"}},
+        },
+        session_id=sid,
+    )
+    assert resp.status_code == 200, resp.text
+    structured = _parse_sse_or_json(resp)["result"]["structuredContent"]
+    assert structured["warning_count"] >= 1
+    assert structured["warnings"] == []
+    assert all(stmt["warnings"] == [] for stmt in structured["results"])
+    assert structured["is_valid"] is True
 
 
 def test_origin_disallowed_returns_403(client: TestClient):

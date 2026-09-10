@@ -32,7 +32,7 @@ uv run fastssv serve --prod --workers 4    # tune worker count
 
 Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
-rule registry once at startup (~154 rules, sub-second).
+rule registry once at startup (~157 rules, sub-second).
 
 The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`uv add "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
 
@@ -64,11 +64,14 @@ prefix. Defaults are production-sane.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FASTSSV_API_MAX_SQL_BYTES` | `100000` | Maximum SQL body size. Requests exceeding this return `413`. |
-| `FASTSSV_API_PARSE_TIMEOUT_SECONDS` | `5.0` | Hard ceiling per validation call. Exceeded → `408`. |
-| `FASTSSV_API_RATE_LIMIT` | `60/minute` | `slowapi`-format limit applied per client IP. |
+| `FASTSSV_API_PARSE_TIMEOUT_SECONDS` | `5.0` | Hard ceiling per validation call. Exceeded → `408`. The CPU-bound parse itself cannot be cancelled and finishes on its worker thread — pair with the concurrency bound below. |
+| `FASTSSV_API_MAX_CONCURRENT_VALIDATIONS` | `8` | Per-worker bound on concurrent validation work. When saturated the API fails fast with `503` + `Retry-After` instead of queueing onto pinned threads. |
+| `FASTSSV_API_RATE_LIMIT` | `60/minute` | `slowapi`-format limit applied per client IP. `/v1/health` is exempt so health probes are never throttled. |
+| `FASTSSV_API_RATE_LIMIT_STORAGE_URI` | _(empty)_ | Rate-limit storage backend. Empty = in-memory, which is **per-process** (N workers → N× the limit, reset on restart). Point at a shared backend (e.g. `redis://host:6379`) for a real cross-worker limit. |
 | `FASTSSV_API_CORS_ORIGINS` | `[]` | Comma-separated list of allowed origins. Empty = CORS disabled. |
 | `FASTSSV_API_LOG_LEVEL` | `INFO` | Root logger level (`DEBUG`/`INFO`/`WARNING`/`ERROR`). |
 | `FASTSSV_API_BEHIND_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. The compose file defaults this to `true`; in-code default is `false` for direct execution. |
+| `FASTSSV_API_TRUSTED_PROXY_HOSTS` | `*` | Peers whose `X-Forwarded-*` headers are trusted when `BEHIND_PROXY=true` (comma-separated IPs/CIDRs). Narrow to your proxy's address unless the app is reachable only through the proxy — `*` lets a direct client spoof its IP via `X-Forwarded-For`. |
 | `FASTSSV_API_MCP_ENABLED` | `false` | Mount the MCP Streamable HTTP endpoint at `/mcp` (requires the `[mcp]` extra). Opt-in because the endpoint is unauthenticated at the app layer; gate it at your reverse proxy before enabling. See [MCP server](mcp.md). |
 | `FASTSSV_API_MCP_ALLOWED_ORIGINS` | `[]` | CSV/JSON list of `Origin` values permitted on `/mcp` from a browser. Empty = closed (any present-but-unlisted Origin → 403). |
 | `FASTSSV_API_MCP_AUTH_MODE` | `none` | Reserved for future OAuth 2.1 conformance. Today pinned to `"none"`. |
@@ -178,7 +181,7 @@ metadata, filter by category, etc.
 **Response (200):**
 ```json
 {
-  "total": 154,
+  "total": 157,
   "rules": [
     {
       "rule_id": "anti_patterns.ambiguous_column_reference",
@@ -199,8 +202,8 @@ Liveness probe. Always `200 OK` unless the process cannot service requests.
 ```json
 {
   "status": "ok",
-  "version": "0.2.0",
-  "rules_loaded": 154
+  "version": "0.3.0",
+  "rules_loaded": 155
 }
 ```
 

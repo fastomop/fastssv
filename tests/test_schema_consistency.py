@@ -1,8 +1,8 @@
 """Schema consistency tests.
 
 Freezes the single-source-of-truth contract: ``CDM_COLUMN_TYPES`` is
-canonical, and ``CDM_COLUMNS`` and ``STANDARD_CONCEPT_FIELDS`` must
-reference only columns that exist there.
+canonical, and ``CDM_COLUMNS``, ``STANDARD_CONCEPT_FIELDS``, and
+``SOURCE_CONCEPT_FIELDS`` must reference only columns that exist there.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import pytest
 from fastssv.schemas import (
     CDM_COLUMN_TYPES,
     CDM_COLUMNS,
+    SOURCE_CONCEPT_FIELDS,
     STANDARD_CONCEPT_FIELDS,
 )
 
@@ -34,3 +35,21 @@ def test_standard_concept_field_exists(table: str, column: str) -> None:
     assert column in CDM_COLUMN_TYPES.get(table, {}), (
         f"STANDARD_CONCEPT_FIELDS declares ('{table}', '{column}') but that column is not in CDM_COLUMN_TYPES"
     )
+
+
+@pytest.mark.parametrize(
+    "table, column",
+    sorted(SOURCE_CONCEPT_FIELDS),
+)
+def test_source_concept_field_exists(table: str, column: str) -> None:
+    assert column in CDM_COLUMN_TYPES.get(table, {}), (
+        f"SOURCE_CONCEPT_FIELDS declares ('{table}', '{column}') but that column is not in CDM_COLUMN_TYPES"
+    )
+
+
+def test_standard_and_source_concept_sets_are_disjoint() -> None:
+    """A (table, column) pair must be exactly one of standard or source —
+    never both. Overlap means the OMOP CDM model is being misread and the
+    rule that consumes these sets will fire inconsistently."""
+    overlap = STANDARD_CONCEPT_FIELDS & SOURCE_CONCEPT_FIELDS
+    assert not overlap, f"Standard / source concept-field sets overlap: {sorted(overlap)}"

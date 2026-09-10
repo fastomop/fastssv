@@ -92,3 +92,24 @@ class TestCorsOriginsValidator:
     def test_cors_allow_origins_empty_returns_empty_list(self):
         settings = _make_settings(cors_origins="")
         assert settings.cors_allow_origins() == []
+
+
+class TestHardeningSettings:
+    def test_defaults(self):
+        settings = _make_settings()
+        assert settings.max_concurrent_validations == 8
+        assert settings.rate_limit_storage_uri == ""
+        assert settings.trusted_proxy_hosts == "*"
+
+    def test_env_overrides(self, monkeypatch):
+        monkeypatch.setenv("FASTSSV_API_MAX_CONCURRENT_VALIDATIONS", "2")
+        monkeypatch.setenv("FASTSSV_API_RATE_LIMIT_STORAGE_URI", "redis://redis:6379")
+        monkeypatch.setenv("FASTSSV_API_TRUSTED_PROXY_HOSTS", "10.0.0.0/8, 192.168.0.1")
+        settings = _make_settings()
+        assert settings.max_concurrent_validations == 2
+        assert settings.rate_limit_storage_uri == "redis://redis:6379"
+        assert settings.trusted_proxy_hosts == "10.0.0.0/8, 192.168.0.1"
+
+    def test_concurrency_bounds_enforced(self):
+        with pytest.raises(Exception):
+            _make_settings(max_concurrent_validations=0)

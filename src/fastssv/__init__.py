@@ -58,7 +58,7 @@ def validate_sql(
             'dialect': str,              # The dialect actually used
         }
     """
-    from fastssv.core.helpers import parse_sql, detect_dialect
+    from fastssv.core.helpers import parse_sql, detect_dialect, looks_like_unrendered_template
 
     if dialect == "auto":
         dialect = detect_dialect(sql)
@@ -77,6 +77,13 @@ def validate_sql(
         "parse_error": None,
         "dialect": dialect,
     }
+
+    # Unrendered SqlRender templates are an input-shape mismatch; rules
+    # would just produce noise about placeholder fragments. Short-circuit
+    # with one structured WARNING before parsing.
+    if looks_like_unrendered_template(sql):
+        results["violations"].append(_make_template_skipped_violation())
+        return results
 
     # Check parse status up-front. If parsing fails, no rules can run, so
     # we return the parse error rather than a misleading empty result.
@@ -118,8 +125,7 @@ def validate_sql(
 
     # Run rules and collect violations
     for rule_cls in rule_classes:
-        rule = rule_cls()
-        violations = rule.validate(sql, dialect)
+        violations = _run_rule(rule_cls, sql, dialect)
         results["violations"].extend(violations)
 
         # Populate grouped fields
@@ -138,6 +144,73 @@ def validate_sql(
 
 PARSE_ERROR_RULE_ID = "parse.syntax_error"
 NOT_SQL_RULE_ID = "parse.not_sql_input"
+TEMPLATE_RULE_ID = "meta.unrendered_sqlrender_template"
+RULE_EXECUTION_ERROR_RULE_ID = "meta.rule_execution_error"
+
+
+def _make_rule_error_violation(rule_id: str, exc: Exception) -> RuleViolation:
+    """Build the WARNING emitted when a rule raises instead of returning.
+
+    One misbehaving rule must not abort the whole batch (library/CLI) or
+    turn into a 500 (API): the registry runs 150+ rules, any of which can
+    hit an AST shape its author didn't anticipate. WARNING rather than
+    ERROR because the *query* isn't known to be wrong — the validator is —
+    so a clean query shouldn't flip to INVALID over an internal bug.
+    """
+    return RuleViolation(
+        rule_id=RULE_EXECUTION_ERROR_RULE_ID,
+        severity=Severity.WARNING,
+        message=(
+            f"Internal error while running rule '{rule_id}': "
+            f"{type(exc).__name__}: {exc}. The rule was skipped; all other "
+            "rules still ran."
+        ),
+        suggested_fix=(
+            "FREEFORM: this is a bug in fastssv, not in your SQL. Report it "
+            f"(with the SQL and rule id '{rule_id}') at "
+            "https://github.com/fastomop/fastSSV/issues."
+        ),
+        details={"failed_rule_id": rule_id, "error": f"{type(exc).__name__}: {exc}", "category": "internal"},
+    )
+
+
+def _run_rule(rule_cls, sql: str, dialect: str) -> List[RuleViolation]:
+    """Instantiate and run one rule, isolating any exception it raises."""
+    try:
+        return rule_cls().validate(sql, dialect)
+    except Exception as exc:
+        rule_id = getattr(rule_cls, "rule_id", rule_cls.__name__)
+        _logger.exception(f"Rule {rule_id} raised during validation; skipping it")
+        return [_make_rule_error_violation(rule_id, exc)]
+
+
+def _make_template_skipped_violation() -> RuleViolation:
+    """Build the single warning emitted when the input is a SqlRender template.
+
+    An unrendered template is a *category mismatch*, not a bug in the
+    query: the file is meant to be processed by SqlRender first to
+    substitute its ``@<identifier>`` placeholders. Running the rule
+    catalog against it would only produce truthful-but-useless
+    "table/column doesn't exist in CDM" errors for every placeholder
+    name. We short-circuit with one structured WARNING so consumers see
+    that fastssv noticed, why it skipped, and what to do about it.
+    """
+    return RuleViolation(
+        rule_id=TEMPLATE_RULE_ID,
+        severity=Severity.WARNING,
+        message=(
+            "Input contains unrendered SqlRender `@<identifier>` placeholders "
+            "(e.g. inside a table name or as a schema/column qualifier). "
+            "Rule validation was skipped — these files are templates, not "
+            "concrete SQL."
+        ),
+        suggested_fix=(
+            "REWRITE: run SqlRender first (``SqlRender::render(sql, ...)`` "
+            "in R, or the equivalent Java/Python port) to substitute every "
+            "@<param>, then re-submit the resulting SQL for validation."
+        ),
+        details={"category": "input_shape"},
+    )
 
 
 def _make_parse_error_violation(error_message: str, sql: str = "") -> RuleViolation:
@@ -215,10 +288,16 @@ def validate_sql_structured(
           the SQL could not be parsed; rules were not executed.
         - Multiple violations mean one or more rules detected issues.
     """
-    from fastssv.core.helpers import parse_sql, detect_dialect
+    from fastssv.core.helpers import parse_sql, detect_dialect, looks_like_unrendered_template
 
     if dialect == "auto":
         dialect = detect_dialect(sql)
+
+    # Unrendered SqlRender templates: short-circuit with a single WARNING
+    # rather than running the rule catalogue against placeholder fragments.
+    if looks_like_unrendered_template(sql):
+        _logger.info("Skipped rule execution: input is an unrendered SqlRender template")
+        return [_make_template_skipped_violation()]
 
     # Check parse status up-front so callers can distinguish clean SQL from
     # unparseable input. Individual rules also call parse_sql() internally and
@@ -245,17 +324,15 @@ def validate_sql_structured(
     # Run rules and collect violations
     violations = []
     for rule_cls in rule_classes:
-        rule = rule_cls()
-
         # Time rule execution if performance logging enabled
         start_time = time.perf_counter()
-        rule_violations = rule.validate(sql, dialect)
+        rule_violations = _run_rule(rule_cls, sql, dialect)
         duration_ms = (time.perf_counter() - start_time) * 1000
 
         violations.extend(rule_violations)
 
         # Log rule execution
-        log_rule_execution(_logger, rule.rule_id, len(rule_violations), duration_ms)
+        log_rule_execution(_logger, rule_cls.rule_id, len(rule_violations), duration_ms)
 
     _logger.info(f"Executed {len(rule_classes)} rules, found {len(violations)} violations before deduplication")
 
@@ -281,8 +358,7 @@ def _validate_category_strings(sql: str, category: str, dialect: str = "postgres
 
     results: List[str] = []
     for rule_cls in get_rules_by_category(category):
-        rule = rule_cls()
-        for v in rule.validate(sql, dialect):
+        for v in _run_rule(rule_cls, sql, dialect):
             prefix = "Warning: " if v.severity == Severity.WARNING else ""
             results.append(f"{prefix}{v.message}")
     return results
@@ -379,6 +455,8 @@ __all__ = [
     "validate_sql_structured",
     "PARSE_ERROR_RULE_ID",
     "NOT_SQL_RULE_ID",
+    "TEMPLATE_RULE_ID",
+    "RULE_EXECUTION_ERROR_RULE_ID",
     # Core classes
     "Rule",
     "RuleViolation",

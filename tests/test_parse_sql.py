@@ -12,8 +12,13 @@ from __future__ import annotations
 
 import pytest
 
-from fastssv import NOT_SQL_RULE_ID, PARSE_ERROR_RULE_ID, validate_sql_structured
-from fastssv.core.helpers import looks_like_prose, parse_sql
+from fastssv import (
+    NOT_SQL_RULE_ID,
+    PARSE_ERROR_RULE_ID,
+    TEMPLATE_RULE_ID,
+    validate_sql_structured,
+)
+from fastssv.core.helpers import looks_like_prose, looks_like_unrendered_template, parse_sql
 
 
 # ---- parse_sql: structural validity -----------------------------------------
@@ -83,6 +88,12 @@ def test_comment_only_rejected() -> None:
         "INSERT INTO person (person_id) VALUES (1)",
         "UPDATE person SET year_of_birth = 1990 WHERE person_id = 1",
         "DELETE FROM person WHERE person_id = 1",
+        # Maintenance ops emitted by OHDSI Achilles between CTAS and
+        # downstream queries — must parse cleanly (sqlglot returns an
+        # ``exp.Analyze`` node, which used to be rejected as
+        # "Input did not parse as a SQL statement (got Analyze)").
+        "ANALYZE tempResults_104",
+        "ANALYZE scratch.tmpach_0",
     ],
 )
 def test_real_sql_parses_cleanly(sql: str) -> None:
@@ -186,3 +197,90 @@ def test_genuine_syntax_error_still_uses_parse_error_rule() -> None:
     violations = validate_sql_structured("SELECT FROM WHERE")
     assert len(violations) == 1
     assert violations[0].rule_id == PARSE_ERROR_RULE_ID
+
+
+# ---- looks_like_unrendered_template: SqlRender @placeholder detector --------
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Achilles shapes captured from output/rendered_pg/Achilles/.../analyses
+        "CREATE TABLE scratch.tmpach_overallStats_1 AS SELECT * FROM scratch.tmpach_@domainId_cost_raw",
+        "SELECT 1 FROM @vocabDatabaseSchema.concept WHERE concept_id = 0",
+        "SELECT B.@domainId_concept_id FROM B",
+        "DROP TABLE IF EXISTS results.achilles_@detailType",
+        "INSERT INTO scratch.tmpach_@domainId_rawCost SELECT 1",
+    ],
+)
+def test_template_detected(sql: str) -> None:
+    assert looks_like_unrendered_template(sql) is True
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Real SQL — no SqlRender placeholders in identifier-embedded /
+        # dotted positions.
+        "SELECT * FROM person WHERE year_of_birth > 1950",
+        "SELECT * FROM cdm.cost c JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id",
+        # TSQL ``DECLARE @var`` — bare standalone variable, no dotted /
+        # embedded usage. Must NOT be flagged.
+        "DECLARE @cnt INT; SELECT @cnt = COUNT(*) FROM person; SELECT @cnt;",
+        "SELECT * FROM person WHERE person_id = @cnt",
+        # TSQL system functions use a double ``@``; must NOT be flagged
+        # even though they appear after dots in other shapes.
+        "SELECT @@version, @@rowcount, @@trancount",
+        # @-characters that live inside string literals or comments aren't
+        # placeholders — the detector strips both before scanning.
+        "SELECT * FROM person WHERE email = 'alice@example.com'",
+        "-- TODO: substitute @schema later\nSELECT 1",
+        "/* SqlRender pseudo-code: @schema.table */ SELECT 1",
+    ],
+)
+def test_template_not_detected(sql: str) -> None:
+    assert looks_like_unrendered_template(sql) is False
+
+
+@pytest.mark.parametrize("text", ["", "   ", "\n\t", "/* only comment */"])
+def test_empty_input_not_flagged_as_template(text: str) -> None:
+    assert looks_like_unrendered_template(text) is False
+
+
+# ---- validate_sql_structured short-circuits on unrendered templates ---------
+
+
+def test_unrendered_template_short_circuits_with_warning() -> None:
+    """Achilles cost_distribution_template.sql shape: rules must not run;
+    the result is a single WARNING-severity meta violation explaining why.
+    """
+    template_sql = (
+        "CREATE TABLE scratch.tmpach_overallStats_1 AS "
+        "SELECT subject_id, CAST(avg(1.0 * @costColumn) AS NUMERIC) AS avg_value "
+        "FROM scratch.tmpach_@domainId_cost_raw "
+        "WHERE @costColumn IS NOT NULL GROUP BY subject_id"
+    )
+    violations = validate_sql_structured(template_sql)
+    assert len(violations) == 1
+    v = violations[0]
+    assert v.rule_id == TEMPLATE_RULE_ID
+    assert v.severity.value == "warning"
+    # No name-matching rule should have been allowed to fire on the
+    # placeholder — that's the whole point of the short-circuit.
+    assert all(x.rule_id != "data_quality.schema_validation" for x in violations)
+
+
+def test_unrendered_template_check_runs_before_parse_error() -> None:
+    """A template that also happens to be unparseable should still surface
+    as a template, not a parse error — the input shape diagnosis is more
+    informative."""
+    template_sql = "SELECT @col, FROM @schema.x WHERE"  # malformed AND template
+    violations = validate_sql_structured(template_sql)
+    assert len(violations) == 1
+    assert violations[0].rule_id == TEMPLATE_RULE_ID
+
+
+def test_clean_sql_not_intercepted_by_template_gate() -> None:
+    """Sanity: ordinary SQL still flows through to the normal rule pass."""
+    violations = validate_sql_structured("SELECT person_id FROM person")
+    assert all(v.rule_id != TEMPLATE_RULE_ID for v in violations)

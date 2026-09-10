@@ -45,6 +45,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
+    select_local_aliases,
     extract_aliases,
     normalize_name,
     parse_sql,
@@ -146,6 +147,10 @@ def _detect(
 
     # --- Discover tables ---------------------------------------------------
     for table in tree.find_all(exp.Table):
+        # A write target (`INSERT INTO cohort SELECT ... FROM condition_occurrence`) is not a source that
+        # needs joining.
+        if table.find_ancestor(exp.Insert, exp.Create) is not None and table.find_ancestor(exp.Select) is None:
+            continue
         t = _normalize_table(table.name)
 
         if _is_clinical(t):
@@ -154,7 +159,23 @@ def _detect(
         if _is_person(t):
             person_aliases.add(t)
 
-    if not clinical_tables or not has_table_reference(tree, COHORT):
+    cohort_read = any(
+        _is_cohort(_normalize_table(t.name))
+        for t in tree.find_all(exp.Table)
+        if not (t.find_ancestor(exp.Insert, exp.Create) is not None and t.find_ancestor(exp.Select) is None)
+    )
+    if not clinical_tables or not cohort_read:
+        return errors_by_table
+    # Only a clinical table read in the SAME select scope as a cohort source (base table or derived `... AS cohort`)
+    # needs a join to it; a CTE that profiles observation_period and another that reads cohort are unrelated.
+    co_scoped: Set[str] = set()
+    for sel in tree.find_all(exp.Select):
+        local = select_local_aliases(sel)
+        names = set(local.values()) | {_normalize_table(a) for a in local}
+        if any(_is_cohort(n) for n in names):
+            co_scoped |= {n for n in names if _is_clinical(n)}
+    clinical_tables &= co_scoped
+    if not clinical_tables:
         return errors_by_table
 
     # --- Status tracking ---------------------------------------------------
@@ -178,6 +199,11 @@ def _detect(
 
         lt, lc = resolve_table_col(left, aliases)
         rt, rc = resolve_table_col(right, aliases)
+        # `ON subject_id = person.person_id`: an unqualified subject_id can only come from the cohort source.
+        if not lt and _norm(lc) == SUBJECT_ID:
+            lt = COHORT
+        if not rt and _norm(rc) == SUBJECT_ID:
+            rt = COHORT
 
         if not (lt and lc and rt and rc):
             continue

@@ -19,6 +19,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from fastssv.api._validation import ValidationLimiter
 from fastssv.api.config import Settings, get_settings
 from fastssv.api.models import ErrorResponse
 from fastssv.api.routes import router
@@ -57,6 +58,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("Permissions-Policy", "interest-cohort=()")
+        # All assets are vendored under /static (htmx, prism), so 'self'
+        # covers scripts/styles; 'unsafe-inline' is required by the inline
+        # <script> blocks and onclick= handlers in the templates, and
+        # data: by the inline SVG backgrounds in style.css.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "connect-src 'self'; object-src 'none'; base-uri 'self'; "
+            "form-action 'self'; frame-ancestors 'none'",
+        )
         return response
 
 
@@ -152,6 +164,7 @@ def _rules_count() -> int:
 def _install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def on_http_exception(request: Request, exc: HTTPException):
+        # Propagate any headers the raiser attached (e.g. Retry-After on 503).
         return JSONResponse(
             status_code=exc.status_code,
             content=ErrorResponse(
@@ -159,6 +172,7 @@ def _install_exception_handlers(app: FastAPI) -> None:
                 message=str(exc.detail),
                 request_id=getattr(request.state, "request_id", None),
             ).model_dump(),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -193,6 +207,7 @@ def _http_error_slug(code: int) -> str:
         413: "payload_too_large",
         422: "invalid_request",
         429: "rate_limited",
+        503: "service_unavailable",
     }.get(code, "error")
 
 
@@ -224,7 +239,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     _configure_logging(settings.log_level)
 
-    limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit])
+    limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=[settings.rate_limit],
+        # Default memory:// storage is per-process; set
+        # FASTSSV_API_RATE_LIMIT_STORAGE_URI (e.g. redis://...) for a
+        # cross-worker limit. See Settings.rate_limit_storage_uri.
+        storage_uri=settings.rate_limit_storage_uri or None,
+    )
+    # Health probes must never be throttled into 429s by client traffic
+    # sharing the same source IP (LB health checks, kubelet probes).
+    from fastssv.api.routes import health
+
+    limiter.exempt(health)
 
     mcp_app = _maybe_build_mcp_app(settings)
     mcp_apps = [mcp_app] if mcp_app is not None else []
@@ -241,6 +268,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.limiter = limiter
     app.state.mcp_mounted = mcp_app is not None
+    # Bounds concurrent validation work per worker process; run_validation
+    # fails fast with 503 when saturated (see Settings.max_concurrent_validations).
+    # Permits are tied to worker-thread lifetime, not request lifetime — a
+    # timed-out request's parse still occupies its permit until it finishes.
+    app.state.validation_limiter = ValidationLimiter(settings.max_concurrent_validations)
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -263,7 +295,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestIDMiddleware)
 
     if settings.behind_proxy:
-        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+        trusted = [h.strip() for h in settings.trusted_proxy_hosts.split(",") if h.strip()] or ["*"]
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)
 
     if settings.cors_allow_origins():
         app.add_middleware(

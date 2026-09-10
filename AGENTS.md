@@ -58,7 +58,7 @@ Rule categories: `anti_patterns`, `concept_standardization`, `data_quality`, `do
 ## Code style
 
 - **ruff** (`[tool.ruff]` in `pyproject.toml`). Line length 120, target 3.10+.
-- Project ignores: `E501` (pre-existing long lines), `E741` (`l`/`I` names), `E402` (intentional in some `__init__.py` for circular-import avoidance), `F841` (WIP regex/match locals in some rules).
+- Project ignores: `E501` (pre-existing long lines), `E741` (`l`/`I` names), `E402` (intentional in some `__init__.py` for circular-import avoidance).
 - `src/fastssv/__init__.py` waives `F401` — it imports submodules purely for `@register` side effects.
 - `tests/test_rules.py` is in `extend-exclude` (skipped by ruff, still run by pytest).
 - Coverage gate: `fail_under = 79` under `[tool.coverage.*]`.
