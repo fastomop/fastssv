@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class Severity(Enum):
@@ -11,6 +11,25 @@ class Severity(Enum):
 
     ERROR = "error"
     WARNING = "warning"
+
+
+@dataclass(frozen=True)
+class Reference:
+    """A published source a rule's claim is derived from."""
+
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
+class RuleExample:
+    """SQL that makes a rule emit a finding of ``severity``; ``note`` says which variant it shows, and ``strict``
+    marks a finding that only appears in strict mode."""
+
+    sql: str
+    severity: Severity
+    note: str
+    strict: bool = False
 
 
 @dataclass
@@ -94,6 +113,12 @@ class Rule(ABC):
         long_description: Multi-sentence explanation rendered on the /rules page
         example_bad: Minimal SQL snippet that trips the rule (for the /rules page)
         example_good: Corrected version of example_bad (for the /rules page)
+        extra_examples: Further triggering examples, one per additional severity or variant the rule emits
+        references: Published sources (CDM specification, Book of OHDSI, THEMIS, engine docs) the rule's
+            claim is derived from
+
+    Every registered rule is expected to set example_bad, example_good and at least one reference; the
+    registry-wide tests in tests/test_rule_metadata.py enforce it.
 
     Subclasses must implement:
         validate(sql, dialect) -> List[RuleViolation]
@@ -107,6 +132,8 @@ class Rule(ABC):
     long_description: Optional[str] = None
     example_bad: Optional[str] = None
     example_good: Optional[str] = None
+    extra_examples: Tuple[RuleExample, ...] = ()
+    references: Tuple[Reference, ...] = ()
 
     @abstractmethod
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

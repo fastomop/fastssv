@@ -27,12 +27,12 @@ If no category fits cleanly, prefer the closest existing one over inventing a ne
 | Category | Layout | Path for a new rule |
 | --- | --- | --- |
 | `anti_patterns`, `concept_standardization`, `data_quality`, `joins`, `temporal` | flat | `src/fastssv/rules/<category>/<snake_name>.py` |
-| `domain_specific` (table-specific rule, e.g. measurement, drug, condition, person, procedure, observation, visit, death, specimen, cohort, cost, episode, visit_detail, location, vocabulary, note) | nested | `src/fastssv/rules/domain_specific/<table>/<table>_<snake_name>.py` |
-| `domain_specific` (cross-cutting, not tied to one table — e.g. `event_cardinality_validation.py`, `event_field_polymorphic_resolution.py`, `dose_era_cross_unit_comparison.py`) | flat (top level) | `src/fastssv/rules/domain_specific/<snake_name>.py` |
+| `domain_specific` (table-specific rule, e.g. measurement, drug, condition, person, procedure, observation, visit, death, specimen, cost, episode, visit_detail, location, vocabulary, note) | nested | `src/fastssv/rules/domain_specific/<table>/<table>_<snake_name>.py` |
+| `domain_specific` (cross-cutting, not tied to one table — e.g. `event_rows_counted_as_persons.py`, `event_field_polymorphic_resolution.py`, `numeric_value_without_unit_constraint.py`) | flat (top level) | `src/fastssv/rules/domain_specific/<snake_name>.py` |
 
-Naming: descriptive snake_case **without** a `rule_` prefix (e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`). For nested `domain_specific` rules, the filename conventionally **starts with the table name** (`measurement_cross_unit_comparison.py`, `drug_days_supply_validation.py`) so the rule reads cleanly when the file is opened in isolation. Class name: PascalCase ending in `Rule`.
+Naming: descriptive snake_case **without** a `rule_` prefix (e.g. `datetime_between_date_literal.py`, `observation_period_anchoring.py`). For nested `domain_specific` rules, the filename conventionally **starts with the table name** (`measurement_range_low_high_validation.py`, `drug_exposure_quantity_misuse.py`) so the rule reads cleanly when the file is opened in isolation. Class name: PascalCase ending in `Rule`.
 
-`rule_id` is `<category>.<snake_name>` — the [documented stable format](../../../README.md#stability) and the convention across all 6 categories. The directory nesting under `domain_specific/<table>/` is organisational only and **does not** appear in the id (e.g. `domain_specific.measurement_cross_unit_comparison`, not `domain_specific.measurement.cross_unit_comparison`).
+`rule_id` is `<category>.<snake_name>` — the [documented stable format](../../../README.md#stability) and the convention across all 6 categories. The directory nesting under `domain_specific/<table>/` is organisational only and **does not** appear in the id (e.g. `domain_specific.measurement_range_low_high_validation`, not `domain_specific.measurement.range_low_high_validation`).
 
 Template:
 
@@ -49,6 +49,7 @@ from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
 from fastssv.core.helpers import parse_sql
+from fastssv.core.references import cdm_table
 from fastssv.core.registry import register
 
 
@@ -70,8 +71,10 @@ class <Name>Rule(Rule):
     long_description = (
         "<Optional. Multi-sentence explanation rendered on /rules.>"
     )
-    example_bad = "<Optional. Minimal SQL that trips the rule.>"
-    example_good = "<Optional. Corrected version of example_bad.>"
+    example_bad = "<Required. Minimal, realistic SQL that trips the rule.>"
+    example_good = "<Required. Corrected version of example_bad; must not trip the rule.>"
+    # Required. The published sources the claim is derived from, most specific first.
+    references = (cdm_table("<table>"),)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -88,6 +91,8 @@ class <Name>Rule(Rule):
                 pass
         return violations
 ```
+
+`references` takes `Reference(title, url)` values. `fastssv.core.references` has helpers for the shared sources (`cdm_table(...)`, `CDM_CONVENTIONS`, `BOOK_VOCABULARIES`, `section(SOURCE, "anchor", "topic")`, …); write `Reference("Title", "https://…")` inline for anything else, such as an engine documentation page. Fetch every URL and read the cited passage before citing it: a source must support the rule's claim, and a claim with no published source should be worded as a FastSSV heuristic and kept at WARNING. If the rule emits a second severity or a materially different variant, add `extra_examples = (RuleExample(sql, Severity.X, "what this variant shows"),)` (import `RuleExample` from `fastssv.core.base`; pass `strict=True` for a finding that only appears in strict mode). `tests/test_rule_metadata.py` runs every example against the rule.
 
 The scaffold above is **F401-clean** — every import has a use site (`exp.Select` in `find_all`, `parse_sql` in the body, the rest in the class definition). Strip the inner `for _node` loop only when you've replaced it with your real check; deleting the import without deleting its only use will break ruff.
 
@@ -138,7 +143,7 @@ uv run --frozen --no-sync pytest tests/test_rules.py -v
 
 - **CHANGELOG.md** — add a bullet under `## [Unreleased]` → `### Added`. Match the existing bold-lead-in style: what was added, why it matters in OMOP terms, what severity it ships with.
 - **README.md** — bump the rules badge if you're tracking the count there (`![Rules](https://img.shields.io/badge/rules-N-orange)`).
-- **docs/rules_reference.md** — re-generate or update the per-rule entry if the docs site lists rules manually.
+- **docs/rules_reference.md** — add the rule's section (anchor = rule id with `.` and `_` replaced by `-`) with `#### Examples` and a `#### Sources` list carrying every `references` URL, and add its row to the quick-reference table. `tests/test_rule_metadata.py` fails until the section exists.
 
 ## 6. Pre-flight
 

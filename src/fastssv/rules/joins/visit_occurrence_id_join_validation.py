@@ -1,268 +1,102 @@
 """Visit Occurrence ID Join Validation Rule.
 
-OMOP semantic rule JOIN_027:
-visit_occurrence_id columns across all tables reference visit_occurrence.visit_occurrence_id.
-Joining a visit_occurrence_id column to another table's column that is not visit_occurrence_id
-(e.g., person_id, condition_occurrence_id, visit_detail_id) is always wrong — these are
-different ID spaces.
+``visit_occurrence_id`` identifies a visit (OMOP CDM v5.4 conventions: "VISIT_OCCURRENCE_ID uniquely identifies a
+PERSON encounter at a point of care"). The event tables, VISIT_DETAIL and NOTE reference it through their own
+``visit_occurrence_id`` foreign key, and ``visit_occurrence.preceding_visit_occurrence_id`` references it too. A
+predicate that equates a visit key with the key of another entity (``visit_detail_id``, ``condition_occurrence_id``,
+``care_site_id``, ...) compares unrelated id sequences and matches unrelated rows on every conformant CDM.
 
-The Problem:
-    Even if numeric values overlap (visit_occurrence_id=123, person_id=123 both exist),
-    they represent completely different entities:
-    - visit_occurrence_id = 123 → A specific visit/encounter
-    - person_id = 123 → A patient identifier
-
-    These are unrelated despite having the same number.
+Each operand is followed through casts, CTEs, derived tables and ``IN (SELECT …)`` to the CDM column it reads; ON,
+WHERE and HAVING are all read. Keys without a declared target are not judged: the polymorphic event keys
+(``cost_event_id``, ``fact_id_1``, ``episode_event.event_id``, ``*_event_id``) and ``cohort.subject_id``, which "can
+refer to the Person, Provider, Visit record or Care Site" (CDM v5.4 COHORT). A pair that involves a person key is
+reported by ``joins.person_id_join_validation``, and a pair that involves ``preceding_visit_occurrence_id`` by
+``joins.preceding_visit_occurrence_validation``.
 
 Violation pattern:
-    SELECT * FROM drug_exposure de
-    JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.person_id
-    -- WRONG: visit_occurrence_id should join to visit_occurrence_id, not person_id
+    SELECT co.condition_concept_id, vd.visit_detail_concept_id
+    FROM condition_occurrence co
+    JOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id
 
 Correct pattern:
-    SELECT * FROM drug_exposure de
-    JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
+    SELECT co.condition_concept_id, vd.visit_detail_concept_id
+    FROM condition_occurrence co
+    JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional
 
-from sqlglot import exp
-
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
-from fastssv.core.patch import build_join_replace_patch
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.references import CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.registry import register
 
+from ._j2_key_pairs import key_pair_violations
+from ._lineage import VISIT_KEY, KeyMismatch, Origin
 
-# --- Constants -------------------------------------------------------------
-
-VISIT_OCCURRENCE_ID = "visit_occurrence_id"
-
-
-# --- Helpers ---------------------------------------------------------------
+VISIT_DETAIL_KEY: Origin = ("visit_detail", "visit_detail_id")
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
+def _keep(m: KeyMismatch) -> Optional[Origin]:
+    # A visit_detail link is finer than its parent visit, so a visit / visit_detail mix-up keeps the detail key.
+    if {m.left_entity, m.right_entity} == {VISIT_KEY, VISIT_DETAIL_KEY}:
+        return VISIT_DETAIL_KEY
+    return VISIT_KEY
 
 
-def _is_visit_occurrence_id(col: Optional[str]) -> bool:
-    return _norm(col) == VISIT_OCCURRENCE_ID
-
-
-def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
-    """Extract column-to-column equality conditions from JOIN ON or WHERE."""
-    eqs: List[exp.EQ] = []
-
-    has_join_on = False
-
-    # Prefer explicit JOIN conditions
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if on_clause:
-            has_join_on = True
-            for eq in on_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    # Fallback to implicit joins (WHERE)
-    if not has_join_on:
-        where_clause = tree.find(exp.Where)
-        if where_clause:
-            for eq in where_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    return eqs
-
-
-def _extract_using_columns(tree: exp.Expression) -> Set[str]:
-    """Extract normalized column names used in USING clauses."""
-    cols: Set[str] = set()
-
-    for join in tree.find_all(exp.Join):
-        using = join.args.get("using")
-        if not using:
-            continue
-
-        if isinstance(using, exp.Tuple):
-            for col in using.expressions:
-                if isinstance(col, exp.Column):
-                    cols.add(_norm(col.name))
-        elif isinstance(using, exp.Identifier):
-            cols.add(_norm(using.name))
-
-    return cols
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
-    """
-    Detect invalid joins where visit_occurrence_id is matched with non-visit_occurrence_id.
-
-    Returns:
-        List of (left_table, left_column, right_table, right_column)
-    """
-    violations: List[Tuple[str, str, str, str]] = []
-    seen: Set[Tuple[str, str, str, str]] = set()
-
-    using_cols = _extract_using_columns(tree)
-
-    for eq in _extract_eq_conditions(tree):
-        left, right = eq.this, eq.expression
-
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-
-        lc_norm = _norm(lc)
-        rc_norm = _norm(rc)
-
-        # --- Defensive guards ---------------------------------------------
-
-        # Skip unresolved or malformed columns
-        if not lc_norm or not rc_norm:
-            continue
-
-        # Skip same-table comparisons (not joins)
-        if lt and rt and _norm(lt) == _norm(rt):
-            continue
-
-        # Skip USING-based equality (safe assumption, avoids double counting)
-        if lc_norm in using_cols and rc_norm in using_cols:
-            continue
-
-        # --- Core validation ----------------------------------------------
-
-        left_is_voi = _is_visit_occurrence_id(lc_norm)
-        right_is_voi = _is_visit_occurrence_id(rc_norm)
-
-        if left_is_voi and not right_is_voi:
-            key = (lt or "unknown", lc_norm, rt or "unknown", rc_norm)
-
-        elif right_is_voi and not left_is_voi:
-            key = (lt or "unknown", lc_norm, rt or "unknown", rc_norm)
-
-        else:
-            continue
-
-        if key not in seen:
-            violations.append(key)
-            seen.add(key)
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+def _explain(m: KeyMismatch) -> str:
+    if {m.left_entity, m.right_entity} == {VISIT_KEY, VISIT_DETAIL_KEY}:
+        return (
+            "visit_detail_id identifies a visit detail and visit_occurrence_id its parent visit; join "
+            "<table>.visit_detail_id = visit_detail.visit_detail_id, or visit_occurrence_id on both sides."
+        )
+    return "Join visit_occurrence_id only to another visit_occurrence_id."
 
 
 @register
 class VisitOccurrenceIdJoinValidationRule(Rule):
-    """
-    Ensure visit_occurrence_id only joins to visit_occurrence_id across tables.
-    """
+    """A visit key equated with a key of another entity."""
 
     rule_id = "joins.visit_occurrence_id_join_validation"
     name = "Visit Occurrence ID Join Validation"
-
     description = (
-        "Ensures visit_occurrence_id columns only join to other visit_occurrence_id columns. "
-        "Prevents incorrect joins to unrelated identifiers such as person_id or "
-        "condition_occurrence_id."
+        "Flags a predicate that equates a visit key (visit_occurrence_id, or a foreign key to it) with the key of "
+        "another entity, such as visit_detail_id, condition_occurrence_id or care_site_id. Polymorphic keys and "
+        "cohort.subject_id, which may hold a visit id, are not judged."
     )
-
     severity = Severity.ERROR
-
-    suggested_fix = "REPLACE: `<table>.visit_occurrence_id = <other>.<other_id>` WITH `<table>.visit_occurrence_id = <other>.visit_occurrence_id`. visit_occurrence_id joins only to itself."
+    suggested_fix = (
+        "REPLACE: the equality WITH one between two columns that identify the same entity: "
+        "`<table>.visit_occurrence_id = <other>.visit_occurrence_id`, or `<table>.visit_detail_id = "
+        "visit_detail.visit_detail_id` for a visit detail."
+    )
     example_bad = (
-        "SELECT * FROM visit_occurrence vo\n"
-        "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id;"
+        "SELECT co.condition_concept_id, vd.visit_detail_concept_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id;"
     )
     example_good = (
-        "SELECT * FROM visit_occurrence vo\n"
-        "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.visit_occurrence_id;"
+        "SELECT co.condition_concept_id, vd.visit_detail_concept_id\n"
+        "FROM condition_occurrence co\n"
+        "JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id;"
+    )
+    extra_examples = (
+        RuleExample(
+            "SELECT vo.visit_concept_id, co.condition_concept_id\n"
+            "FROM visit_occurrence vo\n"
+            "JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id;",
+            Severity.ERROR,
+            "A visit id equated with an event's own primary key.",
+        ),
+    )
+    references = (
+        section(CDM_CONVENTIONS, "fields", "Fields"),
+        cdm_table("visit_occurrence"),
+        cdm_table("visit_detail"),
+        cdm_table("cohort"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
-        # Fast pre-check
-        if VISIT_OCCURRENCE_ID not in sql.lower():
-            return []
-
-        trees, err = parse_sql(sql, dialect)
-        if err:
-            return []
-
-        for tree in trees:
-            if not tree:
-                continue
-
-            aliases = extract_aliases(tree)
-            detected = _detect(tree, aliases)
-
-            for lt, lc, rt, rc in detected:
-                lt_disp = lt if lt and lt != "unknown" else ""
-                rt_disp = rt if rt and rt != "unknown" else ""
-
-                if _is_visit_occurrence_id(lc):
-                    visit_side = f"{lt_disp}.{lc}" if lt_disp else lc
-                    other_side = f"{rt_disp}.{rc}" if rt_disp else rc
-                    other_col = rc
-                else:
-                    visit_side = f"{rt_disp}.{rc}" if rt_disp else rc
-                    other_side = f"{lt_disp}.{lc}" if lt_disp else lc
-                    other_col = lc
-
-                message = (
-                    f"Invalid join: {visit_side} → {other_side}. "
-                    f"visit_occurrence_id must only join to visit_occurrence_id, not {other_col}."
-                )
-
-                # REPLACE the non-visit_occurrence_id side with visit_occurrence_id.
-                patch = None
-                if lt and rt and lt != "unknown" and rt != "unknown":
-                    fix_text = (
-                        f"REPLACE: `{lt_disp}.{lc} = {rt_disp}.{rc}` "
-                        f"WITH `{lt_disp}.visit_occurrence_id = {rt_disp}.visit_occurrence_id`."
-                    )
-                    patch = build_join_replace_patch(
-                        sql,
-                        lt,
-                        lc,
-                        rt,
-                        rc,
-                        VISIT_OCCURRENCE_ID,
-                        VISIT_OCCURRENCE_ID,
-                        fix_text,
-                        aliases=aliases,
-                    )
-
-                violations.append(
-                    self.create_violation(
-                        message=message,
-                        suggested_fix=self.suggested_fix,
-                        suggested_fix_patch=patch,
-                        details={
-                            "type": "visit_occurrence_id_cross_match",
-                            "left_table": lt,
-                            "left_column": lc,
-                            "right_table": rt,
-                            "right_column": rc,
-                        },
-                    )
-                )
-
-        return violations
+        return key_pair_violations(self, sql, dialect, keep_entity=_keep, explain=_explain, prefilter="visit_")
 
 
 __all__ = ["VisitOccurrenceIdJoinValidationRule"]

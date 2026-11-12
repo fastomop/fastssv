@@ -1,413 +1,261 @@
 """End Before Start Validation Rule.
 
-OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_401, OMOP_515, OMOP_526, OMOP_529, OMOP_551:
-Detects logically impossible date constraints where static filters force
-end_date < start_date for the same record.
+Judges constant date bounds on the start and end columns that the OHDSI Data Quality Dashboard pairs in its
+``plausibleStartBeforeEnd`` check (``visit_start_date`` / ``visit_end_date``, ``drug_exposure_start_date`` /
+``drug_exposure_end_date``, ``procedure_date`` / ``procedure_end_date``, the ``*_datetime`` pairs, the era and
+period tables, ...).
 
-The Problem:
-    Many OMOP tables have start_date and end_date columns representing
-    temporal events. A query with static date filters that forces the end
-    date to be before the start date is logically impossible and indicates
-    a WHERE clause error.
+Two findings, both read from the AND-ed predicates of one SELECT about one row source:
 
-Covered Tables and Column Pairs:
-    condition_occurrence:
-        - condition_start_date, condition_end_date (CLIN_011, OMOP_551)
+* ERROR, bounds on ONE column that no value satisfies::
 
-    drug_exposure:
-        - drug_exposure_start_date, drug_exposure_end_date (OMOP_515, OMOP_551)
+      WHERE visit_start_date >= '2023-06-01' AND visit_start_date < '2023-01-01'
+      WHERE visit_start_date BETWEEN '2023-12-31' AND '2023-01-01'
 
-    device_exposure:
-        - device_exposure_start_date, device_exposure_end_date (OMOP_526)
+  The predicate is false for every row, whatever the data holds.
 
-    visit_occurrence:
-        - visit_start_date, visit_end_date (OMOP_052, OMOP_551)
+* WARNING, bounds on a start column and its end column that only a record ending before it starts can satisfy::
 
-    visit_detail:
-        - visit_detail_start_date, visit_detail_end_date (CLIN_045)
+      WHERE drug_exposure_start_date >= '2023-06-01' AND drug_exposure_end_date < '2023-06-01'
 
-    cohort:
-        - cohort_start_date, cohort_end_date (OMOP_529)
+  The CDM specification does not state that an end date follows its start date; the Data Quality Dashboard treats
+  the reverse as implausible and tolerates a share of such rows, so the result depends on the data. On data that
+  passes the check without violations the query returns nothing.
 
-    episode:
-        - episode_start_date, episode_end_date (OMOP_244)
+Not reported:
 
-    payer_plan_period:
-        - payer_plan_period_start_date, payer_plan_period_end_date (OMOP_401)
+* a comparison of the two columns of one row (``visit_end_date < visit_start_date``). That is the plausibility check
+  itself: it selects exactly the records the Data Quality Dashboard counts, in any projection.
+  ``temporal.nullable_date_column`` treats it the same way;
+* comparisons between two row sources (``v2.visit_start_date > v1.visit_end_date``, the readmission or treatment-gap
+  join), and bounds that belong to different row sources or different SELECTs;
+* anything under OR or NOT, and bounds that are not constants.
 
-Example Violations:
-    -- ERROR: Start must be after June, but end must be before January
-    WHERE condition_start_date > '2023-06-01'
-      AND condition_end_date < '2023-01-01'
-
-    -- ERROR: Start >= June 1, but end < June 1
-    WHERE drug_exposure_start_date >= '2023-06-01'
-      AND drug_exposure_end_date < '2023-06-01'
-
-    -- ERROR: Start = June 15, but end = May 1
-    WHERE visit_start_date = '2023-06-15'
-      AND visit_end_date = '2023-05-01'
-
-Valid Patterns (no violation):
-    -- OK: Overlapping range is possible
-    WHERE condition_start_date > '2023-01-01'
-      AND condition_end_date < '2023-12-31'
-
-    -- OK: Could start and end on same day
-    WHERE visit_start_date >= '2023-06-01'
-      AND visit_end_date >= '2023-06-01'
-
-    -- OK: Dynamic comparison (not static date literals)
-    WHERE condition_end_date < condition_start_date + INTERVAL '30 days'
+An untyped string literal compared with a DATE column is read as a date, as PostgreSQL and DuckDB coerce it, so
+``visit_start_date >= '2023-06-01 10:00'`` bounds the column at 2023-06-01. A ``TIMESTAMP`` literal, a cast of the
+column to TIMESTAMP and a datetime column keep the time of day.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
-import re
+from typing import Dict, List, Optional, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import column_owner, normalize_name, parse_sql, scope_predicates
+from fastssv.core.references import DQD_FIELD_THRESHOLDS
 from fastssv.core.registry import register
+from fastssv.rules.temporal._cdm_dates import START_BEFORE_END_PAIRS
+from fastssv.rules.temporal._typing import DATE, base_column, conjuncts, literal_datetime, sql_type, unwrap
+
+# (table, column) -> the (start, end) pairs it takes part in.
+_PAIRS: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
+for _table, _start, _end in START_BEFORE_END_PAIRS:
+    _PAIRS.setdefault((_table, _start), []).append((_start, _end))
+    _PAIRS.setdefault((_table, _end), []).append((_start, _end))
+
+_FLIP = {">": "<", ">=": "<=", "<": ">", "<=": ">=", "=": "="}
+_OPERATOR = {exp.GT: ">", exp.GTE: ">=", exp.LT: "<", exp.LTE: "<=", exp.EQ: "="}
+
+# (id of the SELECT, row-source alias, table, column)
+BoundKey = Tuple[int, str, str, str]
 
 
-# --- Constants -------------------------------------------------------------
+class _Bounds:
+    """Constant range a column is held to: ``low`` (exclusive when ``low_strict``) to ``high``."""
 
-DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}")
+    def __init__(self) -> None:
+        self.low: Optional[datetime] = None
+        self.low_strict = False
+        self.low_sql = ""
+        self.high: Optional[datetime] = None
+        self.high_strict = False
+        self.high_sql = ""
 
-TABLE_CONFIGS = {
-    "condition_occurrence": {
-        "start": "condition_start_date",
-        "end": "condition_end_date",
-    },
-    "drug_exposure": {
-        "start": "drug_exposure_start_date",
-        "end": "drug_exposure_end_date",
-    },
-    "device_exposure": {
-        "start": "device_exposure_start_date",
-        "end": "device_exposure_end_date",
-    },
-    "visit_occurrence": {
-        "start": "visit_start_date",
-        "end": "visit_end_date",
-    },
-    "visit_detail": {
-        "start": "visit_detail_start_date",
-        "end": "visit_detail_end_date",
-    },
-    "cohort": {
-        "start": "cohort_start_date",
-        "end": "cohort_end_date",
-    },
-    "episode": {
-        "start": "episode_start_date",
-        "end": "episode_end_date",
-    },
-    "payer_plan_period": {
-        "start": "payer_plan_period_start_date",
-        "end": "payer_plan_period_end_date",
-    },
-}
+    def add_low(self, value: datetime, strict: bool, sql: str) -> None:
+        if self.low is None or value > self.low or (value == self.low and strict and not self.low_strict):
+            self.low, self.low_strict, self.low_sql = value, strict, sql
 
+    def add_high(self, value: datetime, strict: bool, sql: str) -> None:
+        if self.high is None or value < self.high or (value == self.high and strict and not self.high_strict):
+            self.high, self.high_strict, self.high_sql = value, strict, sql
 
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_in_or(node: exp.Expression) -> bool:
-    parent = node.parent
-    while parent:
-        if isinstance(parent, exp.Or):
-            return True
-        parent = parent.parent
-    return False
-
-
-def _parse_date_literal(node: exp.Expression) -> Optional[datetime]:
-    """Extract datetime from SQL expression."""
-    if node is None:
-        return None
-
-    if isinstance(node, exp.Literal):
-        val = str(node.this).strip("'\"")
-        if DATE_PATTERN.match(val):
-            try:
-                return datetime.strptime(val[:10], "%Y-%m-%d")
-            except Exception:
-                return None
-
-    if isinstance(node, exp.Cast):
-        return _parse_date_literal(node.this)
-
-    if isinstance(node, exp.CurrentDate):
-        return datetime.today()
-
-    return None
-
-
-def _resolve_table_safe(
-    table: Optional[str],
-    aliases: Dict[str, str],
-) -> Optional[str]:
-    table_norm = _norm(table)
-
-    if table_norm:
-        return table_norm if table_norm in TABLE_CONFIGS else None
-
-    tables = {_norm(t) for t in aliases.values()}
-    if len(tables) == 1:
-        only = list(tables)[0]
-        return only if only in TABLE_CONFIGS else None
-
-    return None
-
-
-# --- Constraint Model ------------------------------------------------------
-
-
-class DateBounds:
-    def __init__(self):
-        self.min_date: Optional[datetime] = None
-        self.max_date: Optional[datetime] = None
-        self.min_inclusive: bool = True
-        self.max_inclusive: bool = True
-        self.has_constraints = False
-
-    def add_gt(self, d: datetime, inclusive: bool):
-        self.has_constraints = True
-        if self.min_date is None or d > self.min_date:
-            self.min_date = d
-            self.min_inclusive = inclusive
-        elif d == self.min_date:
-            self.min_inclusive = self.min_inclusive and inclusive
-
-    def add_lt(self, d: datetime, inclusive: bool):
-        self.has_constraints = True
-        if self.max_date is None or d < self.max_date:
-            self.max_date = d
-            self.max_inclusive = inclusive
-        elif d == self.max_date:
-            self.max_inclusive = self.max_inclusive and inclusive
-
-    def add_eq(self, d: datetime):
-        self.has_constraints = True
-        self.min_date = d
-        self.max_date = d
-        self.min_inclusive = True
-        self.max_inclusive = True
-
-    def impossible_with(self, other: "DateBounds") -> bool:
-        if not self.has_constraints or not other.has_constraints:
+    def empty(self) -> bool:
+        if self.low is None or self.high is None:
             return False
-
-        if self.min_date and other.max_date:
-            if self.min_date > other.max_date:
-                return True
-            if self.min_date == other.max_date:
-                if not self.min_inclusive or not other.max_inclusive:
-                    return True
-        return False
+        return self.low > self.high or (self.low == self.high and (self.low_strict or self.high_strict))
 
 
-# --- Detection -------------------------------------------------------------
+def _date_column(node: Optional[exp.Expression]) -> Optional[exp.Column]:
+    """The column a bound applies to. A cast of a DATE column to DATE or TIMESTAMP keeps its value; any other
+    wrapper changes it, so the bound is not read."""
+    node = unwrap(node)
+    if isinstance(node, (exp.Cast, exp.TryCast)):
+        inner = unwrap(node.this)
+        if isinstance(inner, exp.Column) and sql_type(inner) == DATE and sql_type(node) is not None:
+            return inner
+        return None
+    return node if isinstance(node, exp.Column) else None
 
 
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]):
-    bounds: Dict[Tuple[str, str], DateBounds] = {}
-    violations = []
-    seen: Set[str] = set()
+def _constant_bounds(select: exp.Select) -> Dict[BoundKey, _Bounds]:
+    bounds: Dict[BoundKey, _Bounds] = {}
 
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
+    def record(col_node: Optional[exp.Expression], operator: str, value_node: Optional[exp.Expression], sql: str):
+        col = _date_column(col_node)
+        value = literal_datetime(value_node)
+        if col is None or value is None:
+            return
+        origin = base_column(col)
+        if origin is None or origin not in _PAIRS:
+            return
+        owner = normalize_name(col.table) if col.table else column_owner(col, select)
+        if not owner:
+            return
+        entry = bounds.setdefault((id(select), owner, origin[0], origin[1]), _Bounds())
+        when = value[0]
+        literal = unwrap(value_node)
+        if sql_type(col_node) == DATE and isinstance(literal, exp.Literal) and literal.is_string:
+            # An untyped string compared with a DATE is read as a DATE (PostgreSQL, DuckDB), dropping any time.
+            when = when.replace(hour=0, minute=0, second=0, microsecond=0)
+        if operator in (">", ">=", "="):
+            entry.add_low(when, operator == ">", sql)
+        if operator in ("<", "<=", "="):
+            entry.add_high(when, operator == "<", sql)
 
-        if _is_in_or(node):
-            continue
-
-        # `SELECT COUNT(*) ... WHERE end < start` is a data-quality probe counting bad rows, not a reversed
-        # filter — an aggregate-only projection (constants allowed: Achilles `411 AS analysis_id, CAST(NULL ...)`)
-        # with no GROUP BY marks it.
-        sel = node.find_ancestor(exp.Select)
-        if (
-            sel is not None
-            and sel.expressions
-            and not sel.args.get("group")
-            and all(e.find(exp.AggFunc) is not None or e.find(exp.Column, exp.Star) is None for e in sel.expressions)
-        ):
-            continue
-
-        # --- Column-to-column comparison (critical fix) ---
-        if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE)):
-            if isinstance(node.left, exp.Column) and isinstance(node.right, exp.Column):
-                t1, c1 = resolve_table_col(node.left, aliases)
-                t2, c2 = resolve_table_col(node.right, aliases)
-
-                t1 = _resolve_table_safe(t1, aliases)
-                t2 = _resolve_table_safe(t2, aliases)
-
-                if not t1 or not t2 or t1 != t2:
+    for predicate in scope_predicates(select):
+        for leaf in conjuncts(predicate):
+            if isinstance(leaf, exp.Between):
+                if leaf.args.get("symmetric"):
                     continue
-
-                config = TABLE_CONFIGS[t1]
-                start = _norm(config["start"])
-                end = _norm(config["end"])
-
-                c1n, c2n = _norm(c1), _norm(c2)
-
-                if c1n == start and c2n == end and isinstance(node, (exp.GT, exp.GTE)):
-                    key = f"{t1}|direct"
-                    if key not in seen:
-                        seen.add(key)
-                        violations.append((t1, f"{c1n} compared greater than {c2n}, forcing start > end"))
-
-                if c2n == start and c1n == end and isinstance(node, (exp.LT, exp.LTE)):
-                    key = f"{t1}|direct"
-                    if key not in seen:
-                        seen.add(key)
-                        violations.append((t1, f"{c1n} compared less than {c2n}, forcing end < start"))
-
-        # --- Column vs literal constraints ---
-        if isinstance(node, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)):
-            pairs = [(node.left, node.right), (node.right, node.left)]
-
-            for col_node, val_node in pairs:
-                if not isinstance(col_node, exp.Column):
-                    continue
-
-                date_val = _parse_date_literal(val_node)
-                if not date_val:
-                    continue
-
-                table, col = resolve_table_col(col_node, aliases)
-                table = _resolve_table_safe(table, aliases)
-                col = _norm(col)
-
-                if not table or table not in TABLE_CONFIGS:
-                    continue
-
-                key = (table, col)
-                if key not in bounds:
-                    bounds[key] = DateBounds()
-
-                if isinstance(node, exp.GT):
-                    bounds[key].add_gt(date_val, False)
-                elif isinstance(node, exp.GTE):
-                    bounds[key].add_gt(date_val, True)
-                elif isinstance(node, exp.LT):
-                    bounds[key].add_lt(date_val, False)
-                elif isinstance(node, exp.LTE):
-                    bounds[key].add_lt(date_val, True)
-                elif isinstance(node, exp.EQ):
-                    bounds[key].add_eq(date_val)
-
-        # --- BETWEEN ---
-        if isinstance(node, exp.Between):
-            if isinstance(node.this, exp.Column):
-                low = _parse_date_literal(node.args.get("low"))
-                high = _parse_date_literal(node.args.get("high"))
-
-                if not low or not high:
-                    continue
-
-                table, col = resolve_table_col(node.this, aliases)
-                table = _resolve_table_safe(table, aliases)
-                col = _norm(col)
-
-                if not table:
-                    continue
-
-                key = (table, col)
-                if key not in bounds:
-                    bounds[key] = DateBounds()
-
-                bounds[key].add_gt(low, True)
-                bounds[key].add_lt(high, True)
-
-    # --- Evaluate contradictions ---
-    for table, config in TABLE_CONFIGS.items():
-        start = _norm(config["start"])
-        end = _norm(config["end"])
-
-        if (table, start) not in bounds or (table, end) not in bounds:
-            continue
-
-        if bounds[(table, start)].impossible_with(bounds[(table, end)]):
-            key = f"{table}|range"
-            if key in seen:
+                record(leaf.this, ">=", leaf.args.get("low"), leaf.sql())
+                record(leaf.this, "<=", leaf.args.get("high"), leaf.sql())
                 continue
-            seen.add(key)
-
-            violations.append((table, f"Impossible date constraint on {table}: filters force {start} > {end}"))
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+            operator = _OPERATOR.get(type(leaf))
+            if operator is None:
+                continue
+            record(leaf.this, operator, leaf.expression, leaf.sql())
+            record(leaf.expression, _FLIP[operator], leaf.this, leaf.sql())
+    return bounds
 
 
 @register
 class EndBeforeStartValidationRule(Rule):
     rule_id = "temporal.end_before_start_validation"
     name = "End Before Start Validation"
-    description = "Detects impossible constraints where start_date > end_date"
-    severity = Severity.ERROR
-    suggested_fix = "REPLACE: `<event>_end_date < <event>_start_date` WITH `<event>_end_date >= <event>_start_date`, OR remove the predicate (end before start is impossible by spec)."
-    long_description = (
-        "Filtering for *_start_date > *_end_date (or the equivalent "
-        "*_end_date < *_start_date) describes an impossible time range. In "
-        "OMOP tables like visit_occurrence and drug_exposure every record "
-        "has start <= end by specification, so a predicate that returns only "
-        "records where start > end selects zero rows. Useful as a data-"
-        "quality probe, but usually the operator was reversed by accident."
+    description = (
+        "Detects constant date bounds on a start/end column pair that only a record ending before it starts can "
+        "satisfy (WARNING), and bounds on one such column that no value satisfies (ERROR)."
     )
-    example_bad = "SELECT *\nFROM visit_occurrence\nWHERE visit_start_date > visit_end_date;"
-    example_good = "SELECT *\nFROM visit_occurrence\nWHERE visit_start_date <= visit_end_date;"
+    severity = Severity.WARNING
+    suggested_fix = (
+        "REPLACE: the two bounds WITH an overlap test, `<start_col> <= '<window_end>' AND <end_col> >= "
+        "'<window_start>'`. To list records whose end precedes their start as a data-quality check, compare the two "
+        "columns directly: `<end_col> < <start_col>`."
+    )
+    long_description = (
+        "The OHDSI Data Quality Dashboard pairs each start date with its end date (plausibleStartBeforeEnd) and "
+        "counts the records whose start is after their end. A filter such as drug_exposure_start_date >= "
+        "'2023-06-01' AND drug_exposure_end_date < '2023-06-01' admits only those records: the usual cause is a "
+        "window test with one operator the wrong way round. The finding is a WARNING because the CDM specification "
+        "does not rule such records out and the dashboard tolerates a share of them, so the result depends on the "
+        "data. Bounds on a single column that cannot both hold (start >= '2023-06-01' AND start < '2023-01-01', or "
+        "BETWEEN with the larger value first) are false for every row and are an ERROR. Bounds are read from the "
+        "AND-ed predicates of one SELECT, per row source, with the literal on either side. Comparing the two "
+        "columns of a row with each other is the plausibility check itself and is not reported; neither are "
+        "comparisons between two rows, such as a readmission that starts after the previous visit ended."
+    )
+    example_bad = (
+        "SELECT drug_exposure_id\n"
+        "FROM drug_exposure\n"
+        "WHERE drug_exposure_start_date >= DATE '2023-06-01'\n"
+        "  AND drug_exposure_end_date < DATE '2023-06-01';"
+    )
+    example_good = (
+        "SELECT drug_exposure_id\n"
+        "FROM drug_exposure\n"
+        "WHERE drug_exposure_start_date <= DATE '2023-06-30'\n"
+        "  AND drug_exposure_end_date >= DATE '2023-06-01';"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT visit_occurrence_id\n"
+                "FROM visit_occurrence\n"
+                "WHERE visit_start_date >= DATE '2023-06-01'\n"
+                "  AND visit_start_date < DATE '2023-01-01';"
+            ),
+            severity=Severity.ERROR,
+            note="Bounds on one column that no date satisfies: the query returns no rows on any data",
+        ),
+    )
+    references = (DQD_FIELD_THRESHOLDS,)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            issues = _find_violations(tree, aliases)
-
-            for table, msg in issues:
-                cfg = TABLE_CONFIGS[table]
-
-                violations.append(
-                    self.create_violation(
-                        severity=Severity.ERROR,
-                        message=msg,
-                        suggested_fix=(
-                            f"REPLACE: any predicate where `{cfg['end']}` precedes "
-                            f"`{cfg['start']}` WITH `{cfg['start']} <= {cfg['end']}`. "
-                            f"Reversed bounds return zero rows."
-                        ),
-                        details={
-                            "table": table,
-                            "start_column": cfg["start"],
-                            "end_column": cfg["end"],
-                        },
-                    )
-                )
-
+            for select in tree.find_all(exp.Select):
+                bounds = _constant_bounds(select)
+                for (_, owner, table, column), entry in bounds.items():
+                    if entry.empty():
+                        violations.append(
+                            self.create_violation(
+                                severity=Severity.ERROR,
+                                message=(
+                                    f"{table}.{column} is bounded by `{entry.low_sql}` and `{entry.high_sql}`; no "
+                                    "date satisfies both, so the filter is false for every row and the query "
+                                    "returns nothing."
+                                ),
+                                suggested_fix=(
+                                    f"REPLACE: one of the two bounds on `{column}` so that the lower bound does "
+                                    "not exceed the upper bound."
+                                ),
+                                details={"table": table, "column": column, "issue": "empty_range"},
+                            )
+                        )
+                reported = set()
+                for (scope, owner, table, column), entry in bounds.items():
+                    for start, end in _PAIRS[(table, column)]:
+                        if column != start or (scope, owner, start, end) in reported:
+                            continue
+                        other = bounds.get((scope, owner, table, end))
+                        if other is None or entry.low is None or other.high is None:
+                            continue
+                        if entry.empty() or other.empty():
+                            continue
+                        forced = other.high < entry.low or (
+                            other.high == entry.low and (entry.low_strict or other.high_strict)
+                        )
+                        if not forced:
+                            continue
+                        reported.add((scope, owner, start, end))
+                        violations.append(
+                            self.create_violation(
+                                severity=Severity.WARNING,
+                                message=(
+                                    f"`{entry.low_sql}` and `{other.high_sql}` admit only {table} records whose "
+                                    f"{end} precedes their {start}. The OHDSI Data Quality Dashboard counts such "
+                                    "records as implausible, so on data without them this returns nothing. If the "
+                                    "aim is a window test, one bound is the wrong way round."
+                                ),
+                                suggested_fix=(
+                                    f"REPLACE: the two bounds WITH an overlap test, `{start} <= '<window_end>' AND "
+                                    f"{end} >= '<window_start>'`. For a data-quality check, compare the columns "
+                                    f"directly: `{end} < {start}`."
+                                ),
+                                details={
+                                    "table": table,
+                                    "start_column": start,
+                                    "end_column": end,
+                                    "issue": "end_before_start_bounds",
+                                },
+                            )
+                        )
         return violations
 
 

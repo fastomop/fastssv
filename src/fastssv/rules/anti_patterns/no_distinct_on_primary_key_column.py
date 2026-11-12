@@ -1,280 +1,189 @@
 """No DISTINCT on Primary Key Column Rule.
 
-OMOP semantic rule OMOP_110:
-Using DISTINCT on a primary key column is redundant since primary keys are unique
-by definition. This suggests a misunderstanding of the data or an unintended
-Cartesian join.
+A primary key is unique within its table (CDM v5.4 field-level specification, isPrimaryKey). A SELECT over a single
+CDM table, with no joins, that projects the table's primary key therefore returns unique rows, and DISTINCT removes
+nothing (PostgreSQL: DISTINCT removes duplicate rows). The rule reports only that SELECT DISTINCT; a redundant
+DISTINCT never changes the result, so the rule stays narrow rather than flag every equivalent spelling of it.
 
-The Problem:
-    Primary key columns in OMOP CDM tables are unique by definition:
-    - condition_occurrence_id, drug_exposure_id, procedure_occurrence_id, etc.
+    SELECT DISTINCT condition_occurrence_id FROM condition_occurrence WHERE condition_concept_id = 201826;
 
-    Using DISTINCT on these columns is either:
-    1. Redundant: If querying a single table without joins
-    2. Hiding a join problem: If joins introduce duplicates (Cartesian product)
-
-    The presence of DISTINCT on a primary key suggests:
-    - Misunderstanding of data uniqueness
-    - Missing or incorrect join conditions
-    - Unnecessary performance overhead
-
-Violation patterns:
-    -- WRONG: Redundant DISTINCT on primary key
-    SELECT DISTINCT condition_occurrence_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
-
-    -- WRONG: Hiding join issues
-    SELECT DISTINCT de.drug_exposure_id
-    FROM drug_exposure de, person p;  -- Missing join condition
-
-Correct patterns:
-    -- CORRECT: No DISTINCT needed
-    SELECT condition_occurrence_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
-
-    -- CORRECT: DISTINCT on non-PK column
-    SELECT DISTINCT person_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
-
-    -- CORRECT: DISTINCT with joins (though may indicate join issue)
-    SELECT DISTINCT de.drug_exposure_id
-    FROM drug_exposure de
-    JOIN person p ON de.person_id = p.person_id;
+The key may be projected as is, under a cast, or through ``*`` / ``t.*``, and the table may be read through CTEs and
+derived tables that themselves read one source without joins or set operations. Once a join, a set operation or a
+row generator enters, the key can repeat (``person JOIN condition_occurrence`` yields one row per condition), so
+DISTINCT may be needed and nothing is reported. Session-local temporary tables (``#t``) are not taken for the CDM
+table.
 """
 
-from typing import Dict, List, Optional, Tuple
+import re
+from typing import List, Optional, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Reference, Rule, RuleViolation, Severity
 from fastssv.core.helpers import (
-    extract_aliases,
+    _explicit_projection,
+    _query_branches,
+    _source_query,
+    _star_qualifiers,
     normalize_name,
     parse_sql,
-    resolve_table_col,
 )
+from fastssv.core.patch import remove as patch_remove
+from fastssv.core.references import CDM_FIELD_LEVEL
 from fastssv.core.registry import register
+from fastssv.rules.anti_patterns._ap_cdm_fields import PRIMARY_KEYS
+from fastssv.rules.anti_patterns.destructive_operations_on_clinical_tables import _is_temporary_name
 
 
-# --- Constants -------------------------------------------------------------
-
-PRIMARY_KEY_COLUMNS: Dict[str, str] = {
-    "condition_occurrence_id": "condition_occurrence",
-    "drug_exposure_id": "drug_exposure",
-    "procedure_occurrence_id": "procedure_occurrence",
-    "measurement_id": "measurement",
-    "observation_id": "observation",
-    "device_exposure_id": "device_exposure",
-    "visit_occurrence_id": "visit_occurrence",
-    "visit_detail_id": "visit_detail",
-    "specimen_id": "specimen",
-    "note_id": "note",
-    "note_nlp_id": "note_nlp",
-    "death_id": "death",
-    "episode_id": "episode",
-    "episode_event_id": "episode_event",
-    "cost_id": "cost",
-    "payer_plan_period_id": "payer_plan_period",
-    "care_site_id": "care_site",
-    "location_id": "location",
-    "provider_id": "provider",
-    "person_id": "person",
-}
+def _single_source(select: exp.Select) -> Optional[exp.Expression]:
+    if select.args.get("joins") or isinstance(select.parent, exp.SetOperation):
+        return None
+    from_node = select.args.get("from_") or select.args.get("from")
+    return from_node.this if isinstance(from_node, exp.From) else None
 
 
-# --- Normalized Constants --------------------------------------------------
+def _key_table(select: exp.Select, name: str, depth: int = 0) -> Optional[str]:
+    """The CDM table whose primary key column ``name`` of ``select`` is, when ``select`` (and every query it reads
+    the column through) reads exactly one source with no join; None otherwise."""
+    if depth > 8:
+        return None
+    src = _single_source(select)
+    if src is None:
+        return None
+    query = _source_query(select, src)
+    if query is None:
+        if not isinstance(src, exp.Table) or not isinstance(src.this, exp.Identifier) or _is_temporary_name(src):
+            return None
+        table = normalize_name(src.name)
+        return table if PRIMARY_KEYS.get(table) == name else None
+    branches = _query_branches(query)
+    if len(branches) != 1:
+        return None
+    branch = branches[0]
+    if branch.args.get("group") is not None:
+        return None
+    proj = _explicit_projection(branch, name)
+    if proj is not None:
+        inner = proj.this if isinstance(proj, exp.Alias) else proj
+        while isinstance(inner, (exp.Cast, exp.TryCast, exp.Paren)):
+            inner = inner.this
+        return _key_table(branch, normalize_name(inner.name), depth + 1) if isinstance(inner, exp.Column) else None
+    return _key_table(branch, name, depth + 1) if _star_qualifiers(branch) else None
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-NORM_PRIMARY_KEY_COLUMNS = {_norm(k): _norm(v) for k, v in PRIMARY_KEY_COLUMNS.items()}
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _normalize_aliases(aliases: Dict[str, str]) -> Dict[str, str]:
-    return {_norm(k): _norm(v) for k, v in aliases.items()}
-
-
-def _has_joins(select: exp.Select) -> bool:
-    return any(select.find_all(exp.Join))
-
-
-def _is_distinct_on(select: exp.Select) -> bool:
-    distinct = select.args.get("distinct")
-    if isinstance(distinct, exp.Distinct) and distinct.args.get("on"):
-        return True
-    return False
-
-
-def _analyze_select_columns(
-    select: exp.Select,
-    aliases: Dict[str, str],
-) -> Tuple[List[str], List[str]]:
-    """
-    Returns (pk_columns, non_pk_columns)
-    """
-    pk_columns: List[str] = []
-    non_pk_columns: List[str] = []
-
-    # Get tables in THIS SELECT's FROM clause only
-    from_tables = set()
-    from_clause = select.args.get("from_")
-    if from_clause and isinstance(from_clause, exp.From):
-        for table_expr in from_clause.find_all(exp.Table):
-            table_name = _norm(table_expr.name)
-            from_tables.add(aliases.get(table_name, table_name))
-
-    expressions = select.expressions or []
-
-    for expr in expressions:
-        if isinstance(expr, exp.Alias):
+def _projected_key(select: exp.Select, exprs: List[exp.Expression]) -> Optional[Tuple[str, str]]:
+    """(key column as written, table) when one of ``exprs`` is the primary key of the SELECT's single source."""
+    src = _single_source(select)
+    if src is None:
+        return None
+    for expr in exprs:
+        expr = expr.this if isinstance(expr, exp.Alias) else expr
+        while isinstance(expr, (exp.Cast, exp.TryCast, exp.Paren)):
             expr = expr.this
-
-        if not isinstance(expr, exp.Column):
-            non_pk_columns.append("expr")
+        if isinstance(expr, exp.Star) or (isinstance(expr, exp.Column) and isinstance(expr.this, exp.Star)):
+            table = _star_key(select, src)
+            if table:
+                return f"{expr.sql()} (includes {PRIMARY_KEYS[table]})", table
             continue
-
-        table, col_name = resolve_table_col(expr, aliases)
-
-        if not col_name:
-            non_pk_columns.append("unknown")
-            continue
-
-        col_norm = _norm(col_name)
-
-        if col_norm not in NORM_PRIMARY_KEY_COLUMNS:
-            non_pk_columns.append(col_name)
-            continue
-
-        expected_table = NORM_PRIMARY_KEY_COLUMNS[col_norm]
-
-        if table:
-            table_norm = _norm(table)
-            actual_table = aliases.get(table_norm, table_norm)
-
-            if actual_table == expected_table:
-                pk_columns.append(col_name)
-            else:
-                non_pk_columns.append(col_name)
-        else:
-            # Unqualified column → check if expected table is in THIS SELECT's FROM clause
-            # NOT just anywhere in the query
-            if expected_table in from_tables:
-                pk_columns.append(col_name)
-            else:
-                non_pk_columns.append(col_name)
-
-    return pk_columns, non_pk_columns
+        if isinstance(expr, exp.Column):
+            if expr.table and normalize_name(expr.table) != normalize_name(src.alias_or_name):
+                continue
+            table = _key_table(select, normalize_name(expr.name))
+            if table:
+                return expr.name, table
+    return None
 
 
-# --- Rule ------------------------------------------------------------------
+def _star_key(select: exp.Select, src: exp.Expression) -> Optional[str]:
+    for table, key in PRIMARY_KEYS.items():
+        if _key_table(select, key) == table:
+            return table
+    return None
+
+
+_DISTINCT_KEYWORD = re.compile(r"\bdistinct\b\s*", re.IGNORECASE)
+
+
+def _distinct_removal_patch(sql: str):
+    """REMOVE patch for the DISTINCT keyword when the text has exactly one; otherwise None (FREEFORM)."""
+    matches = list(_DISTINCT_KEYWORD.finditer(sql))
+    if len(matches) != 1:
+        return None
+    return patch_remove((matches[0].start(), matches[0].end()))
 
 
 @register
 class NoDistinctOnPrimaryKeyColumnRule(Rule):
-    """Detects redundant DISTINCT on primary key columns."""
+    """Redundant DISTINCT over a single table's primary key."""
 
     rule_id = "anti_patterns.no_distinct_on_primary_key_column"
     name = "No DISTINCT on Primary Key Column"
 
     description = (
-        "Detects redundant use of DISTINCT on primary key columns, which are "
-        "unique by definition. This may indicate a misunderstanding of the data "
-        "or missing join conditions."
+        "Detects SELECT DISTINCT over the primary key of a single CDM table read without joins. Every row is "
+        "already unique, so DISTINCT is redundant."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "REMOVE: DISTINCT when the SELECT list is just primary-key columns (PKs are unique by definition). If duplicates appear, the JOIN conditions are wrong — fix those instead of masking with DISTINCT."
-    long_description = (
-        "DISTINCT on a primary-key column is a tautology: primary keys are "
-        "unique by definition, so the de-duplication never actually "
-        "removes a row. Its appearance usually signals one of two things: "
-        "the author doesn't realise the column is a primary key (worth "
-        "double-checking the table model), or they suspect a JOIN is "
-        "causing duplicates and are papering over it with DISTINCT instead "
-        "of fixing the join. Remove the DISTINCT and, if duplicates do "
-        "appear, tighten the join predicate."
+    suggested_fix = (
+        "REMOVE: DISTINCT. The SELECT reads one table without joins and includes its primary key, so its rows are "
+        "already unique."
     )
-    example_bad = "SELECT DISTINCT person_id\nFROM person;"
-    example_good = "SELECT person_id\nFROM person;"
+    long_description = (
+        "A primary key is unique within its table. A SELECT over that table alone, with no joins, that projects "
+        "the primary key (as is, under a cast, or through * / t.*) therefore returns unique rows, and DISTINCT "
+        "never removes one; it only adds a sort or hash step. The table may be read through CTEs and derived tables that themselves "
+        "read one source without joins or set operations. The primary keys are those of the CDM v5.4 field-level "
+        "specification. Queries that join other sources are not flagged: a join can repeat the key."
+    )
+    example_bad = (
+        "SELECT DISTINCT condition_occurrence_id\nFROM condition_occurrence\nWHERE condition_concept_id = 201826;"
+    )
+    example_good = "SELECT condition_occurrence_id\nFROM condition_occurrence\nWHERE condition_concept_id = 201826;"
+    references = (
+        CDM_FIELD_LEVEL,
+        Reference(
+            "PostgreSQL documentation: SELECT, DISTINCT clause",
+            "https://www.postgresql.org/docs/current/sql-select.html#SQL-DISTINCT",
+        ),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
         trees, error = parse_sql(sql, dialect)
         if error:
             return []
 
-        for tree in trees:
+        violations: List[RuleViolation] = []
+        for tree in trees or []:
             if tree is None:
                 continue
-
-            aliases = _normalize_aliases(extract_aliases(tree))
-
             for select in tree.find_all(exp.Select):
-                # Must have DISTINCT
-                if not select.args.get("distinct"):
-                    continue
-
-                # Skip DISTINCT ON (Postgres-specific valid use case)
-                if _is_distinct_on(select):
-                    continue
-
-                pk_columns, non_pk_columns = _analyze_select_columns(select, aliases)
-
-                if not pk_columns:
-                    continue
-
-                has_joins = _has_joins(select)
-
-                for pk_col in pk_columns:
-                    if has_joins:
-                        message = (
-                            f"DISTINCT used on primary key column '{pk_col}' in a query with joins. "
-                            f"Primary keys are unique by definition. This may indicate incorrect joins."
-                        )
-                        suggestion = "Review join conditions to ensure they do not introduce duplicates."
-                        # When joins are present, the right fix is to repair
-                        # the join predicate, not to strip DISTINCT — leave
-                        # the patch on FREEFORM auto-default.
-                        patch = None
-                    else:
-                        message = (
-                            f"Redundant DISTINCT used on primary key column '{pk_col}'. "
-                            f"Primary keys are unique by definition."
-                        )
-                        suggestion = f"Remove DISTINCT when selecting '{pk_col}'."
-                        # No joins: a clean REMOVE of `DISTINCT ` (with the
-                        # trailing space). Locate is unique-match-only;
-                        # ambiguous cases (multiple SELECT DISTINCT in the
-                        # same SQL) fall back to FREEFORM via auto-default.
-                        from fastssv.core.patch import locate, remove as patch_remove
-
-                        span = locate(sql, "DISTINCT ")
-                        patch = patch_remove(span) if span is not None else None
-
-                    violations.append(
-                        self.create_violation(
-                            message=message,
-                            suggested_fix=suggestion,
-                            suggested_fix_patch=patch,
-                            details={
-                                "column": pk_col,
-                                "has_joins": has_joins,
-                                "recommendation": ("Primary keys are inherently unique; DISTINCT is unnecessary."),
-                            },
-                        )
-                    )
-
+                found = self._check(sql, select)
+                if found is not None:
+                    violations.append(found)
         return violations
+
+    def _check(self, sql: str, select: exp.Select) -> Optional[RuleViolation]:
+        distinct = select.args.get("distinct")
+        if isinstance(distinct, exp.Distinct) and not distinct.args.get("on"):
+            key = _projected_key(select, list(select.expressions))
+            if key:
+                return self._violation(sql, key, "DISTINCT", _distinct_removal_patch(sql))
+        return None
+
+    def _violation(self, sql: str, key: Tuple[str, str], form: str, patch) -> RuleViolation:
+        column, table = key
+        fix = f"REMOVE: DISTINCT; '{column}' is the primary key of {table}."
+        return self.create_violation(
+            message=(
+                f"Redundant {form} on primary key column '{column}'. A primary key is unique, and this SELECT reads "
+                f"only `{table}` without joins, so no row can repeat."
+            ),
+            suggested_fix=fix,
+            suggested_fix_patch=patch,
+            details={"column": column, "table": table, "form": form},
+        )
 
 
 __all__ = ["NoDistinctOnPrimaryKeyColumnRule"]

@@ -6,14 +6,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-157-orange)
+![Rules](https://img.shields.io/badge/rules-92-orange)
 ![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
 
 **OMOP SQL that runs without errors can still be analytically wrong.**
 
-A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 157 rules, no database connection, deterministic.
+A query that silently drops 30% of patients because it misses concept descendants, filters on a deprecated concept, or applies a temporal constraint outside a patient's observation window will execute cleanly, return plausible numbers, and produce a flawed study. FastSSV catches these violations before they reach results — 92 rules, no database connection, deterministic.
 
 📖 **Full documentation: <https://fastomop.github.io/fastssv/>**
 
@@ -33,7 +33,7 @@ uv add fastssv
 
 ```bash
 uv run fastssv path/to/query.sql                       # writes output/query_report.json
-uv run fastssv path/to/query.sql --strict              # cohort-grade enforcement
+uv run fastssv path/to/query.sql --strict              # strict mode: extra checks for ETL validation
 uv run fastssv path/to/query.sql --dialect bigquery    # auto, postgres, tsql, oracle, redshift, bigquery, snowflake, databricks, duckdb
 ```
 
@@ -62,31 +62,19 @@ WHERE c.concept_name LIKE '%aspirin%';
   "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
   "is_valid": true,
   "error_count": 0,
-  "warning_count": 3,
+  "warning_count": 1,
   "warnings": [
     {
       "rule_id": "anti_patterns.concept_name_lookup",
       "severity": "warning",
-      "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). This is highly unreliable as concept names can vary. Use concept_code + vocabulary_id or concept_id instead.",
+      "issue": "Query identifies concepts by pattern-matching names: c.concept_name LIKE '%aspirin%'. A name pattern can match unrelated concepts and miss differently named ones. Concept names are display text, not identifiers: not unique, and can be reworded between vocabulary releases. Use concept_id, or concept_code + vocabulary_id.",
       "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, OR with `WHERE c.concept_id = <id>` if the concept_id is known."
-    },
-    {
-      "rule_id": "concept_standardization.standard_concept_enforcement",
-      "severity": "warning",
-      "issue": "Query uses STANDARD concept fields without ensuring concepts are standard.",
-      "fix": "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts."
-    },
-    {
-      "rule_id": "concept_standardization.concept_domain_validation",
-      "severity": "warning",
-      "issue": "drug_exposure.drug_concept_id joined to concept 'c' without domain_id filter. Expected domain 'Drug'.",
-      "fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
     }
   ]
 }
 ```
 
-`is_valid` is `true` because every violation here is a `warning` — under normal mode, only `error`-severity violations gate the exit code. Run `fastssv query.sql --strict` to escalate best-practice warnings to errors. See the [Semantic rules guide](docs/semantic_rules_guide.md) for the reasoning behind each category and the [Rules reference](docs/rules_reference.md) for the full catalog.
+`is_valid` is `true` because the violation here is a `warning` — under normal mode, only `error`-severity violations gate the exit code. `--strict` adds the strict-only checks described in [Strict mode](docs/semantic_rules_guide.md#strict-mode). See the [Semantic rules guide](docs/semantic_rules_guide.md) for the reasoning behind each category and the [Rules reference](docs/rules_reference.md) for the full catalog.
 
 ## Why FastSSV
 
@@ -98,7 +86,7 @@ Existing OHDSI tools validate data quality, characterise cohorts, and measure ph
 
 **It is AI-agnostic.** SQL produced by humans, ATLAS, scripts, or AI agents is validated identically. FastSSV treats any SQL generator as a black box whose output needs checking.
 
-**It is rule-based and extensible.** Every check is a discrete, documented rule with a unique ID, a severity level, a violation message, and a suggested fix. New rules can be added without touching existing ones.
+**It is rule-based and extensible.** Every check is a discrete, documented rule with a unique ID, a severity level, a violation message, and a suggested fix. Each rule also carries a triggering example, its corrected version, and the published sources it is derived from (CDM specification, Book of OHDSI, engine documentation); see the [Rules reference](docs/rules_reference.md) or the `/rules` page of the web UI. New rules can be added without touching existing ones.
 
 ## Position in the OHDSI ecosystem
 
@@ -140,7 +128,7 @@ Mounted at `/mcp` and built per the [Streamable HTTP transport spec](https://mod
 | Architecture overview | [docs/architecture.md](docs/architecture.md) |
 | Plugin system / writing a rule | [docs/plugin_architecture.md](docs/plugin_architecture.md) |
 | Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
-| Per-rule catalog (all 157) | [docs/rules_reference.md](docs/rules_reference.md) |
+| Per-rule catalog (all 92, with examples and sources) | [docs/rules_reference.md](docs/rules_reference.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
 | MCP server | [docs/mcp.md](docs/mcp.md) |
 | JSON report format | [docs/json_output.md](docs/json_output.md) |

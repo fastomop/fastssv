@@ -1,206 +1,92 @@
 """Join Key Validation Rule.
 
-Validates that JOIN conditions use correct foreign key relationships in OMOP queries.
-Detects incompatible or suspicious JOIN keys that would produce incorrect results.
+The CDM conventions separate two id namespaces. "_ID: Unique identifiers for key entities, which can serve as
+foreign keys to establish relationships across entities" (person_id, visit_occurrence_id, provider_id, ...), and
+"_CONCEPT_ID: Foreign key into the Standardized Vocabularies". An equality between an entity key and a concept id
+compares numbers from unrelated sequences: both are integers, so the comparison runs, but every match is a numeric
+coincidence.
 
-The Problem:
-    Joining tables on incompatible keys creates meaningless results:
+    SELECT * FROM person p JOIN concept c ON p.person_id = c.concept_id
+    -- returns the concept whose id happens to equal each person_id
 
-    SELECT * FROM person p
-    JOIN concept c ON p.person_id = c.concept_id
-    -- WRONG: person_id and concept_id are different entity types!
-
-    Common mistakes:
-    1. Joining person_id to concept_id (person IDs vs concept IDs)
-    2. Joining visit_occurrence_id to concept_id (visit IDs vs concept IDs)
-    3. Joining provider_id to concept_id (provider IDs vs concept IDs)
-    4. Mixing up different _id columns (person_id = provider_id)
-
-    This causes:
-    - Incorrect query results (accidental matches on numeric IDs)
-    - Data quality issues (meaningless joins)
-    - Silent bugs (query runs but returns wrong data)
-
-Violation patterns:
-    SELECT * FROM person p
-    JOIN concept c ON p.person_id = c.concept_id
-    -- ERROR: Incompatible keys (person_id ≠ concept_id)
-
-    SELECT * FROM condition_occurrence co
-    JOIN provider pr ON co.person_id = pr.provider_id
-    -- WARNING: Suspicious (different _id types)
-
-Correct patterns:
-    SELECT * FROM person p
-    JOIN condition_occurrence co ON p.person_id = co.person_id
-    -- CORRECT: Same entity type (person_id ↔ person_id)
-
-    SELECT * FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
-    -- CORRECT: Foreign key relationship (*_concept_id ↔ concept_id)
+Entity keys are the primary keys of the CDM's non-vocabulary tables and the foreign keys that refer to them;
+concept ids are concept.concept_id and every column that is a foreign key to CONCEPT. Both lists come from the CDM
+v5.4 field-level specification. Both sides are traced through CTEs, derived tables, casts and renaming aliases to
+the base column they read, and ``entity_key IN (SELECT concept_id ...)`` is judged like an equality. Columns of
+tables outside the CDM are not judged.
 """
 
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.deduplication import predicate_key
+from fastssv.core.helpers import DERIVED, extract_aliases, normalize_name, parse_sql, resolve_column_source
+from fastssv.core.references import BOOK_CDM, CDM_CONVENTIONS, section
 from fastssv.core.registry import register
+from fastssv.rules.anti_patterns._ap_cdm_fields import CDM_TABLES, CONCEPT_ID_COLUMNS, ENTITY_KEY_COLUMNS
+
+_UNWRAP = (exp.Cast, exp.TryCast, exp.Paren)
 
 
-# --- Constants -------------------------------------------------------------
-
-# Known valid OMOP join keys (safe joins)
-VALID_JOIN_KEYS: Set[Tuple[str, str]] = {
-    ("person_id", "person_id"),
-    ("visit_occurrence_id", "visit_occurrence_id"),
-    ("visit_detail_id", "visit_detail_id"),
-    ("provider_id", "provider_id"),
-    ("care_site_id", "care_site_id"),
-    ("drug_concept_id", "concept_id"),
-    ("condition_concept_id", "concept_id"),
-    ("procedure_concept_id", "concept_id"),
-    ("measurement_concept_id", "concept_id"),
-    ("observation_concept_id", "concept_id"),
-    ("device_concept_id", "concept_id"),
-    ("concept_id", "concept_id"),
-    # Canonical OMOP concept_ancestor patterns for hierarchy expansion
-    ("descendant_concept_id", "condition_concept_id"),
-    ("descendant_concept_id", "drug_concept_id"),
-    ("descendant_concept_id", "procedure_concept_id"),
-    ("descendant_concept_id", "measurement_concept_id"),
-    ("descendant_concept_id", "observation_concept_id"),
-    ("ancestor_concept_id", "concept_id"),
-    ("descendant_concept_id", "concept_id"),
-    # Gender/race/ethnicity lookups
-    ("gender_concept_id", "concept_id"),
-    ("race_concept_id", "concept_id"),
-    ("ethnicity_concept_id", "concept_id"),
-    # Cost table joins (cost_event_id is a polymorphic key)
-    ("drug_exposure_id", "cost_event_id"),
-    ("procedure_occurrence_id", "cost_event_id"),
-    ("condition_occurrence_id", "cost_event_id"),
-    ("measurement_id", "cost_event_id"),
-    ("observation_id", "cost_event_id"),
-    ("device_exposure_id", "cost_event_id"),
-    ("visit_occurrence_id", "cost_event_id"),
-    ("specimen_id", "cost_event_id"),
-}
-
-# Columns that are definitely incompatible
-# These are entity IDs that should never be joined to concept_id
-INCOMPATIBLE_COLUMN_GROUPS: List[Set[str]] = [
-    {"person_id", "concept_id"},
-    {"visit_occurrence_id", "concept_id"},
-    {"provider_id", "concept_id"},
-    {"care_site_id", "concept_id"},  # care_site is a physical entity, not a concept
-    {"location_id", "concept_id"},  # location is a physical entity, not a concept
-]
+def _base_column(node: Optional[exp.Expression], aliases: Dict[str, str]) -> Optional[Tuple[str, str]]:
+    """(table, column) of the CDM column ``node`` reads, through casts and lineage; None otherwise."""
+    while isinstance(node, _UNWRAP):
+        node = node.this
+    if not isinstance(node, exp.Column):
+        return None
+    table, column = resolve_column_source(node, aliases)
+    table, column = normalize_name(table or ""), normalize_name(column or "")
+    if table == DERIVED or table not in CDM_TABLES:
+        return None
+    return table, column
 
 
-# --- Helpers ---------------------------------------------------------------
+def _subquery_column(query: exp.Expression) -> Optional[exp.Expression]:
+    while isinstance(query, exp.Subquery):
+        query = query.this
+    if isinstance(query, exp.Select) and len(query.expressions) == 1:
+        proj = query.expressions[0]
+        return proj.this if isinstance(proj, exp.Alias) else proj
+    return None
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_valid_join_pair(col1: str, col2: str) -> bool:
-    pair = (_norm(col1), _norm(col2))
-    reverse = (_norm(col2), _norm(col1))
-    return pair in VALID_JOIN_KEYS or reverse in VALID_JOIN_KEYS
-
-
-def _is_incompatible(col1: str, col2: str) -> bool:
-    c1 = _norm(col1)
-    c2 = _norm(col2)
-
-    for group in INCOMPATIBLE_COLUMN_GROUPS:
-        if c1 in group and c2 in group and c1 != c2:
-            return True
-    return False
-
-
-def _is_suspicious(col1: str, col2: str) -> bool:
-    """
-    Heuristic: same suffix (_id) but different semantic prefix.
-
-    OMOP-aware: If one column ends with '_concept_id' and the other is
-    any other '*_id' column, this is likely a valid concept join pattern.
-    """
-    if not col1 or not col2:
-        return False
-
-    c1 = _norm(col1)
-    c2 = _norm(col2)
-
-    # Both end with _id but are different
-    if c1.endswith("_id") and c2.endswith("_id") and c1 != c2:
-        # OMOP pattern: any column with name ending in '_concept_id' can join to another
-        # This includes CTE aliases like 'snomed_diabetes_id' joining to 'condition_concept_id'
-        if c1.endswith("_concept_id") and c2.endswith("_concept_id"):
-            return False  # Both are concept_id columns, valid join
-
-        # Allow any *_id to join to *_concept_id (CTE pattern)
-        # This handles cases like snomed_diabetes_id = condition_concept_id
-        if c1.endswith("_concept_id") or c2.endswith("_concept_id"):
-            return False  # One is a concept_id, likely valid
-
-        return True
-
-    return False
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _extract_join_conditions(tree: exp.Expression) -> List[Tuple[exp.Column, exp.Column, str]]:
-    """Extract column = column join conditions."""
-    joins = []
-
-    for eq in tree.find_all(exp.EQ):
-        left = eq.this
-        right = eq.expression
-
-        if isinstance(left, exp.Column) and isinstance(right, exp.Column):
-            joins.append((left, right, eq.sql()))
-
-    return joins
-
-
-# --- Rule ------------------------------------------------------------------
+def _kind(col: Tuple[str, str]) -> Optional[str]:
+    if col[1] in CONCEPT_ID_COLUMNS:
+        return "concept"
+    if col[1] in ENTITY_KEY_COLUMNS:
+        return "entity"
+    return None
 
 
 @register
 class JoinKeyValidationRule(Rule):
-    """Validate correctness of JOIN keys in OMOP queries."""
+    """Entity key compared with a concept id."""
 
     rule_id = "anti_patterns.join_key_validation"
     name = "Join Key Validation"
 
     description = (
-        "Detects incorrect or suspicious JOIN conditions. "
-        "Joining incompatible keys (e.g., person_id = concept_id) "
-        "produces invalid results."
+        "Detects an equality between an OMOP entity key (person_id, visit_occurrence_id, provider_id, "
+        "condition_occurrence_id, ...) and a concept id. These are different id namespaces, so any match is "
+        "coincidental and the join returns meaningless rows."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: incompatible join keys with the canonical OMOP FK pair. Patterns: person_id = person_id across clinical tables; <event>.<x>_concept_id = concept.concept_id; <clinical>.visit_occurrence_id = visit_occurrence.visit_occurrence_id."
+    suggested_fix = (
+        "REPLACE: the join keys with a pair the CDM defines: person_id = person_id across clinical tables; "
+        "<event>.<x>_concept_id = concept.concept_id; <clinical>.visit_occurrence_id = "
+        "visit_occurrence.visit_occurrence_id."
+    )
     long_description = (
-        "OMOP uses distinct ID namespaces for different entities: person_id, "
-        "visit_occurrence_id, provider_id, care_site_id, concept_id, and "
-        "so on. Joining incompatible ID columns (e.g. "
-        "`person.person_id = concept.concept_id`) rarely errors, because "
-        "they're both integers — but every match is a numeric coincidence, "
-        "not a real relationship. The result is garbage rows. Pair keys "
-        "with their canonical foreign-key counterparts."
+        "The CDM conventions use distinct id namespaces: _ID columns identify entity rows (person_id, "
+        "visit_occurrence_id, provider_id, care_site_id, location_id, the event-table keys), _CONCEPT_ID columns "
+        "are foreign keys into the Standardized Vocabularies. Comparing an entity key with a concept id rarely "
+        "errors, because both are integers, but every match is a numeric coincidence. Both sides are traced "
+        "through CTEs, derived tables, casts and renaming aliases to the base column they read, and IN "
+        "(SELECT ...) is judged like an equality. The key lists come from the CDM v5.4 field-level specification."
     )
     example_bad = "SELECT *\nFROM person p\nJOIN concept c ON p.person_id = c.concept_id;"
     example_good = (
@@ -208,83 +94,56 @@ class JoinKeyValidationRule(Rule):
         "FROM person p\n"
         "JOIN concept c ON p.gender_concept_id = c.concept_id;"
     )
+    references = (
+        section(CDM_CONVENTIONS, "fields", "Fields"),
+        section(BOOK_CDM, "general-naming-conventions-of-fields", "General naming conventions of fields"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        # --- Fast pre-check ---
-        if "join" not in sql.lower():
-            return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
         seen: Set[str] = set()
-
-        for tree in trees:
+        for tree in trees or []:
             if not tree:
                 continue
-
             aliases = extract_aliases(tree)
-
-            for left, right, context in _extract_join_conditions(tree):
-                left_table, left_col = resolve_table_col(left, aliases)
-                right_table, right_col = resolve_table_col(right, aliases)
-
-                if not left_col or not right_col:
+            for node in tree.find_all(exp.EQ, exp.In):
+                if isinstance(node, exp.EQ):
+                    left, right = node.this, node.expression
+                else:
+                    if node.args.get("query") is None:
+                        continue
+                    left, right = node.this, _subquery_column(node.args["query"])
+                a, b = _base_column(left, aliases), _base_column(right, aliases)
+                if a is None or b is None:
                     continue
-
-                l = _norm(left_col)
-                r = _norm(right_col)
-
-                key = f"{l}|{r}|{context}"
-                if key in seen:
+                kinds = {_kind(a), _kind(b)}
+                if kinds != {"entity", "concept"}:
                     continue
-                seen.add(key)
-
-                # --- Case 1: Incompatible (HIGH severity) ---
-                if _is_incompatible(l, r):
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                f"Incompatible JOIN keys: '{left_col}' = '{right_col}'. "
-                                "These columns represent different entities and should not be joined."
-                            ),
-                            severity=Severity.ERROR,
-                            suggested_fix=self.suggested_fix,
-                            details={
-                                "type": "incompatible_join",
-                                "left_column": left_col,
-                                "right_column": right_col,
-                                "context": context,
-                            },
-                        )
+                entity, concept = (a, b) if _kind(a) == "entity" else (b, a)
+                context = node.sql()
+                if context in seen:
+                    continue
+                seen.add(context)
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Incompatible JOIN keys: {context} compares entity key '{entity[1]}' with concept id "
+                            f"'{concept[0]}.{concept[1]}'. Entity keys and concept ids are different id "
+                            "namespaces, so any match is a coincidence."
+                        ),
+                        details={
+                            "type": "incompatible_join",
+                            "left_column": a[1],
+                            "right_column": b[1],
+                            "context": context,
+                            "predicate": predicate_key(node),
+                        },
                     )
-                    continue
-
-                # --- Case 2: Valid joins ---
-                if _is_valid_join_pair(l, r):
-                    continue
-
-                # --- Case 3: Suspicious joins ---
-                if _is_suspicious(l, r):
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                f"Suspicious JOIN condition: '{left_col}' = '{right_col}'. "
-                                "Columns share '_id' suffix but represent different entities."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=self.suggested_fix,
-                            details={
-                                "type": "suspicious_join",
-                                "left_column": left_col,
-                                "right_column": right_col,
-                                "context": context,
-                            },
-                        )
-                    )
-
+                )
         return violations
 
 

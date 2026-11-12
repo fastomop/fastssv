@@ -1,356 +1,204 @@
 """Cohort to Clinical Table Join Validation Rule.
 
-OMOP semantic rule JOIN_022:
-cohort joins to clinical tables via cohort.subject_id = clinical_table.person_id.
-Joining on any other columns is structurally incorrect.
+COHORT rows name their members in ``subject_id``. The CDM v5.4 specification lets a cohort's subjects be persons,
+providers or visits; COHORT_DEFINITION.subject_concept_id records which. Person cohorts are by far the common case,
+and the Book of OHDSI joins them to clinical tables with ``subject_id = person_id``.
 
-The Problem:
-    The cohort table is a RESULTS table with unique naming:
-    - Uses subject_id (not person_id) to identify patients
-    - This is the ONLY table in OMOP CDM that uses subject_id
-    - All clinical tables use person_id for patient identity
+The rule looks at every SELECT that reads a cohort source (the COHORT table, or a CTE / derived table that passes
+cohort.subject_id on, under any name) together with person-level sources (the CDM tables that carry person_id, or
+CTEs / derived tables passing their keys on). Predicates that must hold put columns into classes of equal values, so
+links run through casts, unqualified columns, USING, WHERE, other tables and the same literal. It reports, as
+WARNINGs:
 
-    The ONLY valid join is:
-    cohort.subject_id = clinical_table.person_id
-
-    Common mistakes:
-    1. Joining subject_id to primary keys (condition_occurrence_id, etc.)
-       - Structurally invalid (patient ID ≠ event ID)
-    2. Using person_id from cohort table
-       - cohort has no person_id column, only subject_id
-    3. Joining cohort_definition_id to person_id
-       - cohort_definition_id is not patient identity
+* a person-level source not tied to cohort.subject_id, directly (subject_id in one class with its person_id) or
+  through other person-level sources linked to the same person (``cohort -> drug_exposure -> condition_occurrence``):
+  each cohort subject is paired with rows of other patients unless that is intended;
+* cohort.subject_id equated with another entity's key (a visit, provider or event id) while the SELECT does not
+  restrict COHORT_DEFINITION.subject_concept_id: correct only for a cohort whose subjects are of that kind.
 
 Violation pattern:
-    SELECT *
+    SELECT c.subject_id, co.condition_concept_id
     FROM cohort c
-    JOIN condition_occurrence co ON c.subject_id = co.condition_occurrence_id
-    -- WRONG: Joining patient ID to event ID!
+    JOIN condition_occurrence co ON co.condition_start_date >= c.cohort_start_date
 
 Correct pattern:
-    SELECT
-      c.subject_id,
-      co.condition_occurrence_id,
-      co.condition_concept_id
+    SELECT c.subject_id, co.condition_concept_id
     FROM cohort c
     JOIN condition_occurrence co ON c.subject_id = co.person_id
-    WHERE c.cohort_definition_id = 123
       AND co.condition_start_date >= c.cohort_start_date
-      AND co.condition_start_date <= c.cohort_end_date
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    select_local_aliases,
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import column_origins, parse_sql, scope_nodes, scope_predicates
+from fastssv.core.references import BOOK_COHORTS, cdm_table, section
 from fastssv.core.registry import register
 
+from ._join_scope import hoist_joins, shadowed_tables
+from ._person_keys import key_domain
+from ._person_links import ScopeLinks
 
-# --- Constants -------------------------------------------------------------
-
-COHORT = "cohort"
-PERSON = "person"
-
-SUBJECT_ID = "subject_id"
-PERSON_ID = "person_id"
-
-CLINICAL_TABLES = {
-    "observation_period",
-    "visit_occurrence",
-    "visit_detail",
-    "condition_occurrence",
-    "drug_exposure",
-    "procedure_occurrence",
-    "device_exposure",
-    "measurement",
-    "observation",
-    "specimen",
-    "death",
-    "note",
-}
+SUBJECT = ("cohort", "subject_id")
+PERSON_KEY = ("person", "person_id")
+SUBJECT_CONCEPT = ("cohort_definition", "subject_concept_id")
 
 
-# --- Helpers ---------------------------------------------------------------
+def _subject_kind_restricted(select: exp.Select) -> bool:
+    """The SELECT filters COHORT_DEFINITION.subject_concept_id, so the kind of subject is explicit."""
+    for predicate in scope_predicates(select):
+        for col in scope_nodes(predicate):
+            if isinstance(col, exp.Column) and (column_origins(col) or set()) == {SUBJECT_CONCEPT}:
+                return True
+    return False
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
+def _check_select(links: ScopeLinks) -> Tuple[List[Tuple[str, List[str]]], List[Tuple[str, str]]]:
+    """(unlinked targets with the cohort-column equalities they do have, subject_id joins to non-person keys)."""
+    cohort_aliases = {a for a, cols in links.exposed.items() if any(o == SUBJECT for o in cols.values())}
+    if not cohort_aliases:
+        return [], []
+    level = links.person_level()
+    targets = {a: label for a, label in level.items() if a not in cohort_aliases}
+    if not targets:
+        return [], []
 
+    classes: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
+    for node in list(links._parent):
+        classes.setdefault(links._find(node), []).append(node)
 
-def _normalize_table(name: Optional[str]) -> Optional[str]:
-    if not name:
-        return None
-    return _norm(name.split(".")[-1])
-
-
-def _is_cohort(table: Optional[str]) -> bool:
-    return table == COHORT
-
-
-def _is_person(table: Optional[str]) -> bool:
-    return table == PERSON
-
-
-def _is_clinical(table: Optional[str]) -> bool:
-    return table in CLINICAL_TABLES
-
-
-def _is_col(col: Optional[str], name: str) -> bool:
-    return _norm(col) == name
-
-
-def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
-    """Extract column-to-column equality conditions."""
-    eqs: List[exp.EQ] = []
-
-    has_join_on = False
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if on_clause:
-            has_join_on = True
-            for eq in on_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    if not has_join_on:
-        where_clause = tree.find(exp.Where)
-        if where_clause:
-            for eq in where_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    return eqs
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> Dict[str, List[Tuple[str, str, str, str]]]:
-
-    errors_by_table: Dict[str, List[Tuple[str, str, str, str]]] = {}
-
-    clinical_tables: Set[str] = set()
-    person_aliases: Set[str] = set()
-
-    # --- Discover tables ---------------------------------------------------
-    for table in tree.find_all(exp.Table):
-        # A write target (`INSERT INTO cohort SELECT ... FROM condition_occurrence`) is not a source that
-        # needs joining.
-        if table.find_ancestor(exp.Insert, exp.Create) is not None and table.find_ancestor(exp.Select) is None:
+    attached: Set[str] = set()
+    non_person: List[Tuple[str, str]] = []
+    wrong: Dict[str, List[str]] = {}
+    for nodes in classes.values():
+        cohort_cols = [(a, c, links.origin((a, c))) for a, c in nodes if a in cohort_aliases]
+        if not cohort_cols:
             continue
-        t = _normalize_table(table.name)
+        has_subject = any(origin == SUBJECT for _, _, origin in cohort_cols)
+        for alias, column in nodes:
+            if alias not in targets:
+                continue
+            origin = links.origin((alias, column))
+            domain = key_domain(*origin) if origin else None
+            if domain is None:
+                continue
+            if has_subject and domain == PERSON_KEY:
+                attached.add(alias)
+            elif has_subject:
+                non_person.append((alias, f"{origin[0]}.{origin[1]}"))
+            else:
+                for c_alias, c_col, c_origin in cohort_cols:
+                    if c_origin and c_origin[0] == "cohort":
+                        wrong.setdefault(alias, []).append(f"cohort.{c_origin[1]} = {origin[0]}.{origin[1]}")
 
-        if _is_clinical(t):
-            clinical_tables.add(t)
-
-        if _is_person(t):
-            person_aliases.add(t)
-
-    cohort_read = any(
-        _is_cohort(_normalize_table(t.name))
-        for t in tree.find_all(exp.Table)
-        if not (t.find_ancestor(exp.Insert, exp.Create) is not None and t.find_ancestor(exp.Select) is None)
-    )
-    if not clinical_tables or not cohort_read:
-        return errors_by_table
-    # Only a clinical table read in the SAME select scope as a cohort source (base table or derived `... AS cohort`)
-    # needs a join to it; a CTE that profiles observation_period and another that reads cohort are unrelated.
-    co_scoped: Set[str] = set()
-    for sel in tree.find_all(exp.Select):
-        local = select_local_aliases(sel)
-        names = set(local.values()) | {_normalize_table(a) for a in local}
-        if any(_is_cohort(n) for n in names):
-            co_scoped |= {n for n in names if _is_clinical(n)}
-    clinical_tables &= co_scoped
-    if not clinical_tables:
-        return errors_by_table
-
-    # --- Status tracking ---------------------------------------------------
-    status = {
-        t: {
-            "direct_valid": False,
-            "via_person_valid": False,
-            "any_relation": False,
-            "errors": [],
-            "seen": set(),
-        }
-        for t in clinical_tables
-    }
-
-    cohort_to_person = False
-    person_to_clinical: Dict[str, bool] = {t: False for t in clinical_tables}
-
-    # --- Analyze joins -----------------------------------------------------
-    for eq in _extract_eq_conditions(tree):
-        left, right = eq.this, eq.expression
-
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-        # `ON subject_id = person.person_id`: an unqualified subject_id can only come from the cohort source.
-        if not lt and _norm(lc) == SUBJECT_ID:
-            lt = COHORT
-        if not rt and _norm(rc) == SUBJECT_ID:
-            rt = COHORT
-
-        if not (lt and lc and rt and rc):
+    graph = links.person_graph()
+    linked: Set[str] = set()
+    stack = list(attached)
+    while stack:
+        cur = stack.pop()
+        if cur in linked:
             continue
-
-        lt = _normalize_table(lt)
-        rt = _normalize_table(rt)
-        lc = _norm(lc)
-        rc = _norm(rc)
-
-        # --- cohort ↔ clinical (direct) ------------------------------------
-        if _is_cohort(lt) and _is_clinical(rt):
-            s = status[rt]
-            s["any_relation"] = True
-
-            if lc == SUBJECT_ID and rc == PERSON_ID:
-                s["direct_valid"] = True
-            else:
-                key = (COHORT, lc, rt, rc)
-                if key not in s["seen"]:
-                    s["errors"].append(key)
-                    s["seen"].add(key)
-
-        elif _is_cohort(rt) and _is_clinical(lt):
-            s = status[lt]
-            s["any_relation"] = True
-
-            if rc == SUBJECT_ID and lc == PERSON_ID:
-                s["direct_valid"] = True
-            else:
-                key = (COHORT, rc, lt, lc)
-                if key not in s["seen"]:
-                    s["errors"].append(key)
-                    s["seen"].add(key)
-
-        # --- cohort ↔ person -----------------------------------------------
-        if (_is_cohort(lt) and _is_person(rt)) or (_is_cohort(rt) and _is_person(lt)):
-            if (lc == SUBJECT_ID and rc == PERSON_ID) or (rc == SUBJECT_ID and lc == PERSON_ID):
-                cohort_to_person = True
-
-        # --- person ↔ clinical ---------------------------------------------
-        if _is_person(lt) and _is_clinical(rt):
-            if lc == PERSON_ID and rc == PERSON_ID:
-                person_to_clinical[rt] = True
-
-        elif _is_person(rt) and _is_clinical(lt):
-            if rc == PERSON_ID and lc == PERSON_ID:
-                person_to_clinical[lt] = True
-
-    # --- Final evaluation --------------------------------------------------
-    for table, s in status.items():
-        # valid via PERSON bridge
-        if cohort_to_person and person_to_clinical.get(table):
-            s["via_person_valid"] = True
-
-        is_valid = s["direct_valid"] or s["via_person_valid"]
-
-        if is_valid:
-            continue
-
-        # Only add generic error if no specific errors were found
-        if not s["errors"]:
-            if s["any_relation"]:
-                key = (COHORT, "INVALID", table, "INVALID")
-            else:
-                key = (COHORT, "NONE", table, "NONE")
-
-            if key not in s["seen"]:
-                s["errors"].append(key)
-
-        if s["errors"]:
-            errors_by_table[table] = s["errors"]
-
-    return errors_by_table
-
-
-# --- Rule ------------------------------------------------------------------
+        linked.add(cur)
+        stack.extend(graph.get(cur, ()))
+    non_person_aliases = {a for a, _ in non_person}
+    unlinked = [
+        (targets[a], sorted(set(wrong.get(a, [])))) for a in targets if a not in linked and a not in non_person_aliases
+    ]
+    restricted = _subject_kind_restricted(links.select)
+    return unlinked, ([] if restricted else [(targets[a], key) for a, key in non_person])
 
 
 @register
 class CohortClinicalJoinValidationRule(Rule):
-    """
-    Validate that cohort joins to clinical tables using:
-        cohort.subject_id = clinical.person_id
-
-    Also allows:
-        cohort → person → clinical
-    """
+    """A person-level source read with a cohort should be tied to cohort.subject_id."""
 
     rule_id = "joins.cohort_clinical_join_validation"
     name = "Cohort to Clinical Table Join Validation"
 
     description = (
-        "Ensures cohort joins to clinical tables using subject_id = person_id, either directly or via person table."
+        "A clinical table read together with a cohort should be tied to cohort.subject_id (subject_id = person_id, "
+        "directly or through other tables). subject_id joined to a visit, provider or event key is right only for "
+        "a cohort whose subjects are of that kind."
     )
 
-    severity = Severity.ERROR
+    severity = Severity.WARNING
 
-    suggested_fix = "REPLACE: the join target WITH `cohort.subject_id = <clinical>.person_id` (cohort.subject_id holds person_id values), OR go via person: `JOIN person p ON cohort.subject_id = p.person_id JOIN <clinical> c ON p.person_id = c.person_id`."
-    example_bad = "SELECT * FROM cohort c\nJOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;"
-    example_good = "SELECT * FROM cohort c\nJOIN condition_occurrence co ON c.subject_id = co.person_id;"
+    suggested_fix = (
+        "ADD: `cohort.subject_id = <clinical>.person_id` to the join (or link the table to another one already tied "
+        "to subject_id). If the cohort's subjects are visits or providers, restrict "
+        "cohort_definition.subject_concept_id accordingly."
+    )
+    example_bad = (
+        "SELECT c.subject_id, co.condition_concept_id\n"
+        "FROM cohort c\n"
+        "JOIN condition_occurrence co ON co.condition_start_date >= c.cohort_start_date;"
+    )
+    example_good = (
+        "SELECT c.subject_id, co.condition_concept_id\n"
+        "FROM cohort c\n"
+        "JOIN condition_occurrence co ON c.subject_id = co.person_id\n"
+        "  AND co.condition_start_date >= c.cohort_start_date;"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT c.subject_id, co.condition_concept_id\n"
+                "FROM cohort c, condition_occurrence co\n"
+                "WHERE c.cohort_definition_id = 1;"
+            ),
+            severity=Severity.WARNING,
+            note="cohort and a clinical table read together with no join condition at all.",
+        ),
+        RuleExample(
+            sql="SELECT * FROM cohort c\nJOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;",
+            severity=Severity.WARNING,
+            note="subject_id joined to a visit key, without restricting the cohort definition's subject kind.",
+        ),
+    )
+    references = (
+        cdm_table("cohort"),
+        cdm_table("cohort_definition"),
+        section(BOOK_COHORTS, "require-prior-hypertension", "Require prior hypertension"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
         if "cohort" not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
+        violations: List[RuleViolation] = []
+        seen: Set[str] = set()
         for tree in trees:
-            if not tree or not has_table_reference(tree, COHORT):
+            if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            errors_by_table = _detect(tree, aliases)
-
-            for clinical_table, errors in errors_by_table.items():
-                for cohort_tbl, cohort_col, clin_tbl, clin_col in errors:
-                    if cohort_col == "NONE":
-                        msg = f"cohort and {clinical_table} are used but not joined. Missing join condition."
-                    elif cohort_col == "INVALID":
-                        msg = (
-                            f"Invalid join between cohort and {clinical_table}. "
-                            f"Expected subject_id = person_id (directly or via person)."
-                        )
-                    else:
-                        msg = (
-                            f"Invalid FK join between cohort and {clinical_table}: "
-                            f"{cohort_tbl}.{cohort_col} = {clin_tbl}.{clin_col}. "
-                            f"Expected subject_id = person_id."
-                        )
-
-                    violations.append(
-                        self.create_violation(
-                            message=msg,
-                            suggested_fix=self.suggested_fix,
-                            details={
-                                "type": "invalid_fk_join",
-                                "cohort_column": cohort_col,
-                                "clinical_table": clinical_table,
-                                "clinical_column": clin_col,
-                            },
-                        )
+            tree = hoist_joins(tree)
+            shadowed = shadowed_tables(tree)
+            for select in tree.find_all(exp.Select):
+                if not select.args.get("joins"):
+                    continue
+                unlinked, non_person = _check_select(ScopeLinks(select, shadowed))
+                for label, wrong in unlinked:
+                    detail = f" It is equated only through {', '.join(wrong)}." if wrong else ""
+                    message = (
+                        f"cohort and {label} are read in one SELECT, but {label} is not joined to cohort.subject_id, directly or through other tables."
+                        f"{detail} Each cohort subject is paired with rows of other patients unless that is intended."
                     )
-
+                    if message not in seen:
+                        seen.add(message)
+                        violations.append(self.create_violation(message=message, details={"table": label}))
+                for label, key in non_person:
+                    message = (
+                        f"cohort.subject_id is joined to {key}. Cohort subjects are persons unless the cohort "
+                        f"definition says otherwise (COHORT_DEFINITION.subject_concept_id: Person, Provider, Visit); "
+                        f"for a person cohort join subject_id to {label}.person_id."
+                    )
+                    if message not in seen:
+                        seen.add(message)
+                        violations.append(self.create_violation(message=message, details={"table": label, "key": key}))
         return violations
 
 

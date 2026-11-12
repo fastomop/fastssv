@@ -29,7 +29,7 @@ any SQL linter and fail any replication attempt.
 
 -   :material-format-list-checks: **[Rules reference](rules_reference.md)**
 
-    Every built-in rule with its ID, severity, and example violation.
+    Every built-in rule with its ID, severity, examples, and the published sources it is derived from.
 
 -   :material-api: **[HTTP API](api.md)**
 

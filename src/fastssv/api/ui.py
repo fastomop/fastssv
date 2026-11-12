@@ -139,6 +139,11 @@ async def rules_page(request: Request):
                 "long_description": getattr(r, "long_description", None),
                 "example_bad": getattr(r, "example_bad", None),
                 "example_good": getattr(r, "example_good", None),
+                "extra_examples": [
+                    {"sql": e.sql, "severity": e.severity.value, "note": e.note, "strict": e.strict}
+                    for e in r.extra_examples
+                ],
+                "references": [{"title": ref.title, "url": ref.url} for ref in r.references],
             }
             for r in get_all_rules()
         ),
@@ -369,6 +374,8 @@ def _render_results(
             "dialect": dialect,
             "full_report_json": full_report_json,
             "rules_loaded": _rules_loaded(),
+            # Parse-stage findings (parse.*, meta.*) have no catalogue entry to link to.
+            "catalogued_rule_ids": {r.rule_id for r in get_all_rules()},
         },
         status_code=status_code,
     )

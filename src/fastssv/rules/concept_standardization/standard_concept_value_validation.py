@@ -1,232 +1,274 @@
 """Standard Concept Value Validation Rule.
 
-OMOP semantic rule OMOP_037:
-The standard_concept column only accepts 'S' (Standard), 'C' (Classification), or NULL
-(non-standard). Filtering with other values like 'Y', 'N', 1, 0 is incorrect.
+CDM v5.4 field-level specification, concept.standard_concept: "The allowable values are 'S' (Standard Concept) and
+'C' (Classification Concept), otherwise the content is NULL." A comparison with any other value matches nothing.
 
-Valid values:
-    - 'S': Standard concept (the preferred representation)
-    - 'C': Classification concept (hierarchical grouping)
-    - NULL: Non-standard concept (deprecated, source-specific, etc.)
+* ERROR: a required filter (AND-joined to WHERE / HAVING / an inner join's ON) that admits only values the column
+  never holds: ``= 'Y'``, ``= 'N'``, ``= ''`` (non-standard is NULL, not an empty string), ``IN ('N')``. On
+  PostgreSQL and DuckDB, which compare strings case-sensitively, a lowercase ``'s'`` / ``'c'`` is also an ERROR; on
+  other case-sensitive engines it is a WARNING and on SQL Server / MySQL it is accepted.
+* WARNING: the same comparison where it does not restrict the result (under OR, in a CASE label, in an outer join's
+  ON clause), a list that mixes valid and impossible values (``IN ('S', 'Y')``: the extra value is dead), and a
+  negated impossible value (``<> 'N'``, ``NOT IN ('')``), which excludes nothing and equals ``IS NOT NULL``.
 
-Incorrect pattern:
-    WHERE standard_concept = 'Y'  -- treating it like boolean
-    WHERE standard_concept = 1    -- using integer
-
-Correct pattern:
-    WHERE standard_concept = 'S'
-    WHERE standard_concept IN ('S', 'C')
-    WHERE standard_concept IS NULL
+``standard_concept = '' OR standard_concept IS NULL`` is accepted: it is a superset of ``IS NULL`` and returns the
+right rows. Number and boolean operands (``= 1``, ``= TRUE``) are type errors on this varchar column and are left to
+data_quality.column_type_validation; only values written as strings are judged. The column is identified by lineage, so a CTE or derived column that reuses the name for a computed value
+(``CASE ... END AS standard_concept``) is not the CDM column.
 """
 
-from typing import Dict, List, Set, Tuple, Optional
+import re
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    is_in_where_or_join_clause,
-    has_table_reference,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import BOOK_SQL, BOOK_VOCABULARIES, cdm_table, section
 from fastssv.core.registry import register
 
+from ._cs_scope import ColumnFilter, dead_scalar_column, instance_filters
 
-STANDARD_CONCEPT_COLUMN = "standard_concept"
 CONCEPT_TABLE = "concept"
+STANDARD_CONCEPT_COLUMN = "standard_concept"
 VALID_VALUES = {"S", "C"}
 
+# Book of OHDSI: "PostgreSQL ... always case sensitive", SQL Server case-insensitive. Lowercase was checked to match
+# nothing on DuckDB and PostgreSQL; other engines are reported at WARNING.
+_CASE_VERIFIED_DIALECTS = {"postgres", "postgresql", "duckdb"}
+_CASE_INSENSITIVE_DIALECTS = {"tsql", "mysql"}
+_TRUE_LIKE = {"Y", "YES", "TRUE", "T", "1"}
+_FALSE_LIKE = {"N", "NO", "FALSE", "F", "0"}
 
-# --- Helpers ---------------------------------------------------------------
+# Unrendered template parameters (`'{std}'`, `'@std'`, `'${std}'`) are filled in before the SQL runs.
+_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\{\w+\}|\$\{\w+\}|@\w+")
 
 
-def _normalize_literal(node: exp.Expression) -> Optional[str]:
-    """Extract and normalize literal value."""
-    if isinstance(node, exp.Literal):
-        val = str(node.this).strip("'").strip('"')
-        return val.upper()
-    return None
-
-
-def _is_standard_concept_column(
-    column: exp.Column,
-    aliases: Dict[str, str],
-    concept_present: bool,
-) -> bool:
-    """Ensure column is concept.standard_concept (alias-safe)."""
-    col = normalize_name(column.name)
-    if col != STANDARD_CONCEPT_COLUMN:
+def _matches_nothing(raw: str, case_sensitive: bool) -> bool:
+    if _TEMPLATE_PLACEHOLDER_RE.fullmatch(raw):
         return False
-
-    if column.table:
-        alias = str(column.table)
-        table = aliases.get(alias, alias)
-        return normalize_name(table) == CONCEPT_TABLE
-
-    # Only allow unqualified if concept table is present
-    return concept_present
+    if raw in VALID_VALUES:
+        return False
+    return case_sensitive or raw.upper() not in VALID_VALUES
 
 
-def _collect_in_values(node: exp.In) -> Tuple[Set[str], Set[str]]:
-    """Return (values, types) from IN clause."""
-    values = set()
-    types = set()
-
-    for expr in node.expressions or []:
-        if isinstance(expr, exp.Literal):
-            val = _normalize_literal(expr)
-            if val:
-                values.add(val)
-                types.add(type(expr.this).__name__)
-
-    return values, types
+def _note(raw: str) -> str:
+    if raw == "":
+        return "'' is not a standard_concept value; non-standard concepts carry NULL (use IS NULL)."
+    if raw.upper() in VALID_VALUES:
+        return f"'{raw}' is lowercase; standard_concept holds 'S' / 'C' and the comparison is case-sensitive here."
+    if raw.upper() in _FALSE_LIKE:
+        return f"'{raw}' is not a standard_concept value; non-standard concepts carry NULL (use IS NULL)."
+    return f"'{raw}' is not a standard_concept value."
 
 
-# --- Core Detection --------------------------------------------------------
+def _is_typed_literal(node: Optional[exp.Expression]) -> bool:
+    """A number or boolean operand: on this varchar column that is a type error, which
+    data_quality.column_type_validation reports."""
+    while isinstance(node, (exp.Paren, exp.Neg)):
+        node = node.this
+    return isinstance(node, exp.Boolean) or (isinstance(node, exp.Literal) and not node.is_string)
 
 
-def _find_invalid_values(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    concept_present: bool,
-) -> List[dict]:
-    issues: List[dict] = []
-    seen: Set[str] = set()
-
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.NEQ, exp.In)):
-            continue
-
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        left = node.this
-        right = getattr(node, "expression", None)
-
-        pairs = [(left, right), (right, left)]
-
-        for col_node, val_node in pairs:
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            if not _is_standard_concept_column(col_node, aliases, concept_present):
-                continue
-
-            # --- IN ---
-            if isinstance(node, exp.In):
-                values, types = _collect_in_values(node)
-
-                # mixed types (e.g., 'S', 1)
-                if len(types) > 1:
-                    key = f"MIXED:{values}"
-                    if key not in seen:
-                        seen.add(key)
-                        issues.append(
-                            {
-                                "message": (
-                                    f"Mixed literal types in standard_concept IN clause: {values}. "
-                                    f"Use only 'S', 'C', or NULL."
-                                ),
-                                "kind": "IN_MIXED",
-                            }
-                        )
-
-                invalid = [v for v in values if v not in VALID_VALUES]
-                if invalid:
-                    key = f"IN:{','.join(sorted(invalid))}"
-                    if key not in seen:
-                        seen.add(key)
-                        issues.append(
-                            {
-                                "message": (
-                                    f"Invalid standard_concept values: {invalid}. Valid values are 'S', 'C', or NULL."
-                                ),
-                                "kind": "IN_INVALID",
-                            }
-                        )
-
-            # --- Equality / inequality ---
-            else:
-                value = _normalize_literal(val_node)
-                if value and value not in VALID_VALUES:
-                    key = f"VAL:{value}"
-                    if key not in seen:
-                        seen.add(key)
-                        issues.append(
-                            {
-                                "message": (
-                                    f"Invalid standard_concept value: '{value}'. Valid values are 'S', 'C', or NULL."
-                                ),
-                                "kind": "EQ" if isinstance(node, exp.EQ) else "NEQ",
-                                "literal_sql": val_node.sql() if val_node is not None else None,
-                            }
-                        )
-
-    return issues
+def _string_values(flt: ColumnFilter) -> List[str]:
+    """The values of ``flt`` written as strings; numbers and booleans are left out."""
+    atom = flt.node
+    while isinstance(atom, (exp.Not, exp.Paren)):
+        atom = atom.this
+    if isinstance(atom, exp.In):
+        operands = list(atom.expressions or [])
+    elif isinstance(atom, exp.Between):
+        operands = [atom.args.get("low"), atom.args.get("high")]
+    else:
+        side = atom.this
+        operands = [atom.expression if side is flt.column or flt.column in side.find_all(exp.Column) else side]
+    if len(operands) != len(flt.values):
+        return list(flt.values)
+    return [v for v, o in zip(flt.values, operands) if not _is_typed_literal(o)]
 
 
-# --- Rule ------------------------------------------------------------------
+def _or_with_is_null(flt: ColumnFilter) -> bool:
+    """``standard_concept = '' OR standard_concept IS NULL``: the empty string is a guard for loaders that wrote ''."""
+    parent = flt.node.parent
+    while parent is not None and not isinstance(parent, (exp.Where, exp.Join, exp.Having, exp.Select)):
+        if isinstance(parent, exp.Or):
+            for is_node in parent.find_all(exp.Is):
+                col = is_node.this
+                if (
+                    isinstance(col, exp.Column)
+                    and normalize_name(col.name) == STANDARD_CONCEPT_COLUMN
+                    and isinstance(is_node.expression, exp.Null)
+                ):
+                    return True
+        parent = parent.parent
+    return False
+
+
+def _eq_patch(sql: str, flt: ColumnFilter, raw: str) -> Optional[dict]:
+    """Mechanical fix for `standard_concept = '<impossible>'` when the intent is unambiguous; otherwise None."""
+    node = flt.node
+    if not isinstance(node, exp.EQ):
+        return None
+    literal = node.expression if node.this is flt.column or flt.column in node.this.find_all(exp.Column) else node.this
+    upper = raw.upper()
+    if upper in VALID_VALUES:
+        replacement, target = f"'{upper}'", literal
+    elif upper in _TRUE_LIKE:
+        replacement, target = "'S'", literal
+    elif upper in _FALSE_LIKE or raw == "":
+        replacement, target = f"{flt.column.sql()} IS NULL", node
+    else:
+        return None
+    span = locate(sql, target.sql())
+    if span is None and target is node:
+        # The rendered predicate drops the author's spacing (`standard_concept='N'`); match it loosely instead.
+        col = flt.column
+        qualifier = rf"{re.escape(col.table)}\s*\.\s*" if col.table else ""
+        pattern = rf"{qualifier}{re.escape(col.name)}\s*=\s*'{re.escape(raw)}'"
+        matches = list(re.finditer(pattern, sql, flags=re.IGNORECASE))
+        if len(matches) == 1:
+            span = (matches[0].start(), matches[0].end())
+    return patch_replace(span, replacement) if span is not None else None
 
 
 @register
 class StandardConceptValueValidationRule(Rule):
-    """Robust validation for standard_concept values."""
+    """standard_concept compared with a value it never holds."""
 
     rule_id = "concept_standardization.standard_concept_value_validation"
     name = "Standard Concept Value Validation"
-    description = "Ensures standard_concept uses only valid values: 'S', 'C', or NULL."
-    severity = Severity.ERROR
-    suggested_fix = "REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'` (classification), `IS NULL` (non-standard). Those are the only valid values in OMOP."
-    long_description = (
-        "The concept.standard_concept column has exactly three valid "
-        "values: 'S' (standard), 'C' (classification), and NULL (neither, "
-        "typically source vocabularies). Any other literal, like 'X', 'Y' "
-        "or an empty string, matches no rows and is almost always a typo "
-        "from a developer who remembered there was some letter value. The "
-        "fix is usually 'S'; reach for 'C' only when you specifically "
-        "want classification-level concepts such as MedDRA grouping."
+    description = (
+        "standard_concept holds only 'S', 'C' or NULL. A required filter on any other string ('N', 'Y', '', a "
+        "case-sensitive lowercase 's') returns no rows (ERROR); a dead value next to valid ones, a negated impossible "
+        "value or a comparison that does not restrict the rows is a WARNING."
     )
-    example_bad = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'X';"
+    severity = Severity.ERROR
+    suggested_fix = (
+        "REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'` (classification), "
+        "`IS NULL` (non-standard). Those are the only values the CDM allows."
+    )
+    long_description = (
+        "The CDM v5.4 specification allows exactly 'S' (Standard), 'C' (Classification) and NULL in "
+        "concept.standard_concept. A required filter on any other string ('N', 'Y', an empty string) matches no "
+        "concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' does the same on PostgreSQL and "
+        "DuckDB, which compare strings case-sensitively (ERROR there, WARNING on other case-sensitive engines, "
+        "accepted on SQL Server and MySQL). A list that also contains a valid value (IN ('S', 'Y')) still returns "
+        "rows and is a WARNING about the dead value; so is a comparison under OR, in a CASE label or in an outer "
+        "join's ON clause. A negated impossible value (<> 'N', NOT IN ('')) excludes nothing and equals IS NOT NULL "
+        "(WARNING). `standard_concept = '' OR standard_concept IS NULL` is accepted."
+    )
+    example_bad = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'Y';"
     example_good = "SELECT concept_id\nFROM concept\nWHERE standard_concept = 'S';"
+    references = (
+        cdm_table("concept"),
+        section(BOOK_VOCABULARIES, "non-standard-concepts", "Non-standard concepts"),
+        section(BOOK_SQL, "case-sensitivity-in-string-comparisons", "Case sensitivity in string comparisons"),
+    )
+    extra_examples = (
+        RuleExample(
+            sql="SELECT concept_id\nFROM concept\nWHERE standard_concept IN ('S', 'Y');",
+            severity=Severity.WARNING,
+            note="A valid value next to an impossible one: rows still come back, 'Y' is dead",
+        ),
+        RuleExample(
+            sql="SELECT concept_id\nFROM concept\nWHERE standard_concept <> 'N';",
+            severity=Severity.WARNING,
+            note="Negated impossible value: excludes nothing, same as IS NOT NULL",
+        ),
+        RuleExample(
+            sql="SELECT concept_id\nFROM concept\nWHERE standard_concept = '';",
+            severity=Severity.ERROR,
+            note="Empty string: non-standard concepts carry NULL, so nothing matches",
+        ),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if STANDARD_CONCEPT_COLUMN not in sql.lower():
+            return []
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-
+        dialect_norm = normalize_name(dialect or "postgres")
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            concept_present = has_table_reference(tree, CONCEPT_TABLE)
-
-            issues = _find_invalid_values(tree, aliases, concept_present)
-
-            for issue in issues:
-                patch = None
-                # Only the EQ-against-invalid-literal case has an unambiguous
-                # mechanical fix: swap the bad literal for 'S' (the most-
-                # common standard value). NEQ, IN, and mixed-type cases
-                # require human judgement and stay FREEFORM.
-                if issue["kind"] == "EQ" and issue.get("literal_sql"):
-                    span = locate(sql, issue["literal_sql"])
-                    if span is not None:
-                        patch = patch_replace(span, "'S'")
-
-                violations.append(
-                    self.create_violation(
-                        message=issue["message"],
-                        suggested_fix_patch=patch,
-                    )
-                )
-
+            seen: Set[int] = set()
+            for flts in instance_filters(tree, CONCEPT_TABLE, STANDARD_CONCEPT_COLUMN).values():
+                for flt in flts:
+                    if id(flt.node) in seen or not flt.complete:
+                        continue
+                    seen.add(id(flt.node))
+                    finding = self._judge(flt, dialect_norm)
+                    if finding is not None:
+                        severity, message, raw = finding
+                        patch = _eq_patch(sql, flt, raw) if severity == Severity.ERROR and flt.op == "eq" else None
+                        fix = (
+                            "REPLACE: the negated comparison WITH `standard_concept IS NOT NULL` (or "
+                            "`standard_concept = 'S'` for standard concepts only)."
+                            if flt.op in ("neq", "not_in")
+                            else None
+                        )
+                        violations.append(
+                            self.create_violation(
+                                message=message, severity=severity, suggested_fix=fix, suggested_fix_patch=patch
+                            )
+                        )
         return violations
+
+    def _judge(self, flt: ColumnFilter, dialect: str):
+        case_sensitive = dialect not in _CASE_INSENSITIVE_DIALECTS and not flt.case_folded
+        values = _string_values(flt)
+        if not values:
+            return None
+        if flt.op == "like":
+            if any(ch in values[0] for ch in "%_"):
+                return None
+            op = "eq"
+        else:
+            op = flt.op
+        if op not in ("eq", "in", "neq", "not_in"):
+            return None
+        impossible = [v for v in values if _matches_nothing(v, case_sensitive)]
+        if not impossible:
+            return None
+        if op == "eq" and values == [""] and _or_with_is_null(flt):
+            return None
+        notes = " ".join(dict.fromkeys(_note(v) for v in impossible))
+        if op in ("neq", "not_in"):
+            return (
+                Severity.WARNING,
+                f"{notes} A value that never occurs excludes nothing, so `{flt.sql}` keeps every 'S' and 'C' row: it "
+                "is the same as standard_concept IS NOT NULL. Write that, or `standard_concept = 'S'` if only "
+                "standard concepts are wanted.",
+                impossible[0],
+            )
+        only_case = all(v.upper() in VALID_VALUES for v in impossible)
+        all_dead = len(impossible) == len(values)
+        restricts = flt.required and not flt.outer_join_on
+        if all_dead and restricts and (not only_case or dialect in _CASE_VERIFIED_DIALECTS):
+            dead = dead_scalar_column(flt.node)
+            consequence = dead or "the query returns no rows"
+            return (
+                Severity.ERROR,
+                f"Invalid standard_concept {'values ' + str(impossible) if len(impossible) > 1 else 'value ' + repr(impossible[0])} "
+                f"in `{flt.sql}`: no concept row matches, so {consequence}. "
+                f"Valid values are 'S', 'C', or NULL. {notes}",
+                impossible[0],
+            )
+        if not all_dead:
+            reason = "the other values still return rows, but these never match"
+        elif not restricts:
+            reason = "it never matches; here it does not restrict the result, but the branch is dead"
+        else:
+            reason = "it matches nothing where string comparison is case-sensitive"
+        return (
+            Severity.WARNING,
+            f"`{flt.sql}`: {', '.join(repr(v) for v in impossible)} is not a standard_concept value; {reason}. "
+            f"Valid values are 'S', 'C', or NULL. {notes}",
+            impossible[0],
+        )
 
 
 __all__ = ["StandardConceptValueValidationRule"]

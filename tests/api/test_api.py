@@ -57,7 +57,7 @@ def test_validate_valid_query_returns_no_errors(client: TestClient):
 def test_validate_unknown_table_returns_schema_error(client: TestClient):
     resp = client.post(
         "/v1/validate",
-        json={"sql": "SELECT * FROM nonexistent_table;", "dialect": "postgres"},
+        json={"sql": "SELECT * FROM condition_occurence;", "dialect": "postgres"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -72,12 +72,12 @@ def test_validate_empty_sql_rejected(client: TestClient):
     assert resp.status_code == 422
 
 
-# A vocabulary join without a standard-concept filter (and without concept_ancestor) — still a warning
-# under the narrowed rule; escalates to an error in strict mode.
+# A vocabulary join filtered by concept_name without a standard-concept filter. In default mode only
+# advisory warnings speak; strict mode adds the standard-concept check as a WARNING.
 _STRICT_ESCALATION_SQL = """
-SELECT co.person_id FROM condition_occurrence co
-JOIN concept c ON c.concept_id = co.condition_concept_id
-WHERE c.concept_name LIKE '%diabetes%'
+SELECT de.person_id FROM drug_exposure de
+JOIN concept c ON c.concept_id = de.drug_concept_id
+WHERE c.concept_name LIKE '%aspirin%'
 """
 
 
@@ -91,7 +91,8 @@ def test_validate_default_is_non_strict(client: TestClient):
     assert body["strict"] is False
     # Best-practice rule stays a WARNING; query is still is_valid=true.
     assert body["is_valid"] is True
-    assert any(w["rule_id"] == "concept_standardization.standard_concept_enforcement" for w in body["warnings"])
+    assert any(w["rule_id"] == "anti_patterns.concept_name_lookup" for w in body["warnings"])
+    assert not any(w["rule_id"] == "concept_standardization.standard_concept_enforcement" for w in body["warnings"])
 
 
 def test_validate_single_statement_has_one_result(client: TestClient):
@@ -112,7 +113,7 @@ def test_validate_multi_statement_attributes_per_query(client: TestClient):
     resp = client.post(
         "/v1/validate",
         json={
-            "sql": ("SELECT person_id FROM person; SELECT * FROM bogus_table_alpha; SELECT * FROM bogus_table_beta;"),
+            "sql": ("SELECT person_id FROM person; SELECT * FROM condition_occurence; SELECT * FROM drug_exposre;"),
             "dialect": "postgres",
         },
     )
@@ -125,22 +126,25 @@ def test_validate_multi_statement_attributes_per_query(client: TestClient):
     assert body["results"][0]["query_index"] == 1
     assert body["results"][1]["is_valid"] is False
     assert body["results"][1]["query_index"] == 2
-    assert any("bogus_table_alpha" in e["issue"] for e in body["results"][1]["errors"])
+    assert any("condition_occurence" in e["issue"] for e in body["results"][1]["errors"])
     assert body["results"][2]["query_index"] == 3
-    assert any("bogus_table_beta" in e["issue"] for e in body["results"][2]["errors"])
+    assert any("drug_exposre" in e["issue"] for e in body["results"][2]["errors"])
+
+
+# concept_code_requires_vocabulary_id is a WARNING by default and escalates to an ERROR in strict mode.
+_STRICT_ESCALATION_ERROR_SQL = "SELECT concept_id FROM concept WHERE concept_code = '250.00'"
 
 
 def test_validate_strict_escalates_warning_to_error(client: TestClient):
     resp = client.post(
         "/v1/validate",
-        json={"sql": _STRICT_ESCALATION_SQL, "dialect": "postgres", "strict": True},
+        json={"sql": _STRICT_ESCALATION_ERROR_SQL, "dialect": "postgres", "strict": True},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["strict"] is True
     assert body["is_valid"] is False
-    # Standard-concept rule now reports as an ERROR.
-    assert any(e["rule_id"] == "concept_standardization.standard_concept_enforcement" for e in body["errors"])
+    assert any(e["rule_id"] == "anti_patterns.concept_code_requires_vocabulary_id" for e in body["errors"])
 
 
 def test_validate_bad_dialect_rejected(client: TestClient):
@@ -168,8 +172,28 @@ def test_rules_endpoint_lists_registered_rules(client: TestClient):
     assert body["total"] > 0
     assert len(body["rules"]) == body["total"]
     first = body["rules"][0]
-    for key in ("rule_id", "name", "description", "severity", "category"):
+    for key in (
+        "rule_id",
+        "name",
+        "description",
+        "severity",
+        "category",
+        "example_bad",
+        "example_good",
+        "extra_examples",
+        "references",
+    ):
         assert key in first
+    for rule in body["rules"]:
+        assert rule["example_bad"] and rule["example_good"], rule["rule_id"]
+        assert rule["references"], rule["rule_id"]
+        assert all(ref["url"].startswith("https://") and ref["title"] for ref in rule["references"])
+
+
+def test_rules_page_renders_sources(client: TestClient):
+    resp = client.get("/rules")
+    assert resp.status_code == 200
+    assert resp.text.count('class="rule-block-sources"') == client.get("/v1/rules").json()["total"]
 
 
 def test_security_headers_present(client: TestClient):

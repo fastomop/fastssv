@@ -1,94 +1,60 @@
 """Left Join Then Where On Right Table Rule.
 
 OMOP semantic rule OMOP_149:
-A LEFT JOIN followed by a WHERE clause filtering on a column of the right table
-(other than IS NULL) effectively converts the LEFT JOIN to an INNER JOIN, silently
-dropping the unmatched rows the LEFT JOIN was meant to preserve.
+A LEFT JOIN keeps every left-side row; rows without a match get NULL in every
+right-side column. A WHERE conjunct that can never be true when a right-side
+column is NULL (a "null-rejecting" predicate) removes exactly those rows, so the
+LEFT JOIN behaves like an INNER JOIN.
 
-The Problem:
-    LEFT JOIN semantics:
-    - Returns ALL rows from the left table
-    - Matched rows from right table have values
-    - Unmatched rows from right table have NULL values
+Null-rejecting conjuncts that are flagged (``r`` is the LEFT JOIN's right side):
+    r.col = 'x', r.col <> 'x', r.col > 5, r.col IN (...), r.col LIKE '...',
+    r.col BETWEEN a AND b, r.col = l.col, LOWER(r.col) = 'x', r.col IS NOT NULL
 
-    When a WHERE clause filters on a right table column with non-NULL conditions:
-    - Rows where right table column is NULL are filtered out
-    - This defeats the purpose of LEFT JOIN
-    - Effectively converts LEFT JOIN to INNER JOIN
-    - Developer likely intended INNER JOIN or should move filter to JOIN ON
-
-    This is a common SQL anti-pattern that produces unexpected results.
-
-    Common mistakes:
-    1. Using LEFT JOIN when INNER JOIN is needed
-    2. Filtering right table columns in WHERE instead of JOIN ON
-    3. Not understanding LEFT JOIN NULL behavior
-    4. Copy-paste errors changing JOIN to LEFT JOIN without adjusting WHERE
-
-Why this is wrong:
-    The LEFT JOIN is meant to preserve all left table rows, but the WHERE clause
-    silently removes them:
-    - Produces incorrect result set (missing expected rows)
-    - Creates confusion about query intent
-    - Leads to subtle bugs in analytics
-    - Performance impact (LEFT JOIN is more expensive than INNER JOIN)
-
-    If filtering right table is needed:
-    - Use INNER JOIN if you want only matched rows
-    - Move filter to JOIN ON clause to preserve LEFT JOIN semantics
+Predicates that keep NULL-extended rows are not flagged:
+    r.col IS NULL                         -- selects the unmatched rows on purpose
+    COALESCE(r.col, 0) = 0, CASE ... END  -- explicit NULL handling
+    NOT (r.col IS NULL AND l.col IS NULL)
+    r.col = 'x' OR l.col = 'y'            -- another branch can keep the row
 
 Violation patterns:
     SELECT co.* FROM condition_occurrence co
     LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
     WHERE vo.visit_concept_id = 9201
-    -- WARNING: Filters right table, converts to INNER JOIN
 
-    SELECT p.* FROM person p
-    LEFT JOIN location l ON p.location_id = l.location_id
-    WHERE l.state = 'CA' AND l.city = 'Los Angeles'
-    -- WARNING: Multiple conditions on right table
-
-    SELECT * FROM drug_exposure de
-    LEFT JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.domain_id = 'Drug'
-    -- WARNING: Right table filter defeats LEFT JOIN
+    SELECT co.* FROM condition_occurrence co
+    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+    WHERE vo.visit_occurrence_id IS NOT NULL   -- same rows as an INNER JOIN
 
 Correct patterns:
+    -- INNER JOIN when only matched rows are wanted
     SELECT co.* FROM condition_occurrence co
     JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
     WHERE vo.visit_concept_id = 9201
-    -- OK: Use INNER JOIN when filtering right table
 
-    SELECT co.* FROM condition_occurrence co
-    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vo.visit_occurrence_id IS NULL
-    -- OK: IS NULL check is intentional (finding unmatched rows)
-
-    SELECT co.* FROM condition_occurrence co
-    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE co.condition_concept_id = 201826
-    -- OK: Filter on left table only
-
+    -- Right-side filter in the ON clause keeps unmatched left rows
     SELECT co.* FROM condition_occurrence co
     LEFT JOIN visit_occurrence vo
       ON co.visit_occurrence_id = vo.visit_occurrence_id
       AND vo.visit_concept_id = 9201
-    -- OK: Right table filter in JOIN ON preserves LEFT JOIN semantics
 
-Note:
-    This is a WARNING, not an ERROR. Some developers intentionally use this pattern,
-    though it's usually a mistake. IS NULL and IS NOT NULL checks are allowed as they
-    are often intentional (finding unmatched rows or excluding them).
+Only columns that the SELECT reads from a LEFT JOIN's right-side source are
+considered (a qualified alias, or an unqualified name that only that source
+supplies); another alias of the same base table (self-joins, an inner-joined
+second copy of ``concept``) is not. Date functions that return NULL for a NULL
+argument (``DATE_TRUNC``, ``DATEDIFF``, ``EXTRACT``, ``YEAR``) are followed, and
+``(predicate) IS TRUE`` is as null-rejecting as the predicate.
 """
 
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
+
+from ._lineage import owner_alias
 
 
 logger = logging.getLogger(__name__)
@@ -101,172 +67,151 @@ def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
-def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
-
-
 def _is_left_join(join: exp.Join) -> bool:
-    """
-    Robust LEFT JOIN detection across dialects.
-    """
     kind = join.args.get("kind")
     side = join.args.get("side")
-
-    return (kind and _norm(kind) == "left") or (side and _norm(side) == "left")
-
-
-def _local_aliases(select: exp.Select) -> Dict[str, str]:
-    """Aliases declared by ``select``'s own FROM/JOIN — excluding tables
-    nested inside subqueries or further CTE bodies inside this scope.
-
-    Mirrors the scope-local helper in ``comprehensive_schema_validation``.
-    Required because the global ``extract_aliases`` would let a LEFT JOIN
-    in one CTE alias-collide with a WHERE in another scope, producing
-    false-positive "LEFT JOIN + WHERE on right table" reports.
-    """
-    aliases: Dict[str, str] = {}
-    from_node = select.args.get("from_") or select.args.get("from")
-    scopes: List[exp.Expression] = []
-    if from_node is not None:
-        scopes.append(from_node)
-    scopes.extend(select.args.get("joins") or [])
-    for scope_node in scopes:
-        for tbl in scope_node.find_all(exp.Table):
-            if tbl.find_ancestor(exp.Select) is not select:
-                continue
-            real = _norm(tbl.name) or ""
-            alias = tbl.alias_or_name
-            if alias:
-                alias_norm = _norm(alias)
-                if alias_norm:
-                    aliases[alias_norm] = real
-            if real:
-                aliases[real] = real
-    return aliases
+    return bool((kind and _norm(kind) == "left") or (side and _norm(side) == "left"))
 
 
-def _select_left_join_right_tables(select: exp.Select) -> Tuple[Set[str], Set[str]]:
-    """Return (right_aliases, right_real_names) for LEFT JOINs declared
-    directly on ``select`` — does not descend into subqueries or nested CTE
-    bodies.
-    """
-    right_aliases: Set[str] = set()
-    right_real_names: Set[str] = set()
+def _unparen(node: exp.Expression) -> exp.Expression:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return node
+
+
+def _right_aliases(select: exp.Select) -> Set[str]:
+    """Aliases of the right-hand sources of LEFT JOINs declared directly on ``select``."""
+    out: Set[str] = set()
     for join in select.args.get("joins") or []:
         if not _is_left_join(join):
             continue
-        if not isinstance(join.this, exp.Table):
-            continue
-        alias = _norm(join.this.alias_or_name)
-        real = _norm(join.this.name)
-        if alias:
-            right_aliases.add(alias)
-        if real:
-            right_real_names.add(real)
-    return right_aliases, right_real_names
-
-
-def _is_safe_null_check(node: exp.Expression) -> bool:
-    """
-    Only IS NULL is safe for LEFT JOIN semantics.
-    IS NOT NULL must NOT be ignored.
-    """
-    return isinstance(node, exp.Is) and not node.args.get("negated")
+        src = join.this
+        if isinstance(src, (exp.Table, exp.Subquery)) and src.alias_or_name:
+            out.add(_norm(src.alias_or_name))
+    return out
 
 
 def _flatten_and(node: exp.Expression) -> List[exp.Expression]:
+    node = _unparen(node)
     if isinstance(node, exp.And):
         return _flatten_and(node.this) + _flatten_and(node.expression)
     return [node]
 
 
-def _contains_or(node: exp.Expression) -> bool:
-    return any(isinstance(n, exp.Or) for n in node.walk())
+# Functions/operators that return NULL whenever their argument is NULL.
+_STRICT_WRAPPERS = (
+    exp.Paren,
+    exp.Cast,
+    exp.TryCast,
+    exp.Lower,
+    exp.Upper,
+    exp.Trim,
+    exp.Abs,
+    exp.Length,
+    exp.Substring,
+    exp.Extract,
+    exp.Add,
+    exp.Sub,
+    exp.Mul,
+    exp.Div,
+    exp.Mod,
+    exp.DateTrunc,
+    exp.TimestampTrunc,
+    exp.DateDiff,
+    exp.DateAdd,
+    exp.DateSub,
+    exp.Year,
+    exp.Month,
+    exp.Day,
+    exp.TimeStrToTime,
+    exp.TsOrDsToDate,
+)
+
+_COMPARISONS = (
+    exp.EQ,
+    exp.NEQ,
+    exp.GT,
+    exp.GTE,
+    exp.LT,
+    exp.LTE,
+    exp.Like,
+    exp.ILike,
+    exp.Between,
+    exp.In,
+    exp.SimilarTo,
+    exp.RegexpLike,
+)
 
 
-def _collect_where_right_table_filters(
-    select: exp.Select,
-    where_clause: exp.Expression,
-    right_aliases: Set[str],
-    right_real_names: Set[str],
-    local_aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> List[str]:
-    violations = []
+def _strict_columns(node: Optional[exp.Expression]) -> List[exp.Column]:
+    """Columns whose NULL makes ``node`` NULL (reached only through strict wrappers)."""
+    if node is None:
+        return []
+    if isinstance(node, exp.Column):
+        return [node]
+    if isinstance(node, _STRICT_WRAPPERS):
+        out: List[exp.Column] = []
+        for child in node.iter_expressions():
+            out.extend(_strict_columns(child))
+        return out
+    return []
 
-    # Avoid OR complexity (reduce false positives)
-    if _contains_or(where_clause):
-        return violations
 
-    conditions = _flatten_and(where_clause)
-
-    for cond in conditions:
-        # Skip safe IS NULL only
-        if _is_safe_null_check(cond):
-            continue
-
-        # Skip subqueries (scope isolation)
-        if isinstance(cond, (exp.Subquery, exp.Exists)):
-            continue
-
-        for col in cond.find_all(exp.Column):
-            # Columns nested inside a subquery belong to that subquery's
-            # scope — they must not be matched against THIS select's
-            # LEFT JOIN right-tables.
-            if col.find_ancestor(exp.Select) is not select:
-                continue
-
-            raw = _norm(col.table) if col.table else None
-            if not raw:
-                continue
-            if raw in cte_names:
-                continue
-
-            col_name = _norm(col.name)
-            if not col_name:
-                continue
-
-            resolved = local_aliases.get(raw, raw)
-            # An alias that doesn't belong to THIS select's local FROM/JOIN
-            # is either a correlated outer ref or unrelated — ignore.
-            if raw not in local_aliases:
-                continue
-
-            if raw in right_aliases or resolved in right_real_names:
-                violations.append(f"{raw}.{col_name}")
-
-    return violations
+def _null_rejected_columns(cond: exp.Expression) -> List[exp.Column]:
+    """Columns for which ``cond`` is never TRUE when the column is NULL."""
+    cond = _unparen(cond)
+    if isinstance(cond, exp.Is) and isinstance(cond.expression, exp.Boolean) and cond.expression.this is True:
+        return _null_rejected_columns(cond.this)  # (NULL) IS TRUE is FALSE
+    if isinstance(cond, exp.Not):
+        inner = _unparen(cond.this)
+        if isinstance(inner, exp.Is):
+            return _strict_columns(inner.this)  # col IS NOT NULL
+        if isinstance(inner, exp.In) and inner.args.get("query"):
+            return []  # NULL NOT IN (<empty subquery>) is TRUE
+        if isinstance(inner, _COMPARISONS):
+            return _null_rejected_columns(inner)  # NOT (NULL) is NULL
+        return []
+    if not isinstance(cond, _COMPARISONS):
+        return []
+    if isinstance(cond, exp.Between):
+        operands = [cond.this]
+    elif isinstance(cond, exp.In):
+        operands = [cond.this]
+    else:
+        operands = [cond.this, cond.expression]
+    out: List[exp.Column] = []
+    for operand in operands:
+        out.extend(_strict_columns(operand))
+    return out
 
 
 def _find_violations(tree: exp.Expression) -> List[str]:
     issues: List[str] = []
-    cte_names = _extract_cte_names(tree)
 
     for select in tree.find_all(exp.Select):
-        right_aliases, right_real_names = _select_left_join_right_tables(select)
-        if not right_aliases and not right_real_names:
+        right = _right_aliases(select)
+        if not right:
             continue
-
         where = select.args.get("where")
         if where is None:
             continue
 
-        local = _local_aliases(select)
-        violations = _collect_where_right_table_filters(
-            select,
-            where.this,
-            right_aliases,
-            right_real_names,
-            local,
-            cte_names,
-        )
+        cited: List[str] = []
+        for cond in _flatten_and(where.this):
+            for col in _null_rejected_columns(cond):
+                if col.find_ancestor(exp.Select) is not select:
+                    continue
+                qualifier = _norm(col.table) if col.table else owner_alias(col, select)
+                if qualifier in right:
+                    cited.append(f"{qualifier}.{_norm(col.name)}")
 
-        if violations:
-            cols = ", ".join(sorted(set(violations)))
+        if cited:
+            cols = ", ".join(sorted(set(cited)))
             issues.append(
                 f"LEFT JOIN followed by WHERE filtering right table column(s): {cols}. "
-                f"This converts LEFT JOIN into INNER JOIN behavior. "
-                f"Use INNER JOIN or move condition into JOIN ON."
+                f"These predicates are never true for the NULL-extended rows of unmatched left rows, "
+                f"so the LEFT JOIN behaves as an INNER JOIN. Use INNER JOIN or move the condition "
+                f"into JOIN ON."
             )
 
     return list(dict.fromkeys(issues))
@@ -284,7 +229,11 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
     rule_id = "joins.left_join_then_where_on_right_table"
     name = "Left Join Then Where On Right Table"
 
-    description = "Filtering right table columns in WHERE after LEFT JOIN turns it effectively into INNER JOIN."
+    description = (
+        "A WHERE predicate that is never true when a LEFT JOIN's right-side column is NULL "
+        "(e.g. right.col = 'x' or right.col IS NOT NULL) drops the unmatched rows, so the LEFT JOIN "
+        "behaves as an INNER JOIN."
+    )
 
     severity = Severity.WARNING
 
@@ -299,6 +248,29 @@ class LeftJoinThenWhereOnRightTableRule(Rule):
         "LEFT JOIN visit_occurrence vo\n"
         "  ON p.person_id = vo.person_id\n"
         "  AND vo.visit_start_date >= DATE '2023-01-01';"
+    )
+    extra_examples = (
+        RuleExample(
+            "SELECT co.condition_occurrence_id FROM condition_occurrence co\n"
+            "LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id\n"
+            "WHERE vo.visit_occurrence_id IS NOT NULL;",
+            Severity.WARNING,
+            "An IS NOT NULL test on the right table keeps exactly the rows an INNER JOIN would.",
+        ),
+    )
+    references = (
+        Reference(
+            "PostgreSQL documentation: Joined Tables",
+            "https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN",
+        ),
+        Reference(
+            "PostgreSQL documentation: The WHERE Clause",
+            "https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-WHERE",
+        ),
+        Reference(
+            "PostgreSQL documentation: Comparison Functions and Operators",
+            "https://www.postgresql.org/docs/current/functions-comparison.html",
+        ),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:

@@ -168,12 +168,11 @@ def test_validate_sql_tool_matches_direct_validator(client: TestClient):
 
 
 def test_validate_sql_tool_omits_warnings_by_default(client: TestClient):
-    """Agent-facing default: errors only (warnings caused churn and correct→wrong edits in the feedback study);
-    warning_count still reports that warnings exist."""
+    """Agent-facing default: errors only; warning_count still reports that warnings exist."""
     sql = (
-        "SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co "
+        "SELECT COUNT(DISTINCT co.person_id) * 1.0 / (SELECT COUNT(*) FROM person) FROM condition_occurrence co "
         "WHERE co.condition_start_date > DATE '2020-01-01';"
-    )  # warning-only query (observation-period anchoring)
+    )  # warning-only query (observation-period anchoring: a per-person rate)
     sid = _initialize(client)
     resp = _post(
         client,

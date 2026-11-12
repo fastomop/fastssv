@@ -1,401 +1,63 @@
 """Source Concept ID with Standard Filter Rule.
 
-OMOP semantic rule VOCAB_020:
-When resolving *_source_concept_id columns (e.g., condition_source_concept_id),
-the join to concept should NOT filter standard_concept = 'S'. Source concepts are
-intentionally non-standard - they represent the original source vocabulary codes.
+``*_source_concept_id`` holds the concept of the source code (CDM v5.4 field-level specification: "the concept
+representing the condition source value and may not necessarily be standard"). It is non-standard when the source
+system codes in a source vocabulary (ICD10CM, NDC, Read) and Standard when it codes in a standard one (SNOMED, LOINC,
+RxNorm, CVX). Joining the source field to ``concept`` and requiring that concept row to be Standard (``standard_concept
+= 'S'``, ``IN ('S', 'C')``, ``IS NOT NULL``) keeps only the records whose source code is itself standard and drops
+every record coded in a source vocabulary. That is rarely intended, but whether rows remain depends on the data, so
+the rule is a WARNING.
 
-The Problem:
-    In OMOP CDM, clinical domain tables have two types of concept ID columns:
-
-    1. Standard concept IDs (e.g., condition_concept_id):
-       - Reference standard concepts for analytics
-       - Should have standard_concept = 'S'
-
-    2. Source concept IDs (e.g., condition_source_concept_id):
-       - Reference the original source vocabulary codes (ICD-10, CPT, etc.)
-       - Are intentionally NON-standard (standard_concept IS NULL or 'C')
-       - Preserve the original coding system used in the source data
-
-    Filtering standard_concept = 'S' when joining on *_source_concept_id is
-    semantically wrong and will typically return zero results.
-
-    Common mistakes:
-    1. Joining source_concept_id to concept with standard_concept = 'S' filter
-    2. Misunderstanding the dual concept ID design
-    3. Applying standard concept filters to source concept joins
-
-Violation patterns:
-    -- WRONG: standard_concept = 'S' on source concept join
-    SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
-    WHERE c.standard_concept = 'S'
-    -- Returns nothing! Source concepts are non-standard by design
-
-    -- WRONG: Filter in JOIN ON clause
-    SELECT c.concept_name
-    FROM drug_exposure de
-    JOIN concept c
-      ON de.drug_source_concept_id = c.concept_id
-      AND c.standard_concept = 'S'
-
-    -- WRONG: Same issue with procedure
-    SELECT c.concept_name
-    FROM procedure_occurrence po
-    JOIN concept c
-      ON po.procedure_source_concept_id = c.concept_id
-    WHERE c.standard_concept = 'S'
-
-Correct patterns:
-    -- CORRECT: No standard_concept filter on source concept join
-    SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
-
-    -- CORRECT: Join standard concept ID if you want standard concepts
-    SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_concept_id = c.concept_id
-    WHERE c.standard_concept = 'S'
-
-    -- CORRECT: Explicitly query non-standard source concepts
-    SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
-    WHERE c.standard_concept IS NULL
-
-    -- CORRECT: Explore source vocabulary
-    SELECT c.vocabulary_id, c.concept_code
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
+The source fields are every ``*_source_concept_id`` of the CDM v5.4 field-level specification. The link and the filter
+are tied to one concept table instance by lineage (CTEs, derived tables, IN / EXISTS subqueries, comma joins, casts);
+a filter under OR or NOT, in a CASE or on another concept row is not reported.
 """
 
 import re
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.helpers import parse_sql
 from fastssv.core.patch import locate, remove as patch_remove
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.registry import register
 
+from ._cs_cdm_fields import SOURCE_CONCEPT_FIELDS
+from ._cs_scope import ColumnFilter, instance_filters, instance_is_null_extended, links
 
-def _build_remove_predicate_patch(
-    sql: str,
-    predicate_sql: str,
-    is_in_and: bool,
-    is_left_of_and: bool,
-) -> Optional[dict]:
-    """Build a REMOVE patch that drops a single predicate from a compound
-    boolean expression.
+SOURCE_CONCEPT_ID_COLUMNS = frozenset(column for _, column in SOURCE_CONCEPT_FIELDS)
 
-    Handles the dangling-AND hazard:
-      * If the predicate is the LEFT side of an AND, remove `<pred> AND `.
-      * If the predicate is the RIGHT side of an AND, remove ` AND <pred>`.
-      * If the predicate stands alone (only WHERE/ON predicate), don't
-        emit a patch — removing the only predicate would leave a dangling
-        WHERE/ON keyword.
-    """
-    span = locate(sql, predicate_sql)
+
+def _remove_patch(sql: str, node: exp.Expression) -> Optional[dict]:
+    """REMOVE one predicate from a conjunction together with its AND; None when it is the only predicate."""
+    parent = node.parent
+    if not isinstance(parent, exp.And):
+        return None
+    span = locate(sql, node.sql())
     if span is None:
         return None
-
-    if not is_in_and:
-        # Sole predicate; safer to leave on FREEFORM auto-default.
-        return None
-
-    s, e = span
-    if is_left_of_and:
-        # `<pred> AND <rest>` → drop the predicate plus the trailing AND.
-        # Allow tabs/newlines as well as spaces.
-        tail = sql[e:]
-        m = re.match(r"\s+AND\s+", tail, flags=re.IGNORECASE)
-        if m is None:
-            return None
-        return patch_remove((s, e + m.end()))
-    else:
-        # `<rest> AND <pred>` → drop the leading AND plus the predicate.
-        head = sql[:s]
-        m = re.search(r"\s+AND\s+\Z", head, flags=re.IGNORECASE)
-        if m is None:
-            return None
-        return patch_remove((m.start(), e))
+    start, end = span
+    if parent.this is node:
+        match = re.match(r"\s+AND\s+", sql[end:], flags=re.IGNORECASE)
+        return patch_remove((start, end + match.end())) if match else None
+    match = re.search(r"\s+AND\s+\Z", sql[:start], flags=re.IGNORECASE)
+    return patch_remove((match.start(), end)) if match else None
 
 
-# --- Constants -------------------------------------------------------------
-
-CONCEPT_TABLE = "concept"
-CONCEPT_ID = "concept_id"
-STANDARD_CONCEPT = "standard_concept"
-
-SOURCE_CONCEPT_ID_COLUMNS: Set[str] = {
-    "condition_source_concept_id",
-    "drug_source_concept_id",
-    "procedure_source_concept_id",
-    "measurement_source_concept_id",
-    "observation_source_concept_id",
-    "device_source_concept_id",
-    "visit_source_concept_id",
-    "specimen_source_concept_id",
-}
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _get_concept_aliases(aliases: Dict[str, str]) -> Set[str]:
-    return {alias for alias, table in aliases.items() if _norm(table) == CONCEPT_TABLE}
-
-
-def _is_source_concept_id_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-) -> bool:
-    _, col_name = resolve_table_col(col, aliases)
-    return _norm(col_name) in SOURCE_CONCEPT_ID_COLUMNS
-
-
-def _is_concept_id_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    concept_aliases: Set[str],
-) -> bool:
-    table, col_name = resolve_table_col(col, aliases)
-
-    if _norm(col_name) != CONCEPT_ID:
+def _requires_standard(flt: ColumnFilter) -> bool:
+    """A required filter that no non-standard (NULL) concept satisfies."""
+    if not flt.required or flt.outer_join_on:
         return False
-
-    if table:
-        return _norm(table) == CONCEPT_TABLE
-
-    return len(concept_aliases) == 1
-
-
-def _is_standard_concept_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    concept_aliases: Set[str],
-) -> bool:
-    table, col_name = resolve_table_col(col, aliases)
-
-    if _norm(col_name) != STANDARD_CONCEPT:
+    if flt.op == "is_not_null":
+        return True
+    if not flt.complete:
         return False
-
-    if table:
-        return _norm(table) == CONCEPT_TABLE
-
-    return len(concept_aliases) == 1
-
-
-def _extract_string_literal(node: exp.Expression) -> Optional[str]:
-    if isinstance(node, exp.Literal) and isinstance(node.this, str):
-        return _norm(node.this)
-    return None
-
-
-# --- Filter Detection ------------------------------------------------------
-
-
-def _has_standard_filter(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    concept_alias: str,
-    concept_aliases: Set[str],
-) -> bool:
-    """Detect standard_concept = 'S' or IN ('S') filters for a given concept alias."""
-    return _find_standard_filter_node(node, aliases, concept_alias, concept_aliases) is not None
-
-
-def _find_standard_filter_node(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    concept_alias: str,
-    concept_aliases: Set[str],
-) -> Optional[exp.Expression]:
-    """Return the EQ/IN expression matching the standard_concept = 'S'
-    filter (or None). Used so callers can build a structured REMOVE patch."""
-
-    # EQ
-    for eq in node.find_all(exp.EQ):
-        pairs = [(eq.this, eq.expression), (eq.expression, eq.this)]
-
-        for col_node, val_node in pairs:
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            if not _is_standard_concept_column(col_node, aliases, concept_aliases):
-                continue
-
-            col_table = _norm(col_node.table) if col_node.table else None
-
-            if col_table:
-                if col_table != concept_alias:
-                    continue
-            else:
-                if len(concept_aliases) != 1:
-                    continue
-
-            val = _extract_string_literal(val_node)
-            if val == "s":
-                return eq
-
-    # IN
-    for in_node in node.find_all(exp.In):
-        if not isinstance(in_node.this, exp.Column):
-            continue
-
-        if not _is_standard_concept_column(in_node.this, aliases, concept_aliases):
-            continue
-
-        col_table = _norm(in_node.this.table) if in_node.this.table else None
-
-        if col_table:
-            if col_table != concept_alias:
-                continue
-        else:
-            if len(concept_aliases) != 1:
-                continue
-
-        exprs = in_node.args.get("expressions") or []
-        values = {_extract_string_literal(e) for e in exprs}
-        values.discard(None)
-
-        if "s" in values:
-            return in_node
-
-    return None
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_source_concept_joins(tree: exp.Expression) -> List[Dict[str, object]]:
-    violations: List[Dict[str, object]] = []
-    seen: Set[str] = set()
-
-    for select in tree.find_all(exp.Select):
-        aliases = extract_aliases(select)
-        concept_aliases = _get_concept_aliases(aliases)
-
-        if not concept_aliases:
-            continue
-
-        for join in select.find_all(exp.Join):
-            table = join.this
-
-            if not isinstance(table, exp.Table):
-                continue
-
-            table_name = _norm(table.name)
-            if table_name != CONCEPT_TABLE:
-                continue
-
-            table_alias = _norm(str(table.alias)) if table.alias else table_name
-
-            if table_alias not in concept_aliases:
-                continue
-
-            on_clause = join.args.get("on")
-            if not on_clause:
-                continue
-
-            found_source_join = False
-            source_col_name = None
-
-            for eq in on_clause.find_all(exp.EQ):
-                pairs = [(eq.this, eq.expression), (eq.expression, eq.this)]
-
-                for left, right in pairs:
-                    if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
-                        continue
-
-                    if _is_source_concept_id_column(left, aliases):
-                        if _is_concept_id_column(right, aliases, concept_aliases):
-                            right_alias = _norm(right.table) if right.table else None
-
-                            if right_alias == table_alias or (not right_alias and len(concept_aliases) == 1):
-                                found_source_join = True
-                                _, source_col_name = resolve_table_col(left, aliases)
-                                break
-
-                    elif _is_source_concept_id_column(right, aliases):
-                        if _is_concept_id_column(left, aliases, concept_aliases):
-                            left_alias = _norm(left.table) if left.table else None
-
-                            if left_alias == table_alias or (not left_alias and len(concept_aliases) == 1):
-                                found_source_join = True
-                                _, source_col_name = resolve_table_col(right, aliases)
-                                break
-
-                if found_source_join:
-                    break
-
-            if not found_source_join:
-                continue
-
-            filter_node: Optional[exp.Expression] = None
-
-            on_filter = _find_standard_filter_node(on_clause, aliases, table_alias, concept_aliases)
-            if on_filter is not None:
-                filter_node = on_filter
-
-            if filter_node is None:
-                where = select.args.get("where")
-                if where:
-                    where_filter = _find_standard_filter_node(where, aliases, table_alias, concept_aliases)
-                    if where_filter is not None:
-                        filter_node = where_filter
-
-            if filter_node is None:
-                having = select.args.get("having")
-                if having:
-                    having_filter = _find_standard_filter_node(having, aliases, table_alias, concept_aliases)
-                    if having_filter is not None:
-                        filter_node = having_filter
-
-            if filter_node is None:
-                continue
-
-            key = f"{table_alias}_{source_col_name}_{id(select)}"
-            if key in seen:
-                continue
-            seen.add(key)
-
-            violations.append(
-                {
-                    "type": "source_concept_standard_filter",
-                    "alias": table_alias,
-                    "source_column": source_col_name,
-                    "context": join.sql(),
-                    "filter_sql": filter_node.sql(),
-                    "filter_parent_is_and": isinstance(filter_node.parent, exp.And),
-                    "filter_is_left_of_and": (
-                        isinstance(filter_node.parent, exp.And) and filter_node.parent.this is filter_node
-                    ),
-                }
-            )
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+    values = {v.upper() for v in flt.values}
+    if flt.op in ("eq", "in"):
+        return bool(values) and values <= {"S", "C"} and "S" in values
+    return False
 
 
 @register
@@ -406,22 +68,26 @@ class SourceConceptIdStandardFilterRule(Rule):
     name = "Source Concept ID Should Not Filter Standard Concepts"
 
     description = (
-        "Joining *_source_concept_id to concept with standard_concept = 'S' "
-        "is semantically incorrect. Source concepts are non-standard."
+        "A *_source_concept_id is joined to concept and the concept is required to be Standard. Source concepts are "
+        "often non-standard, so records coded in source vocabularies (ICD10CM, NDC, ...) are dropped (WARNING: "
+        "source fields hold Standard concepts too when the source system codes in a standard vocabulary)."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "REMOVE: `AND c.standard_concept = 'S'` from the join on *_source_concept_id (source concepts are non-standard by definition). Either drop the filter or join *_concept_id (without `_source`) instead."
+    suggested_fix = (
+        "REMOVE: the standard_concept filter on the concept joined to *_source_concept_id, OR join the paired "
+        "*_concept_id (without `_source`) if Standard concepts are what you want."
+    )
     long_description = (
         "Every OMOP clinical table has two concept columns: *_concept_id "
         "(the standard vocabulary mapping, e.g. SNOMED for conditions) and "
         "*_source_concept_id (the code from the originating system, "
-        "e.g. ICD10CM). Source concepts are by definition non-standard, so "
-        "joining *_source_concept_id to concept and then filtering "
-        "standard_concept = 'S' always returns zero rows. Either join "
-        "against *_concept_id (for standard-code analytics) or drop the "
-        "standard filter (to inspect source codes)."
+        "e.g. ICD10CM). The source field 'may not necessarily be standard' (CDM v5.4 field-level "
+        "specification): it is non-standard when the source system codes in a source vocabulary, and Standard "
+        "when it codes in a standard one (SNOMED, LOINC, RxNorm, CVX). Requiring the joined concept to be Standard "
+        "therefore keeps only the records whose source code happens to be standard and drops the rest. Either join "
+        "against *_concept_id (for standard-code analytics) or drop the standard filter (to inspect source codes)."
     )
     example_bad = (
         "SELECT co.person_id\n"
@@ -435,48 +101,55 @@ class SourceConceptIdStandardFilterRule(Rule):
         "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
         "WHERE c.standard_concept = 'S';"
     )
+    references = (
+        section(
+            CDM_CONVENTIONS,
+            "source-values-source-concept-ids-and-standard-concept-ids",
+            "Source values, source concept ids and standard concept ids",
+        ),
+        section(BOOK_VOCABULARIES, "non-standard-concepts", "Non-standard concepts"),
+        cdm_table("condition_occurrence"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "source_concept_id" not in sql.lower():
+        lowered = sql.lower()
+        if "source_concept_id" not in lowered or "standard_concept" not in lowered:
             return []
-
-        if CONCEPT_TABLE not in sql.lower():
-            return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
-
         for tree in trees:
-            if not tree or not has_table_reference(tree, CONCEPT_TABLE):
+            if not tree:
                 continue
-
-            detected = _detect_source_concept_joins(tree)
-
-            for v in detected:
-                patch = _build_remove_predicate_patch(
-                    sql,
-                    v.get("filter_sql", ""),
-                    v.get("filter_parent_is_and", False),
-                    v.get("filter_is_left_of_and", False),
-                )
-                violations.append(
-                    self.create_violation(
-                        message=(
-                            f"JOIN on {v['source_column']} to concept (alias: {v['alias']}) "
-                            f"with standard_concept = 'S'. Source concepts are non-standard "
-                            f"and typically do not satisfy this filter."
-                        ),
-                        severity=self.severity,
-                        suggested_fix=self.suggested_fix,
-                        details=v,
-                        suggested_fix_patch=patch,
+            filters = instance_filters(tree, "concept", "standard_concept")
+            if not filters:
+                continue
+            seen: Set[int] = set()
+            for link in links(tree, "concept", "concept_id"):
+                if link.origin not in SOURCE_CONCEPT_FIELDS:
+                    continue
+                if not link.required and not instance_is_null_extended(link):
+                    continue
+                for flt in filters.get(link.instance, []):
+                    if id(flt.node) in seen or not _requires_standard(flt):
+                        continue
+                    seen.add(id(flt.node))
+                    table, column = link.origin
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"JOIN on {table}.{column} to concept (alias: {link.alias}) with `{flt.sql}`. Source "
+                                "concepts are often non-standard, so records coded in a source vocabulary are dropped; "
+                                "only records whose source code is itself Standard remain."
+                            ),
+                            severity=self.severity,
+                            suggested_fix_patch=_remove_patch(sql, flt.node),
+                            details={"source_column": f"{table}.{column}", "filter": flt.sql},
+                        )
                     )
-                )
-
         return violations
 
 
-__all__ = ["SourceConceptIdStandardFilterRule"]
+__all__ = ["SOURCE_CONCEPT_ID_COLUMNS", "SourceConceptIdStandardFilterRule"]

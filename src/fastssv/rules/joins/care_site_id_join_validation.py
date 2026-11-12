@@ -1,216 +1,136 @@
 """Care Site ID Join Validation Rule.
 
-OMOP semantic rule JOIN_002:
-Clinical event tables must join to care_site via care_site_id on both sides.
-Joining on location_id, provider_id, or any other column is incorrect.
+In CDM v5.4 ``care_site_id`` on PERSON, PROVIDER, VISIT_OCCURRENCE and VISIT_DETAIL is a foreign key to
+CARE_SITE.care_site_id, and ``location_id`` on PERSON and CARE_SITE is a foreign key to LOCATION.location_id. An
+equality between a care-site or location key and the key of another entity (``person.location_id =
+care_site.care_site_id``, ``care_site.care_site_id = location.location_id``) matches rows only where unrelated ids
+coincide.
 
-The Problem:
-    Clinical tables have care_site_id (foreign key to care_site.care_site_id).
-    Joining on other columns (e.g., care_site_id to location_id) is semantically
-    incorrect and produces wrong results.
+Each operand is resolved by lineage (casts, CTEs, derived tables, set operations, IN-subqueries) to the CDM column it
+reads, and that column to the entity whose key it holds (keys generated from the CDM v5.4 field-level
+specification). Equalities between two columns that reference the same entity (``person.location_id =
+care_site.location_id``: patients living at a care site's address) and comparisons with non-key columns are
+accepted.
 
-Violation pattern:
-    SELECT * FROM visit_occurrence vo
-    JOIN care_site cs ON vo.care_site_id = cs.location_id
-    -- Wrong: should use cs.care_site_id, not cs.location_id
+Other rules own the remaining pairs: ``<table>.care_site_id = location.location_id`` is
+joins.care_site_join_validation; keys of a person-level event, person or visit_occurrence are
+joins.clinical_pk_cross_join_validation, joins.person_id_join_validation and
+joins.visit_occurrence_id_join_validation; provider columns are joins.provider_care_site_join_validation.
 
-Correct pattern:
-    SELECT * FROM visit_occurrence vo
-    JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+Violation patterns:
+    SELECT * FROM person p JOIN care_site cs ON p.location_id = cs.care_site_id
+    SELECT * FROM care_site cs JOIN location l ON cs.care_site_id = l.location_id
+
+Correct patterns:
+    SELECT * FROM person p JOIN care_site cs ON p.care_site_id = cs.care_site_id
+    SELECT * FROM care_site cs JOIN location l ON cs.location_id = l.location_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Set, Tuple
 
-from sqlglot import exp
-
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
-from fastssv.core.patch import build_join_replace_patch
+from fastssv.core.deduplication import predicate_key
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import cdm_table
 from fastssv.core.registry import register
 
+from ._join_scope import Side, fk_replace_patch, hoist_joins, key_mismatches
+from ._person_keys import PERSON_SCOPED_KEYS
 
-# --- Constants -------------------------------------------------------------
-
-CARE_SITE = "care_site"
-CARE_SITE_ID = "care_site_id"
-
-TABLES_WITH_CARE_SITE_ID = {
-    "visit_occurrence",
-    "visit_detail",
-    "condition_occurrence",
-    "procedure_occurrence",
-    "drug_exposure",
-    "device_exposure",
-    "measurement",
-    "observation",
-    "specimen",
-    "person",
-}
+CARE_SITE_KEY = ("care_site", "care_site_id")
+LOCATION_KEY = ("location", "location_id")
+CONCEPT_KEY = ("concept", "concept_id")
+CARE_SITE_FK_TABLES = {"person", "provider", "visit_occurrence", "visit_detail"}
 
 
-# --- Helpers ---------------------------------------------------------------
+def care_site_to_location(a: Side, b: Side) -> bool:
+    """``<table>.care_site_id = location.location_id``, reported by joins.care_site_join_validation."""
+    for x, y in ((a, b), (b, a)):
+        if x.table in CARE_SITE_FK_TABLES and x.name == "care_site_id" and y.origin == LOCATION_KEY:
+            return True
+    return False
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_care_site(table: Optional[str]) -> bool:
-    return _norm(table) == CARE_SITE
-
-
-def _has_care_site_id(table: Optional[str]) -> bool:
-    return _norm(table) in TABLES_WITH_CARE_SITE_ID
-
-
-def _is_col(col: Optional[str], name: str) -> bool:
-    return _norm(col) == name
-
-
-def _extract_join_conditions(join: exp.Join) -> List[exp.Expression]:
-    """Extract equality conditions from JOIN ON clause."""
-    on_clause = join.args.get("on")
-    if not on_clause:
-        return []
-    return list(on_clause.find_all(exp.EQ))
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _check_care_site_join(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
-    """
-    Detect incorrect joins between tables and care_site.
-
-    Returns:
-        List of (source_table, source_col, care_site_table, care_site_col)
-    """
-    violations: List[Tuple[str, str, str, str]] = []
-    seen: Set[Tuple[str, str, str, str]] = set()
-
-    for join in tree.find_all(exp.Join):
-        conditions = _extract_join_conditions(join)
-
-        has_correct_join = False
-        incorrect_pairs: List[Tuple[str, str, str, str]] = []
-
-        for eq in conditions:
-            left, right = eq.this, eq.expression
-
-            if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-                continue
-
-            lt, lc = resolve_table_col(left, aliases)
-            rt, rc = resolve_table_col(right, aliases)
-
-            if not (lt and lc and rt and rc):
-                continue
-
-            for t1, c1, t2, c2 in [
-                (lt, lc, rt, rc),
-                (rt, rc, lt, lc),
-            ]:
-                if _has_care_site_id(t1) and _is_care_site(t2):
-                    if _is_col(c1, CARE_SITE_ID) and _is_col(c2, CARE_SITE_ID):
-                        has_correct_join = True
-                    else:
-                        key = (t1, c1, t2, c2)
-                        if key not in seen:
-                            incorrect_pairs.append(key)
-                            seen.add(key)
-
-        # Only report violations if we found incorrect joins and no correct join
-        if incorrect_pairs and not has_correct_join:
-            violations.extend(incorrect_pairs)
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+def _reported(a: Side, b: Side) -> bool:
+    # An entity key equated with a concept id is reported by anti_patterns.join_key_validation.
+    if CONCEPT_KEY in (a.domain, b.domain):
+        return False
+    if CARE_SITE_KEY not in (a.domain, b.domain) and LOCATION_KEY not in (a.domain, b.domain):
+        return False
+    if a.domain in PERSON_SCOPED_KEYS or b.domain in PERSON_SCOPED_KEYS:
+        return False
+    if "provider" in (a.table, b.table):
+        return False
+    return not care_site_to_location(a, b)
 
 
 @register
 class CareSiteIdJoinValidationRule(Rule):
-    """Validate that tables join to care_site via care_site_id."""
+    """Care-site and location keys must be equated with their own foreign keys."""
 
     rule_id = "joins.care_site_id_join_validation"
-    name = "Care Site ID Join Validation"
+    name = "Care Site and Location Key Join Validation"
 
     description = (
-        "Tables containing care_site_id must join to care_site using care_site_id. "
-        "Joining on location_id, provider_id, or other columns is incorrect."
+        "A care_site or location key equated with another entity's key (person.location_id = "
+        "care_site.care_site_id, care_site.care_site_id = location.location_id) matches unrelated rows. Keys are "
+        "followed by lineage and taken from the CDM v5.4 specification."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: the join target WITH `<table>.care_site_id = care_site.care_site_id`. Joins from tables holding care_site_id must use that column on both sides."
+    suggested_fix = (
+        "REPLACE: the key equality WITH the foreign key pair: `<table>.care_site_id = care_site.care_site_id` or "
+        "`<table>.location_id = location.location_id`."
+    )
     example_bad = "SELECT * FROM person p JOIN care_site cs ON p.location_id = cs.care_site_id;"
     example_good = "SELECT * FROM person p JOIN care_site cs ON p.care_site_id = cs.care_site_id;"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT * FROM care_site cs JOIN location l ON cs.care_site_id = l.location_id;",
+            severity=Severity.ERROR,
+            note="The care site's own key used where its location_id foreign key belongs.",
+        ),
+    )
+    references = (cdm_table("care_site"), cdm_table("person"), cdm_table("location"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
+        lowered = sql.lower()
+        if "care_site" not in lowered and "location" not in lowered:
+            return []
+        trees, err = parse_sql(sql, dialect)
+        if err:
+            return []
+
         violations: List[RuleViolation] = []
-
-        # Fast pre-filter
-        if "care_site" not in sql.lower():
-            return []
-
-        trees, parse_error = parse_sql(sql, dialect)
-        if parse_error:
-            return []
-
+        seen: Set[Tuple[str, str]] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, CARE_SITE):
-                continue
-
-            aliases = extract_aliases(tree)
-            bad_joins = _check_care_site_join(tree, aliases)
-
-            for source_table, source_col, care_site_table, care_site_col in bad_joins:
-                fix_text = (
-                    f"REPLACE: `{source_table}.{source_col} = {care_site_table}.{care_site_col}` "
-                    f"WITH `{source_table}.care_site_id = {care_site_table}.care_site_id`."
-                )
+            tree = hoist_joins(tree)
+            for eq, a, b in key_mismatches(tree):
+                if not _reported(a, b):
+                    continue
+                key = tuple(sorted((f"{a.table}.{a.name}", f"{b.table}.{b.name}")))
+                if key in seen:
+                    continue
+                seen.add(key)
+                fix = f"REPLACE: `{eq.sql()}` WITH the foreign key pair that links {a.table} and {b.table}."
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"Incorrect join between {source_table} and {care_site_table}. "
-                            f"Found {source_table}.{source_col} = {care_site_table}.{care_site_col}. "
-                            f"Expected care_site_id = care_site_id."
+                            f"Invalid join: {eq.sql()}. {a.table}.{a.name} holds {a.domain[0]} keys and "
+                            f"{b.table}.{b.name} holds {b.domain[0]} keys; they never identify the same row."
                         ),
-                        suggested_fix=self.suggested_fix,
-                        suggested_fix_patch=build_join_replace_patch(
-                            sql,
-                            source_table,
-                            source_col,
-                            care_site_table,
-                            care_site_col,
-                            CARE_SITE_ID,
-                            CARE_SITE_ID,
-                            fix_text,
-                            aliases=aliases,
-                        ),
+                        suggested_fix=fix,
+                        suggested_fix_patch=fk_replace_patch(sql, a, b, fix),
                         details={
-                            "source_table": source_table,
-                            "source_column": source_col,
-                            "care_site_table": care_site_table,
-                            "care_site_column": care_site_col,
-                            "expected": f"{source_table}.care_site_id = {care_site_table}.care_site_id",
+                            "left": f"{a.table}.{a.name}",
+                            "right": f"{b.table}.{b.name}",
+                            "predicate": predicate_key(eq.node),
                         },
                     )
                 )
-
         return violations
 
 

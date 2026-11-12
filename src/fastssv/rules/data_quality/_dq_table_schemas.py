@@ -1,0 +1,46 @@
+"""Schema of every OMOP CDM v5.4 table: the databaseSchema column of the field-level specification CSV
+(OHDSI/DataQualityDashboard inst/csv/OMOP_CDMv5.4_Field_Level.csv). Generated, do not edit by hand."""
+
+from typing import Dict
+
+# fmt: off
+TABLE_DATABASE_SCHEMA: Dict[str, str] = {'care_site': 'cdm',
+ 'cdm_source': 'cdm',
+ 'cohort': 'cohort',
+ 'cohort_definition': 'cohort',
+ 'concept': 'vocab',
+ 'concept_ancestor': 'vocab',
+ 'concept_class': 'vocab',
+ 'concept_relationship': 'vocab',
+ 'concept_synonym': 'vocab',
+ 'condition_era': 'cdm',
+ 'condition_occurrence': 'cdm',
+ 'cost': 'cdm',
+ 'death': 'cdm',
+ 'device_exposure': 'cdm',
+ 'domain': 'vocab',
+ 'dose_era': 'cdm',
+ 'drug_era': 'cdm',
+ 'drug_exposure': 'cdm',
+ 'drug_strength': 'vocab',
+ 'episode': 'cdm',
+ 'episode_event': 'cdm',
+ 'fact_relationship': 'cdm',
+ 'location': 'cdm',
+ 'measurement': 'cdm',
+ 'metadata': 'cdm',
+ 'note': 'cdm',
+ 'note_nlp': 'cdm',
+ 'observation': 'cdm',
+ 'observation_period': 'cdm',
+ 'payer_plan_period': 'cdm',
+ 'person': 'cdm',
+ 'procedure_occurrence': 'cdm',
+ 'provider': 'cdm',
+ 'relationship': 'vocab',
+ 'source_to_concept_map': 'vocab',
+ 'specimen': 'cdm',
+ 'visit_detail': 'cdm',
+ 'visit_occurrence': 'cdm',
+ 'vocabulary': 'vocab'}
+# fmt: on

@@ -23,7 +23,7 @@ from fastssv.cli import _clean_llm_output, _split_queries, main
 def test_main_batch_multiple_queries_writes_grouped_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sql = """
     SELECT person_id FROM person;
-    SELECT * FROM no_such_table;
+    SELECT * FROM condition_occurence;
     SELECT person_id FROM person WHERE year_of_birth > 1980;
     """
     sql_file = tmp_path / "batch.sql"

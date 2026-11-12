@@ -1,245 +1,229 @@
 """Note NLP Offset is Character Position Rule.
 
-OMOP semantic rule GAP_012:
-note_nlp.offset is a VARCHAR field storing the character position of the NLP
-extraction within the note text. It is not an integer ID and should not be used
-in JOINs or numeric comparisons without explicit CAST.
+OMOP semantic rule GAP_012.
 
-The Problem:
-    The note_nlp.offset column stores character positions as VARCHAR, not INTEGER.
-    Developers often mistakenly treat it as a numeric column because:
-    1. Positions are conceptually numeric
-    2. Most OMOP CDM position/ID fields are integers
-    3. The name "offset" suggests a numeric value
+CDM v5.4 stores ``note_nlp.offset`` ("Character offset of the extracted term in
+the input note") as ``varchar(50)``. Its content is a number, but every ordering
+operation on the raw column is a string ordering: ``'9' > '100'`` is true,
+``ORDER BY offset`` puts 100 before 9, and ``MAX(offset)`` returns '99' over
+'100'. These run without error and silently return wrong rows.
 
-    This leads to:
-    - String vs numeric comparison semantics (e.g., '9' > '100' is true)
-    - Using it in JOINs (semantically incorrect - it's a position, not a key)
-    - Arithmetic operations without proper casting
+Flagged on an uncast ``note_nlp.offset``:
+    * ``<``, ``<=``, ``>``, ``>=`` against a string literal or against another
+      uncast offset (e.g. "term A appears before term B in the same note");
+    * ``BETWEEN`` with string-literal bounds;
+    * ``ORDER BY offset`` (including window ``ORDER BY``);
+    * ``MIN(offset)`` / ``MAX(offset)``, ``GREATEST`` / ``LEAST`` over offsets.
 
-Common mistakes:
-    1. Direct numeric comparisons: WHERE offset > 100
-    2. Using in JOIN conditions: JOIN ... ON nn.offset = ...
-    3. BETWEEN without CAST: WHERE offset BETWEEN 50 AND 200
-    4. Arithmetic: WHERE offset + 10 < 500
+The column is recognised by lineage (``column_origins``): through CTEs, derived tables and renames, qualified or
+not; a CTE that casts it (``CAST("offset" AS INTEGER) AS "offset"``) yields an integer and is not flagged.
 
-Violation pattern:
-    SELECT *
-    FROM note_nlp
-    WHERE offset > 100
-    -- WRONG: VARCHAR compared as string, not number!
+Not flagged:
+    * equality and IN (string equality of positions is exact);
+    * comparison with a numeric literal or arithmetic: PostgreSQL has no
+      ``varchar > integer`` operator and casts from string types are
+      explicit-only, so the query fails loudly rather than returning wrong rows;
+    * any use inside CAST / TRY_CAST / CONVERT or ``::int``.
 
-Correct pattern:
-    SELECT *
-    FROM note_nlp
-    WHERE CAST(offset AS INT) > 100
-    -- or
-    WHERE CONVERT(INT, offset) > 100
+Violation:
+    SELECT a.note_id FROM note_nlp a
+    JOIN note_nlp b ON a.note_id = b.note_id
+    WHERE a."offset" < b."offset"
+
+Correct:
+    ... WHERE CAST(a."offset" AS INTEGER) < CAST(b."offset" AS INTEGER)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.references import BOOK_SQL, cdm_table, section
 from fastssv.core.helpers import (
-    extract_aliases,
+    is_string_literal,
     normalize_name,
     parse_sql,
-    resolve_table_col,
+    _explicit_projection,
+    _pick_source,
+    _query_branches,
+    _select_sources,
+    _source_by_qualifier,
+    _source_query,
+    column_origins,
 )
 from fastssv.core.patch import locate, replace as patch_replace
 from fastssv.core.registry import register
 
 
-# --- Constants -------------------------------------------------------------
-
 NOTE_NLP = "note_nlp"
 OFFSET_COL = "offset"
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _normalize_table(name: Optional[str]) -> Optional[str]:
-    return _norm(name.split(".")[-1]) if name else None
-
-
-def _is_note_nlp(table: Optional[str]) -> bool:
-    return _normalize_table(table) == NOTE_NLP
-
-
-def _is_offset_col(col: Optional[str]) -> bool:
-    return _norm(col) == OFFSET_COL
-
-
-def _has_note_nlp(tree: exp.Expression) -> bool:
-    return any(_normalize_table(t.name) == NOTE_NLP for t in tree.find_all(exp.Table))
+_SYMBOL = {exp.LT: "<", exp.LTE: "<=", exp.GT: ">", exp.GTE: ">="}
 
 
 def _is_casted(node: exp.Expression) -> bool:
     parent = node.parent
-    while parent:
+    while isinstance(parent, (exp.Paren, exp.Cast, exp.TryCast, exp.Anonymous)):
         if isinstance(parent, (exp.Cast, exp.TryCast)):
             return True
-        if isinstance(parent, exp.Anonymous):
-            func_name = str(parent.this).lower()
-            if func_name == "convert":
-                return True
-        parent = parent.parent
-    return False
-
-
-def _is_in_join(node: exp.Expression) -> bool:
-    parent = node.parent
-    while parent:
-        if isinstance(parent, exp.Join):
+        if isinstance(parent, exp.Anonymous) and normalize_name(str(parent.this)) == "convert":
             return True
-        if isinstance(parent, (exp.Where, exp.Select)):
-            return False
         parent = parent.parent
     return False
 
 
-def _is_offset_reference(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    has_note_nlp: bool,
-) -> Tuple[bool, Optional[str], Optional[str]]:
-    table, column = resolve_table_col(col, aliases)
-
-    is_offset = _is_offset_col(column)
-
-    if table and _is_note_nlp(table):
-        return is_offset, table, column
-
-    if not table and has_note_nlp and is_offset:
-        return True, NOTE_NLP, column
-
-    return False, None, None
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_join_usage(tree, aliases, has_note_nlp):
-    results = []
-
-    for eq in tree.find_all(exp.EQ):
-        if not _is_in_join(eq):
+def _recast(col: exp.Column, depth: int = 0) -> bool:
+    """A CTE / derived-table projection on ``col``'s lineage casts the value (``column_origins`` looks through casts)."""
+    if depth > 12:
+        return False
+    select = col.find_ancestor(exp.Select)
+    if select is None:
+        return False
+    name = normalize_name(col.name)
+    if col.table:
+        scope, src = _source_by_qualifier(select, normalize_name(col.table))
+    else:
+        scope, src = select, _pick_source(select, _select_sources(select), name, depth)
+    if scope is None or src is None:
+        return False
+    query = _source_query(scope, src)
+    if query is None:
+        return False
+    for branch in _query_branches(query):
+        proj = _explicit_projection(branch, name)
+        if proj is None:
             continue
-
-        for node in (eq.this, eq.expression):
-            if not isinstance(node, exp.Column):
-                continue
-            if _is_casted(node):
-                continue
-
-            is_offset, table, col = _is_offset_reference(node, aliases, has_note_nlp)
-
-            if is_offset:
-                results.append(("join", table, col, None, node.sql()))
-
-    return results
+        expr = proj.this if isinstance(proj, exp.Alias) else proj
+        while isinstance(expr, exp.Paren):
+            expr = expr.this
+        if isinstance(expr, (exp.Cast, exp.TryCast)) or (
+            isinstance(expr, exp.Anonymous) and normalize_name(str(expr.this)) == "convert"
+        ):
+            return True
+        if isinstance(expr, exp.Column) and _recast(expr, depth + 1):
+            return True
+    return False
 
 
-def _detect_numeric_comparisons(tree, aliases, has_note_nlp):
-    results = []
-
-    comparison_types = (exp.GT, exp.GTE, exp.LT, exp.LTE)
-
-    for node in tree.find_all(*comparison_types):
-        if _is_in_join(node):
-            continue
-
-        left, right = node.this, node.expression
-
-        for col_node in (left, right):
-            if not isinstance(col_node, exp.Column):
-                continue
-            if _is_casted(col_node):
-                continue
-
-            is_offset, table, col = _is_offset_reference(col_node, aliases, has_note_nlp)
-
-            if is_offset:
-                op = type(node).__name__
-                results.append(("numeric", table, col, op, col_node.sql()))
-
-    return results
+def _is_offset(node: exp.Expression) -> bool:
+    """True for an uncast value whose lineage is note_nlp.offset, through CTEs, derived tables and renames."""
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if not isinstance(node, exp.Column) or _is_casted(node):
+        return False
+    origins = column_origins(node)
+    return origins == {(NOTE_NLP, OFFSET_COL)} and not _recast(node)
 
 
-def _detect_between(tree, aliases, has_note_nlp):
-    results = []
-
-    for node in tree.find_all(exp.Between):
-        col_node = node.this
-
-        if not isinstance(col_node, exp.Column):
-            continue
-        if _is_casted(col_node):
-            continue
-
-        is_offset, table, col = _is_offset_reference(col_node, aliases, has_note_nlp)
-
-        if is_offset:
-            results.append(("between", table, col, None, col_node.sql()))
-
-    return results
+def _column(node: exp.Expression) -> exp.Column:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return node
 
 
-def _detect_arithmetic(tree, aliases, has_note_nlp):
-    results = []
-
-    for node in tree.find_all(exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Mod):
-        for col in node.find_all(exp.Column):
-            if _is_casted(col):
-                continue
-
-            is_offset, table, column = _is_offset_reference(col, aliases, has_note_nlp)
-
-            if is_offset:
-                op = type(node).__name__
-                results.append(("arithmetic", table, column, op, col.sql()))
-
-    return results
+def _order_target(ordered: exp.Ordered) -> exp.Expression:
+    """What an ORDER BY item sorts on. PostgreSQL resolves a bare name in a query-level ORDER BY to an
+    output column first, so ``CAST(nn."offset" AS INTEGER) AS "offset" ... ORDER BY "offset"`` sorts integers."""
+    key = _column(ordered.this)
+    order = ordered.parent
+    select = order.parent if isinstance(order, exp.Order) else None
+    if not isinstance(key, exp.Column) or key.table or not isinstance(select, exp.Select):
+        return key
+    for proj in select.expressions:
+        if isinstance(proj, exp.Alias) and normalize_name(proj.alias) == normalize_name(key.name):
+            return proj.this
+    return key
 
 
-# --- Rule ------------------------------------------------------------------
+def _findings(tree: exp.Expression) -> List[Tuple[str, str, exp.Column]]:
+    """(kind, detail, column) for every string-ordering use of an uncast offset."""
+    out: List[Tuple[str, str, exp.Column]] = []
+
+    for cmp in tree.find_all(exp.LT, exp.LTE, exp.GT, exp.GTE):
+        left, right = cmp.this, cmp.expression
+        if _is_offset(left) and _is_offset(right):
+            out.append(("offset_pair", _SYMBOL[type(cmp)], _column(left)))
+        elif _is_offset(left) and is_string_literal(right):
+            out.append(("comparison", _SYMBOL[type(cmp)], _column(left)))
+        elif _is_offset(right) and is_string_literal(left):
+            out.append(("comparison", _SYMBOL[type(cmp)], _column(right)))
+
+    for between in tree.find_all(exp.Between):
+        bounds = (between.args.get("low"), between.args.get("high"))
+        if _is_offset(between.this) and any(b is not None and is_string_literal(b) for b in bounds):
+            out.append(("between", "BETWEEN", _column(between.this)))
+
+    for ordered in tree.find_all(exp.Ordered):
+        target = _order_target(ordered)
+        if _is_offset(target):
+            out.append(("order", "ORDER BY", _column(target)))
+
+    for agg in tree.find_all(exp.Min, exp.Max):
+        if _is_offset(agg.this):
+            out.append(("minmax", type(agg).__name__.upper(), _column(agg.this)))
+
+    for fn in tree.find_all(exp.Greatest, exp.Least):
+        args = [fn.this, *(fn.expressions or [])]
+        offsets = [a for a in args if _is_offset(a)]
+        if offsets and all(_is_offset(a) or is_string_literal(a) for a in args):
+            out.append(("minmax", type(fn).__name__.upper(), _column(offsets[0])))
+
+    return out
+
+
+_MESSAGES = {
+    "comparison": "note_nlp.offset used in a `{detail}` comparison as a string: offset is varchar, so '9' > '100'.",
+    "offset_pair": "Two note_nlp.offset values compared with `{detail}` as strings: offset is varchar, so '9' > '100'.",
+    "between": "note_nlp.offset used in BETWEEN with string bounds: offset is varchar, so the range is lexicographic.",
+    "order": "ORDER BY note_nlp.offset sorts character positions as strings (100 before 9).",
+    "minmax": "{detail}(note_nlp.offset) picks the lexicographic extreme of a varchar column ('99' over '100').",
+}
 
 
 @register
 class NoteNlpOffsetIsCharacterPositionRule(Rule):
-    """Ensure note_nlp.offset is not misused as numeric."""
+    """Flag string-ordered uses of note_nlp.offset, a varchar character position."""
 
     rule_id = "data_quality.note_nlp_offset_is_character_position"
     name = "Note NLP Offset is Character Position"
 
     description = (
-        "note_nlp.offset is VARCHAR storing character positions and must not "
-        "be used in joins or numeric operations without explicit casting."
+        "note_nlp.offset is a varchar character position. Range comparisons with string literals or another "
+        "offset, BETWEEN with string bounds, ORDER BY, and MIN/MAX on the uncast column order it as text."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "WRAP: note_nlp.offset in CAST when used numerically — `CAST(offset AS INTEGER)`. Or treat it as VARCHAR (string compare, LIKE). Do not JOIN on it."
+    suggested_fix = "WRAP: note_nlp.offset in `CAST(offset AS INTEGER)` wherever it is ordered, ranged or aggregated."
     long_description = (
-        "note_nlp.offset is a VARCHAR column that stores the character "
-        "position of the NLP-extracted term within the note text. Despite "
-        "the numeric content, the column type is string — using it in a "
-        "numeric comparison or JOIN without an explicit CAST leads to "
-        "implicit-cast errors on strict dialects and silent mis-sorts on "
-        "lenient ones. CAST to INT when you need numeric semantics."
+        "note_nlp.offset holds the character position of the extracted term but is declared varchar(50) in "
+        "CDM v5.4. Ordering it without a cast compares strings, so position 100 sorts before 9 and a range "
+        "filter such as offset > '100' keeps position 9. Cast it to an integer first."
     )
-    example_bad = "SELECT *\nFROM note_nlp\nWHERE offset > 100;"
-    example_good = "SELECT *\nFROM note_nlp\nWHERE CAST(offset AS INT) > 100;"
+    example_bad = "SELECT note_nlp_id\nFROM note_nlp\nWHERE \"offset\" > '100';"
+    example_good = 'SELECT note_nlp_id\nFROM note_nlp\nWHERE CAST("offset" AS INTEGER) > 100;'
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT a.note_id\n"
+                "FROM note_nlp a\n"
+                "JOIN note_nlp b ON a.note_id = b.note_id\n"
+                'WHERE a."offset" < b."offset";'
+            ),
+            severity=Severity.WARNING,
+            note="Two offsets compared as text ('term A before term B'); cast both sides.",
+        ),
+        RuleExample(
+            sql='SELECT note_id, lexical_variant\nFROM note_nlp\nORDER BY "offset";',
+            severity=Severity.WARNING,
+            note="ORDER BY on the uncast offset sorts position 100 before 9.",
+        ),
+    )
+    references = (cdm_table("note_nlp"), section(BOOK_SQL, "implicit-casts", "Implicit casts"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "note_nlp" not in sql.lower() or "offset" not in sql.lower():
+        lowered = sql.lower()
+        if NOTE_NLP not in lowered or OFFSET_COL not in lowered:
             return []
 
         trees, err = parse_sql(sql, dialect)
@@ -247,69 +231,29 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
             return []
 
         violations: List[RuleViolation] = []
-        seen: Set[str] = set()
-
+        seen: Set[Tuple[str, str, str]] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            has_note_nlp = _has_note_nlp(tree)
-
-            findings = []
-            findings += _detect_join_usage(tree, aliases, has_note_nlp)
-            findings += _detect_numeric_comparisons(tree, aliases, has_note_nlp)
-            findings += _detect_between(tree, aliases, has_note_nlp)
-            findings += _detect_arithmetic(tree, aliases, has_note_nlp)
-
-            for kind, table, col, op, col_sql in findings:
-                key = f"{kind}|{table}|{col}|{op}|{col_sql}"
+            for kind, detail, col in _findings(tree):
+                col_sql = col.sql(dialect=dialect)
+                key = (kind, detail, col_sql)
                 if key in seen:
                     continue
                 seen.add(key)
-
-                if kind == "join":
-                    message = f"{table}.{col} used in JOIN condition."
-                    fix = "REMOVE: `note_nlp.offset` from the JOIN ON clause. offset is a VARCHAR character position, not a relational key — JOIN on `note_nlp.note_id = note.note_id` instead."
-
-                elif kind == "numeric":
-                    message = f"{table}.{col} used in numeric comparison ({op}) without CAST."
-                    fix = self.suggested_fix
-
-                elif kind == "between":
-                    message = f"{table}.{col} used in BETWEEN without CAST."
-                    fix = self.suggested_fix
-
-                else:
-                    message = f"{table}.{col} used in arithmetic operation ({op}) without CAST."
-                    fix = self.suggested_fix
-
-                # Structured patch: wrap the offset reference in
-                # CAST(<col> AS INTEGER). This is the canonical fix for
-                # numeric comparison / BETWEEN / arithmetic uses. JOIN
-                # uses are *not* mechanical (the right fix is to remove
-                # the predicate, not cast it), so leave those FREEFORM.
-                patch = None
-                if kind in {"numeric", "between", "arithmetic"} and col_sql:
-                    span = locate(sql, col_sql)
-                    if span is not None:
-                        patch = patch_replace(span, f"CAST({col_sql} AS INTEGER)")
-
+                # Casting one side of an offset-vs-offset comparison would leave integer vs varchar, which
+                # PostgreSQL rejects; that fix needs both sides and is left to the author.
+                span = locate(sql, col_sql) if kind != "offset_pair" else None
+                patch = patch_replace(span, f"CAST({col_sql} AS INTEGER)") if span is not None else None
                 violations.append(
                     self.create_violation(
-                        message=message,
+                        message=_MESSAGES[kind].format(detail=detail),
                         severity=self.severity,
-                        suggested_fix=fix,
+                        suggested_fix=self.suggested_fix,
                         suggested_fix_patch=patch,
-                        details={
-                            "type": kind,
-                            "table": table,
-                            "column": col,
-                            "operator": op,
-                        },
+                        details={"type": kind, "operator": detail, "column": col_sql},
                     )
                 )
-
         return violations
 
 

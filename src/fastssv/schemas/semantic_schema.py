@@ -4,7 +4,7 @@ Defines which (table, column) pairs are *standard* or *source* concept-id
 fields, and which vocabulary tables drive hierarchy lookups. Used by
 ``concept_standardization.standard_concept_enforcement`` (default vs.
 strict-mode targeting), ``joins.maps_to_direction``, and
-``joins.join_path_validation``.
+``joins.concept_relationship_requires_relationship_id``.
 
 Every entry in ``STANDARD_CONCEPT_FIELDS`` and ``SOURCE_CONCEPT_FIELDS``
 must be a real column in
@@ -25,10 +25,11 @@ The CDM v5.4 spec defines two distinct concept-id flavours per event:
 
 The standard-concept-enforcement rule consumes these differently:
 
-* Default mode (correctness-precision): fires on ``SOURCE_CONCEPT_FIELDS``
-  references that aren't filtered or mapped via ``concept_relationship
-  'Maps to'``, and on vocabulary-context queries (joins to
-  ``VOCABULARY_TABLES``) that don't filter by ``standard_concept = 'S'``.
+* Default mode (correctness-precision): fires only on
+  ``SOURCE_CONCEPT_FIELDS`` columns used as a filter or join key without a
+  ``concept_relationship 'Maps to'`` mapping, a literal filter, or a
+  codeset join. ``STANDARD_CONCEPT_FIELDS`` are trusted outright — joining
+  one to a vocabulary table cannot make it non-standard.
 * Strict mode (ETL-validation / new-dataset distrust): adds the historic
   broad check against ``STANDARD_CONCEPT_FIELDS`` on top — every standard
   concept-id reference needs an explicit standardness filter even though

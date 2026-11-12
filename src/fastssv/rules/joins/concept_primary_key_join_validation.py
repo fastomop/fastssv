@@ -1,230 +1,66 @@
 """Concept Primary Key Join Validation Rule.
 
-OMOP semantic rule JOIN_008:
-All joins TO the concept table must target concept.concept_id (the primary key).
-Joining to concept.concept_name, concept.concept_code, concept.vocabulary_id, or
-concept.domain_id as the join predicate is incorrect.
+Every ``*_concept_id`` column of the CDM v5.4 is a foreign key to CONCEPT.concept_id (Data Model Conventions,
+Fields). An equality between such a column and any other CONCEPT column (concept_name, concept_code, vocabulary_id,
+...) compares a concept id with an unrelated attribute: PostgreSQL rejects the type mismatch, DuckDB fails on the first
+value that does not convert, and with a cast to text the join runs and matches nothing.
 
-The Problem:
-    The concept table has a primary key (concept_id) and several descriptive columns
-    (concept_name, concept_code, vocabulary_id, domain_id, etc.). Joining on
-    descriptive columns instead of the primary key causes:
-
-    1. Non-unique matches: concept_name is not unique, causing cartesian joins
-    2. String matching issues: Case sensitivity, trailing spaces, encoding
-    3. Performance: String joins are much slower than integer joins
-    4. Semantic incorrectness: Foreign keys should reference primary keys
+Operands are resolved by lineage (casts, CTEs, derived tables, set operations, IN-subqueries) in every SELECT, so an
+alias that names a different source in each scope, or a concept-id column renamed in a CTE, is judged by the column it
+reads. Columns of VOCABULARY, DOMAIN, CONCEPT_CLASS and RELATIONSHIP are checked by
+joins.concept_metadata_join_validation and joins.concept_relationship_relationship_join_validation, columns of
+CONCEPT_SYNONYM by joins.concept_synonym_join_validation. Joins on concept.concept_code without a vocabulary_id
+constraint are checked by anti_patterns.concept_code_requires_vocabulary_id.
 
 Violation pattern:
-    SELECT * FROM drug_exposure de
-    JOIN concept c ON de.drug_source_value = c.concept_name
-    -- WRONG: Joining on concept_name instead of concept_id
+    SELECT * FROM condition_occurrence co
+    JOIN concept c ON co.condition_concept_id = c.concept_name
 
 Correct pattern:
-    SELECT * FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
+    SELECT * FROM condition_occurrence co
+    JOIN concept c ON co.condition_concept_id = c.concept_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
-
-from sqlglot import exp
+from typing import List, Optional, Set, Tuple
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.patch import add as patch_add, build_join_replace_patch, freeform, locate
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.helpers import parse_sql
+from fastssv.core.patch import build_join_replace_patch
+from fastssv.core.references import BOOK_SQL, CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.registry import register
 
+from ._j1_reference_joins import REFERENCE_TABLES
+from ._join_scope import Side, hoist_joins, tree_equalities
 
-# --- Constants -------------------------------------------------------------
-
-CONCEPT = "concept"
-CONCEPT_ID = "concept_id"
-
-
-# --- Helpers ---------------------------------------------------------------
+CONCEPT_KEY = ("concept", "concept_id")
+_OWNED_ELSEWHERE = REFERENCE_TABLES | {"concept_synonym"}
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _normalize_table(name: Optional[str]) -> Optional[str]:
-    if not name:
-        return None
-    return _norm(name.split(".")[-1])
-
-
-def _is_concept(table: Optional[str]) -> bool:
-    return _norm(table) == CONCEPT
-
-
-def _is_col(col: Optional[str], name: str) -> bool:
-    return _norm(col) == name
-
-
-def _is_concept_id_like(col: Optional[str]) -> bool:
-    """
-    Detect OMOP concept_id-like columns (e.g., condition_concept_id).
-    """
-    c = _norm(col)
-    return c is not None and c.endswith("_concept_id")
-
-
-def _is_vocab_safe_column(col: Optional[str]) -> bool:
-    """
-    Columns whose use as a join predicate to the concept table is suspicious
-    without an accompanying vocabulary_id filter.
-
-    Only `concept_code` qualifies — it is not unique across vocabularies and
-    typically needs `concept.vocabulary_id = '<vocab>'` to disambiguate.
-
-    `vocabulary_id`, `domain_id`, `concept_class_id` are legitimate FK join
-    columns to the respective lookup tables (vocabulary, domain, concept_class)
-    and are excluded here to avoid false positives.
-    """
-    return _norm(col) == "concept_code"
-
-
-def _extract_all_equalities(tree: exp.Expression) -> List[exp.EQ]:
-    """
-    Extract equality conditions from:
-    - JOIN ON clauses
-    - WHERE clauses (implicit joins)
-    """
-    return list(tree.find_all(exp.EQ))
-
-
-def _group_equalities_by_join(
-    tree: exp.Expression,
-) -> List[List[exp.EQ]]:
-    """
-    Group equality conditions by logical AND blocks.
-    Helps detect composite joins like:
-      ON a = b AND c = d
-    """
-    groups: List[List[exp.EQ]] = []
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if not on_clause:
+def _mismatch(a: Side, b: Side) -> Optional[Tuple[Side, Side]]:
+    """(concept-id operand, concept attribute operand) when one holds concept ids and the other another CONCEPT column."""
+    for ids, attr in ((a, b), (b, a)):
+        if ids.domain != CONCEPT_KEY or ids.table in _OWNED_ELSEWHERE:
             continue
-
-        eqs = list(on_clause.find_all(exp.EQ))
-        if eqs:
-            groups.append(eqs)
-
-    # Also include WHERE-level equalities as a single group
-    where = tree.args.get("where")
-    if where:
-        eqs = list(where.find_all(exp.EQ))
-        if eqs:
-            groups.append(eqs)
-
-    return groups
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> Tuple[
-    List[Tuple[str, str, str, str]],  # errors
-    List[Tuple[str, str, str, str]],  # warnings
-]:
-    errors: List[Tuple[str, str, str, str]] = []
-    warnings: List[Tuple[str, str, str, str]] = []
-
-    seen_errors: Set[Tuple[str, str, str, str]] = set()
-    seen_warnings: Set[Tuple[str, str, str, str]] = set()
-
-    groups = _group_equalities_by_join(tree)
-
-    for group in groups:
-        resolved = []
-
-        for eq in group:
-            left, right = eq.this, eq.expression
-
-            if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-                continue
-
-            lt, lc = resolve_table_col(left, aliases)
-            rt, rc = resolve_table_col(right, aliases)
-
-            if not (lt and lc and rt and rc):
-                continue
-
-            lt = _normalize_table(lt)
-            rt = _normalize_table(rt)
-
-            resolved.append((lt, lc, rt, rc))
-
-        # Evaluate each condition within its join group
-        for lt, lc, rt, rc in resolved:
-            for t1, c1, t2, c2 in [
-                (lt, lc, rt, rc),
-                (rt, rc, lt, lc),
-            ]:
-                if not _is_concept(t2):
-                    continue
-
-                # --- ERROR: *_concept_id must join to concept_id ---
-                if _is_concept_id_like(c1):
-                    if not _is_col(c2, CONCEPT_ID):
-                        key = (t1, c1, t2, c2)
-                        if key not in seen_errors:
-                            errors.append(key)
-                            seen_errors.add(key)
-
-                # --- WARNING: suspicious vocabulary join ---
-                elif _is_vocab_safe_column(c2):
-                    # Check if vocabulary_id also present in same join group
-                    has_vocab_constraint = any(
-                        _norm(col2) == "vocabulary_id" for (_, _, t2b, col2) in resolved if _is_concept(t2b)
-                    )
-
-                    if not has_vocab_constraint:
-                        key = (t1, c1, t2, c2)
-                        if key not in seen_warnings:
-                            warnings.append(key)
-                            seen_warnings.add(key)
-
-    return errors, warnings
-
-
-# --- Rule ------------------------------------------------------------------
+        if attr.table == "concept" and attr.name != "concept_id":
+            return ids, attr
+    return None
 
 
 @register
 class ConceptJoinValidationRule(Rule):
-    """
-    Production-grade OMOP concept join validation.
-
-    Enforces:
-    - *_concept_id must join to concept.concept_id (ERROR)
-    - concept_code joins without vocabulary_id are suspicious (WARNING)
-    """
+    """A concept id must be compared with concept.concept_id."""
 
     rule_id = "joins.concept_join_validation"
     name = "Concept Join Validation"
 
     description = (
-        "Ensures correct joins to the OMOP concept table. "
-        "Columns ending with '_concept_id' must join to concept.concept_id. "
-        "Vocabulary-based joins (e.g., concept_code) should include vocabulary_id."
+        "A *_concept_id column (a foreign key to concept.concept_id) must be compared with concept.concept_id, not "
+        "with concept_name, concept_code or another concept column."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: any `*_concept_id` join target other than `concept.concept_id` WITH `concept.concept_id`. ADD: `AND <c>.vocabulary_id = '<vocab>'` whenever joining on `concept_code` (concept_code is unique only within a vocabulary)."
+    suggested_fix = "REPLACE: any `*_concept_id` join target other than `concept.concept_id` WITH `concept.concept_id`."
 
     example_bad = (
         "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_name;"
@@ -232,110 +68,66 @@ class ConceptJoinValidationRule(Rule):
     example_good = (
         "SELECT co.person_id FROM condition_occurrence co\nJOIN concept c ON co.condition_concept_id = c.concept_id;"
     )
+    references = (
+        section(CDM_CONVENTIONS, "fields", "Fields"),
+        cdm_table("concept"),
+        section(BOOK_SQL, "using-the-vocabulary-when-querying", "Using the vocabulary when querying"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
         if "concept" not in sql.lower():
             return []
-
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
 
+        violations: List[RuleViolation] = []
+        seen: Set[Tuple[str, str]] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, CONCEPT):
-                continue
-
-            aliases = extract_aliases(tree)
-
-            errors, warnings = _detect_violations(tree, aliases)
-
-            # --- ERRORS ---
-            for other_table, other_col, concept_table, concept_col in errors:
-                fix_text = (
-                    f"REPLACE: `{other_table}.{other_col} = {concept_table}.{concept_col}` "
-                    f"WITH `{other_table}.{other_col} = {concept_table}.concept_id`."
-                )
+            for eq in tree_equalities(hoist_joins(tree)):
+                if eq.left.origin is None or eq.right.origin is None:
+                    continue
+                found = _mismatch(eq.left, eq.right)
+                if found is None:
+                    continue
+                ids, attr = found
+                key = (f"{ids.table}.{ids.name}", attr.name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ids_text = ids.column.sql() if ids.column is not None else f"{ids.table}.{ids.name}"
+                attr_text = attr.column.sql() if attr.column is not None else f"concept.{attr.name}"
+                fix = f"REPLACE: `{eq.sql()}` WITH a comparison of {ids_text} with concept.concept_id."
+                patch = None
+                if ids.column is not None and attr.column is not None and ids.column.table and attr.column.table:
+                    patch = build_join_replace_patch(
+                        sql,
+                        ids.column.table,
+                        ids.column.name,
+                        attr.column.table,
+                        attr.column.name,
+                        ids.column.name,
+                        "concept_id",
+                        fix,
+                    )
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"Invalid join: {other_table}.{other_col} must join to "
-                            f"{concept_table}.concept_id, not {concept_col}."
+                            f"Invalid join: {eq.sql()}. {ids.table}.{ids.name} holds concept ids and must be compared "
+                            f"with concept.concept_id, not concept.{attr.name} ({attr_text})."
                         ),
-                        suggested_fix=fix_text,
-                        # Only the RHS changes (concept_col → concept_id);
-                        # `other_col` is preserved.
-                        suggested_fix_patch=build_join_replace_patch(
-                            sql,
-                            other_table,
-                            other_col,
-                            concept_table,
-                            concept_col,
-                            other_col,
-                            "concept_id",
-                            fix_text,
-                            aliases=aliases,
-                        ),
-                        details={
-                            "type": "invalid_concept_id_join",
-                            "other_table": other_table,
-                            "other_column": other_col,
-                            "concept_column": concept_col,
-                        },
-                    )
-                )
-
-            # --- WARNINGS ---
-            for other_table, other_col, concept_table, concept_col in warnings:
-                fix_text = (
-                    f"ADD: `AND {concept_table}.vocabulary_id = '<vocab>'` to the existing "
-                    f"`{other_table}.{other_col} = {concept_table}.{concept_col}` join. "
-                    f"concept_code is unique only within a vocabulary."
-                )
-                # Build an ADD patch that inserts after the offending join
-                # predicate; placeholder `<vocab>` left for the LLM /
-                # outer loop to resolve from the concept_code value.
-                # Try aliased forms too — the detector resolved table names
-                # but the SQL may use aliases (e.g. `c.concept_code`).
-                from fastssv.core.patch import _qualifiers_for_table
-
-                other_quals = _qualifiers_for_table(other_table, aliases)
-                concept_quals = _qualifiers_for_table(concept_table, aliases)
-                patch = freeform(fix_text)
-                for oq in other_quals:
-                    for cq in concept_quals:
-                        bad_predicate_a = f"{oq}.{other_col} = {cq}.{concept_col}"
-                        bad_predicate_b = f"{cq}.{concept_col} = {oq}.{other_col}"
-                        span = locate(sql, bad_predicate_a) or locate(sql, bad_predicate_b)
-                        if span is not None:
-                            patch = patch_add(
-                                span[1],
-                                f" AND {cq}.vocabulary_id = '<vocab>'",
-                            )
-                            break
-                    if patch.get("action") == "ADD":
-                        break
-                violations.append(
-                    RuleViolation(
-                        rule_id=self.rule_id,
-                        message=(
-                            f"Potentially ambiguous join using {concept_table}.{concept_col} "
-                            f"without vocabulary_id constraint."
-                        ),
-                        severity=Severity.WARNING,
-                        suggested_fix=fix_text,
+                        suggested_fix=fix,
                         suggested_fix_patch=patch,
                         details={
-                            "type": "ambiguous_vocabulary_join",
-                            "column": concept_col,
+                            "type": "invalid_concept_id_join",
+                            "other_table": ids.table,
+                            "other_column": ids.name,
+                            "concept_column": attr.name,
                         },
                     )
                 )
-
         return violations
 
 

@@ -192,16 +192,13 @@
       "  AND year_of_birth > 1980;",
 
     missing_standard:
-      "-- Warning: uses concept_ancestor for descendant expansion but\n" +
-      "-- never enforces standard_concept = 'S' on the clinical fact field.\n" +
-      "WITH risk_concepts AS (\n" +
-      "    SELECT descendant_concept_id AS concept_id\n" +
-      "    FROM concept_ancestor\n" +
-      "    WHERE ancestor_concept_id = 201820\n" +
-      ")\n" +
-      "SELECT DISTINCT person_id\n" +
-      "FROM condition_occurrence\n" +
-      "WHERE condition_concept_id IN (SELECT concept_id FROM risk_concepts);",
+      "-- Warning: matches the source concept against concept_ancestor,\n" +
+      "-- which only holds standard concepts; ICD10CM-coded rows never match.\n" +
+      "SELECT DISTINCT co.person_id\n" +
+      "FROM condition_occurrence co\n" +
+      "JOIN concept_ancestor ca\n" +
+      "  ON co.condition_source_concept_id = ca.descendant_concept_id\n" +
+      "WHERE ca.ancestor_concept_id = 201826;",
 
     unknown_table:
       "-- Error: 'cohort_result' is not an OMOP CDM v5.4 table.\n" +

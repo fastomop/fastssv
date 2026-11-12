@@ -1,319 +1,241 @@
 """Negative Concept ID Validation Rule.
 
-OMOP semantic rule OMOP_050:
-All concept_id values in OMOP are non-negative integers (>= 0).
-Negative concept_id values are never valid and indicate an error.
+The Standardized Vocabularies assign concept_ids from 0 upwards ("reserved from 0 to 2,000,000,000"; above that
+range for local use), so no CDM column that holds a concept_id can contain a negative value. A predicate that only a
+negative concept_id would satisfy matches no row.
 
-The Problem:
-    OMOP concept_id values range from 0 (unmapped) to positive integers.
-    Negative values are not allowed and will never return results.
+Checked columns: CONCEPT.concept_id and every CDM v5.4 column with a foreign key to CONCEPT (generated from the
+field-level CSV, ``_dq_concept_columns.py``), when the column's lineage is that CDM column. A value recomputed on the
+way (``COALESCE(unit_concept_id, -1)``) and columns of non-CDM tables are not judged.
 
-    Common mistakes:
-    - Using -1 as a sentinel/null value
-    - Typos or sign errors
-    - Copy-paste from non-OMOP systems
-
-Violation pattern:
-    SELECT * FROM condition_occurrence WHERE condition_concept_id = -1
-    -- Will always return 0 rows; negative concept_ids don't exist
-
-Correct pattern:
-    SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
-    -- Or for unmapped: condition_concept_id = 0
+Flagged predicates (literals may be parenthesised or cast):
+    * ``= -n``, ``IN (...)`` whose values are all negative, ``BETWEEN`` with a negative upper bound, ``< 0``,
+      ``<= -n``, ``< -n``.
+    * ERROR when the predicate restricts the rows the statement returns: an AND-conjunct of WHERE, HAVING or an
+      inner join's ON, and, inside a subquery, only when that subquery's IN / EXISTS / comparison restricts the
+      enclosing query in turn. The query returns nothing from that source. WARNING otherwise: in an outer join's ON
+      it attaches no row of the joined side (the outer rows are kept), inside NOT EXISTS / NOT IN the empty subquery
+      removes no row, and under OR, CASE or in the select list the branch is dead.
+    * WARNING for a negative value inside an IN list that also holds valid ids: that member matches nothing.
+Not flagged: predicates that every row satisfies (``> -1``, ``<> -1``, ``NOT IN (-1)``), and anything under NOT.
 """
 
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import DERIVED, column_origins, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import CDM_CONVENTIONS, section
 from fastssv.core.registry import register
 
+from fastssv.rules.domain_specific._rows import in_negated_scope, restricting_clause, restricts_rows
 
-# --- Constants -------------------------------------------------------------
+from ._dq_concept_columns import CONCEPT_ID_COLUMNS
 
-CONCEPT_ID_COLUMNS = {
-    # Core
-    "concept_id",
-    # Clinical
-    "condition_concept_id",
-    "drug_concept_id",
-    "procedure_concept_id",
-    "measurement_concept_id",
-    "observation_concept_id",
-    "device_concept_id",
-    "visit_concept_id",
-    "visit_detail_concept_id",
-    "specimen_concept_id",
-    "episode_concept_id",
-    "cause_concept_id",
-    # Source
-    "condition_source_concept_id",
-    "drug_source_concept_id",
-    "procedure_source_concept_id",
-    "measurement_source_concept_id",
-    "observation_source_concept_id",
-    "device_source_concept_id",
-    "visit_source_concept_id",
-    "visit_detail_source_concept_id",
-    "specimen_source_concept_id",
-    "episode_source_concept_id",
-    "cause_source_concept_id",
-    # Type
-    "condition_type_concept_id",
-    "drug_type_concept_id",
-    "procedure_type_concept_id",
-    "measurement_type_concept_id",
-    "observation_type_concept_id",
-    "device_type_concept_id",
-    "visit_type_concept_id",
-    "visit_detail_type_concept_id",
-    "specimen_type_concept_id",
-    "note_type_concept_id",
-    "death_type_concept_id",
-    "episode_type_concept_id",
-    # Person
-    "gender_concept_id",
-    "race_concept_id",
-    "ethnicity_concept_id",
-    "gender_source_concept_id",
-    "race_source_concept_id",
-    "ethnicity_source_concept_id",
-    # Auxiliary
-    "route_concept_id",
-    "dose_unit_concept_id",
-    "unit_concept_id",
-    "operator_concept_id",
-    "value_as_concept_id",
-    "qualifier_concept_id",
-    "modifier_concept_id",
-    "anatomic_site_concept_id",
-    "disease_status_concept_id",
-    "specialty_concept_id",
-    "note_encoding_concept_id",
-    "language_concept_id",
-    "condition_status_concept_id",
-    # Payer
-    "payer_concept_id",
-    "plan_concept_id",
-    "sponsor_concept_id",
-    "stop_reason_concept_id",
-    "payer_source_concept_id",
-    "plan_source_concept_id",
-    "sponsor_source_concept_id",
-}
+_WRAPPERS = (exp.Paren, exp.Cast)
 
 
-# --- Helpers ---------------------------------------------------------------
+def _peel(node: Optional[exp.Expression]) -> Optional[exp.Expression]:
+    while isinstance(node, _WRAPPERS) and not isinstance(node, exp.TryCast):
+        node = node.this
+    return node
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_concept_id_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
-    _, col_name = resolve_table_col(col, aliases)
-    return _norm(col_name) in CONCEPT_ID_COLUMNS
-
-
-def _extract_int(node: exp.Expression) -> Optional[int]:
-    """Strict integer extraction (no floats)."""
+def _int(node: Optional[exp.Expression]) -> Optional[int]:
+    node = _peel(node)
     if isinstance(node, exp.Neg):
-        inner = node.this
+        inner = _peel(node.this)
         if isinstance(inner, exp.Literal) and inner.is_int:
             return -int(inner.this)
         return None
-
     if isinstance(node, exp.Literal) and node.is_int:
         return int(node.this)
-
     return None
 
 
-# --- Detection -------------------------------------------------------------
+def _concept_column(node: Optional[exp.Expression]) -> Optional[exp.Column]:
+    node = _peel(node)
+    if not isinstance(node, exp.Column):
+        return None
+    origins = column_origins(node)
+    if not origins or any(t == DERIVED or (t, c) not in CONCEPT_ID_COLUMNS for t, c in origins):
+        return None
+    return node
 
 
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[dict]:
-    issues: List[dict] = []
-    seen: Set[str] = set()
+def _negated(node: exp.Expression) -> bool:
+    parent = node.parent
+    while parent is not None and not isinstance(parent, (exp.Select, exp.Where, exp.Join, exp.Having)):
+        if isinstance(parent, exp.Not):
+            return True
+        parent = parent.parent
+    return False
 
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE, exp.In, exp.Between)):
+
+_SUBQUERY_PREDICATES = (exp.In, exp.Exists, exp.Any, exp.All, exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
+
+
+def _restricts_result(node: exp.Expression) -> bool:
+    """``node`` must hold for every row the statement returns: it restricts its own SELECT (not in an outer join's
+    ON, not under NOT), and a subquery holding it sits in a predicate that restricts the enclosing SELECT in turn.
+    Under NOT EXISTS / NOT IN an empty subquery removes no outer row."""
+    if not restricts_rows(node) or in_negated_scope(node):
+        return False
+    select = node.find_ancestor(exp.Select)
+    while select is not None:
+        holder = select.parent
+        while isinstance(holder, (exp.Subquery, exp.Paren, exp.SetOperation)):
+            holder = holder.parent
+        if not isinstance(holder, _SUBQUERY_PREDICATES):
+            return True
+        if not restricts_rows(holder):
+            return False
+        select = holder.find_ancestor(exp.Select)
+    return True
+
+
+def _in_outer_join_on(node: exp.Expression) -> bool:
+    clause = restricting_clause(node)
+    return isinstance(clause, exp.Join) and not restricts_rows(node)
+
+
+def _never_true(node: exp.Expression) -> Optional[Tuple[exp.Column, str]]:
+    """(column, kind) when ``node`` compares a concept_id column so that no valid id satisfies it.
+
+    kind: "dead" (the whole predicate matches nothing) or "member" (one IN member matches nothing)."""
+    if isinstance(node, exp.In):
+        column = _concept_column(node.this)
+        values = [_int(v) for v in node.expressions or []]
+        if column is None or not values or any(v is None for v in values):
+            return None
+        negatives = [v for v in values if v < 0]
+        if not negatives:
+            return None
+        return column, "dead" if len(negatives) == len(values) else "member"
+    if isinstance(node, exp.Between):
+        column = _concept_column(node.this)
+        high = _int(node.args.get("high"))
+        return (column, "dead") if column is not None and high is not None and high < 0 else None
+    for col_side, val_side, flipped in ((node.this, node.expression, False), (node.expression, node.this, True)):
+        column = _concept_column(col_side)
+        value = _int(val_side)
+        if column is None or value is None:
             continue
-
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        # --- Binary comparisons ---
-        if isinstance(node, (exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE)):
-            pairs = [(node.this, node.expression), (node.expression, node.this)]
-
-            for col_node, val_node in pairs:
-                if not isinstance(col_node, exp.Column):
-                    continue
-                if not _is_concept_id_column(col_node, aliases):
-                    continue
-
-                value = _extract_int(val_node)
-                if value is not None and value < 0:
-                    _, col_name = resolve_table_col(col_node, aliases)
-
-                    key = f"{node.sql()}"
-                    if key in seen:
-                        continue
-                    seen.add(key)
-
-                    issues.append(
-                        {
-                            "message": (
-                                f"Invalid negative concept_id: {col_name} {node.key} {value}. Concept IDs must be >= 0."
-                            ),
-                            "fragment": node.sql(),
-                            "kind": "EQ" if isinstance(node, exp.EQ) else "OTHER",
-                            "col_qualified_sql": col_node.sql(),
-                        }
-                    )
-
-        # --- IN clause ---
-        elif isinstance(node, exp.In):
-            col_node = node.this
-
-            if not isinstance(col_node, exp.Column):
-                continue
-            if not _is_concept_id_column(col_node, aliases):
-                continue
-
-            negatives = []
-            for val in node.expressions or []:
-                v = _extract_int(val)
-                if v is not None and v < 0:
-                    negatives.append(v)
-
-            if negatives:
-                _, col_name = resolve_table_col(col_node, aliases)
-
-                key = f"{node.sql()}"
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                issues.append(
-                    {
-                        "message": (
-                            f"Invalid negative values in {col_name} {node.key}: {sorted(negatives)}. "
-                            f"Concept IDs must be >= 0."
-                        ),
-                        "fragment": node.sql(),
-                        "kind": "IN",
-                        "col_qualified_sql": col_node.sql(),
-                    }
-                )
-
-        # --- BETWEEN ---
-        elif isinstance(node, exp.Between):
-            col_node = node.this
-
-            if not isinstance(col_node, exp.Column):
-                continue
-            if not _is_concept_id_column(col_node, aliases):
-                continue
-
-            low = _extract_int(node.args.get("low"))
-            high = _extract_int(node.args.get("high"))
-
-            if (low is not None and low < 0) or (high is not None and high < 0):
-                _, col_name = resolve_table_col(col_node, aliases)
-
-                key = f"{node.sql()}"
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                issues.append(
-                    {
-                        "message": (
-                            f"Invalid BETWEEN range for {col_name}: ({low if low is not None else '?'}, "
-                            f"{high if high is not None else '?'}). Concept IDs must be >= 0."
-                        ),
-                        "fragment": node.sql(),
-                        "kind": "BETWEEN",
-                        "col_qualified_sql": col_node.sql(),
-                    }
-                )
-
-    return issues
-
-
-# --- Rule ------------------------------------------------------------------
+        op = type(node)
+        if flipped:
+            op = {exp.LT: exp.GT, exp.GT: exp.LT, exp.LTE: exp.GTE, exp.GTE: exp.LTE}.get(op, op)
+        if (op is exp.EQ and value < 0) or (op is exp.LT and value <= 0) or (op is exp.LTE and value < 0):
+            return column, "dead"
+    return None
 
 
 @register
 class NegativeConceptIdValidationRule(Rule):
-    """Validates concept_id values are non-negative."""
+    """Predicates on a concept_id column that only a negative value would satisfy."""
 
     rule_id = "data_quality.negative_concept_id_validation"
     name = "Negative Concept ID Validation"
-    description = "Concept IDs must be non-negative integers (>= 0)."
+    description = (
+        "Concept ids are non-negative (0 for 'no matching concept', positive for real concepts), so a filter that "
+        "only a negative concept_id satisfies (= -1, IN (-1, -2), < 0) matches no row."
+    )
     severity = Severity.ERROR
-    suggested_fix = "REPLACE: `<x>_concept_id < 0` or negative literal filters WITH `<x>_concept_id >= 0`. Concept IDs are non-negative integers in OMOP."
+    suggested_fix = (
+        "REPLACE: the negative literal WITH the intended concept_id (0 for unmapped records). If -1 stands for a "
+        "missing value, test `IS NULL` or `= 0` instead."
+    )
     long_description = (
-        "Every concept_id in OMOP is a non-negative integer (>= 0); 0 "
-        "represents unmapped records, positive values are real concepts. "
-        "Negative literals never match any concept and are usually the "
-        "result of either a sign error or a confusion with ROW_NUMBER-"
-        "style synthetic IDs from another system. Replace the literal "
-        "with the correct non-negative concept_id."
+        "The Standardized Vocabularies assign concept_ids from 0 upwards; 0 means 'no matching concept' and ids "
+        "above 2,000,000,000 are reserved for local use. No CDM column that holds a concept_id contains a negative "
+        "value, so a filter such as condition_concept_id = -1 or unit_concept_id < 0 matches nothing: the query "
+        "returns no rows from that table (ERROR). In an outer join's ON clause the comparison attaches no row and "
+        "the outer rows are kept; inside NOT EXISTS / NOT IN the empty subquery removes no row; under OR, in a CASE "
+        "or in the select list the comparison is a dead branch; a negative id inside an IN list with valid ids is a "
+        "dead member (all WARNING). Predicates "
+        "that every row satisfies (> -1, <> -1, NOT IN (-1)) and sentinel values computed in the query "
+        "(COALESCE(unit_concept_id, -1)) are not flagged."
     )
     example_bad = "SELECT *\nFROM condition_occurrence\nWHERE condition_concept_id = -1;"
     example_good = "SELECT *\nFROM condition_occurrence\nWHERE condition_concept_id = 201820;"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT *\nFROM condition_occurrence\nWHERE condition_concept_id IN (201820, -1);",
+            severity=Severity.WARNING,
+            note="A negative id among valid ones: that member of the IN list matches nothing.",
+        ),
+    )
+    references = (section(CDM_CONVENTIONS, "concepts", "Concepts"),)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
-        # Optional fast-path optimization
-        if "concept_id" not in sql:
+        if not any(ch in sql for ch in "-<>"):
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            issues = _find_violations(tree, aliases)
-
-            for issue in issues:
+            seen: Set[str] = set()
+            for node in tree.find_all(exp.EQ, exp.LT, exp.LTE, exp.GT, exp.GTE, exp.In, exp.Between):
+                if isinstance(node, exp.In) and isinstance(node.parent, exp.Not) or _negated(node):
+                    continue
+                found = _never_true(node)
+                if found is None:
+                    continue
+                column, kind = found
+                fragment = node.sql(dialect=dialect)
+                if fragment in seen:
+                    continue
+                seen.add(fragment)
+                if kind == "member":
+                    severity = Severity.WARNING
+                    message = (
+                        f"Negative value in `{fragment}`: concept ids are non-negative, so that member of the IN "
+                        f"list matches nothing."
+                    )
+                elif _restricts_result(node):
+                    severity = Severity.ERROR
+                    message = (
+                        f"`{fragment}` matches no row: concept ids are non-negative (0 = no matching concept), so "
+                        f"the query returns nothing from {column.table or 'this table'}."
+                    )
+                elif _in_outer_join_on(node):
+                    severity = Severity.WARNING
+                    message = (
+                        f"`{fragment}` is never true: concept ids are non-negative (0 = no matching concept), so this "
+                        "outer join's ON clause attaches no row; the joined columns are NULL on every row and the "
+                        "other side's rows are kept."
+                    )
+                elif in_negated_scope(node):
+                    severity = Severity.WARNING
+                    message = (
+                        f"`{fragment}` is never true: concept ids are non-negative (0 = no matching concept). It sits "
+                        "in a NOT EXISTS / NOT IN subquery (or under NOT), so the negation around it removes no row "
+                        "from the outer query."
+                    )
+                else:
+                    severity = Severity.WARNING
+                    message = (
+                        f"`{fragment}` is never true: concept ids are non-negative (0 = no matching concept), so "
+                        f"this branch is dead."
+                    )
                 patch = None
-                # Only EQ predicates have an unambiguous mechanical fix:
-                # replace the entire `<col> = -<n>` predicate with
-                # `<col> = <expected_concept_id>` (placeholder for the
-                # outer correction loop / LLM to resolve).
-                if issue["kind"] == "EQ":
-                    span = locate(sql, issue["fragment"])
+                if isinstance(node, exp.EQ):
+                    span = locate(sql, node.sql())
                     if span is not None:
-                        patch = patch_replace(
-                            span,
-                            f"{issue['col_qualified_sql']} = <expected_concept_id>",
-                        )
-
+                        patch = patch_replace(span, f"{column.sql()} = <expected_concept_id>")
                 violations.append(
                     self.create_violation(
-                        message=issue["message"],
+                        message=message,
+                        severity=severity,
                         suggested_fix_patch=patch,
+                        details={"column": column.name, "kind": kind},
                     )
                 )
-
         return violations
 
 

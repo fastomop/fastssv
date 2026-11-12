@@ -1,267 +1,273 @@
-from typing import Dict, List, Optional, Set
+"""Concept Relationship Requires Relationship ID Rule.
+
+CONCEPT_RELATIONSHIP holds every kind of link between two concepts ('Maps to', 'Is a', 'Subsumes', 'Has finding
+site', 'RxNorm has ing', ...) in the same two columns; the type is named only by relationship_id (Book of OHDSI 5.3).
+A lookup that constrains concept_id_1 / concept_id_2 without restricting relationship_id returns every type at once.
+
+Whether that changes the result depends on the concept looked up, which the SQL does not show: a non-standard source
+code often has a single standard target, while a standard concept also links to its parents, children and attribute
+concepts. The finding is therefore a WARNING. When the unrestricted ids reach a predicate on a clinical
+``*_concept_id`` column the message says the selected rows can include concepts that are not the intended mapping.
+
+A lookup is an instance of concept_relationship whose concept_id_1 / concept_id_2 values are compared anywhere in the
+statement (directly, through CTEs, derived tables and IN-subqueries). It is not reported when:
+
+* relationship_id is restricted for that instance, in its own SELECT or downstream on its projected column, by any
+  non-negated predicate except ``<>``, ``IS [NOT] NULL`` and a LIKE pattern that matches every value;
+* the instance's relationship_id reaches the statement's output (projected by ``SELECT cr.relationship_id``, ``*`` or
+  ``cr.*``, or grouped on in the output SELECT), so every row shows its relationship type;
+* the lookup is the body of NOT EXISTS: it asks whether a concept has any relationship at all.
+"""
+
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import (
-    extract_aliases,
+    CONCEPT_RELATIONSHIP,
+    RELATIONSHIP_ID,
+    InstanceKey,
+    _instance_key,
+    _is_filter_position,
+    _query_branches,
+    _reads,
+    _reads_through,
+    _select_sources,
+    _side_reads,
+    _source_query,
+    _star_qualifiers,
+    comparison_pairs,
     normalize_name,
     parse_sql,
-    resolve_table_col,
+    relationship_filters,
 )
 from fastssv.core.patch import add as patch_add, locate
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.registry import register
+from fastssv.schemas import SOURCE_CONCEPT_FIELDS, STANDARD_CONCEPT_FIELDS
+
+CONCEPT_ID_COLUMNS = ("concept_id_1", "concept_id_2")
+
+_CLINICAL_CONCEPT_FIELDS = {
+    (normalize_name(t), normalize_name(c)) for t, c in (*STANDARD_CONCEPT_FIELDS, *SOURCE_CONCEPT_FIELDS)
+}
 
 
-def _find_concept_relationship_aliases(
-    tree: exp.Expression,
-) -> Set[str]:
-    """Find all aliases of concept_relationship table."""
-    cr_aliases: Set[str] = set()
-
-    for table in tree.find_all(exp.Table):
-        table_name = normalize_name(table.name)
-        if table_name == "concept_relationship":
-            alias = normalize_name(table.alias_or_name)
-            cr_aliases.add(alias)
-
-    return cr_aliases
+def _matches_everything(node: exp.Expression) -> bool:
+    """``x LIKE '%'`` (and ILIKE): true for every non-null value, so it restricts nothing."""
+    if not isinstance(node, (exp.Like, exp.ILike)):
+        return False
+    pattern = node.expression
+    return isinstance(pattern, exp.Literal) and pattern.is_string and set(pattern.this) <= {"%"} and pattern.this != ""
 
 
-def _collect_relationship_filters(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    cr_aliases: Set[str],
-) -> Dict[str, bool]:
-    """
-    Track which concept_relationship aliases have relationship_id filters.
-    Only accepts filters that specify relationship types (EQ, IN).
-    Rejects NEQ and IS NULL/IS NOT NULL as they don't prevent cross-products.
-    Returns: {alias: has_filter}
-    """
-    alias_filter_map = {alias: False for alias in cr_aliases}
-
-    for node in tree.walk():
-        # Only accept operators that specify relationship types
-        if not isinstance(node, (exp.EQ, exp.In)):
-            continue
-
-        left = node.this
-        right = node.expression
-
-        # Check both sides (handles reversed conditions)
-        for col_node, val_node in [(left, right), (right, left)]:
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            table, col = resolve_table_col(col_node, aliases)
-            table = normalize_name(table) if table else ""
-            col = normalize_name(col)
-
-            if col != "relationship_id":
-                continue
-
-            # Ensure it's from concept_relationship
-            # Normalize the table reference for comparison
-            col_table_ref = normalize_name(col_node.table) if col_node.table else ""
-
-            # If unqualified, check if 'relationship_id' could be from a CR table in scope
-            if not col_table_ref:
-                # relationship_id is unique to concept_relationship table in OMOP CDM
-                # If we have CR tables in the query and an unqualified relationship_id,
-                # assume it belongs to one of them
-                if cr_aliases:
-                    # Mark all CR aliases as having a filter (conservative assumption)
-                    for cr_alias in cr_aliases:
-                        alias_filter_map[cr_alias] = True
-                continue
-
-            if col_table_ref not in cr_aliases:
-                continue
-
-            alias_filter_map[col_table_ref] = True
-
-    return alias_filter_map
+def _drop_non_restricting(tree: exp.Expression) -> exp.Expression:
+    return tree.transform(lambda node: exp.true() if _matches_everything(node) else node)
 
 
-def _is_grouping_by_relationship_id(tree: exp.Expression, cr_aliases: Set[str]) -> bool:
-    """Check if query groups by relationship_id from concept_relationship.
-
-    This indicates exploratory analysis, which is valid even without filtering.
-    """
-    for select in tree.find_all(exp.Select):
-        group_by = select.args.get("group")
-        if not group_by or not isinstance(group_by, exp.Group):
-            continue
-
-        for group_expr in group_by.expressions:
-            if isinstance(group_expr, exp.Column):
-                col_name = normalize_name(group_expr.name)
-                if col_name == "relationship_id":
-                    # Check if it's from concept_relationship
-                    table_ref = normalize_name(str(group_expr.table)) if group_expr.table else ""
-                    if not table_ref or table_ref in cr_aliases:
-                        return True
-
-    return False
+def _instance_reads(nodes, table_column_ok) -> Set[InstanceKey]:
+    out: Set[InstanceKey] = set()
+    for select, alias, table, column in nodes:
+        if table == CONCEPT_RELATIONSHIP and table_column_ok(column):
+            out.add(_instance_key(select, alias))
+    return out
 
 
-def _find_join_on_sql_for_alias(tree: exp.Expression, target_alias: str) -> Optional[str]:
-    """Find the ON expression SQL for the JOIN that introduces ``target_alias``.
+def _constrained_instances(tree: exp.Expression) -> Set[InstanceKey]:
+    """Instances whose concept_id_1 / concept_id_2 are compared somewhere: a filter-position column, or either side
+    of an equality / IN-subquery."""
+    out: Set[InstanceKey] = set()
+    for col in tree.find_all(exp.Column):
+        if _is_filter_position(col):
+            out |= _instance_reads(_reads(col), lambda c: c in CONCEPT_ID_COLUMNS)
+    for _, left, right in comparison_pairs(tree):
+        for side in (left, right):
+            out |= _instance_reads(_side_reads(side, relay=False), lambda c: c in CONCEPT_ID_COLUMNS)
+    return out
 
-    Returns None if the alias isn't introduced by an explicit JOIN with an ON
-    clause (e.g. it's in the FROM clause, or uses USING). The caller falls
-    back to FREEFORM in that case.
-    """
-    target = normalize_name(target_alias)
-    for join in tree.find_all(exp.Join):
-        table = join.this
-        if not isinstance(table, exp.Table):
-            continue
-        if normalize_name(table.alias_or_name) != target:
-            continue
-        on = join.args.get("on")
-        if on is not None:
-            return on.sql()
+
+def _clinical_reach(tree: exp.Expression) -> Set[InstanceKey]:
+    """Instances whose concept ids are compared with a clinical *_concept_id column."""
+    out: Set[InstanceKey] = set()
+    for _, left, right in comparison_pairs(tree):
+        left_reads, right_reads = _side_reads(left), _side_reads(right)
+        for a, b in ((left_reads, right_reads), (right_reads, left_reads)):
+            if any((t, c) in _CLINICAL_CONCEPT_FIELDS for _, _, t, c in a):
+                out |= _instance_reads(b, lambda c: c in CONCEPT_ID_COLUMNS)
+    return out
+
+
+def _output_query(tree: exp.Expression) -> Optional[exp.Expression]:
+    """The query whose rows the statement returns or writes."""
+    if isinstance(tree, (exp.Select, exp.SetOperation)):
+        return tree
+    if isinstance(tree, (exp.Insert, exp.Create)):
+        query = tree.expression
+        return query if isinstance(query, (exp.Select, exp.SetOperation)) else None
     return None
 
 
-def _check_missing_filters(alias_filter_map: Dict[str, bool], is_exploratory: bool) -> List[tuple]:
-    """Generate issues for aliases missing filters.
+def _shown_instances(tree: exp.Expression) -> Set[InstanceKey]:
+    """Instances whose relationship_id reaches the statement output: projected (explicitly or through ``*`` /
+    ``t.*``) or grouped on by an output SELECT."""
+    query = _output_query(tree)
+    if query is None:
+        return set()
+    out: Set[InstanceKey] = set()
+    for branch in _query_branches(query):
+        nodes = list(branch.expressions)
+        if branch.args.get("group") is not None:
+            nodes.append(branch.args["group"])
+        for node in nodes:
+            for col in node.find_all(exp.Column):
+                if not isinstance(col.this, exp.Star) and col.find_ancestor(exp.Select) is branch:
+                    out |= _instance_reads(_reads(col), lambda c: c == RELATIONSHIP_ID)
+        stars = _star_qualifiers(branch)
+        for src in _select_sources(branch):
+            if None in stars or normalize_name(src.alias_or_name) in stars:
+                reads = _reads_through(branch, src, RELATIONSHIP_ID, 0, set(), relay=False)
+                out |= _instance_reads(reads, lambda c: c == RELATIONSHIP_ID)
+    return out
 
-    Returns list of (message, severity, alias) tuples. ``alias`` is the
-    concept_relationship alias missing a filter, used to build a structured
-    ADD patch.
 
-    If the query groups by relationship_id (exploratory analysis), the
-    user has explicitly opted in to seeing all relationships — no warning.
-    """
-    if is_exploratory:
-        return []
+def _in_not_exists(select: exp.Select) -> bool:
+    node = select.parent
+    if isinstance(node, exp.Subquery):
+        node = node.parent
+    return isinstance(node, exp.Exists) and isinstance(node.parent, exp.Not)
 
-    issues = []
-    for alias, has_filter in alias_filter_map.items():
-        if not has_filter:
-            issues.append(
-                (
-                    f"concept_relationship alias '{alias}' is used without filtering on relationship_id. "
-                    f"This may produce a cross-product of all relationship types. "
-                    f"For analytical queries exploring all relationships, this may be intentional. "
-                    f"For cohort definitions, add a filter on relationship_id.",
-                    Severity.WARNING,
-                    alias,
-                )
-            )
 
-    return issues
+def _join_on_sql(select: exp.Select, alias: str) -> Optional[str]:
+    for join in select.args.get("joins") or []:
+        table = join.this
+        if isinstance(table, exp.Table) and normalize_name(table.alias_or_name) == alias:
+            on = join.args.get("on")
+            return on.sql() if on is not None else None
+    return None
 
 
 @register
 class ConceptRelationshipRequiresRelationshipIdRule(Rule):
-    """Robust validation for concept_relationship usage."""
+    """Flag concept_relationship lookups that do not restrict relationship_id."""
 
     rule_id = "joins.concept_relationship_requires_relationship_id"
     name = "Concept Relationship Requires Relationship ID Filter"
     description = (
-        "Queries using concept_relationship should typically filter on relationship_id "
-        "to avoid cross-product joins. Exploratory/analytical queries may intentionally "
-        "omit this filter to analyze all relationships."
+        "A concept_relationship lookup without a relationship_id restriction returns every relationship type at "
+        "once ('Maps to', 'Is a', 'Subsumes', attribute links). Whether that changes the result depends on the "
+        "concept looked up, so the finding is a WARNING."
     )
-    severity = Severity.WARNING  # Changed from ERROR to support analytical queries
-    suggested_fix = "ADD: `WHERE cr.relationship_id = '<relationship>'` (or IN(...)) to every concept_relationship query. Common values: 'Maps to', 'Subsumes', 'Is a', 'Has_RxNorm'."
+    severity = Severity.WARNING
+    suggested_fix = (
+        "ADD: `AND cr.relationship_id = '<relationship>'` to the concept_relationship lookup, typically "
+        "'Maps to' for source-to-standard mapping. For hierarchy use concept_ancestor instead. If every "
+        "relationship type is wanted, project relationship_id."
+    )
     long_description = (
-        "concept_relationship is a many-to-many table: a single source "
-        "concept typically has dozens of relationships "
-        "('Maps to', 'Is a', 'Subsumes', 'Has brand name', …). Joining to "
-        "concept_relationship without filtering on relationship_id pulls "
-        "them all, blowing up the row count and mixing semantically "
-        "different relationships into one result set. For cohort "
-        "definitions, always restrict to a single relationship type "
-        "(typically relationship_id = 'Maps to'); exploratory queries "
-        "should at least GROUP BY it so the direction of each match is "
-        "visible in the output."
+        "concept_relationship stores every link between two concepts: 'Maps to', 'Is a', 'Subsumes', attribute "
+        "links such as 'Has finding site', drug links such as 'RxNorm has ing', and their reverses. Reading "
+        "concept_id_2 for a concept without restricting relationship_id returns all of them. For a non-standard "
+        "source code that may be just its standard target, but for a standard concept it adds parents, children "
+        "and attribute concepts (Type 2 diabetes mellitus, 201826, has 133 standard condition concepts among its "
+        "links and one 'Maps to' target in Athena v5.0 27-AUG-25). Because the effect depends on the concept, the "
+        "rule warns. Lookups that show relationship_id in the output, never constrain concept_id_1 / "
+        "concept_id_2, or sit in a NOT EXISTS orphan check are not reported."
     )
     example_bad = (
-        "SELECT c1.concept_name, c2.concept_name\n"
-        "FROM concept c1\n"
-        "JOIN concept_relationship cr\n"
-        "  ON c1.concept_id = cr.concept_id_1\n"
-        "JOIN concept c2\n"
-        "  ON cr.concept_id_2 = c2.concept_id\n"
-        "WHERE c1.concept_id = 201820;"
+        "WITH related AS (\n"
+        "  SELECT cr.concept_id_2 AS concept_id\n"
+        "  FROM concept_relationship cr\n"
+        "  WHERE cr.concept_id_1 = 201826\n"
+        ")\n"
+        "SELECT COUNT(DISTINCT co.person_id)\n"
+        "FROM condition_occurrence co\n"
+        "JOIN related r ON co.condition_concept_id = r.concept_id;"
     )
     example_good = (
-        "SELECT c1.concept_name, c2.concept_name\n"
-        "FROM concept c1\n"
-        "JOIN concept_relationship cr\n"
-        "  ON c1.concept_id = cr.concept_id_1\n"
-        "  AND cr.relationship_id = 'Maps to'\n"
-        "JOIN concept c2\n"
-        "  ON cr.concept_id_2 = c2.concept_id\n"
-        "WHERE c1.concept_id = 201820;"
+        "WITH related AS (\n"
+        "  SELECT cr.concept_id_2 AS concept_id\n"
+        "  FROM concept_relationship cr\n"
+        "  WHERE cr.concept_id_1 = 201826\n"
+        "    AND cr.relationship_id = 'Maps to'\n"
+        ")\n"
+        "SELECT COUNT(DISTINCT co.person_id)\n"
+        "FROM condition_occurrence co\n"
+        "JOIN related r ON co.condition_concept_id = r.concept_id;"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT c.concept_id, c.concept_name\n"
+                "FROM concept_relationship cr\n"
+                "JOIN concept c ON cr.concept_id_2 = c.concept_id\n"
+                "WHERE cr.concept_id_1 = 201826;"
+            ),
+            severity=Severity.WARNING,
+            note="A vocabulary-only lookup: the result mixes relationship types and does not show which.",
+        ),
+    )
+    references = (
+        cdm_table("concept_relationship"),
+        section(CDM_CONVENTIONS, "concept-relationships", "Concept Relationships"),
+        section(BOOK_VOCABULARIES, "relationships", "Relationships"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if CONCEPT_RELATIONSHIP not in sql.lower():
+            return []
         trees, error = parse_sql(sql, dialect)
         if error:
             return []
 
-        for tree in trees:
-            if not tree:
+        violations: List[RuleViolation] = []
+        for parsed in trees:
+            if not parsed:
                 continue
+            tree = _drop_non_restricting(parsed)
+            filtered = relationship_filters(tree)
+            constrained = _constrained_instances(tree)
+            shown = _shown_instances(tree)
+            reaching: Optional[Set[InstanceKey]] = None
 
-            aliases = extract_aliases(tree)
-
-            cr_aliases = _find_concept_relationship_aliases(tree)
-
-            if not cr_aliases:
-                continue
-
-            alias_filter_map = _collect_relationship_filters(tree, aliases, cr_aliases)
-
-            # Check if this is exploratory analysis (GROUP BY relationship_id)
-            is_exploratory = _is_grouping_by_relationship_id(tree, cr_aliases)
-
-            issues = _check_missing_filters(alias_filter_map, is_exploratory)
-
-            # Strict-mode escalation: promote the base WARNING to ERROR when
-            # strict mode is on. Listed in validation_context.strict_escalation_rules.
-            from fastssv.core.validation_context import get_validation_context
-
-            ctx = get_validation_context()
-            escalate = ctx.should_escalate_rule(self.rule_id)
-
-            for issue, severity, alias in issues:
-                final_severity = Severity.ERROR if escalate and severity == Severity.WARNING else severity
-
-                # Structured patch: ADD `AND <alias>.relationship_id =
-                # '<relationship>'` to the end of the JOIN ON clause that
-                # introduces the offending concept_relationship alias. The
-                # relationship value is left as a `<relationship>`
-                # placeholder for the outer correction loop. If the alias
-                # isn't introduced by an ON-bearing JOIN, fall back to
-                # FREEFORM via auto-default.
-                patch = None
-                on_sql = _find_join_on_sql_for_alias(tree, alias)
-                if on_sql is not None:
-                    span = locate(sql, on_sql)
-                    if span is not None:
-                        patch = patch_add(
-                            span[1],
-                            f" AND {alias}.relationship_id = '<relationship>'",
+            for select in tree.find_all(exp.Select):
+                for src in _select_sources(select):
+                    if not isinstance(src, exp.Table) or normalize_name(src.name) != CONCEPT_RELATIONSHIP:
+                        continue
+                    if _source_query(select, src) is not None:
+                        continue
+                    alias = normalize_name(src.alias_or_name)
+                    key = _instance_key(select, alias)
+                    if key in filtered or key in shown or key not in constrained or _in_not_exists(select):
+                        continue
+                    if reaching is None:
+                        reaching = _clinical_reach(tree)
+                    reaches = key in reaching
+                    if reaches:
+                        message = (
+                            f"concept_relationship '{alias}' has no relationship_id restriction, and its concept ids "
+                            "select clinical rows. Every relationship type ('Maps to', 'Is a', 'Subsumes', attribute "
+                            "links) is included, so depending on the concept looked up the rows can include concepts "
+                            "that are not the intended mapping."
                         )
-
-                violations.append(
-                    self.create_violation(
-                        message=issue,
-                        severity=final_severity,
-                        details={"strict_mode_escalated": final_severity != severity},
-                        suggested_fix_patch=patch,
+                    else:
+                        message = (
+                            f"concept_relationship '{alias}' is looked up without a relationship_id restriction, "
+                            "so the result can mix relationship types without showing which. Restrict "
+                            "relationship_id, or project it if all relationships are wanted."
+                        )
+                    patch = None
+                    on_sql = _join_on_sql(select, alias)
+                    span = locate(sql, on_sql) if on_sql else None
+                    if span is not None:
+                        patch = patch_add(span[1], f" AND {alias}.relationship_id = '<relationship>'")
+                    violations.append(
+                        self.create_violation(
+                            message=message,
+                            details={"alias": alias, "reaches_clinical_predicate": reaches},
+                            suggested_fix_patch=patch,
+                        )
                     )
-                )
-
         return violations
 
 

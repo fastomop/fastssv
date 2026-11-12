@@ -175,17 +175,17 @@ def test_null_comparison_neq_emits_is_not_null():
 
 
 def test_concept_code_emits_add_patch_with_inferred_vocab():
-    sql = "SELECT c.concept_id FROM concept c WHERE c.concept_code = 'E11.9'"
+    sql = "SELECT c.concept_id FROM concept c WHERE c.concept_code = '250.00'"
     violations = _violations(sql, "anti_patterns.concept_code_requires_vocabulary_id")
     assert violations
     patch = violations[0].suggested_fix_patch
     assert patch is not None
     assert patch["action"] == "ADD"
-    # ICD10CM is unambiguously inferable from 'E11.9'
-    assert "ICD10CM" in patch["text"]
+    # Only the ICD9CM code shape is unique in the vocabulary release
+    assert "ICD9CM" in patch["text"]
     assert not has_unresolved_placeholders(patch)
     fixed = apply_patch(sql, patch)
-    assert "vocabulary_id = 'ICD10CM'" in fixed
+    assert "vocabulary_id = 'ICD9CM'" in fixed
 
 
 def test_concept_code_like_emits_placeholder_patch():
@@ -220,40 +220,14 @@ def test_concept_join_emits_replace_with_aliased_sql():
     assert "co.condition_concept_id = c.concept_id" in fixed
 
 
-def test_concept_class_join_emits_replace_with_aliased_sql():
-    sql = "SELECT * FROM concept c JOIN concept_class cc ON c.vocabulary_id = cc.concept_class_id"
-    violations = _violations(sql, "joins.concept_concept_class_join_validation")
-    assert violations
-    patch = violations[0].suggested_fix_patch
-    assert patch["action"] == "REPLACE"
-    fixed = apply_patch(sql, patch)
-    assert "c.concept_class_id = cc.concept_class_id" in fixed
-
-
-def test_clinical_visit_detail_join_emits_replace_with_aliased_sql():
+def test_visit_occurrence_id_join_emits_replace_with_aliased_sql():
     sql = "SELECT * FROM measurement m JOIN visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id"
-    violations = _violations(sql, "joins.clinical_visit_detail_join_validation")
+    violations = _violations(sql, "joins.visit_occurrence_id_join_validation")
     assert violations
     patch = violations[0].suggested_fix_patch
     assert patch["action"] == "REPLACE"
     fixed = apply_patch(sql, patch)
     assert "m.visit_detail_id = vd.visit_detail_id" in fixed
-
-
-def test_year_of_birth_emits_freeform():
-    sql = (
-        "SELECT co.person_id FROM person p "
-        "JOIN condition_occurrence co ON p.person_id = co.person_id "
-        "WHERE EXTRACT(YEAR FROM co.condition_start_date) - p.year_of_birth >= 65"
-    )
-    violations = _violations(sql, "domain_specific.year_of_birth_age_arithmetic")
-    assert violations
-    patch = violations[0].suggested_fix_patch
-    assert patch is not None
-    assert patch["action"] == "FREEFORM"
-    # FREEFORM patches are not auto-appliable
-    with pytest.raises(PatchError):
-        apply_patch(sql, patch)
 
 
 def test_violation_to_dict_emits_patch_dict_for_mechanical():

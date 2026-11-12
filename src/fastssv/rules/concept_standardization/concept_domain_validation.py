@@ -1,232 +1,88 @@
-"""Concept Domain Validation Rule (Comprehensive).
+"""Concept Domain Validation Rule.
 
-Merged rule combining domain_segregation and concept_domain_validation.
+A CDM v5.4 ``*_concept_id`` field whose field-level specification names a foreign-key domain (``fkDomain``) holds
+concepts of that domain only: ``condition_occurrence.condition_concept_id`` holds 'Condition' concepts ("Only records
+whose source values map to concepts with a domain of 'Condition' should go in this table"), every
+``*_type_concept_id`` holds 'Type Concept' concepts, ``measurement.unit_concept_id`` holds 'Unit' concepts, and so
+on. When such a column is matched to ``concept.concept_id`` and that concept row is required (through AND) to have a
+different ``domain_id``, no concept row can match on a conformant CDM:
 
-OMOP semantic rules OMOP_066 + OMOP_019 + CLIN_012 + OMOP_101 + OMOP_102 + OMOP_103 + OMOP_153 + CLIN_043 + OMOP_246 + OMOP_508 + OMOP_509 + OMOP_521 + OMOP_528:
-Each concept_id column in OMOP CDM is tied to a specific domain. When a query
-joins a clinical table to the concept table, the domain_id filter on the concept
-table must match that column's expected domain.
+    SELECT co.person_id
+    FROM condition_occurrence co
+    JOIN concept c ON co.condition_concept_id = c.concept_id
+    WHERE c.domain_id = 'Drug';        -- ERROR: always empty
 
-Coverage:
-  - Main clinical event tables (11 tables) - WARNING when no domain filter, ERROR when wrong
-  - Auxiliary columns (29+ columns) - ERROR only when wrong domain is specified
-  - Status/qualifier columns (CLIN_012, OMOP_101, OMOP_153) - ERROR when wrong domain
-  - Multi-domain columns (OMOP_103) - Support multiple valid domains
+A ``domain_id`` filter that lists the expected domain together with others is reported as a WARNING: the extra values
+can never match rows reached through that column.
 
-Examples of correct usage:
-  Main clinical tables:
-    - condition_occurrence.condition_concept_id → domain_id = 'Condition'
-    - drug_exposure.drug_concept_id → domain_id = 'Drug'
-    - procedure_occurrence.procedure_concept_id → domain_id = 'Procedure'
-    - measurement.measurement_concept_id → domain_id = 'Measurement'
-    - observation.observation_concept_id → domain_id = 'Observation'
-    - device_exposure.device_concept_id → domain_id = 'Device' (OMOP_508)
-    - visit_occurrence.visit_concept_id → domain_id = 'Visit'
-    - visit_detail.visit_detail_concept_id → domain_id = 'Visit' (CLIN_043)
-    - specimen.specimen_concept_id → domain_id = 'Specimen'
-    - death.cause_concept_id → domain_id = 'Condition'
-    - episode.episode_concept_id → domain_id = 'Episode' (OMOP_246)
+A *missing* ``domain_id`` filter is not reported: the join is on the concept primary key and the column's domain is
+fixed by the CDM. 'Metadata' is accepted for every column: it is the domain of concept 0, which the CDM stores for an
+unmapped record. A negated filter (``<> 'Condition'``) is not reported either: it selects the unmapped records.
 
-  Auxiliary columns:
-    - person.gender_concept_id → domain_id = 'Gender' (OMOP_019)
-    - person.race_concept_id → domain_id = 'Race'
-    - drug_exposure.route_concept_id → domain_id = 'Route' (OMOP_102, OMOP_521)
-    - measurement.unit_concept_id → domain_id = 'Unit' (OMOP_509)
-    - provider.specialty_concept_id → domain_id = 'Specialty' (OMOP_528)
-    - condition_occurrence.condition_status_concept_id → domain_id = 'Condition Status' (CLIN_012)
-    - observation.qualifier_concept_id → domain_id = 'Meas Value' (OMOP_101)
-    - specimen.disease_status_concept_id → domain_id = 'Spec Disease Status' (OMOP_153)
-    - visit_occurrence.admitted_from_concept_id → domain_id IN ('Visit', 'Place of Service') (OMOP_103)
-    - visit_occurrence.discharged_to_concept_id → domain_id IN ('Visit', 'Place of Service') (OMOP_103)
-    - ... and 20+ more
+The column-to-concept link and the domain filter are tied to one concept table instance by lineage, so they are found
+through CTEs, derived tables, IN / EXISTS subqueries, comma joins and casts, and a filter on a different concept row
+that reuses the alias is never mixed in. A predicate that does not restrict the rows (under OR or NOT, in a CASE, in
+the ON clause of an outer join) is not reported. Columns with no fkDomain (observation_concept_id,
+value_as_concept_id, ...) can hold several domains and are not checked.
 
-Violation levels:
-  - ERROR: domain_id filter is missing or specifies the wrong domain
+Four fields have no fkDomain in the CSV, but the specification text of the field names their domain, and they are
+checked with it: cdm_source.cdm_version_concept_id (Metadata), drug_strength.drug_concept_id (Drug: "the Branded Drug
+or Clinical Drug Product"), location.country_concept_id (Geography) and measurement.operator_concept_id (Meas Value
+Operator). See ``_cs_cdm_fields.FK_DOMAINS``.
 """
 
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Set, Tuple
 
-from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    is_string_literal,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_FIELD_LEVEL, cdm_table, section
 from fastssv.core.registry import register
 
+from ._cs_cdm_fields import FK_DOMAINS
+from ._cs_scope import ColumnFilter, instance_filters, instance_is_null_extended, links
 
-# --- Canonical OMOP domains (display form) ---
-MAIN_CLINICAL_TABLE_DOMAIN: Dict[Tuple[str, str], str] = {
-    ("condition_occurrence", "condition_concept_id"): "Condition",
-    ("drug_exposure", "drug_concept_id"): "Drug",
-    ("procedure_occurrence", "procedure_concept_id"): "Procedure",
-    ("measurement", "measurement_concept_id"): "Measurement",
-    ("observation", "observation_concept_id"): "Observation",
-    ("device_exposure", "device_concept_id"): "Device",
-    ("visit_occurrence", "visit_concept_id"): "Visit",
-    ("visit_detail", "visit_detail_concept_id"): "Visit",
-    ("specimen", "specimen_concept_id"): "Specimen",
-    ("death", "cause_concept_id"): "Condition",
-    ("episode", "episode_concept_id"): "Episode",
-}
+# (table, column) -> admissible domain_id: the fkDomain of the CDM v5.4 field-level specification, plus four fields
+# whose domain only the specification text gives (see FK_DOMAINS).
+EXPECTED_DOMAINS: Dict[Tuple[str, str], List[str]] = {field: [domain] for field, domain in FK_DOMAINS.items()}
 
-AUXILIARY_CONCEPT_COLUMNS: Dict[str, Union[str, List[str]]] = {
-    "gender_concept_id": "Gender",
-    "race_concept_id": "Race",
-    "ethnicity_concept_id": "Ethnicity",
-    "route_concept_id": "Route",
-    "dose_unit_concept_id": "Unit",
-    "unit_concept_id": "Unit",
-    "operator_concept_id": "Meas Value Operator",
-    "value_as_concept_id": "Meas Value",
-    "anatomic_site_concept_id": "Spec Anatomic Site",
-    "disease_status_concept_id": "Spec Disease Status",
-    "specialty_concept_id": "Specialty",
-    "condition_status_concept_id": "Condition Status",  # CLIN_012
-    "modifier_concept_id": "Modifier",  # CLIN_021 (procedure modifier)
-    "qualifier_concept_id": "Meas Value",  # OMOP_101 (observation qualifier)
-    "admitted_from_concept_id": ["Visit", "Place of Service"],  # OMOP_103
-    "discharged_to_concept_id": ["Visit", "Place of Service"],  # OMOP_103
-}
+# Concept 0 ("No matching concept", the CDM value for an unmapped record) has domain_id 'Metadata'.
+_UNMAPPED_DOMAIN = "metadata"
 
 
-def _norm(val: str) -> str:
-    return normalize_name(val)
-
-
-def _find_concept_joins(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
-    """
-    Returns:
-      (clinical_table, concept_column, type, concept_alias)
-    """
-    results = []
-
-    for eq in tree.find_all(exp.EQ):
-        if not is_in_where_or_join_clause(eq):
-            continue
-
-        # ensure inside JOIN
-        parent = eq.parent
-        in_join = False
-        while parent:
-            if isinstance(parent, exp.Join):
-                in_join = True
-                break
-            parent = parent.parent
-        if not in_join:
-            continue
-
-        left, right = eq.left, eq.right
-
-        if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-            continue
-
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-
-        lt, rt = _norm(lt or ""), _norm(rt or "")
-        lc, rc = _norm(lc or ""), _norm(rc or "")
-
-        left_alias = _norm(left.table) if left.table else None
-        right_alias = _norm(right.table) if right.table else None
-
-        # clinical -> concept
-        if rt == "concept" and rc == "concept_id":
-            key = (lt, lc)
-            if key in MAIN_CLINICAL_TABLE_DOMAIN:
-                results.append((lt, lc, "main", right_alias))
-            elif lc in AUXILIARY_CONCEPT_COLUMNS:
-                results.append((lt, lc, "aux", right_alias))
-
-        # concept -> clinical
-        elif lt == "concept" and lc == "concept_id":
-            key = (rt, rc)
-            if key in MAIN_CLINICAL_TABLE_DOMAIN:
-                results.append((rt, rc, "main", left_alias))
-            elif rc in AUXILIARY_CONCEPT_COLUMNS:
-                results.append((rt, rc, "aux", left_alias))
-
-    return results
-
-
-def _collect_domain_filters(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> Dict[str, Set[str]]:
-    """
-    Returns:
-      {concept_alias: {domain_values}}
-    """
-    result: Dict[str, Set[str]] = {}
-
-    def add(alias: str, val: str):
-        if alias not in result:
-            result[alias] = set()
-        result[alias].add(_norm(val))
-
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.In)):
-            continue
-
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        left = node.this
-        right = node.expression
-
-        for col, val in [(left, right), (right, left)]:
-            if not isinstance(col, exp.Column):
-                continue
-
-            table, col_name = resolve_table_col(col, aliases)
-            table = _norm(table or "")
-            col_name = _norm(col_name)
-
-            if col_name != "domain_id" or table != "concept":
-                continue
-
-            alias = _norm(col.table) if col.table else None
-            if not alias:
-                continue  # strict mode: ignore unqualified
-
-            if isinstance(node, exp.EQ) and is_string_literal(val):
-                add(alias, val.this)
-
-            elif isinstance(node, exp.In):
-                # For IN expressions, values are in node.expressions
-                in_values = node.expressions or []
-                for v in in_values:
-                    if is_string_literal(v):
-                        add(alias, v.this)
-                break  # Only need to check once for IN
-
-    return result
+def _domain_values(flt: ColumnFilter) -> Set[str]:
+    """The domain_id values a required positive filter admits, lowercased; empty when it is not such a filter."""
+    if not (flt.required and not flt.outer_join_on and flt.complete):
+        return set()
+    if flt.op in ("eq", "in"):
+        return {v.lower() for v in flt.values}
+    if flt.op == "like" and not any(ch in flt.values[0] for ch in "%_"):
+        return {flt.values[0].lower()}
+    return set()
 
 
 @register
 class ConceptDomainValidationRule(Rule):
     rule_id = "concept_standardization.concept_domain_validation"
-    name = "Concept Domain ID Matches Target Table"
-    description = "Validates that concept.domain_id matches the expected domain for each *_concept_id column."
-    severity = Severity.WARNING  # Best practice, not correctness issue
-    suggested_fix = "ADD: `AND c.domain_id = '<expected_domain>'` matching the clinical table (e.g. 'Condition' for condition_occurrence, 'Drug' for drug_exposure, 'Procedure' for procedure_occurrence)."
+    name = "Concept Domain ID Matches Target Column"
+    description = (
+        "A *_concept_id column joined to concept is filtered on a domain_id that the CDM v5.4 specification does not "
+        "allow for that column (e.g. 'Drug' on condition_concept_id, a clinical domain on a *_type_concept_id); no "
+        "concept row can match the join."
+    )
+    severity = Severity.ERROR
+    suggested_fix = (
+        "REPLACE: the concept alias's domain_id filter WITH the column's domain (e.g. 'Condition' for "
+        "condition_occurrence.condition_concept_id, 'Type Concept' for any *_type_concept_id), OR remove it: the "
+        "join on concept_id already fixes the domain."
+    )
     long_description = (
-        "Each OMOP *_concept_id column has a canonical domain_id: "
-        "condition_occurrence.condition_concept_id is always 'Condition', "
-        "drug_exposure.drug_concept_id is always 'Drug', and so on. "
-        "Filtering a concept join with the wrong domain "
-        "(e.g. c.domain_id = 'Drug' while joining on condition_concept_id) "
-        "silently returns zero rows. The fix is to match the domain to "
-        "the column."
+        "Each CDM v5.4 *_concept_id field with an fkDomain holds concepts of that domain only: "
+        "condition_occurrence.condition_concept_id is 'Condition', drug_exposure.drug_concept_id is 'Drug', every "
+        "*_type_concept_id is 'Type Concept', measurement.unit_concept_id is 'Unit'. Requiring the joined concept row "
+        "to have another domain_id means no concept row can match (an inner join returns zero rows). A domain_id filter that also lists other domains is reported as a "
+        "warning because the extra values can never match. A missing domain_id filter is not reported: the join is on "
+        "the concept primary key, so the filter would change nothing."
     )
     example_bad = (
         "SELECT co.person_id\n"
@@ -240,109 +96,91 @@ class ConceptDomainValidationRule(Rule):
         "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
         "WHERE c.domain_id = 'Condition';"
     )
+    references = (
+        CDM_FIELD_LEVEL,
+        cdm_table("condition_occurrence"),
+        section(BOOK_VOCABULARIES, "conceptDomains", "Domains"),
+        cdm_table("cdm_source"),
+        cdm_table("drug_strength"),
+        cdm_table("location"),
+        cdm_table("measurement"),
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT co.person_id\n"
+                "FROM condition_occurrence co\n"
+                "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+                "WHERE c.domain_id IN ('Condition', 'Observation');"
+            ),
+            severity=Severity.WARNING,
+            note="The domain filter lists the column's domain plus others that can never match",
+        ),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if "domain_id" not in sql.lower():
+            return []
         trees, error = parse_sql(sql, dialect)
         if error:
             return []
 
-        # Check validation context for severity adjustment
-        from fastssv.core.validation_context import get_validation_context
-
-        ctx = get_validation_context()
-
-        # Default: WARNING (best practice) for missing filters
-        # Strict mode: escalate to ERROR
-        # Wrong domain is always ERROR (semantic error)
-        missing_filter_severity = Severity.WARNING
-        if ctx.should_escalate_rule(self.rule_id):
-            missing_filter_severity = Severity.ERROR
-
+        violations: List[RuleViolation] = []
         for tree in trees:
-            if not tree or not has_table_reference(tree, "concept"):
+            if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-
-            joins = _find_concept_joins(tree, aliases)
-            if not joins:
+            checked = [
+                link
+                for link in links(tree, "concept", "concept_id")
+                if link.origin in EXPECTED_DOMAINS and (link.required or instance_is_null_extended(link))
+            ]
+            if not checked:
                 continue
-
-            domain_filters = _collect_domain_filters(tree, aliases)
-
-            for table, col, col_type, concept_alias in joins:
-                if not concept_alias:
+            filters = instance_filters(tree, "concept", "domain_id")
+            seen: Set[Tuple[int, Tuple[str, str]]] = set()
+            for link in checked:
+                if (id(link.node), link.origin) in seen:
                     continue
-
-                if col_type == "main":
-                    expected = MAIN_CLINICAL_TABLE_DOMAIN[(table, col)]
-                    expected_domains = [expected]  # Single domain for main tables
-                else:
-                    expected_raw = AUXILIARY_CONCEPT_COLUMNS[col]
-                    # Support both single domain (str) and multiple domains (list)
-                    expected_domains = expected_raw if isinstance(expected_raw, list) else [expected_raw]
-                    expected = expected_domains[0]  # Primary domain for messages
-
-                expected_norms = {_norm(d) for d in expected_domains}
-
-                values = domain_filters.get(concept_alias, set())
-
-                # --- Missing filter ---
-                if not values:
-                    if col_type == "main":
+                seen.add((id(link.node), link.origin))
+                table, col = link.origin
+                expected = EXPECTED_DOMAINS[link.origin]
+                admissible = {d.lower() for d in expected} | {_UNMAPPED_DOMAIN}
+                expected_msg = " OR ".join(f"'{d}'" for d in expected)
+                alias = link.alias
+                for flt in filters.get(link.instance, []):
+                    values = _domain_values(flt)
+                    if not values:
+                        continue
+                    shown = ", ".join(f"'{v}'" for v in flt.values)
+                    if not values & admissible:
                         violations.append(
                             self.create_violation(
-                                severity=missing_filter_severity,  # Context-aware severity
+                                severity=Severity.ERROR,
                                 message=(
-                                    f"{table}.{col} joined to concept '{concept_alias}' "
-                                    f"without domain_id filter. Expected domain '{expected}'."
+                                    f"Domain mismatch for {table}.{col}: concept '{alias}' is filtered on "
+                                    f"domain_id ({shown}) but the column only holds {expected_msg} concepts, so no "
+                                    "concept row can match the join."
                                 ),
                                 suggested_fix=(
-                                    f"ADD: `AND {concept_alias}.domain_id = '{expected}'` to the WHERE/JOIN-ON predicates."
+                                    f"REPLACE: the `{alias}.domain_id` filter WITH `{alias}.domain_id = "
+                                    f"'{expected[0]}'`, OR remove it."
                                 ),
                             )
                         )
-                    continue
-
-                # --- Wrong domain ---
-                # Check if ANY of the actual values match ANY expected domain
-                if not (values & expected_norms):
-                    actual = ", ".join(sorted(v.capitalize() for v in values))
-                    if len(expected_domains) > 1:
-                        expected_msg = " OR ".join(f"'{d}'" for d in expected_domains)
-                        suggested_fix = (
-                            f"REPLACE: the existing domain_id filter WITH "
-                            f"`{concept_alias}.domain_id IN ('{expected_domains[0]}', '{expected_domains[1]}')`."
+                    elif not values <= admissible:
+                        extra = ", ".join(f"'{v}'" for v in flt.values if v.lower() not in admissible)
+                        violations.append(
+                            self.create_violation(
+                                severity=Severity.WARNING,
+                                message=(
+                                    f"{alias}.domain_id also admits ({extra}), which never matches {table}.{col} "
+                                    f"(only {expected_msg} concepts); the extra values are dead and suggest the "
+                                    "filter was written for another column."
+                                ),
+                                suggested_fix=f"REMOVE: ({extra}) from the `{alias}.domain_id` filter.",
+                            )
                         )
-                    else:
-                        expected_msg = f"'{expected}'"
-                        suggested_fix = (
-                            f"REPLACE: the existing domain_id filter WITH `{concept_alias}.domain_id = '{expected}'`."
-                        )
-
-                    violations.append(
-                        self.create_violation(
-                            severity=Severity.ERROR,  # Wrong domain is always ERROR
-                            message=(f"Domain mismatch for {table}.{col}: expected {expected_msg}, found ({actual})."),
-                            suggested_fix=suggested_fix,
-                        )
-                    )
-
-                # --- Optional: multi-domain warning (only if not all valid) ---
-                elif len(values) > 1 and not values.issubset(expected_norms):
-                    violations.append(
-                        self.create_violation(
-                            severity=Severity.WARNING,
-                            message=(
-                                f"{concept_alias}.domain_id uses multiple domains ({values}). "
-                                f"This may produce unintended results."
-                            ),
-                        )
-                    )
-
         return violations
 
 
-__all__ = ["ConceptDomainValidationRule"]
+__all__ = ["ConceptDomainValidationRule", "EXPECTED_DOMAINS"]

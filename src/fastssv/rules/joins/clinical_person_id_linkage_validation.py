@@ -1,509 +1,211 @@
-"""Clinical Tables Person ID Linkage Validation Rule.
+"""Person-level sources read together without a person-scoped link.
 
-OMOP semantic rules CLIN_055, OMOP_517: all_clinical_tables_require_person_id_for_patient_query
+In the OMOP CDM every clinical event row belongs to one person: CDM v5.4 gives 18 tables a ``person_id`` foreign key
+to PERSON. When one SELECT reads two of them (directly, or through a CTE or derived table that passes their keys on)
+and no predicate ties them to the same person, each row of one is paired with rows of every other person. That is
+almost always a mistake, but it is the intended result for some analyses (matching controls to cases, counting per
+provider or care site), so the finding is a WARNING.
 
-When combining data across multiple clinical tables for patient-level analysis,
-all tables must be linked through person_id (directly or transitively). Missing
-person_id linkage produces cross-patient contamination in results.
+Two sources are linked when predicates that must hold (AND-connected equalities in ON / WHERE, or USING) put a key of
+the same person-level entity of each into one class of equal values:
 
-CTE-Aware Validation:
-    CTEs are treated as validated units. If a CTE contains clinical tables,
-    we validate those joins within the CTE scope. When the main query references
-    CTEs, we check if the CTEs are properly joined on person_id.
+* ``person_id`` on both sides;
+* a visit key (``visit_occurrence_id`` / ``preceding_visit_occurrence_id``) or visit-detail key
+  (``visit_detail_id`` / ``parent_visit_detail_id`` / ``preceding_visit_detail_id``): each is a foreign key to one
+  visit, and a visit belongs to one person;
+* an event primary key matched with itself or with a polymorphic event key (``measurement_event_id``,
+  ``observation_event_id``, ``note_event_id``), which the specification defines as the primary key of the linked
+  record;
+* both attached to one FACT_RELATIONSHIP or EPISODE_EVENT row.
 
-The Problem:
-    Joining clinical tables without person_id linkage can match data from different
-    patients, leading to completely invalid results. For example:
-
-    - Patient A has condition_start_date = '2020-01-15'
-    - Patient B has drug_exposure_start_date = '2020-01-15'
-
-    Joining on dates alone would incorrectly associate Patient A's condition with
-    Patient B's drug exposure.
-
-Clinical tables that require person_id linkage:
-    - condition_occurrence
-    - drug_exposure
-    - procedure_occurrence
-    - measurement
-    - observation
-    - visit_occurrence
-    - visit_detail
-    - death
-    - person
+Classes run through casts, through any other table, CTE or derived table
+(``co.person_id = c.subject_id AND de.person_id = c.subject_id``) and through the same literal
+(``co.person_id = 42 AND p.person_id = 42``), including a literal pinned inside a CTE or derived source. Each
+argument of ``COALESCE(a.person_id, b.person_id)`` joins the class. An OR links a source only when every
+alternative ties it to one already linked group; any other equality under OR, and every one under NOT, links nothing. Every SELECT in the
+statement is checked, including CTE bodies, derived tables and each branch of a set operation. A LATERAL / APPLY
+source is not checked: its link is the correlation inside it.
 
 Violation pattern:
     SELECT co.condition_concept_id, de.drug_concept_id
     FROM condition_occurrence co
     JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date
-    -- WRONG: No person_id linkage, cross-patient contamination
 
 Correct patterns:
-    -- Direct person_id join
     SELECT co.condition_concept_id, de.drug_concept_id
     FROM condition_occurrence co
     JOIN drug_exposure de ON co.person_id = de.person_id
 
-    -- Transitive through person table
-    SELECT co.condition_concept_id, de.drug_concept_id
-    FROM condition_occurrence co
-    JOIN person p ON co.person_id = p.person_id
-    JOIN drug_exposure de ON p.person_id = de.person_id
-
-    -- Via CTEs (correctly joined)
-    WITH cte1 AS (SELECT person_id FROM drug_exposure),
-         cte2 AS (SELECT person_id FROM condition_occurrence)
-    SELECT * FROM cte1 JOIN cte2 ON cte1.person_id = cte2.person_id
+    SELECT vd.visit_detail_id, nxt.visit_start_date
+    FROM visit_detail vd
+    JOIN visit_occurrence nxt ON nxt.preceding_visit_occurrence_id = vd.visit_occurrence_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
-from collections import defaultdict, deque
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.deduplication import predicate_key
+from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.patch import add as patch_add, locate
+from fastssv.core.references import BOOK_CDM, cdm_table, section
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
-
-CLINICAL_TABLES: Set[str] = {
-    "condition_occurrence",
-    "drug_exposure",
-    "procedure_occurrence",
-    "measurement",
-    "observation",
-    "visit_occurrence",
-    "visit_detail",
-    "death",
-    "person",
-}
-
-PERSON_ID = "person_id"
-# visit_occurrence_id / visit_detail_id are unique keys of a single person's visit: an equi-join on them cannot
-# cross patients, so it links the tables as surely as person_id does.
-LINK_COLUMNS = {PERSON_ID, "visit_occurrence_id", "visit_detail_id"}
+from ._person_keys import PERSON_TABLES
+from ._join_scope import hoist_joins, shadowed_tables
+from ._person_links import ScopeLinks
 
 
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_clinical_table(table: Optional[str]) -> bool:
-    return _norm(table) in CLINICAL_TABLES
-
-
-def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    """Extract all CTE names from WITH clauses."""
-    cte_names = set()
-    for cte in tree.find_all(exp.CTE):
-        if cte.alias:
-            cte_names.add(_norm(cte.alias))
-    return cte_names
-
-
-def _get_outermost_select(tree: exp.Expression) -> Optional[exp.Select]:
-    """Get the outermost SELECT statement (not inside CTEs or subqueries)."""
-    # If tree is a WITH statement, get its main query
-    if isinstance(tree, exp.With):
-        return tree.this if isinstance(tree.this, exp.Select) else None
-
-    # If tree is already a SELECT, return it
-    if isinstance(tree, exp.Select):
-        return tree
-
-    # Otherwise, find the first top-level SELECT
-    for node in tree.walk():
-        if isinstance(node, exp.Select):
-            # Make sure it's not inside a subquery or CTE
-            parent = node.parent
-            is_subquery = False
-            while parent:
-                if isinstance(parent, (exp.Subquery, exp.CTE)):
-                    is_subquery = True
-                    break
-                parent = parent.parent
-            if not is_subquery:
-                return node
-
+def _add_person_link_patch(sql: str, links: ScopeLinks, components: List[Set[str]]) -> Optional[dict]:
+    """ADD `AND a.person_id = b.person_id` to the ON clause of the first join that brings in an unlinked source,
+    when both sides expose person_id. None (prose fix only) for comma joins, CROSS JOIN or no person_id."""
+    component_of = {alias: i for i, comp in enumerate(components) for alias in comp}
+    earlier: List[str] = []
+    from_node = links.select.args.get("from_") or links.select.args.get("from")
+    if from_node is not None and from_node.this.alias_or_name:
+        earlier.append(normalize_name(from_node.this.alias_or_name))
+    for join in links.select.args.get("joins") or []:
+        alias = normalize_name(join.this.alias_or_name) if join.this.alias_or_name else None
+        if alias in component_of:
+            partners = [e for e in earlier if e in component_of and component_of[e] != component_of[alias]]
+            if partners and not any(component_of.get(e) == component_of[alias] for e in earlier):
+                partner = partners[0]
+                on = join.args.get("on")
+                if on is None or "person_id" not in links.exposed.get(alias, {}):
+                    return None
+                if "person_id" not in links.exposed.get(partner, {}):
+                    return None
+                span = locate(sql, on.sql())
+                if span is None:
+                    return None
+                return patch_add(span[1], f" AND {partner}.person_id = {alias}.person_id")
+        if alias:
+            earlier.append(alias)
     return None
 
 
-def _extract_aliases_from_select_only(select: exp.Select) -> Dict[str, str]:
-    """Extract aliases from a specific SELECT statement only (not from nested CTEs/subqueries)."""
-    aliases: Dict[str, str] = {}
-
-    # Get FROM table
-    from_clause = select.args.get("from_")
-    if from_clause and isinstance(from_clause.this, exp.Table):
-        table = from_clause.this
-        real = _norm(table.name)
-        alias = table.alias_or_name
-        alias_norm = _norm(alias) if alias else None
-        if alias_norm and alias_norm != real:
-            # Has a different alias, only add the alias mapping
-            aliases[alias_norm] = real
-        else:
-            # No alias or alias is same as table name, add self-mapping
-            aliases[real] = real
-
-    # Get JOIN tables
-    for join in select.args.get("joins", []):
-        if isinstance(join.this, exp.Table):
-            table = join.this
-            real = _norm(table.name)
-            alias = table.alias_or_name
-            alias_norm = _norm(alias) if alias else None
-            if alias_norm and alias_norm != real:
-                # Has a different alias, only add the alias mapping
-                aliases[alias_norm] = real
-            else:
-                # No alias or alias is same as table name, add self-mapping
-                aliases[real] = real
-
-    return aliases
-
-
-def _get_clinical_aliases_in_scope(select: exp.Select, cte_names: Set[str]) -> Dict[str, str]:
-    """Get clinical table aliases referenced in this SELECT scope only.
-
-    Excludes:
-    - Tables inside CTEs (validated separately)
-    - CTEs themselves (treated as validated units)
-    """
-    result: Dict[str, str] = {}
-    aliases = _extract_aliases_from_select_only(select)
-
-    for alias, table in aliases.items():
-        # Skip CTEs - they're not physical clinical tables
-        if _norm(alias) in cte_names:
-            continue
-
-        # Only include clinical tables
-        if _is_clinical_table(table):
-            result[alias] = table
-
-    return result
-
-
-def _build_table_to_aliases(aliases: Dict[str, str]) -> Dict[str, List[str]]:
-    mapping: Dict[str, List[str]] = defaultdict(list)
-    for alias, table in aliases.items():
-        mapping[_norm(table)].append(alias)
-    return mapping
-
-
-def _extract_join_conditions(select: exp.Select) -> List[Tuple[exp.Column, exp.Column]]:
-    """Extract join conditions from a specific SELECT statement only."""
-    conditions: List[Tuple[exp.Column, exp.Column]] = []
-
-    # Get joins from this SELECT only
-    for join in select.args.get("joins", []):
-        on_clause = join.args.get("on")
-        if on_clause:
-            for eq in on_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    conditions.append((eq.this, eq.expression))
-
-    # Get WHERE conditions from this SELECT only
-    where = select.args.get("where")
-    if where:
-        for eq in where.find_all(exp.EQ):
-            if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                conditions.append((eq.this, eq.expression))
-
-    return conditions
-
-
-def _extract_using_edges(
-    select: exp.Select,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str]]:
-    """Extract USING clause edges from a specific SELECT."""
-    edges: List[Tuple[str, str]] = []
-
-    seen_tables: List[str] = []
-
-    # Get the FROM table first
-    from_clause = select.args.get("from_")
-    if from_clause and isinstance(from_clause.this, exp.Table):
-        seen_tables.append(from_clause.this.alias_or_name)
-
-    # Process joins in order
-    for join in select.args.get("joins", []):
-        using = join.args.get("using")
-        if not using:
-            if isinstance(join.this, exp.Table):
-                seen_tables.append(join.this.alias_or_name)
-            continue
-
-        cols = set()
-
-        if isinstance(using, exp.Tuple):
-            cols = {_norm(e.name) for e in using.expressions if isinstance(e, exp.Identifier)}
-        elif isinstance(using, list):
-            cols = {_norm(e.name) for e in using if isinstance(e, exp.Identifier)}
-        elif isinstance(using, exp.Identifier):
-            cols = {_norm(using.name)}
-
-        if cols & LINK_COLUMNS and isinstance(join.this, exp.Table):
-            right_alias = join.this.alias_or_name
-            for left_alias in seen_tables:
-                edges.append((left_alias, right_alias))
-                edges.append((right_alias, left_alias))
-
-        if isinstance(join.this, exp.Table):
-            seen_tables.append(join.this.alias_or_name)
-
-    return edges
-
-
-def _build_graph(
-    conditions: List[Tuple[exp.Column, exp.Column]],
-    using_edges: List[Tuple[str, str]],
-    aliases: Dict[str, str],
-    clinical_aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> Dict[str, Set[str]]:
-    """Build connectivity graph of clinical tables and CTEs via person_id."""
-    graph: Dict[str, Set[str]] = defaultdict(set)
-
-    table_to_aliases = _build_table_to_aliases(aliases)
-
-    # Explicit ON / WHERE joins
-    for left, right in conditions:
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-
-        if _norm(lc) != _norm(rc) or _norm(lc) not in LINK_COLUMNS:
-            continue
-
-        if not lt or not rt:
-            continue
-
-        # Check if either side is a CTE
-        left_is_cte = _norm(lt) in cte_names or _norm(left.table) in cte_names
-        right_is_cte = _norm(rt) in cte_names or _norm(right.table) in cte_names
-
-        # Handle CTE joins
-        if left_is_cte or right_is_cte:
-            left_key = _norm(left.table) if left.table else None
-            right_key = _norm(right.table) if right.table else None
-
-            if left_key and right_key:
-                graph[left_key].add(right_key)
-                graph[right_key].add(left_key)
-            continue
-
-        # Handle physical table joins
-        left_aliases = table_to_aliases.get(_norm(lt), [])
-        right_aliases = table_to_aliases.get(_norm(rt), [])
-
-        for la in left_aliases:
-            for ra in right_aliases:
-                if la in clinical_aliases and ra in clinical_aliases:
-                    graph[la].add(ra)
-                    graph[ra].add(la)
-
-    # USING edges
-    for a, b in using_edges:
-        # Check if either is a CTE
-        a_is_cte = _norm(a) in cte_names
-        b_is_cte = _norm(b) in cte_names
-
-        if a_is_cte or b_is_cte:
-            graph[_norm(a)].add(_norm(b))
-            graph[_norm(b)].add(_norm(a))
-        elif a in clinical_aliases and b in clinical_aliases:
-            graph[a].add(b)
-            graph[b].add(a)
-
-    return graph
-
-
-def _connected_components(graph: Dict[str, Set[str]], nodes: List[str]) -> List[Set[str]]:
-    visited: Set[str] = set()
-    components: List[Set[str]] = []
-
-    for node in nodes:
-        if node in visited:
-            continue
-
-        comp = set()
-        queue = deque([node])
-
-        while queue:
-            current = queue.popleft()
-            if current in visited:
+def _cross_predicates(links: ScopeLinks, components: List[Set[str]]) -> List[str]:
+    """Normalised equalities of ``links.select`` whose two operands read sources of different components."""
+    component_of = {alias: i for i, comp in enumerate(components) for alias in comp}
+    roots = [j.args["on"] for j in links.select.args.get("joins") or [] if j.args.get("on") is not None]
+    if links.select.args.get("where") is not None:
+        roots.append(links.select.args["where"].this)
+    found: Set[str] = set()
+    for root in roots:
+        for eq in root.find_all(exp.EQ):
+            if eq.find_ancestor(exp.Select) is not links.select:
                 continue
-
-            visited.add(current)
-            comp.add(current)
-
-            for neigh in graph.get(current, set()):
-                if neigh not in visited:
-                    queue.append(neigh)
-
-        components.append(comp)
-
-    return components
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[List[str], List[str]]]:
-    """Detect violations in the outermost SELECT only (CTE-aware)."""
-
-    # Extract CTEs
-    cte_names = _extract_cte_names(tree)
-
-    # Get outermost SELECT
-    outermost_select = _get_outermost_select(tree)
-    if not outermost_select:
-        return []
-
-    # Get clinical aliases in outermost scope only (excluding CTEs themselves)
-    clinical_aliases = _get_clinical_aliases_in_scope(outermost_select, cte_names)
-
-    # If we have CTEs and they're being joined in the final query, validate the joins
-    # But don't flag missing joins for tables inside CTEs
-    if cte_names and len(clinical_aliases) < 2:
-        # Only CTEs being referenced, or single clinical table
-        # CTEs are assumed to be validated separately
-        return []
-
-    if len(clinical_aliases) < 2:
-        return []
-
-    conditions = _extract_join_conditions(outermost_select)
-    using_edges = _extract_using_edges(outermost_select, aliases)
-
-    # No joins at all → immediate violation
-    if not conditions and not using_edges:
-        return [(list(clinical_aliases.keys()), [])]
-
-    graph = _build_graph(conditions, using_edges, aliases, clinical_aliases, cte_names)
-    # Orphan-FK checks (`LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    # WHERE vo.visit_occurrence_id IS NULL`) link the tables on the FK by design — 8/8 expert findings.
-    for a, b in _antijoin_edges(outermost_select, clinical_aliases):
-        graph.setdefault(a, set()).add(b)
-        graph.setdefault(b, set()).add(a)
-
-    # Check connectivity among clinical aliases only
-    # CTEs are intermediate constructs - we only care if final clinical tables are connected
-    all_nodes = list(clinical_aliases.keys())
-    components = _connected_components(graph, all_nodes)
-
-    if len(components) <= 1:
-        return []
-
-    # Multiple disconnected components - return violation
-    return [(list(clinical_aliases.keys()), [])]
-
-
-# --- Rule ------------------------------------------------------------------
-
-
-def _antijoin_edges(select: exp.Select, clinical_aliases: Dict[str, str]) -> List[Tuple[str, str]]:
-    """Edges for outer joins whose right side is tested `IS NULL` in WHERE (anti-join / orphan check)."""
-    where = select.args.get("where")
-    null_tested = set()
-    if where is not None:
-        for is_node in where.find_all(exp.Is):
-            if isinstance(is_node.this, exp.Column) and isinstance(is_node.expression, exp.Null) and is_node.this.table:
-                null_tested.add(_norm(is_node.this.table))
-    edges: List[Tuple[str, str]] = []
-    for join in select.args.get("joins", []) or []:
-        if (join.side or "").upper() not in {"LEFT", "RIGHT", "FULL"} or not isinstance(join.this, exp.Table):
-            continue
-        right = _norm(join.this.alias_or_name)
-        if right not in null_tested:
-            continue
-        on = join.args.get("on")
-        if on is None:
-            continue
-        for eq in on.find_all(exp.EQ):
-            if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                a, b = _norm(eq.this.table), _norm(eq.expression.table)
-                if a and b and a in clinical_aliases and b in clinical_aliases and a != b:
-                    edges.append((a, b))
-    return edges
+            left = {component_of.get(alias) for alias, _ in links._nodes(eq.this)} - {None}
+            right = {component_of.get(alias) for alias, _ in links._nodes(eq.expression)} - {None}
+            if any(a != b for a in left for b in right):
+                found.add(predicate_key(eq))
+    return sorted(found)
 
 
 @register
 class ClinicalPersonIdLinkageValidationRule(Rule):
-    """Ensure clinical tables are linked via person_id (CTE-aware)."""
+    """Person-level sources of one SELECT should be tied to the same person."""
 
     rule_id = "joins.clinical_person_id_linkage_validation"
-    name = "Clinical Tables Require Person ID Linkage"
+    name = "Clinical Tables Without a Person-Scoped Link"
 
     description = (
-        "Clinical tables must be connected via person_id to ensure patient-level correctness. "
-        "CTEs are treated as validated units and checked separately."
+        "Two person-level tables (or CTEs / derived tables carrying their keys) are read in one SELECT with no "
+        "predicate tying them to the same person (person_id, a visit or visit-detail key, an event key). Rows of "
+        "different patients are paired; this is right only for deliberately cross-person analyses."
     )
 
-    severity = Severity.ERROR
+    severity = Severity.WARNING
 
-    suggested_fix = "ADD: `<clinical_a>.person_id = <clinical_b>.person_id` to every join between clinical event tables. Without person_id linkage the cross-table join produces a Cartesian product per person."
+    suggested_fix = (
+        "ADD: `<a>.person_id = <b>.person_id` (or a shared visit key such as visit_occurrence_id) to the join "
+        "between the two sources, unless pairing rows of different patients is intended."
+    )
     example_bad = (
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "SELECT co.condition_concept_id, de.drug_concept_id\n"
         "FROM condition_occurrence co\n"
-        "JOIN drug_exposure de ON co.visit_occurrence_id = de.visit_occurrence_id;"
+        "JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date;"
     )
     example_good = (
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id\n"
+        "SELECT co.condition_concept_id, de.drug_concept_id\n"
         "FROM condition_occurrence co\n"
-        "JOIN drug_exposure de ON co.person_id = de.person_id;"
+        "JOIN drug_exposure de ON co.person_id = de.person_id\n"
+        "  AND co.condition_start_date = de.drug_exposure_start_date;"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT d.person_id, co.condition_start_date\n"
+                "FROM death d\n"
+                "JOIN condition_occurrence co ON d.cause_concept_id = co.condition_concept_id;"
+            ),
+            severity=Severity.WARNING,
+            note="death matched to conditions by concept only: every death pairs with other patients' conditions.",
+        ),
+        RuleExample(
+            sql=(
+                "SELECT d.person_id, vo.visit_occurrence_id\n"
+                "FROM death d, visit_occurrence vo\n"
+                "WHERE d.death_date BETWEEN vo.visit_start_date AND vo.visit_end_date;"
+            ),
+            severity=Severity.WARNING,
+            note="A comma join with only a date condition.",
+        ),
+    )
+    references = (
+        section(BOOK_CDM, "model-Conv", "General conventions of the model"),
+        cdm_table("person"),
+        cdm_table("visit_occurrence"),
+        cdm_table("fact_relationship"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
+        lowered = sql.lower()
+        if sum(table in lowered for table in PERSON_TABLES) < 1:
+            return []
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
-
+        seen: Set[Tuple[str, ...]] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            issues = _detect_violations(tree, aliases)
-
-            for component, _ in issues:
-                tables = [aliases[a] for a in component if a in aliases]
-
-                # Skip if we only have one distinct table type
-                unique_tables = list(set(tables))
-                if len(unique_tables) < 2:
+            tree = hoist_joins(tree)
+            shadowed = shadowed_tables(tree)
+            for select in tree.find_all(exp.Select):
+                if len(select.args.get("joins") or []) < 1:
                     continue
-
-                msg = (
-                    f"Clinical tables {unique_tables} are not connected via person_id. "
-                    f"This can cause cross-patient contamination."
-                )
-
+                links = ScopeLinks(select, shadowed)
+                level = links.person_level()
+                if len(level) < 2:
+                    continue
+                components = links.components()
+                if len(components) <= 1:
+                    continue
+                groups = sorted(sorted(level[a] for a in comp) for comp in components)
+                key = tuple(" + ".join(g) for g in groups)
+                if key in seen:
+                    continue
+                seen.add(key)
+                listed = " | ".join(key)
                 violations.append(
                     self.create_violation(
-                        message=msg,
-                        severity=self.severity,
-                        details={"tables": unique_tables},
+                        message=(
+                            f"Person-level sources are read in one SELECT without a person-scoped link (person_id, a "
+                            f"visit key or an event key) between these groups: {listed}. Rows of different patients are paired unless that is intended "
+                            f"(for example matching controls to cases, or counting per provider)."
+                        ),
+                        details={
+                            "groups": groups,
+                            "tables": sorted({t for g in groups for t in g}),
+                            "predicates": _cross_predicates(links, components),
+                        },
+                        suggested_fix_patch=_add_person_link_patch(sql, links, components),
                     )
                 )
-
         return violations
 
 

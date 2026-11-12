@@ -1,335 +1,252 @@
 """Concept Relationship Transitive Misuse Rule.
 
-OMOP semantic rule VOCAB_034:
-concept_relationship stores only direct (one-hop) relationships. To find all
-descendants across multiple levels, use concept_ancestor (which is pre-computed
-for all transitive hierarchical paths). Chaining multiple concept_relationship
-self-joins to simulate transitivity is fragile and incomplete.
+concept_relationship stores first-degree hierarchy only: each 'Is a' / 'Subsumes' row links a concept to its direct
+parent / child. Chaining two or more such lookups (``cr1.concept_id_2 = cr2.concept_id_1``, written as self-joins or
+across CTEs) returns only the concepts reached in exactly N steps: it skips the levels in between and the deeper
+ones, and the result depends on the chain length. concept_ancestor already stores every transitive path with its
+levels of separation for standard and classification concepts; non-standard vocabularies (ICD10CM, Read, ...) are
+not in it, and a recursive CTE walks their hierarchy instead.
 
-The Problem:
-    concept_relationship contains direct relationships only:
-    - Concept A "Subsumes" Concept B (one hop)
-    - Concept B "Subsumes" Concept C (one hop)
+Flagged: a chain of two or more concept_relationship instances, each restricted to a single hierarchical
+relationship, that walks one direction of the hierarchy: 'Subsumes' read from concept_id_1 to concept_id_2, or 'Is a'
+read from concept_id_2 to concept_id_1, goes down; the reverse goes up. Hops joined directly or through a concept row
+(``concept.concept_id`` carries the id unchanged) both count. Not flagged: mixed chains ('Is a' then 'Subsumes'
+finds siblings; 'Maps to' then 'Is a' finds the parent of a mapped concept), and any hop inside a recursive CTE, which
+repeats until the closure is complete.
 
-    To find all descendants of A (both B and C), users sometimes chain joins:
-    cr1 → cr2 → cr3 (each hop requires another join)
-
-    Issues with manual chaining:
-    1. Incomplete: Only gets descendants at specific depth (e.g., exactly 3 hops)
-    2. Fragile: Misses concepts with multiple inheritance paths
-    3. Performance: Multiple self-joins are slow
-    4. Complexity: Hard to maintain and understand
-
-    The concept_ancestor table pre-computes ALL transitive hierarchical paths
-    and is optimized for hierarchy traversal queries.
-
-Violation pattern:
-    SELECT cr3.concept_id_2
+Violation:
+    SELECT cr2.concept_id_2
     FROM concept_relationship cr1
-    JOIN concept_relationship cr2
-      ON cr1.concept_id_2 = cr2.concept_id_1
-    JOIN concept_relationship cr3
-      ON cr2.concept_id_2 = cr3.concept_id_1
+    JOIN concept_relationship cr2 ON cr1.concept_id_2 = cr2.concept_id_1
     WHERE cr1.concept_id_1 = 201820
       AND cr1.relationship_id = 'Subsumes'
       AND cr2.relationship_id = 'Subsumes'
-      AND cr3.relationship_id = 'Subsumes'
-    -- Only gets descendants exactly 3 hops away!
 
-Correct patterns:
-    -- Get all descendants at any depth
-    SELECT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    WHERE ca.ancestor_concept_id = 201820
-      AND ca.min_levels_of_separation >= 1
-
-    -- Get descendants within depth 3
-    SELECT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    WHERE ca.ancestor_concept_id = 201820
-      AND ca.min_levels_of_separation BETWEEN 1 AND 3
+Correct:
+    SELECT descendant_concept_id
+    FROM concept_ancestor
+    WHERE ancestor_concept_id = 201820
+      AND min_levels_of_separation BETWEEN 1 AND 2
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    normalize_name,
-    parse_sql,
-)
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_CONVENTIONS, section
+from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.registry import register
+from fastssv.core.helpers import (
+    CONCEPT_RELATIONSHIP,
+    comparison_pairs,
+    relationship_filters,
+    side_reads,
+)
+
+HIERARCHICAL_RELATIONSHIPS = {"is a", "subsumes"}
+
+Instance = Tuple[int, str]
 
 
-# --- Constants -------------------------------------------------------------
-
-CONCEPT_RELATIONSHIP = "concept_relationship"
-
-HIERARCHICAL_RELATIONSHIPS = {
-    "Subsumes",
-    "Is a",
-    "Has ancestor",
-    "Has descendant",
-}
-
-MIN_CHAIN_LENGTH = 3
-
-HIERARCHICAL_RELATIONSHIPS_NORM = {normalize_name(r) for r in HIERARCHICAL_RELATIONSHIPS}
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(val: Optional[str]) -> Optional[str]:
-    return normalize_name(val) if val else None
-
-
-def _get_table_alias(table: exp.Table) -> str:
-    alias_expr = table.args.get("alias")
-    return alias_expr.name if alias_expr else table.name
-
-
-def _is_concept_relationship_table(table_name: str) -> bool:
-    return _norm(table_name) == _norm(CONCEPT_RELATIONSHIP)
-
-
-def _extract_concept_relationship_aliases(tree: exp.Expression) -> Set[str]:
-    aliases = set()
-
-    for table in tree.find_all(exp.Table):
-        if _is_concept_relationship_table(table.name):
-            alias = _get_table_alias(table)
-            aliases.add(_norm(alias))
-
-    return aliases
-
-
-# --- Graph construction ----------------------------------------------------
-
-
-def _build_join_graph(tree: exp.Expression, cr_aliases: Set[str]) -> Dict[str, Set[str]]:
-    graph: Dict[str, Set[str]] = {alias: set() for alias in cr_aliases}
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if not on_clause:
-            continue
-
-        for eq in on_clause.find_all(exp.EQ):
-            left, right = eq.this, eq.expression
-
-            if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
-                continue
-
-            left_table = _norm(left.table)
-            right_table = _norm(right.table)
-
-            if left_table not in cr_aliases or right_table not in cr_aliases:
-                continue
-
-            left_col = _norm(left.name)
-            right_col = _norm(right.name)
-
-            # Forward direction
-            if left_col == "concept_id_2" and right_col == "concept_id_1":
-                if left_table != right_table:
-                    graph[left_table].add(right_table)
-
-            # Reverse direction
-            elif left_col == "concept_id_1" and right_col == "concept_id_2":
-                if left_table != right_table:
-                    graph[right_table].add(left_table)
-
-    return graph
-
-
-# --- Chain detection -------------------------------------------------------
-
-
-def _find_chains(graph: Dict[str, Set[str]], max_depth: int = 10) -> List[List[str]]:
-    all_chains: List[List[str]] = []
-
-    def dfs(path: List[str], visited: Set[str]):
-        # Record intermediate chains (FIX)
-        if len(path) >= 2:
-            all_chains.append(path[:])
-
-        if len(path) >= max_depth:
-            return
-
-        current = path[-1]
-
-        for neighbor in graph.get(current, set()):
-            if neighbor in visited:
-                continue
-            dfs(path + [neighbor], visited | {neighbor})
-
-    for start in graph:
-        dfs([start], {start})
-
-    return all_chains
-
-
-# --- Relationship filtering ------------------------------------------------
-
-
-def _has_hierarchical_relationship_filter(tree: exp.Expression, alias: str) -> bool:
-    alias_norm = _norm(alias)
-
-    # EQ filters
-    for eq in tree.find_all(exp.EQ):
-        left, right = eq.this, eq.expression
-
-        for col_node, val_node in [(left, right), (right, left)]:
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            if _norm(col_node.table) != alias_norm:
-                continue
-
-            if _norm(col_node.name) != "relationship_id":
-                continue
-
-            if isinstance(val_node, exp.Literal) and val_node.is_string:
-                val = _norm(str(val_node.this))
-                if val in HIERARCHICAL_RELATIONSHIPS_NORM:
-                    return True
-
-    # IN filters
-    for in_expr in tree.find_all(exp.In):
-        col = in_expr.this
-        if not isinstance(col, exp.Column):
-            continue
-
-        if _norm(col.table) != alias_norm:
-            continue
-
-        if _norm(col.name) != "relationship_id":
-            continue
-
-        for val in in_expr.expressions or []:
-            if isinstance(val, exp.Literal) and val.is_string:
-                norm_val = _norm(str(val.this))
-                if norm_val in HIERARCHICAL_RELATIONSHIPS_NORM:
-                    return True
-
-    return False
-
-
-def _chain_uses_hierarchical_relationships(tree: exp.Expression, chain: List[str]) -> bool:
-    """Check if any alias in the chain uses hierarchical relationships."""
-    for alias in chain:
-        if _has_hierarchical_relationship_filter(tree, alias):
+def _in_recursive_cte(select: exp.Select) -> bool:
+    """True inside a CTE body that reads the CTE itself: such a walk repeats until no new rows, so it is not
+    fixed-depth."""
+    cte = select.find_ancestor(exp.CTE)
+    while cte is not None:
+        name = normalize_name(cte.alias_or_name)
+        if any(normalize_name(t.name) == name and not t.args.get("db") for t in cte.this.find_all(exp.Table)):
             return True
+        cte = cte.find_ancestor(exp.CTE)
     return False
 
 
-# --- Rule ------------------------------------------------------------------
+# Columns a hop reads from and leads to when walking down the hierarchy (parent -> child): a 'Subsumes' row goes
+# from concept_id_1 (parent) to concept_id_2 (child), an 'Is a' row from concept_id_2 (parent) to concept_id_1.
+_DOWN = {"subsumes": ("concept_id_1", "concept_id_2"), "is a": ("concept_id_2", "concept_id_1")}
+
+
+def _equalities(tree: exp.Expression) -> List[Tuple[Set, Set]]:
+    """Pairs of read sets equated by the statement; reads equated to the same concept row are paired too, because
+    joining through concept.concept_id carries the id unchanged."""
+    pairs = []
+    via_concept: Dict[Tuple[int, str], Set] = {}
+    for _, left, right in comparison_pairs(tree):
+        left_reads, right_reads = side_reads(left, relay=False), side_reads(right, relay=False)
+        pairs.append((left_reads, right_reads))
+        for a, b in ((left_reads, right_reads), (right_reads, left_reads)):
+            for s1, a1, t1, c1 in a:
+                if t1 == "concept" and c1 == "concept_id":
+                    via_concept.setdefault((id(s1), a1), set()).update(r for r in b if r[2] == CONCEPT_RELATIONSHIP)
+    for reads in via_concept.values():
+        pairs.append((reads, reads))
+    return pairs
+
+
+def _chain_edges(tree: exp.Expression, relationship_of: Dict[Instance, str], direction: str):
+    """Edges X -> Y where the row X leads to is the row Y starts from, walking ``direction`` ("down" or "up")."""
+    edges: Dict[Instance, Set[Instance]] = {}
+
+    def ends(instance: Instance) -> Tuple[str, str]:
+        start, end = _DOWN[relationship_of[instance]]
+        return (start, end) if direction == "down" else (end, start)
+
+    for a_reads, b_reads in _equalities(tree):
+        for a, b in ((a_reads, b_reads), (b_reads, a_reads)):
+            for s1, a1, t1, c1 in a:
+                x = (id(s1), a1)
+                if t1 != CONCEPT_RELATIONSHIP or x not in relationship_of or c1 != ends(x)[1]:
+                    continue
+                for s2, a2, t2, c2 in b:
+                    y = (id(s2), a2)
+                    if t2 != CONCEPT_RELATIONSHIP or y not in relationship_of or c2 != ends(y)[0]:
+                        continue
+                    if x != y and not _in_recursive_cte(s1) and not _in_recursive_cte(s2):
+                        edges.setdefault(x, set()).add(y)
+    return edges
+
+
+def _anchored(tree: exp.Expression, instance: Instance, column: str) -> bool:
+    """Whether ``column`` of ``instance`` is compared with something other than another concept_relationship row:
+    that is where the walk starts."""
+    for node in tree.find_all(exp.EQ, exp.In):
+        sides = [node.this, node.expression] if isinstance(node, exp.EQ) else [node.this]
+        others = [node.expression, node.this] if isinstance(node, exp.EQ) else [node.args.get("query")]
+        for side, other in zip(sides, others):
+            reads = side_reads(side, relay=False) if side is not None else set()
+            if not any((id(r[0]), r[1]) == instance and r[3] == column for r in reads):
+                continue
+            if other is None:
+                return True  # IN (literal list)
+            if not any(r[2] == CONCEPT_RELATIONSHIP for r in side_reads(other, relay=False)):
+                return True
+    return False
+
+
+def _longest_chain(edges: Dict[Instance, Set[Instance]], nodes: Set[Instance]) -> List[Instance]:
+    best: List[Instance] = []
+
+    def walk(path: List[Instance]) -> None:
+        nonlocal best
+        if len(path) > len(best):
+            best = list(path)
+        for nxt in sorted(edges.get(path[-1], ()), key=str):
+            if nxt in nodes and nxt not in path:
+                walk(path + [nxt])
+
+    for start in sorted(nodes, key=str):
+        walk([start])
+    return best
 
 
 @register
 class ConceptRelationshipTransitiveMisuseRule(Rule):
-    """Detect chained concept_relationship joins attempting transitive closure."""
+    """Detect chained 'Is a' / 'Subsumes' lookups that emulate hierarchy traversal."""
 
     rule_id = "anti_patterns.concept_relationship_transitive_misuse"
     name = "Concept Relationship Transitive Misuse"
-
     description = (
-        "concept_relationship stores only direct relationships. "
-        "Chaining multiple self-joins attempts transitive closure and is fragile. "
-        "Use concept_ancestor instead."
+        "Chaining two or more 'Is a' (or 'Subsumes') concept_relationship lookups returns only the concepts "
+        "reached in exactly N steps and misses the rest of the hierarchy. Use concept_ancestor (standard and "
+        "classification concepts) or a recursive CTE."
     )
-
     severity = Severity.WARNING
-
-    suggested_fix = "REPLACE: chained concept_relationship self-joins WITH a single JOIN on concept_ancestor (it stores the transitive closure of the concept_relationship hierarchy)."
+    suggested_fix = (
+        "REPLACE: the chained concept_relationship lookups WITH concept_ancestor "
+        "(`descendant_concept_id` for 'Subsumes', `ancestor_concept_id` for 'Is a'), filtering "
+        "`min_levels_of_separation` when a depth limit is intended; for a non-standard vocabulary, which "
+        "concept_ancestor does not cover, use a recursive CTE."
+    )
     long_description = (
-        "concept_relationship stores only direct (one-hop) relationships. "
-        "Chaining multiple self-joins on it to simulate transitive closure "
-        "('Subsumes' through three levels of hierarchy) is fragile: it "
-        "only captures descendants at the exact depth you chained for, "
-        "misses concepts with multiple inheritance paths, and gets slower "
-        "with each additional self-join. concept_ancestor pre-computes all "
-        "transitive hierarchical paths and is the correct table for "
-        "'everything beneath this concept' queries."
+        "concept_relationship holds only first-degree hierarchy: one 'Is a' / 'Subsumes' row per direct "
+        "parent-child pair. A chain of such lookups returns the concepts reached in exactly that many steps, "
+        "skipping the intermediate levels and everything deeper, and concepts with several parents can be reached "
+        "at different depths. concept_ancestor is built from these relationships and stores every transitive path "
+        "with min/max levels of separation, so one join answers 'all descendants' or 'descendants within N levels'. "
+        "It covers standard and classification concepts only; a non-standard vocabulary's hierarchy needs a "
+        "recursive CTE."
     )
     example_bad = (
-        "SELECT cr3.concept_id_2\n"
+        "SELECT cr2.concept_id_2\n"
         "FROM concept_relationship cr1\n"
         "JOIN concept_relationship cr2 ON cr1.concept_id_2 = cr2.concept_id_1\n"
-        "JOIN concept_relationship cr3 ON cr2.concept_id_2 = cr3.concept_id_1\n"
         "WHERE cr1.concept_id_1 = 201820\n"
         "  AND cr1.relationship_id = 'Subsumes'\n"
-        "  AND cr2.relationship_id = 'Subsumes'\n"
-        "  AND cr3.relationship_id = 'Subsumes';"
+        "  AND cr2.relationship_id = 'Subsumes';"
     )
     example_good = (
-        "SELECT descendant_concept_id AS concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820;"
+        "SELECT descendant_concept_id\n"
+        "FROM concept_ancestor\n"
+        "WHERE ancestor_concept_id = 201820\n"
+        "  AND min_levels_of_separation BETWEEN 1 AND 2;"
+    )
+    references = (
+        section(CDM_CONVENTIONS, "concept-relationships", "Concept relationships"),
+        section(BOOK_VOCABULARIES, "conceptAncestor", "Hierarchy"),
+        section(CDM_CONVENTIONS, "concept-ancestor", "Concept ancestor"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "concept_relationship" not in sql.lower():
+        if CONCEPT_RELATIONSHIP not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
-        seen: Set[str] = set()
-
         for tree in trees:
             if not tree:
                 continue
-
-            cr_aliases = _extract_concept_relationship_aliases(tree)
-
-            if len(cr_aliases) < MIN_CHAIN_LENGTH:
+            relationship_of: Dict[Instance, str] = {}
+            for instance, values in relationship_filters(tree).items():
+                if len(values) == 1 and next(iter(values)) in HIERARCHICAL_RELATIONSHIPS:
+                    relationship_of[instance] = next(iter(values))
+            if len(relationship_of) < 2:
                 continue
-
-            graph = _build_join_graph(tree, cr_aliases)
-            chains = _find_chains(graph)
-
-            valid_chains = [
-                chain
-                for chain in chains
-                if len(chain) >= MIN_CHAIN_LENGTH and _chain_uses_hierarchical_relationships(tree, chain)
-            ]
-
-            if not valid_chains:
-                continue
-
-            longest_chain = max(valid_chains, key=len)
-            chain_key = "->".join(longest_chain)
-
-            if chain_key in seen:
-                continue
-            seen.add(chain_key)
-
-            violations.append(
-                self.create_violation(
-                    message=(
-                        f"Query chains {len(longest_chain)} concept_relationship self-joins "
-                        f"({' → '.join(longest_chain)}) to traverse hierarchy. "
-                        f"This is fragile and incomplete - only finds descendants at specific depth. "
-                        f"Use concept_ancestor table instead, which pre-computes all transitive paths."
-                    ),
-                    severity=Severity.WARNING,
-                    suggested_fix=(
-                        f"REWRITE: the {len(longest_chain)}-join concept_relationship chain WITH "
-                        f"`SELECT descendant_concept_id FROM concept_ancestor "
-                        f"WHERE ancestor_concept_id = <start_concept> "
-                        f"AND min_levels_of_separation BETWEEN 1 AND {len(longest_chain) - 1}`. "
-                        f"concept_ancestor pre-computes the transitive 'Is a' closure."
-                    ),
-                    details={
-                        "chain_length": len(longest_chain),
-                        "chain": longest_chain,
-                    },
+            chains = {}
+            for direction in ("down", "up"):
+                chain = _longest_chain(_chain_edges(tree, relationship_of, direction), set(relationship_of))
+                if len(chain) >= 2:
+                    chains[direction] = chain
+            if len(chains) == 2 and set(chains["down"]) == set(chains["up"]):
+                # The same hops read in reverse: the walk goes the way whose first hop is anchored to an outside
+                # value; without an anchor, the way most hops are written ('Subsumes' down, 'Is a' up).
+                down_head, up_head = chains["down"][0], chains["up"][0]
+                down_anchor = _anchored(tree, down_head, _DOWN[relationship_of[down_head]][0])
+                up_anchor = _anchored(tree, up_head, _DOWN[relationship_of[up_head]][1])
+                if down_anchor != up_anchor:
+                    keep = "down" if down_anchor else "up"
+                else:
+                    subsumes = sum(relationship_of[i] == "subsumes" for i in chains["down"])
+                    keep = "down" if subsumes * 2 >= len(chains["down"]) else "up"
+                chains = {keep: chains[keep]}
+            for direction, chain in chains.items():
+                hops = len(chain)
+                aliases = " → ".join(alias for _, alias in chain)
+                used = " / ".join(sorted({f"'{relationship_of[i].capitalize()}'" for i in chain}))
+                target, anchor = (
+                    ("descendant_concept_id", "ancestor")
+                    if direction == "down"
+                    else ("ancestor_concept_id", "descendant")
                 )
-            )
-
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Query chains {hops} {used} concept_relationship lookups ({aliases}) {direction} the "
+                            f"hierarchy, which returns only concepts reached in exactly {hops} steps and skips the levels "
+                            "in between and beyond. concept_ancestor stores every level of the standard and "
+                            "classification hierarchy; for a non-standard vocabulary (e.g. ICD10CM), which "
+                            "concept_ancestor does not cover, walk all levels with a recursive CTE."
+                        ),
+                        suggested_fix=(
+                            f"REWRITE: the {hops}-step chain WITH `SELECT {target} FROM concept_ancestor WHERE "
+                            f"{anchor}_concept_id = <start> AND min_levels_of_separation BETWEEN 1 AND {hops}` for "
+                            "standard / classification concepts, or a recursive CTE over the same relationship for a "
+                            "non-standard vocabulary."
+                        ),
+                        details={"chain_length": hops, "direction": direction, "chain": aliases},
+                    )
+                )
         return violations
 
 

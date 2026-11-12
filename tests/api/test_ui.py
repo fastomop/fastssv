@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from fastssv.api.app import create_app  # noqa: E402
 from fastssv.api.config import Settings  # noqa: E402
+from fastssv.core.registry import get_all_rules  # noqa: E402
 
 
 @pytest.fixture()
@@ -46,7 +47,7 @@ def test_rules_page_renders_all_rules(client: TestClient):
     assert resp.status_code == 200
     body = resp.text
     # Each rule renders as a <details class="rule-block ..."> accordion.
-    assert body.count('class="rule-block ') > 100  # 157 in practice
+    assert body.count('class="rule-block ') == len(get_all_rules())
     assert "rule-filter" in body
 
 
@@ -80,13 +81,13 @@ def test_ui_validate_valid_query_renders_ok_banner(client: TestClient):
 def test_ui_validate_invalid_table_renders_error_card(client: TestClient):
     resp = client.post(
         "/ui/validate",
-        data={"sql": "SELECT * FROM no_such_table;", "dialect": "postgres"},
+        data={"sql": "SELECT * FROM condition_occurence;", "dialect": "postgres"},
     )
     assert resp.status_code == 200
     body = resp.text
     assert "sev-error" in body
     assert "data_quality.schema_validation" in body
-    assert "no_such_table" in body
+    assert "condition_occurence" in body
 
 
 def test_ui_validate_empty_sql_returns_error_fragment(client: TestClient):
@@ -169,7 +170,7 @@ def test_ui_validate_result_includes_json_view_toggle(client: TestClient):
 
 
 def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient):
-    sql = "SELECT person_id FROM person; SELECT * FROM bogus_table_alpha; SELECT * FROM bogus_table_beta;"
+    sql = "SELECT person_id FROM person; SELECT * FROM condition_occurence; SELECT * FROM drug_exposre;"
     resp = client.post("/ui/validate", data={"sql": sql, "dialect": "postgres"})
     assert resp.status_code == 200
     body = resp.text
@@ -178,8 +179,8 @@ def test_ui_validate_multi_query_renders_one_panel_per_query(client: TestClient)
     assert body.count("Query 2") == 1
     assert body.count("Query 3") == 1
     # Each bad-table error appears in a panel — per-query attribution.
-    assert "bogus_table_alpha" in body
-    assert "bogus_table_beta" in body
+    assert "condition_occurence" in body
+    assert "drug_exposre" in body
     # First block is valid (mint pastel), others are flagged (red pastel).
     assert body.count("block-ok") == 1
     assert body.count("block-bad") == 2

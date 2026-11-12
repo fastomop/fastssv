@@ -1,511 +1,243 @@
 """Canonical Vocabulary String Value Validation Rule.
 
-Validates that filters on canonical OMOP vocabulary string columns
-(``concept_class_id``, ``domain_id``, ``vocabulary_id``) use the canonical
-casing — and, for ``vocabulary_id``, are hyphen-free. Wrong casing or
-hyphens silently match zero rows under case-sensitive comparison.
+vocabulary_id, domain_id and concept_class_id are "short case-sensitive unique alphanumeric" IDs (Book of OHDSI,
+ch. 5). A literal that names one of them with the wrong case, or with dashes the ID omits ('ICD-10-CM' for
+'ICD10CM'), matches no row on an engine that compares strings case-sensitively, and still matches no row on any
+engine when the spelling differs.
 
-Replaces three previously separate rules:
+The known IDs are those of the Athena release named in ``_dq_vocab_ids.py`` (113 vocabularies, 50 domains, 433
+concept classes); the columns that hold them are the keys of VOCABULARY, DOMAIN and CONCEPT_CLASS and every CDM v5.4
+column with a foreign key to one of them (concept.vocabulary_id, source_to_concept_map.target_vocabulary_id,
+cost.cost_domain_id, ...). A column is checked only when its lineage is that CDM column, followed through CTEs,
+derived tables and casts; a value recomputed on the way (``LOWER(domain_id) AS domain_id``) is not.
 
-- data_quality.concept_class_id_case_sensitivity (VOCAB_007)
-- data_quality.domain_id_case_sensitivity        (VOCAB_006)
-- data_quality.vocabulary_id_validation          (VOCAB_004 / VOCAB_005)
-
-Each had identical detection shape (find EQ/IN/LIKE filters on the column,
-look up the value in a canonical map, flag if mismatched) and differed only
-in (a) which canonical map applied, and (b) whether hyphens are also flagged
-(``vocabulary_id`` only).
+Flagged, wherever the comparison appears (``=``, ``<>``, ``IN``, ``NOT IN``, ``LIKE`` without wildcards, BETWEEN):
+    * ERROR on PostgreSQL and DuckDB, which compare case-sensitively, when the literal differs from a known ID only
+      in letter case ('snomed' for 'SNOMED');
+    * WARNING on other dialects for the same: SQL Server and MySQL compare case-insensitively under their default
+      collations, so the query works there but not on case-sensitive engines;
+    * WARNING when the literal is a known ID written with dashes, spaces or underscores the ID does not have.
+    The message follows the operator: ``=`` / IN with such a value match no row, while ``<>`` / NOT IN exclude
+    nothing and keep every row.
+Not flagged: ILIKE and comparisons on LOWER / UPPER of the column (case-insensitive by construction), and values
+that are not a variant of any known ID (sites may load local vocabularies).
 """
 
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import DERIVED, column_origins, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import BOOK_SQL, BOOK_VOCABULARIES, section
 from fastssv.core.registry import register
 
+from ._dq_vocab_ids import (
+    CONCEPT_CLASS_ID_COLUMNS,
+    CONCEPT_CLASS_IDS,
+    DOMAIN_ID_COLUMNS,
+    DOMAIN_IDS,
+    VOCABULARY_ID_COLUMNS,
+    VOCABULARY_IDS,
+)
 
-# --- Per-column canonical maps -------------------------------------------
-
-CANONICAL_CONCEPT_CLASSES: Dict[str, str] = {
-    # --- RxNorm ---
-    "ingredient": "Ingredient",
-    "clinicaldrug": "Clinical Drug",
-    "brandeddrug": "Branded Drug",
-    "clinicaldrugform": "Clinical Drug Form",
-    "clinicaldrugcomp": "Clinical Drug Comp",
-    "brandeddrugcomp": "Branded Drug Comp",
-    "brandeddrugform": "Branded Drug Form",
-    "clinicalpack": "Clinical Pack",
-    "brandedpack": "Branded Pack",
-    "brandname": "Brand Name",
-    "doseform": "Dose Form",
-    "doseformgroup": "Dose Form Group",
-    # --- SNOMED ---
-    "clinicalfinding": "Clinical Finding",
-    "procedure": "Procedure",
-    "bodystructure": "Body Structure",
-    "observableentity": "Observable Entity",
-    "qualifiervalue": "Qualifier Value",
-    "contextdependent": "Context-dependent",
-    "morphologicabnormality": "Morphologic Abnormality",
-    "event": "Event",
-    "situation": "Situation",
-    "regimetherapy": "Regime/Therapy",
-    "stagingscale": "Staging Scale",
-    "assessmentscale": "Assessment Scale",
-    "tumorfinding": "Tumor Finding",
-    "organism": "Organism",
-    "substance": "Substance",
-    "physicalobject": "Physical Object",
-    "specimen": "Specimen",
-    # --- LOINC ---
-    "labtest": "Lab Test",
-    "clinicalobservation": "Clinical Observation",
-    "survey": "Survey",
-    "loinccomponent": "LOINC Component",
-    # --- Type Concepts ---
-    "typeconcept": "Type Concept",
-    "conditiontype": "Condition Type",
-    "drugtype": "Drug Type",
-    "proceduretype": "Procedure Type",
-    "visittype": "Visit Type",
-    "observationtype": "Observation Type",
-    "measurementtype": "Measurement Type",
-    "devicetype": "Device Type",
-    "specimentype": "Specimen Type",
-    "notetype": "Note Type",
-    "episodetype": "Episode Type",
-    # --- Admin / generic ---
-    "domain": "Domain",
-    "vocabulary": "Vocabulary",
-    "unit": "Unit",
-    "currency": "Currency",
-    "relationship": "Relationship",
-    # --- Demographics ---
-    "race": "Race",
-    "ethnicity": "Ethnicity",
-    "gender": "Gender",
-    # --- Common ---
-    "condition": "Condition",
-    "measurement": "Measurement",
-    "drug": "Drug",
-    "device": "Device",
-    "visit": "Visit",
-    # --- Misc ---
-    "undefined": "Undefined",
-    "metadata": "Metadata",
-    "modelcomponent": "Model Component",
-    "administrativeconcept": "Administrative Concept",
-}
+_CASE_SENSITIVE = {"postgres", "postgresql", "duckdb"}
 
 
-def _norm_for_match_concept_class(value: str) -> str:
+def _key(value: str) -> str:
     return value.lower().replace(" ", "").replace("-", "").replace("_", "")
 
 
-def _get_concept_class(value: str) -> Optional[str]:
-    return CANONICAL_CONCEPT_CLASSES.get(_norm_for_match_concept_class(value))
+def _index(ids: FrozenSet[str]) -> Dict[str, str]:
+    return {_key(i): i for i in ids}
 
 
-CANONICAL_DOMAINS: Dict[str, str] = {
-    "condition": "Condition",
-    "drug": "Drug",
-    "procedure": "Procedure",
-    "measurement": "Measurement",
-    "observation": "Observation",
-    "device": "Device",
-    "specanatomicsite": "Spec Anatomic Site",
-    "measvalue": "Meas Value",
-    "route": "Route",
-    "unit": "Unit",
-    "visit": "Visit",
-    "typeconcept": "Type Concept",
-    "race": "Race",
-    "ethnicity": "Ethnicity",
-    "gender": "Gender",
-}
+_KINDS: Dict[Tuple[str, str], Tuple[str, Dict[str, str], FrozenSet[str]]] = {}
+for _cols, _label, _ids in (
+    (VOCABULARY_ID_COLUMNS, "vocabulary_id", VOCABULARY_IDS),
+    (DOMAIN_ID_COLUMNS, "domain_id", DOMAIN_IDS),
+    (CONCEPT_CLASS_ID_COLUMNS, "concept_class_id", CONCEPT_CLASS_IDS),
+):
+    for _col in _cols:
+        _KINDS[_col] = (_label, _index(_ids), _ids)
 
-CANONICAL_VOCABULARIES: Dict[str, str] = {
-    "snomed": "SNOMED",
-    "rxnorm": "RxNorm",
-    "rxnormextension": "RxNorm Extension",
-    "icd10cm": "ICD10CM",
-    "icd9cm": "ICD9CM",
-    "icd10pcs": "ICD10PCS",
-    "icd9proc": "ICD9Proc",
-    "loinc": "LOINC",
-    "cpt4": "CPT4",
-    "hcpcs": "HCPCS",
-    "ndc": "NDC",
-    "atc": "ATC",
-    "read": "Read",
-    "opcs4": "OPCS4",
-    "meddra": "MedDRA",
-    "mesh": "MeSH",
-    "multum": "Multum",
-    "gemscript": "GemScript",
-    "hesspecialty": "HES Specialty",
-    "ucum": "UCUM",
-    "race": "Race",
-    "ethnicity": "Ethnicity",
-    "gender": "Gender",
-    "conditiontype": "Condition Type",
-    "drugtype": "Drug Type",
-    "proceduretype": "Procedure Type",
-    "visittype": "Visit Type",
-    "observationtype": "Observation Type",
-    "measurementtype": "Measurement Type",
-    "specimentype": "Specimen Type",
-    "notetype": "Note Type",
-    "devicetype": "Device Type",
-    "currency": "Currency",
-    "unit": "Unit",
-    "relationshiptype": "Relationship",
-    "indication": "Indication",
-    "contraindication": "Contraindication",
-}
+_TARGET_NAMES = {c for _, c in _KINDS}
+_CASE_FOLDING = (exp.Lower, exp.Upper)
 
 
-def _norm_for_match_simple(value: str) -> str:
-    return value.lower().replace(" ", "")
-
-
-def _norm_for_match_with_hyphens(value: str) -> str:
-    return value.lower().replace("-", "").replace(" ", "").replace("_", "")
-
-
-def _get_domain(value: str) -> Optional[str]:
-    return CANONICAL_DOMAINS.get(_norm_for_match_simple(value))
-
-
-def _get_vocabulary(value: str) -> Optional[str]:
-    return CANONICAL_VOCABULARIES.get(_norm_for_match_with_hyphens(value))
-
-
-# Per-column behaviour. Each entry is keyed by the normalized column name.
-TARGETS: Dict[str, Dict[str, object]] = {
-    "concept_class_id": {
-        "label": "concept_class_id",
-        "canonical_lookup": _get_concept_class,
-        # vocab strips hyphens in the matching key; the others don't.
-        "flag_hyphens_in_unknown": False,
-        # vocab also skips columns wrapped in UPPER/LOWER/COALESCE/etc.
-        "skip_if_wrapped_in_function": False,
-    },
-    "domain_id": {
-        "label": "domain_id",
-        "canonical_lookup": _get_domain,
-        "flag_hyphens_in_unknown": False,
-        "skip_if_wrapped_in_function": False,
-    },
-    "vocabulary_id": {
-        "label": "vocabulary_id",
-        "canonical_lookup": _get_vocabulary,
-        "flag_hyphens_in_unknown": True,
-        "skip_if_wrapped_in_function": True,
-    },
-}
-
-
-# --- Helpers --------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _extract_string_literal(node: exp.Expression) -> Optional[str]:
-    if isinstance(node, exp.Literal) and node.is_string:
-        return str(node.this)
-    return None
-
-
-def _is_target_column(col: exp.Column, aliases: Dict[str, str]) -> Optional[str]:
-    """If ``col`` resolves to a registered target column, return its
-    normalized name. Otherwise None.
-    """
-    table, col_name = resolve_table_col(col, aliases)
-    norm = _norm(col_name)
-    if norm not in TARGETS:
+def _target(node: exp.Expression) -> Optional[Tuple[str, Dict[str, str], FrozenSet[str]]]:
+    """(label, normalised index, ids) when ``node`` reads, unchanged, a CDM column that holds vocabulary IDs."""
+    while isinstance(node, (exp.Paren, exp.Cast)) and not isinstance(node, exp.TryCast):
+        node = node.this
+    if not isinstance(node, exp.Column):
         return None
-    # Provenance: the literal is only checkable against a column that IS the CDM vocabulary column. A same-named
-    # column on a derived / intermediate table (`og_* ... LOWER(domain_id) AS domain_id`) carries transformed
-    # values — 90/90 findings of this rule on expert SQL were that shape.
-    from fastssv.schemas import CDM_COLUMNS
-
-    cdm_tables = {_norm(t) for t in CDM_COLUMNS}
-    if table:
-        return norm if _norm(table) in cdm_tables else None
-    select = col.find_ancestor(exp.Select)
-    if select is None:
-        return norm
-    from fastssv.core.helpers import select_scope_tables
-
-    scope = select_scope_tables(select)
-    derived = any(
-        not isinstance((j.this if not isinstance(j, exp.Table) else j), exp.Table)
-        for j in [select.args.get("from_") or select.args.get("from"), *(select.args.get("joins") or [])]
-        if j is not None
-    )
-    if derived or not scope or not scope <= cdm_tables:
+    origins = column_origins(node)
+    if not origins or any(t == DERIVED for t, _ in origins):
         return None
-    return norm
+    kinds = [_KINDS.get(o) for o in origins]
+    if any(k is None for k in kinds) or len({k[0] for k in kinds}) != 1:
+        return None
+    return kinds[0]
 
 
-def _is_wrapped_in_function(node: exp.Column) -> bool:
-    """Check if column is wrapped in a SQL function (UPPER, LOWER, COALESCE,
-    etc.). Excludes logical/comparison operators which are also exp.Func
-    subclasses in sqlglot.
-    """
+def _string(node: Optional[exp.Expression]) -> Optional[str]:
+    while isinstance(node, (exp.Paren, exp.Cast)):
+        node = node.this
+    return str(node.this) if isinstance(node, exp.Literal) and node.is_string else None
+
+
+def _negated(node: exp.Expression) -> bool:
     parent = node.parent
-    while parent:
-        if isinstance(parent, exp.Func) and not isinstance(
-            parent,
-            (
-                exp.And,
-                exp.Or,
-                exp.Not,
-                exp.EQ,
-                exp.NEQ,
-                exp.GT,
-                exp.GTE,
-                exp.LT,
-                exp.LTE,
-                exp.In,
-                exp.Between,
-                exp.Like,
-                exp.ILike,
-            ),
-        ):
-            return True
+    while isinstance(parent, exp.Paren):
         parent = parent.parent
-    return False
+    return isinstance(parent, exp.Not)
 
 
-# --- Extraction ----------------------------------------------------------
-
-
-def _extract_target_filters(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str]]:
-    """Return list of (column_name, value, context_sql) tuples for every
-    string-literal filter against a target column.
-    """
-    filters: List[Tuple[str, str, str]] = []
-
-    def maybe_record(col_node: exp.Column, val_node: exp.Expression, context: str) -> None:
-        col = _is_target_column(col_node, aliases)
-        if not col:
-            return
-        cfg = TARGETS[col]
-        if cfg["skip_if_wrapped_in_function"] and _is_wrapped_in_function(col_node):
-            return
-        value = _extract_string_literal(val_node)
-        if value is None:
-            return
-        filters.append((col, value, context))
-
-    for node in tree.walk():
-        if isinstance(node, exp.EQ):
-            for col_side, val_side in (
-                (node.this, node.expression),
-                (node.expression, node.this),
-            ):
-                if isinstance(col_side, exp.Column):
-                    maybe_record(col_side, val_side, node.sql())
-
-        elif isinstance(node, exp.In):
-            if isinstance(node.this, exp.Column):
-                for expr in node.expressions or []:
-                    maybe_record(node.this, expr, node.sql())
-
+def _comparisons(tree: exp.Expression) -> List[Tuple[exp.Expression, List[exp.Expression], bool, bool]]:
+    """(column side, compared values, is LIKE, excludes) for every comparison in the statement. ``excludes`` marks
+    ``<>``, NOT IN and a negated ``=`` / LIKE: a value no row holds makes such a filter keep every row."""
+    out: List[Tuple[exp.Expression, List[exp.Expression], bool, bool]] = []
+    for node in tree.find_all(exp.EQ, exp.NEQ, exp.In, exp.Between, exp.Like):
+        excludes = isinstance(node, exp.NEQ) != _negated(node)
+        if isinstance(node, exp.In):
+            out.append((node.this, list(node.expressions or []), False, excludes))
         elif isinstance(node, exp.Between):
-            if isinstance(node.this, exp.Column):
-                for bound in (node.args.get("low"), node.args.get("high")):
-                    if bound is not None:
-                        maybe_record(node.this, bound, node.sql())
-
-        elif isinstance(node, (exp.Like, exp.ILike)):
-            if isinstance(node.this, exp.Column):
-                maybe_record(node.this, node.expression, node.sql())
-
-    return filters
-
-
-# --- Validation ----------------------------------------------------------
-
-
-def _evaluate(
-    column: str,
-    value: str,
-) -> Optional[Tuple[Optional[str], str, Severity]]:
-    """Validate a single (column, value) filter.
-
-    Returns ``None`` if the value is acceptable. Otherwise a tuple of
-    ``(expected_canonical_or_None, issue, severity)`` where ``issue`` is
-    one of ``"case_sensitivity"`` / ``"hyphen"`` / ``"both"``.
-    """
-    cfg = TARGETS[column]
-    canonical_lookup: Callable[[str], Optional[str]] = cfg["canonical_lookup"]  # type: ignore[assignment]
-    flag_hyphens = bool(cfg["flag_hyphens_in_unknown"])
-
-    has_hyphen = "-" in value
-    canonical = canonical_lookup(value)
-
-    # Unknown value
-    if canonical is None:
-        if flag_hyphens and has_hyphen:
-            return (None, "hyphen", Severity.WARNING)
-        return None
-
-    if value == canonical:
-        return None
-
-    # Known but mismatched. For columns that strip hyphens in matching,
-    # split the diagnosis into "case", "hyphen", or "both".
-    if flag_hyphens:
-        value_no_hyphen = value.replace("-", "")
-        case_differs = value_no_hyphen.lower() == canonical.lower() and value_no_hyphen != canonical
-        if has_hyphen and case_differs:
-            issue = "both"
-        elif has_hyphen:
-            issue = "hyphen"
+            bounds = [b for b in (node.args.get("low"), node.args.get("high")) if b is not None]
+            out.append((node.this, bounds, False, False))
+        elif isinstance(node, exp.Like):
+            out.append((node.this, [node.expression], True, excludes))
         else:
-            issue = "case_sensitivity"
-        # 'hyphen' alone is a warning; 'case_sensitivity' / 'both' are errors.
-        sev = Severity.WARNING if issue == "hyphen" else Severity.ERROR
-        return (canonical, issue, sev)
-
-    return (canonical, "case_sensitivity", Severity.ERROR)
-
-
-# --- Rule ----------------------------------------------------------------
+            out.append((node.this, [node.expression], False, excludes))
+            out.append((node.expression, [node.this], False, excludes))
+    return out
 
 
 @register
 class CanonicalStringValueValidationRule(Rule):
-    """Validate canonical casing on concept_class_id, domain_id, vocabulary_id."""
+    """Literal vocabulary_id / domain_id / concept_class_id values with the wrong case or spelling."""
 
     rule_id = "data_quality.canonical_string_value_validation"
     name = "Canonical Vocabulary String Value Validation"
 
     description = (
-        "Filters on concept_class_id, domain_id, and vocabulary_id must use "
-        "canonical OMOP casing (e.g. 'Ingredient', 'Condition', 'SNOMED'). "
-        "Case-sensitive comparison silently returns zero rows when the casing "
-        "is wrong; vocabulary_id values must also be hyphen-free."
+        "Filters on vocabulary_id, domain_id and concept_class_id must spell the ID exactly ('SNOMED', 'Condition', "
+        "'Ingredient'): the IDs are case-sensitive, so a wrong case matches no row on case-sensitive engines "
+        "(PostgreSQL, DuckDB), and an ID written with dashes it does not have ('ICD-10-CM') matches no row anywhere."
     )
 
-    severity = Severity.ERROR  # default; overridden per violation
+    severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: the lowercased / hyphenated string literal WITH the canonical OMOP value. Examples: 'snomed' → 'SNOMED', 'icd10cm' → 'ICD10CM', 'ICD-10-CM' → 'ICD10CM', 'condition' → 'Condition', 'ingredient' → 'Ingredient'."
+    suggested_fix = (
+        "REPLACE: the string literal WITH the vocabulary ID as the vocabulary spells it, e.g. 'snomed' -> 'SNOMED', "
+        "'icd10cm' -> 'ICD10CM', 'ICD-10-CM' -> 'ICD10CM', 'condition' -> 'Condition', 'ingredient' -> 'Ingredient'."
+    )
     long_description = (
-        "Three OMOP vocabulary string columns are case-sensitive and follow a "
-        "fixed canonical casing: concept_class_id ('Ingredient', 'Clinical "
-        "Drug', …), domain_id ('Condition', 'Drug', …), and vocabulary_id "
-        "('SNOMED', 'RxNorm', 'ICD10CM', …). Filtering with the wrong casing "
-        "('ingredient', 'condition', 'snomed') silently returns zero rows. "
-        "vocabulary_id values are additionally hyphen-free in OMOP — "
-        "'ICD-10-CM' is invalid; the canonical form is 'ICD10CM'. Match the "
-        "canonical form exactly."
+        "vocabulary_id, domain_id and concept_class_id are short case-sensitive IDs. On PostgreSQL and DuckDB, "
+        "which compare strings case-sensitively, vocabulary_id = 'snomed' matches no row: an ERROR. SQL Server "
+        "and MySQL compare case-insensitively under their default collations, so on those dialects the same filter "
+        "works but is not portable: a WARNING. Vocabulary IDs generally omit the dashes of the vocabulary's name "
+        "('ICD-9-CM' is 'ICD9CM'), so a dashed form of a known ID is reported as a WARNING. The known IDs come from "
+        "an Athena release; values that are not a variant of any of them are not judged, since sites may load "
+        "local vocabularies. ILIKE and comparisons on LOWER() or UPPER() of the column are case-insensitive and "
+        "are not flagged."
     )
 
     example_bad = "SELECT concept_id\nFROM concept\nWHERE vocabulary_id = 'snomed';"
     example_good = "SELECT concept_id\nFROM concept\nWHERE vocabulary_id = 'SNOMED';"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT concept_id\nFROM concept\nWHERE vocabulary_id = 'ICD-10-CM';",
+            severity=Severity.WARNING,
+            note="A known vocabulary ID written with dashes it does not have; the ID is 'ICD10CM'.",
+        ),
+    )
+    references = (
+        section(BOOK_VOCABULARIES, "vocabularies", "Vocabularies"),
+        section(BOOK_VOCABULARIES, "conceptDomains", "Domains"),
+        section(BOOK_VOCABULARIES, "concept-classes", "Concept classes"),
+        section(BOOK_SQL, "case-sensitivity-in-string-comparisons", "Case sensitivity in string comparisons"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        sql_lower = sql.lower()
-        if not any(col in sql_lower for col in TARGETS):
+        lowered = sql.lower()
+        if not any(name in lowered for name in _TARGET_NAMES):
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
-
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            filters = _extract_target_filters(tree, aliases)
-
-            seen: Set[Tuple[str, str, str]] = set()
-
-            for column, value, context in filters:
-                outcome = _evaluate(column, value)
-                if outcome is None:
+            seen: Set[Tuple[str, str]] = set()
+            for column_side, values, is_like, excludes in _comparisons(tree):
+                if isinstance(column_side, _CASE_FOLDING):
                     continue
-
-                expected, issue, sev = outcome
-                key = (column, value, issue)
-                if key in seen:
+                target = _target(column_side)
+                if target is None:
                     continue
-                seen.add(key)
-
-                # --- Build message + fix ---
-                if issue == "hyphen" and expected is None:
-                    message = f"Invalid {column} '{value}': contains hyphens. OMOP {column} values are hyphen-free."
-                    fix = f"REPLACE: `'{value}'` WITH the canonical OMOP form — remove hyphens (e.g. 'ICD-10-CM' -> 'ICD10CM')."
-
-                elif issue == "hyphen":
-                    message = f"Invalid {column} '{value}': contains hyphens. OMOP {column} values are hyphen-free."
-                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
-
-                elif issue == "both":
-                    message = (
-                        f"Invalid {column} '{value}': incorrect casing and contains hyphens. Expected '{expected}'."
-                    )
-                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column})."
-
-                else:  # case_sensitivity
-                    message = (
-                        f"Incorrect {column} casing: '{value}'. "
-                        f"Expected '{expected}'. Case-sensitive comparison may fail."
-                    )
-                    fix = f"REPLACE: `'{value}'` WITH `'{expected}'` (canonical OMOP {column} casing)."
-
-                # Build a structured REPLACE patch for the literal token when
-                # the canonical value is known. The literal in source may use
-                # single or double quotes; try both. If the literal isn't
-                # uniquely locatable, fall back to FREEFORM auto-default.
-                patch = None
-                if expected is not None:
-                    for q in ("'", '"'):
-                        bad_lit = f"{q}{value}{q}"
-                        good_lit = f"{q}{expected}{q}"
-                        span = locate(sql, bad_lit)
-                        if span is not None:
-                            patch = patch_replace(span, good_lit)
-                            break
-
-                violations.append(
-                    self.create_violation(
-                        message=message,
-                        severity=sev,
-                        suggested_fix=fix,
-                        suggested_fix_patch=patch,
-                        details={
-                            "column": column,
-                            "provided": value,
-                            "expected": expected,
-                            "issue": issue,
-                            "context": context,
-                        },
-                    )
-                )
-
+                label, index, ids = target
+                for node in values:
+                    value = _string(node)
+                    if value is None or value in ids or (label, value) in seen:
+                        continue
+                    if is_like and ("%" in value or "_" in value):
+                        continue
+                    expected = index.get(_key(value))
+                    if expected is None:
+                        continue
+                    seen.add((label, value))
+                    violations.append(self._violation(sql, label, value, expected, dialect, excludes))
         return violations
+
+    def _violation(
+        self, sql: str, label: str, value: str, expected: str, dialect: str, excludes: bool = False
+    ) -> RuleViolation:
+        # A negated filter on a value no row holds excludes nothing, so it keeps every row instead of matching none.
+        outcome = (
+            f"the filter excludes nothing: it keeps every row, including the '{expected}' rows"
+            if excludes
+            else "the filter matches no row"
+        )
+        if value.lower() == expected.lower():
+            issue = "case"
+            if dialect in _CASE_SENSITIVE:
+                severity = Severity.ERROR
+                message = (
+                    f"Incorrect {label} casing: '{value}'. The ID is '{expected}', and this dialect compares "
+                    f"strings case-sensitively, so {outcome}."
+                )
+            else:
+                severity = Severity.WARNING
+                elsewhere = "excludes nothing" if excludes else "matches no row"
+                message = (
+                    f"Incorrect {label} casing: '{value}'. The ID is '{expected}'. This dialect's default collation "
+                    f"compares case-insensitively, so the filter works here but {elsewhere} on case-sensitive "
+                    f"engines (PostgreSQL, DuckDB)."
+                )
+        else:
+            issue = "spelling"
+            severity = Severity.WARNING
+            message = (
+                f"{label} '{value}' is not an ID in the vocabulary; the ID is '{expected}'. Vocabulary IDs generally "
+                f"omit the hyphens and spaces of the vocabulary's name, and the case must match. Unless the database "
+                f"has a local ID spelled '{value}', {outcome}."
+            )
+        patch = None
+        for q in ("'", '"'):
+            span = locate(sql, f"{q}{value}{q}")
+            if span is not None:
+                patch = patch_replace(span, f"{q}{expected}{q}")
+                break
+        return self.create_violation(
+            message=message,
+            severity=severity,
+            suggested_fix=f"REPLACE: `'{value}'` WITH `'{expected}'`.",
+            suggested_fix_patch=patch,
+            details={"column": label, "provided": value, "expected": expected, "issue": issue},
+        )
 
 
 __all__ = ["CanonicalStringValueValidationRule"]

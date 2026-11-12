@@ -1,357 +1,232 @@
 """Note NLP Snippet Misuse Rule.
 
-OMOP semantic rule OMOP_152:
-The note_nlp table contains NLP-extracted clinical entities from unstructured notes.
-The snippet and lexical_variant columns contain free-text excerpts for human context,
-not standardized clinical codes. These should NOT be used for structured data matching.
+CDM v5.4 defines ``note_nlp.snippet`` as "a small window of text surrounding the term" and
+``note_nlp.lexical_variant`` as "raw text extracted from the NLP tool". Both are free text kept for context. The
+coded result of the extraction is ``note_nlp_concept_id``. Selecting findings by matching those strings misses
+spelling, abbreviation and casing variants ('DM', 'diabetic', 'Diabetes') and catches substrings ('prediabetes'), so
+the result depends on how clinicians happened to write rather than on what was extracted.
 
-The Problem:
-    note_nlp columns and their purposes:
-    - snippet: Short text excerpt around the NLP-extracted term (for context)
-    - lexical_variant: The exact text string found in the note
-    - note_nlp_concept_id: Standardized OMOP concept_id for the extracted entity
+Fires when, in a WHERE or JOIN ON clause, a note_nlp snippet / lexical_variant column (followed through casts,
+LOWER / UPPER / TRIM, CTEs and derived tables) is:
+    * compared with ``=`` or ``IN`` to a non-empty string literal;
+    * matched with LIKE / ILIKE (also ``LIKE ANY``), a regular expression (``~``, ``~*``, ``REGEXP_CONTAINS``) or
+      ``SIMILAR TO`` against a pattern that has characters other than ``%`` and ``_``;
+    * searched with POSITION / STRPOS / CHARINDEX for a non-empty literal;
+    * equated to ``concept.concept_name`` or ``concept_synonym.concept_synonym_name``;
+and the same note_nlp row is not also selected by ``note_nlp_concept_id`` (``=``, ``IN``, a join). Matching the
+text of rows already selected by concept (a negation or context cue in the window), or of unmapped rows
+(``note_nlp_concept_id = 0``), is what the context columns are for.
 
-    Common mistakes:
-    1. Text matching on snippet/lexical_variant instead of using concept_id
-    2. Joining to concept table on text columns instead of concept_id
-    3. Filtering by exact text matches that miss lexical variations
-    4. Treating unstructured text as structured identifiers
+Not flagged: projecting the text, presence checks (``IS NOT NULL``, ``<> ''``, ``LIKE '%'``), length or other
+computed uses, and text logic in SELECT / CASE.
 
-Why this is wrong:
-    Free-text columns are unsuitable for clinical identification:
-    - Lexical variations: "diabetes", "DM", "diabetic", "diabetes mellitus"
-    - Case sensitivity: "Diabetes" vs "diabetes"
-    - Substring matching issues: "diabetes" in "prediabetes"
-    - No standardization: same concept expressed many ways
-    - Performance: text searches are slow compared to integer concept_id lookups
-    - Accuracy: text matching misses related concepts in hierarchy
-
-    The note_nlp_concept_id is the standardized clinical code that should be used
-    for all structured queries and analysis.
-
-Violation patterns:
-    SELECT * FROM note_nlp WHERE snippet = 'diabetes'
-    -- WARNING: Text matching on free-text field, use note_nlp_concept_id
-
-    SELECT * FROM note_nlp WHERE lexical_variant = 'DM'
-    -- WARNING: Text matching on lexical variant, use note_nlp_concept_id
-
-    SELECT * FROM note_nlp WHERE snippet LIKE '%diabetes%'
-    -- WARNING: LIKE pattern on free text, use concept_id for clinical search
-
-    SELECT n.* FROM note_nlp n
-    JOIN concept c ON n.snippet = c.concept_name
-    -- WARNING: Joining on text column instead of note_nlp_concept_id
-
-    SELECT * FROM note_nlp
-    WHERE lexical_variant IN ('diabetes', 'DM', 'diabetic')
-    -- WARNING: Text list matching, use concept_id or concept hierarchy
-
-Correct patterns:
-    SELECT * FROM note_nlp WHERE note_nlp_concept_id = 201826
-    -- OK: Using standardized concept_id
-
-    SELECT snippet, note_nlp_concept_id FROM note_nlp
-    WHERE note_nlp_concept_id IN (201826, 443238)
-    -- OK: Displaying snippet for context, filtering by concept_id
-
-    SELECT n.* FROM note_nlp n
-    JOIN concept c ON n.note_nlp_concept_id = c.concept_id
-    -- OK: Joining on concept_id
-
-    SELECT * FROM note_nlp WHERE snippet IS NOT NULL
-    -- OK: Checking presence, not matching text
-
-    SELECT * FROM note_nlp WHERE term_exists = 'Y'
-    AND note_nlp_concept_id = 201826
-    -- OK: Using concept_id with term existence flag
-
-Note:
-    This is a WARNING, not an error. Text searches on snippet/lexical_variant
-    may be intentional for exploratory analysis or debugging. However, production
-    queries should always use note_nlp_concept_id for clinical identification.
+This is a WARNING: text search is the only option where the NLP pipeline left note_nlp_concept_id unmapped.
 """
 
-import logging
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import is_in_where_or_join_clause, is_string_literal, parse_sql
+from fastssv.core.references import cdm_table
 from fastssv.core.registry import register
+from fastssv.rules.domain_specific._rows import Read, RowPath, in_negated_scope, read_of, same_row
 
-
-logger = logging.getLogger(__name__)
-
-
-# --- Constants ---------------------------------------------------------------
-
-NOTE_NLP_TABLE = "note_nlp"
+NOTE_NLP = "note_nlp"
 TEXT_COLUMNS = {"snippet", "lexical_variant"}
+CONCEPT_COLUMN = "note_nlp_concept_id"
+CONCEPT_NAME_COLUMNS = {("concept", "concept_name"), ("concept_synonym", "concept_synonym_name")}
+_TEXT_WRAPPERS = (exp.Lower, exp.Upper, exp.Trim, exp.Paren, exp.Cast, exp.TryCast)
+_PATTERN_MATCHES = tuple(
+    getattr(exp, name) for name in ("Like", "ILike", "RegexpLike", "RegexpILike", "SimilarTo") if hasattr(exp, name)
+)
 
 
-# --- Helpers -----------------------------------------------------------------
+def _unwrap(node: Optional[exp.Expression]) -> Optional[exp.Expression]:
+    while isinstance(node, _TEXT_WRAPPERS):
+        node = node.this
+    return node
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
-
-
-def _collect_tables(tree: exp.Expression, cte_names: Set[str]) -> Set[str]:
-    tables = set()
-    for tbl in tree.find_all(exp.Table):
-        name = _norm(tbl.name)
-        if name and name not in cte_names:
-            tables.add(name)
-    return tables
-
-
-def _is_note_nlp_table(name: Optional[str]) -> bool:
-    return name == NOTE_NLP_TABLE
-
-
-def _is_text_column(name: Optional[str]) -> bool:
-    return name in TEXT_COLUMNS
-
-
-def _resolve_table_name(
-    table_name: Optional[str],
-    aliases: Dict[str, str],
-) -> Optional[str]:
-    if not table_name:
+def _text_read(node: Optional[exp.Expression]) -> Optional[Read]:
+    """The note_nlp free-text column ``node`` reads (through text normalisers and lineage)."""
+    read = read_of(_unwrap(node))
+    if read is None or read[1] != NOTE_NLP or read[2] not in TEXT_COLUMNS:
         return None
-
-    table_name = _norm(table_name)
-    resolved = aliases.get(table_name)
-
-    if resolved:
-        return _norm(resolved)
-
-    return table_name
+    return read
 
 
-def _is_safe_usage(node: exp.Expression) -> bool:
-    """
-    Safe usages:
-    - IS NULL / IS NOT NULL
-    - string formatting functions (CONCAT, COALESCE)
-    """
-    if isinstance(node, exp.Is):
-        return True
-
-    if isinstance(node, (exp.Concat, exp.Coalesce)):
-        return True
-
-    return False
+def _non_empty_text(node: Optional[exp.Expression]) -> bool:
+    return (
+        node is not None
+        and (is_string_literal(node) or isinstance(node, exp.RawString))
+        and str(node.this).strip() != ""
+    )
 
 
-def _column_matches_note_nlp(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    col_name = _norm(col.name)
-    table_name = _resolve_table_name(col.table, aliases)
-
-    # Unqualified heuristic
-    if not table_name:
-        if tables_in_query == {NOTE_NLP_TABLE} and _is_text_column(col_name):
-            table_name = NOTE_NLP_TABLE
-        else:
-            return None
-
-    if table_name in cte_names:
-        return None
-
-    if _is_note_nlp_table(table_name) and _is_text_column(col_name):
-        return col_name
-
-    return None
+def _real_pattern(node: Optional[exp.Expression]) -> bool:
+    if isinstance(node, exp.Any):
+        node = node.this
+        while isinstance(node, exp.Paren):
+            node = node.this
+        values = node.expressions if isinstance(node, exp.Array) else [node]
+        return any(_real_pattern(v) for v in values)
+    return _non_empty_text(node) and str(node.this).strip().strip("%_") != ""
 
 
-def _expression_contains_target_column(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    for col in node.find_all(exp.Column):
-        match = _column_matches_note_nlp(col, aliases, cte_names, tables_in_query)
-        if match:
-            return match
-    return None
+def _is_concept_name(node: Optional[exp.Expression]) -> bool:
+    read = read_of(_unwrap(node))
+    return read is not None and (read[1], read[2]) in CONCEPT_NAME_COLUMNS
 
 
-def _check_comparison(
-    comparison: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    left = comparison.this
-    right = comparison.expression
-
-    if not left or not right:
-        return None
-
-    # Safe usage check (FIXED)
-    if _is_safe_usage(comparison):
-        return None
-
-    # Check both sides for presence of target column
-    for side, other in [(left, right), (right, left)]:
-        col_name = _expression_contains_target_column(side, aliases, cte_names, tables_in_query)
-
-        if not col_name:
+def _concept_selected_rows(tree: exp.Expression) -> List[RowPath]:
+    """note_nlp rows that a filter or join also selects by note_nlp_concept_id."""
+    rows: List[RowPath] = []
+    for node in tree.find_all(exp.EQ, exp.In):
+        if not is_in_where_or_join_clause(node) or in_negated_scope(node):
             continue
+        sides = [node.this] if isinstance(node, exp.In) else [node.this, node.expression]
+        for side in sides:
+            read = read_of(side)
+            if read is not None and read[1:] == (NOTE_NLP, CONCEPT_COLUMN):
+                rows.append(read[0])
+    return rows
 
-        # If comparing to anything other than NULL → unsafe
-        if not isinstance(other, exp.Null):
-            if isinstance(other, exp.Column):
-                return f"Column '{col_name}' is free text. Join on note_nlp_concept_id instead of text columns."
 
-            return (
-                f"Column '{col_name}' is free text for context, not structured data. "
-                f"Use note_nlp_concept_id for clinical identification instead of text matching."
+def _find_violations(tree: exp.Expression) -> List[str]:
+    found: List[tuple] = []
+
+    def add(read: Read, msg: str) -> None:
+        found.append((read[0], msg))
+
+    for eq in tree.find_all(exp.EQ):
+        if not is_in_where_or_join_clause(eq):
+            continue
+        for side, other in ((eq.this, eq.expression), (eq.expression, eq.this)):
+            read = _text_read(side)
+            if read is None:
+                continue
+            col = read[2]
+            if _is_concept_name(other):
+                add(
+                    read,
+                    f"note_nlp.{col} joined to a concept name. {col} is free text; "
+                    "join on note_nlp.note_nlp_concept_id = concept.concept_id instead.",
+                )
+            elif _non_empty_text(_unwrap(other)):
+                add(
+                    read,
+                    f"note_nlp.{col} matched to a text literal. {col} is free text kept for context; "
+                    "filter on note_nlp_concept_id to find the extracted concept.",
+                )
+
+    for in_node in tree.find_all(exp.In):
+        if not is_in_where_or_join_clause(in_node):
+            continue
+        read = _text_read(in_node.this)
+        if read is not None and any(_non_empty_text(e) for e in in_node.expressions or []):
+            add(
+                read,
+                f"note_nlp.{read[2]} matched to a list of text literals. {read[2]} is free text and a list of spellings "
+                "misses lexical variation; filter on note_nlp_concept_id instead.",
             )
 
-    return None
+    for match in tree.find_all(*_PATTERN_MATCHES):
+        if not is_in_where_or_join_clause(match):
+            continue
+        read = _text_read(match.this)
+        if read is not None and _real_pattern(match.expression):
+            add(
+                read,
+                f"note_nlp.{read[2]} searched with LIKE / a pattern match. Pattern matches on free text miss variants "
+                "and catch substrings; filter on note_nlp_concept_id instead.",
+            )
 
+    for pos in tree.find_all(exp.StrPosition):
+        if not is_in_where_or_join_clause(pos):
+            continue
+        read = _text_read(pos.this)
+        if read is not None and _non_empty_text(_unwrap(pos.args.get("substr"))):
+            add(
+                read,
+                f"note_nlp.{read[2]} searched for a substring. Substring searches on free text miss variants and catch "
+                "longer words; filter on note_nlp_concept_id instead.",
+            )
 
-def _check_like_pattern(
-    like_expr: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    col_name = _expression_contains_target_column(like_expr.this, aliases, cte_names, tables_in_query)
-
-    if not col_name:
-        return None
-
-    return (
-        f"Column '{col_name}' is free text. "
-        f"LIKE patterns on unstructured text may be unreliable. "
-        f"Use note_nlp_concept_id for clinical searches."
-    )
-
-
-def _check_in_clause(
-    in_expr: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    col_name = _expression_contains_target_column(in_expr.this, aliases, cte_names, tables_in_query)
-
-    if not col_name:
-        return None
-
-    return (
-        f"Column '{col_name}' is free text. "
-        f"IN/NOT IN on text misses lexical variation. "
-        f"Use note_nlp_concept_id or concept hierarchy."
-    )
-
-
-def _find_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> List[str]:
+    selected = _concept_selected_rows(tree)
     issues: List[str] = []
-
-    tables_in_query = _collect_tables(tree, cte_names)
-
-    # Comparisons
-    for comp in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
-        msg = _check_comparison(comp, aliases, cte_names, tables_in_query)
-        if msg:
+    for row, msg in found:
+        if any(same_row(row, s) for s in selected):
+            continue
+        if msg not in issues:
             issues.append(msg)
-
-    # LIKE
-    for like in tree.find_all(exp.Like, exp.ILike):
-        msg = _check_like_pattern(like, aliases, cte_names, tables_in_query)
-        if msg:
-            issues.append(msg)
-
-    # IN clauses (NOT IN is exp.Not wrapping exp.In)
-    for in_expr in tree.find_all(exp.In):
-        msg = _check_in_clause(in_expr, aliases, cte_names, tables_in_query)
-        if msg:
-            issues.append(msg)
-
-    return list(dict.fromkeys(issues))
-
-
-# --- Rule --------------------------------------------------------------------
+    return issues
 
 
 @register
 class NoteNlpSnippetMisuseRule(Rule):
-    """
-    OMOP_152: Validate misuse of note_nlp text columns for matching.
-    """
+    """Flag selecting note_nlp findings by matching snippet / lexical_variant text."""
 
     rule_id = "domain_specific.note_nlp_snippet_misuse"
     name = "Note NLP Snippet Misuse"
 
     description = (
-        "note_nlp.snippet and lexical_variant are free text for context, "
-        "not structured data. Use note_nlp_concept_id instead."
+        "note_nlp.snippet and lexical_variant are free text kept for context. Selecting rows by matching them "
+        "against text literals, patterns or concept names, without also selecting by note_nlp_concept_id, misses "
+        "variants; use note_nlp_concept_id."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "REPLACE: text-pattern filters on note_nlp.snippet / note_nlp.lexical_variant WITH `WHERE note_nlp.note_nlp_concept_id = <id>` (or IN(...)). snippet and lexical_variant are free-text context, not structured identifiers."
+    suggested_fix = (
+        "REPLACE: text matches on note_nlp.snippet / note_nlp.lexical_variant WITH "
+        "`WHERE note_nlp.note_nlp_concept_id = <id>` (or IN (...)). Keep the text columns in SELECT for context, or as "
+        "an extra filter on rows already selected by concept."
+    )
+    long_description = (
+        "CDM v5.4 keeps note_nlp.snippet (the text window around the term) and lexical_variant (the raw extracted "
+        "text) for context; the coded result is note_nlp_concept_id. A filter that selects rows by matching the text "
+        "misses spelling and abbreviation variants and catches substrings. Matching text on rows already selected by "
+        "note_nlp_concept_id (for example a negation cue in the window), or on unmapped rows (concept 0), is not "
+        "reported."
+    )
     example_bad = "SELECT note_nlp_id FROM note_nlp\nWHERE snippet LIKE '%diabetes%';"
-    example_good = "SELECT note_nlp_id FROM note_nlp\nWHERE note_nlp_concept_id = 201820;"
+    example_good = "SELECT note_nlp_id, snippet FROM note_nlp\nWHERE note_nlp_concept_id = 201820;"
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT n.note_id, c.concept_id\n"
+                "FROM note_nlp n\n"
+                "JOIN concept c ON LOWER(n.lexical_variant) = LOWER(c.concept_name);"
+            ),
+            severity=Severity.WARNING,
+            note="lexical_variant joined to concept names instead of note_nlp_concept_id = concept_id",
+        ),
+    )
+    references = (cdm_table("note_nlp"),)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []
-
-        sql_lower = sql.lower()
-
-        if NOTE_NLP_TABLE not in sql_lower:
-            return []
-
-        if not any(col in sql_lower for col in TEXT_COLUMNS):
+        lowered = sql.lower()
+        if not any(col in lowered for col in TEXT_COLUMNS):
             return []
 
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
-            logger.warning(
-                "SQL parsing failed for OMOP_152",
-                extra={"sql": sql[:500], "dialect": dialect},
-            )
             return []
 
         violations: List[RuleViolation] = []
-
+        seen: Set[str] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            cte_names = _extract_cte_names(tree)
-
-            issues = _find_violations(tree, aliases, cte_names)
-
-            for msg in issues:
-                violations.append(
-                    self.create_violation(
-                        message=msg,
-                        severity=self.severity,
-                    )
-                )
-
+            for msg in _find_violations(tree):
+                if msg in seen:
+                    continue
+                seen.add(msg)
+                violations.append(self.create_violation(message=msg, severity=self.severity))
         return violations
 
 
