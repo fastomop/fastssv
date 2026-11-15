@@ -125,6 +125,33 @@ def test_valid_sql_does_not_raise_parse_error() -> None:
     assert parse_errors == []
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT person_id FROM person WHERE gender_concept_id = 8507;  -- Male;",
+        "SELECT person_id FROM person; -- trailing note",
+        "SELECT person_id FROM person; /* trailing note */",
+        "SELECT person_id FROM person; /* between */ SELECT person_id FROM death",
+    ],
+)
+@pytest.mark.parametrize("dialect", ["postgres", "duckdb", "tsql", "snowflake"])
+def test_comment_after_semicolon_is_not_a_parse_error(sql: str, dialect: str) -> None:
+    # sqlglot returns the comment as a standalone Semicolon node.
+    trees, err = parse_sql(sql, dialect)
+    assert err is None
+    assert all(type(t).__name__ != "Semicolon" for t in trees)
+    rule_ids = {v.rule_id for v in validate_sql_structured(sql, dialect=dialect)}
+    assert PARSE_ERROR_RULE_ID not in rule_ids
+    assert NOT_SQL_RULE_ID not in rule_ids
+
+
+@pytest.mark.parametrize("sql", ["; -- only a note", "-- only a note;"])
+def test_comment_after_bare_semicolon_still_rejected(sql: str) -> None:
+    trees, err = parse_sql(sql)
+    assert trees is None
+    assert err is not None
+
+
 # ---- looks_like_prose: heuristic for distinguishing prose from SQL ----------
 
 

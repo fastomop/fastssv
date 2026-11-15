@@ -2706,6 +2706,15 @@ between minor versions.
 
 ### Fixed
 
+- **A comment after the final semicolon no longer makes valid SQL a parse
+  error.** sqlglot parses a comment that follows a `;` (`SELECT … = 8507;
+  -- Male`, or a `/* … */` between statements) into a standalone `Semicolon`
+  node, and `parse_sql` rejected any top-level node that is not a statement,
+  so the whole query was reported as `parse.syntax_error` (ERROR) and no rule
+  ran. `parse_sql` now treats that node as an empty statement, on every
+  dialect; input that is only a comment, or only `;` plus a comment, is still
+  rejected.
+
 - **Error tier: the eight rules behind the Study 1 consensus false positives
   now follow column lineage and SELECT scope.** Two-rater adjudication of the
   0.3.0 error tier found 15 false positives from eight rules; each came from

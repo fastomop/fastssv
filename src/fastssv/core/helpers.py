@@ -310,7 +310,9 @@ def parse_sql(sql: str, dialect: str = "postgres") -> Tuple[Optional[List[exp.Ex
     if not sql or not sql.strip():
         return None, "Empty or whitespace-only input — no SQL statement to validate."
     try:
-        trees = sqlglot.parse(sql, read=dialect)
+        # sqlglot parses a comment after a `;` (e.g. `SELECT 1; -- note`) into a
+        # standalone Semicolon node; it holds no SQL, so treat it like an empty statement.
+        trees = [None if isinstance(t, exp.Semicolon) else t for t in sqlglot.parse(sql, read=dialect)]
         # sqlglot returns [None, None, ...] for input that tokenizes but
         # contains no statements (e.g. only comments or stray semicolons).
         if not trees or all(t is None for t in trees):
