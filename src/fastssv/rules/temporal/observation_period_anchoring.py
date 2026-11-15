@@ -33,7 +33,7 @@ from typing import Iterator, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
-from fastssv.core.helpers import _select_sources, _source_query, normalize_name, parse_sql
+from fastssv.core.helpers import _select_sources, _source_query, display_sql, normalize_name, parse_sql
 from fastssv.core.references import BOOK_CDM, cdm_table, section
 from fastssv.core.registry import register
 from fastssv.rules.temporal._cdm_dates import PERSON_EVENT_TABLES
@@ -308,7 +308,7 @@ class ObservationPeriodAnchoringRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"Absence of {table} records is tested (`{predicate.sql(dialect=dialect)[:120]}`) but "
+                            f"Absence of {table} records is tested (`{display_sql(predicate)[:120]}`) but "
                             "observation_period is never read for this population. The CDM v5.4 OBSERVATION_PERIOD "
                             "guide: absence of an event outside the observation periods cannot be construed as "
                             "evidence that it did not happen. Whether this matters depends on how the site built "
@@ -328,7 +328,7 @@ class ObservationPeriodAnchoringRule(Rule):
                     self.create_violation(
                         message=(
                             f"A count of {table} records is divided by a count of persons "
-                            f"(`{div.sql(dialect=dialect)[:120]}`) without observation_period. The CDM v5.4 "
+                            f"(`{display_sql(div)[:120]}`) without observation_period. The CDM v5.4 "
                             "OBSERVATION_PERIOD guide: incidence or prevalence rates should only be calculated for "
                             "the time of active observation periods."
                         ),

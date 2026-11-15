@@ -187,7 +187,7 @@ class NegativeConceptIdValidationRule(Rule):
                 if found is None:
                     continue
                 column, kind = found
-                fragment = node.sql(dialect=dialect)
+                fragment = node.sql()
                 if fragment in seen:
                     continue
                 seen.add(fragment)

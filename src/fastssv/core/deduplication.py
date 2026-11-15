@@ -9,8 +9,6 @@ from sqlglot import exp
 
 from fastssv.core.base import RuleViolation, Severity
 
-_LIMIT_WITHOUT_ORDER_BY = "anti_patterns.limit_without_order_by"
-
 
 def _normalized_sql(node: exp.Expression) -> str:
     while isinstance(node, exp.Paren):
@@ -29,11 +27,6 @@ def predicate_key(node: exp.Expression) -> str:
     return _normalized_sql(node)
 
 
-def scope_key(select: exp.Expression) -> str:
-    """Normalised SQL of a query scope (e.g. the SELECT a LIMIT belongs to)."""
-    return _normalized_sql(select)
-
-
 def _drop_consequences(violations: List[RuleViolation]) -> List[RuleViolation]:
     """Remove findings that only restate a defect another rule already reports."""
     named_by: dict = {}
@@ -41,11 +34,6 @@ def _drop_consequences(violations: List[RuleViolation]) -> List[RuleViolation]:
         predicate = (v.details or {}).get("predicate")
         if predicate and v.severity == Severity.ERROR:
             named_by.setdefault(predicate, set()).add(v.rule_id)
-    explained_limits: dict = {}
-    for v in violations:
-        scope = (v.details or {}).get("limit_scope")
-        if scope and v.rule_id != _LIMIT_WITHOUT_ORDER_BY:
-            explained_limits.setdefault(scope, set()).add(v.rule_id)
 
     kept = []
     for v in violations:
@@ -58,9 +46,6 @@ def _drop_consequences(violations: List[RuleViolation]) -> List[RuleViolation]:
             and predicates
             and all(named_by.get(p, set()) - {v.rule_id} for p in predicates)
         ):
-            continue
-        # A bare "LIMIT without ORDER BY" yields to another rule that explains why that LIMIT is wrong.
-        if v.rule_id == _LIMIT_WITHOUT_ORDER_BY and details.get("limit_scope") in explained_limits:
             continue
         kept.append(v)
     return kept
@@ -175,4 +160,4 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     return sorted(deduplicated, key=lambda v: original_index[id(v)])
 
 
-__all__ = ["deduplicate_violations", "predicate_key", "scope_key"]
+__all__ = ["deduplicate_violations", "predicate_key"]

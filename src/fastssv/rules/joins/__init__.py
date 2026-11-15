@@ -24,7 +24,6 @@ from .clinical_pk_cross_join_validation import ClinicalPkCrossJoinValidationRule
 from .concept_synonym_join_validation import ConceptSynonymJoinValidationRule
 from .fact_relationship_join_validation import FactRelationshipJoinValidationRule
 from .clinical_person_id_linkage_validation import ClinicalPersonIdLinkageValidationRule
-from .left_join_then_where_on_right_table import LeftJoinThenWhereOnRightTableRule
 from .period_join_requires_date_overlap import PeriodJoinRequiresDateOverlapRule
 from .observation_period_unlinked import ObservationPeriodUnlinkedRule
 
@@ -49,7 +48,6 @@ __all__ = [
     "ConceptSynonymJoinValidationRule",
     "FactRelationshipJoinValidationRule",
     "ClinicalPersonIdLinkageValidationRule",
-    "LeftJoinThenWhereOnRightTableRule",
     "PeriodJoinRequiresDateOverlapRule",
     "ObservationPeriodUnlinkedRule",
 ]

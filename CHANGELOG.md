@@ -244,30 +244,6 @@ between minor versions.
   person-level table list is generated from the CDM v5.4 field-level
   specification.
 
-- **`temporal.date_diff_interval_comparison` (ERROR).** On PostgreSQL and
-  DuckDB, `DATE − DATE` is an integer number of days, so comparing it with an
-  `INTERVAL` literal (`ABS(a.x_date − b.y_date) <= INTERVAL '30 days'`) is a
-  type error that fails at execution. This shape was the most common crash in
-  LLM-written OMOP SQL in the feedback study and was unflagged by the frozen
-  rule set. Timestamp differences and dialects where `DATE − DATE` is not an
-  integer are not flagged.
-
-  `temporal.date_diff_interval_comparison` types operands by lineage. A column
-  is followed through CTEs, derived tables, set operations and renames to its
-  CDM column or to the expression that produces it, and the PostgreSQL
-  operator rules give the result type. A timestamp that happens to be called
-  `first_date`, or `drug_exposure_start_date + INTERVAL '30 days' AS
-  window_end_date`, is no longer reported as a type error; a renamed DATE
-  column is. Newly caught, and verified to fail on PostgreSQL 16 and DuckDB:
-  `CURRENT_DATE - <date>`, `'30 days'::interval`, `CAST(... AS INTERVAL)`, `30
-  * INTERVAL '1 day'`, `make_interval(...)`, a day difference tested `BETWEEN`
-  two intervals, `COALESCE(end, start) - start` and `(end - start) + 1`. The
-  message now quotes the operator PostgreSQL actually reports (`interval >=
-  integer` when the interval is on the left) and names DuckDB under that
-  dialect. The rule no longer runs under the `redshift` dialect: no cited
-  source documents the type of DATE − DATE there. Columns of tables outside
-  the CDM are no longer assumed to be DATE because their name ends in `_date`.
-
 - **`concept_standardization.concept_literal_without_hierarchy` (WARNING).** A
   clinical `*_concept_id` filtered on literal concept ids, in a SELECT that
   does not use `concept_ancestor`, may miss descendant concepts: an
@@ -452,20 +428,105 @@ between minor versions.
 
 ### Changed
 
+- **Every finding is now independent of the SQL dialect; `dialect` is used
+  only to parse.** FastSSV reports deviations from what the OMOP CDM defines
+  (tables, columns, column types, vocabulary values, OHDSI conventions), not
+  whether a given engine would run the SQL. Previously several rules chose
+  their severity, and in places whether to report at all, from the dialect,
+  because case sensitivity and implicit casts differ between engines; the same
+  query could be an ERROR on PostgreSQL, a WARNING on Snowflake and silent on
+  SQL Server. Now the same SQL gives the same (rule_id, severity, message) on
+  every dialect it parses on, and messages state the CDM fact (the defined
+  value or type) rather than an engine's behaviour. Remaining differences come
+  only from how sqlglot parses each dialect (a construct one dialect does not
+  support, a `@param` read as a column, BigQuery's double-quoted strings).
+
+- **`data_quality.column_type_validation` is an ERROR on every dialect.** A
+  varchar or date column compared with a number (`domain_id = 19`,
+  `condition_start_date >= 2020`), an integer column compared with a quoted
+  non-integer (`year_of_birth = 'unknown'`) and two columns of different type
+  families (`person_id = person_source_value`) were ERROR on PostgreSQL, partly
+  ERROR on DuckDB and WARNING on every other dialect; they are now ERROR
+  everywhere, and the message cites the column's CDM type instead of
+  "PostgreSQL has no operator…" / "On this dialect an implicit cast may run
+  it". `value_as_string > '100'` stays a WARNING (it orders text). What counts
+  as an integer literal is one definition for every dialect: optional
+  surrounding whitespace, an optional sign and decimal digits. `'1e3'`,
+  `'1.5'`, `'0x1F'` and `'8_507'` against an integer column, accepted before
+  on DuckDB or PostgreSQL, are now ERROR. Sources: the PostgreSQL
+  type-conversion page and the Book of OHDSI implicit-casts section are
+  replaced by the CDM v5.4 field-level specification and the CONCEPT and
+  CONDITION_OCCURRENCE table pages.
+
+- **`data_quality.concept_id_string_comparison`: a quoted non-integer is an
+  ERROR on every dialect.** `gender_concept_id = 'FEMALE'` was ERROR on
+  PostgreSQL and DuckDB and WARNING elsewhere; it is now ERROR everywhere,
+  with a message stating that the CDM defines the column as INTEGER. A quoted
+  integer (`= '8507'`) stays a WARNING. The integer definition is the one
+  `column_type_validation` uses, so `'0x1F'` and `'8_507'` move from WARNING
+  to ERROR. The PostgreSQL and Book of OHDSI implicit-cast sources are
+  replaced by the CDM CONCEPT page and the field-level specification; the
+  BigQuery literal-coercion source stays for the quoted-integer warning.
+
+- **Wrong-case vocabulary values are an ERROR on every dialect.**
+  `data_quality.canonical_string_value_validation` (`vocabulary_id =
+  'rxnorm'`), `concept_standardization.standard_concept_value_validation`
+  (`standard_concept = 's'`), `concept_standardization.domain_vocabulary_validation`
+  and `concept_standardization.unit_vocabulary_validation` (`vocabulary_id =
+  'ucum'` on a unit join) were ERROR on PostgreSQL and DuckDB, WARNING on
+  other case-sensitive engines and silent on SQL Server / MySQL. Vocabulary
+  IDs and `standard_concept` values are case-sensitive values the vocabulary
+  defines, so a case-only mismatch is now an ERROR everywhere, whatever an
+  engine's collation; LIKE patterns are matched case-sensitively unless the
+  SQL uses ILIKE, LOWER or UPPER. Misspelt IDs (`'ICD-10-CM'`), dead values in
+  a list, negated values and non-restricting positions keep their WARNING. The
+  Book of OHDSI "Case sensitivity in string comparisons" source is replaced by
+  the CDM VOCABULARY / DOMAIN / CONCEPT_CLASS pages, the field-level
+  specification and the Book of OHDSI Vocabularies section; the domain and
+  unit rules gain a lowercase example.
+
+- **`domain_specific.vocabulary_relationship_boolean_comparison`: integer and
+  boolean operands are an ERROR on every dialect.** `is_hierarchical = 1`,
+  `= TRUE`, `IS TRUE` and a bare `WHERE is_hierarchical` were reported only on
+  PostgreSQL and BigQuery and accepted on engines that coerce. The CDM defines
+  both flags as varchar(1) holding '0' / '1', so they are now ERROR everywhere,
+  with a message that states the CDM type. The PostgreSQL and BigQuery
+  documentation sources are replaced by the field-level specification.
+
+- **`anti_patterns.ambiguous_column_reference` counts only CDM tables, and
+  reports only names that are ambiguous on every engine.** A name exposed by
+  two CTEs or derived tables of the query, or by a CDM table and a CTE, is no
+  longer reported: which CDM tables share a column name is CDM knowledge,
+  while a clash between sources the query defines itself is SQL scoping that
+  the database reports on its own. On PostgreSQL it also reported a name merged by
+  `USING` / `NATURAL JOIN` that a later source exposes again, and a name that
+  matches a select-list alias in GROUP BY / HAVING / WHERE; DuckDB, BigQuery
+  and Snowflake resolve those, so they are no longer reported on any dialect.
+  The message no longer appends PostgreSQL's SQLSTATE 42702, and that error-code
+  source is dropped.
+
+- **`data_quality.schema_validation` reports engine system columns.**
+  PostgreSQL's `ctid`, `xmin`, `xmax`, `cmin`, `cmax` and `tableoid` were
+  skipped on PostgreSQL; they are not CDM columns, so they are now reported
+  like any other undefined column, on every dialect. BigQuery's
+  `information_schema.tables`, which its parser reads as one dotted table
+  name, is now recognised as a system catalogue like on other dialects.
+
+- **SQL quoted in finding messages is rendered the same for every dialect.**
+  `free_text_column_misuse`, `implausible_date_filter`,
+  `datetime_between_date_literal`, `observation_period_anchoring`,
+  `negative_concept_id_validation`, `vocabulary_table_protection`,
+  `note_nlp_offset_is_character_position` and `visit_length_of_stay_arithmetic`
+  rendered the offending expression in the input dialect (`INT64`,
+  `GETDATE()`, `sum(...)`), and a division parsed as DuckDB SQL was shown with
+  an added `NULLIF(…, 0)`. They now render one dialect-neutral form.
+
 - **ERROR-tier corrections from a final check on PostgreSQL 16 and DuckDB.**
   Every rule that can raise an ERROR was run against queries built to break
   it, and each reported false ERROR was confirmed on both engines. An ERROR
   now means the query fails, or certainly returns wrong rows, on any
   conformant CDM; findings that depend on data or intent are WARNINGs. Per
   rule:
-  - `anti_patterns.having_without_group_by` counts a column inside an
-    aggregate's `FILTER (WHERE …)` or an ordered-set aggregate's `WITHIN
-    GROUP (ORDER BY …)` (`mode()`, `percentile_cont`, `percentile_disc`) as
-    aggregated; both forms run on PostgreSQL and DuckDB and were reported as
-    ERRORs. Outside the `postgres` dialect, an unqualified HAVING name that
-    matches a select-list alias (`SELECT count(*) AS n … HAVING n > 0`) is
-    no longer reported, because DuckDB and other engines resolve it to the
-    aggregate.
   - `anti_patterns.destructive_operations_on_clinical_tables` treats a table
     the statement itself creates as temporary (`SELECT … INTO TEMP TABLE
     death`, `CREATE OR REPLACE TEMP TABLE death AS …`) as session-local: the
@@ -478,14 +539,6 @@ between minor versions.
     to the CDM schema stays an ERROR: FastSSV validates analytics SQL and
     the Book of OHDSI makes that schema read-only to the end user. The
     write is not claimed to fail or to return wrong rows.
-  - `anti_patterns.null_comparison_operator` no longer calls `x NOT BETWEEN
-    NULL AND y` (or `NOT (x BETWEEN NULL AND y)`) a comparison that never
-    holds. With one NULL bound the BETWEEN is false where the other bound
-    fails and unknown elsewhere, so the negation is true exactly where `x >
-    y` (`x < y` for `NOT BETWEEN y AND NULL`); PostgreSQL and DuckDB return
-    those rows. The form is now a WARNING whose message states that result.
-    A plain BETWEEN with a NULL bound, and a negated BETWEEN with two NULL
-    bounds, still never hold and keep the ERROR.
   - `anti_patterns.ambiguous_column_reference` takes the visibility of a
     name in an ON clause from the JOIN of the SELECT being judged. A
     correlated name inside a subquery's own JOIN (`… JOIN death d ON … AND
@@ -563,16 +616,6 @@ between minor versions.
     so the filter excludes nothing and keeps every row, including the SNOMED
     rows it was meant to drop. The message now says so. Severities are
     unchanged.
-  - `data_quality.non_standard_date_literal_format` no longer claims that
-    DuckDB rejects every non-ISO date. DuckDB (checked on 2.0) reads a date
-    year first, with `-`, `/` or a space between the parts and a one- or
-    two-digit day. It rejects the dot, month-name and `YYYYMMDD` forms and a
-    slash date with a four-digit year (`'01/31/2020'`), which stay ERRORs on
-    DuckDB. A slash date whose last field has two digits it accepts and reads
-    as another date (`'01/02/20'` is 0001-02-20, `'12/02/29'` is
-    0012-02-29); that is now a WARNING whose message names the date DuckDB
-    reads, because the query runs and only the rows are wrong. The rule now
-    cites the DuckDB Date Types page.
   - `data_quality.vocabulary_table_protection` states, in its docstring
     and documentation, why a write to a vocabulary table is an ERROR: it is
     the rule set's one declared exception, shared with
@@ -629,11 +672,6 @@ between minor versions.
     `anti_patterns.destructive_operations_on_clinical_tables`: a schema named
     for results, scratch or temp space (`vocab_scratch.concept`,
     `cdm_results.concept_ancestor`) gets the WARNING, not the ERROR.
-  - `anti_patterns.having_without_group_by` counts every aggregate the
-    dialect defines, taking the aggregate names from the PostgreSQL and
-    DuckDB documentation as well as sqlglot's aggregate classes. DuckDB's
-    `list(x)`, which sqlglot does not parse as an aggregate, was reported as
-    an ungrouped column.
 
 - **Web UI example "Unmapped source concept" replaced by "Source concept in
   hierarchy".** The old example filtered `condition_source_concept_id <> 0`,
@@ -980,27 +1018,6 @@ between minor versions.
   filter exempts only the table instance it applies to, not every read of the
   table in the statement.
 
-- **`data_quality.non_standard_date_literal_format` accepts `YYYYMMDD` outside
-  DuckDB and only judges direct operands.** `'20100101'` is the ISO 8601 basic
-  form that OHDSI SQL uses and SqlRender translates per dialect, so it is no
-  longer flagged. Format patterns are now matched in full; a 9-digit code no
-  longer passes as `YYYYMMDD`. Only a literal that is a direct operand of a
-  comparison or `BETWEEN` with a date column counts, not one nested in a
-  subquery. `DD-MON-YYYY`, `DD-MON-YY` and slash dates are still flagged.
-  Expert corpus: 1 query instead of 3.
-
-  `data_quality.non_standard_date_literal_format` states what each format does
-  and covers more uses. The message no longer says a `DD-MON-YYYY` literal
-  depends on PostgreSQL's settings (PostgreSQL reads it the same in every
-  mode); it says SQL Server and Oracle read month names in the session
-  language and DuckDB rejects the form. On DuckDB a format it rejects,
-  `YYYYMMDD` included, is an ERROR; a slash date it reads year first is a
-  WARNING (see the ERROR-tier corrections entry).
-  Literals are now checked in IN lists, with a time part, in dotted form, when
-  cast to a date (`DATE '...'`, `::date`, `CONVERT(DATE, ...)` without a
-  style) and as DATEDIFF / DATEADD arguments; whether a column is a date is
-  decided by its lineage to a CDM date column, not by its name.
-
 - **`data_quality.concept_id_string_comparison` skips unrendered SqlRender
   parameters and states accurate engine behaviour.**
   `'@gender_concept_ids'`-style placeholders are skipped. The description no
@@ -1078,15 +1095,6 @@ between minor versions.
   tables and renaming aliases, so `WITH x AS (SELECT person_id AS pid FROM
   person) ... ON x.pid = c.concept_id` is caught.
 
-- **`anti_patterns.limit_without_order_by` checks `IN (...)` subqueries and
-  set operations.** `x IN (SELECT ... LIMIT n)` was exempt even though the
-  arbitrary n rows decide the IN-list; only `EXISTS (...)` is exempt now. A
-  LIMIT on a UNION/INTERSECT/EXCEPT is checked too, unless every arm is a
-  scalar aggregate and the limit is at least the arm count. `LIMIT 0` is never
-  flagged. A LIMIT inside a CTE, derived table or subquery gets an extra
-  sentence saying the arbitrary subset feeds the enclosing query. `LIMIT ALL`
-  and `LIMIT NULL` mean no limit and are not flagged.
-
 - **`anti_patterns.no_distinct_on_primary_key_column` only flags single-table
   SELECTs.** The "DISTINCT used on primary key column ... in a query with
   joins" variant is gone: after a 1:N join (e.g. `person JOIN
@@ -1099,25 +1107,6 @@ between minor versions.
   SQL text contains more than one `DISTINCT` (for example `COUNT(DISTINCT …)`
   beside the flagged subquery), the fix is FREEFORM instead of a REMOVE of the
   first match.
-
-- **`joins.left_join_then_where_on_right_table` flags only null-rejecting
-  predicates on the LEFT JOIN's own right-side alias.**
-  - Parenthesised `(r.col IS NULL)` was flagged, and so were null-tolerant
-    predicates (`COALESCE(r.col, 0) = 0`, `NOT (r.col IS NULL AND ...)`).
-  - Any alias of the same base table was cited, including the preserved side
-    of a self-join and an inner-joined second copy of `concept`.
-  - A single OR anywhere in the WHERE silenced the whole clause.
-  - Now each AND-conjunct is tested for null rejection (comparisons, IN, LIKE,
-    BETWEEN, `IS NOT NULL`, through strict wrappers such as
-    LOWER/CAST/arithmetic), only aliases of LEFT JOIN right sides are matched,
-    and derived-table and CTE right sides are covered.
-  - Agent 36 → 32, expert 4 → 2.
-
-  `joins.left_join_then_where_on_right_table` catches more spellings. An
-  unqualified column that only the LEFT JOIN's right side supplies, date
-  functions that return NULL for a NULL argument (`DATE_TRUNC`, `DATEDIFF`,
-  `DATEADD`, `YEAR`, date casts) and `(predicate) IS TRUE` are now recognised
-  as null-rejecting.
 
 - **`data_quality.union_vs_union_all_clinical_events` skips UNIONs whose
   de-duplication cannot change the result.**
@@ -1207,8 +1196,7 @@ between minor versions.
   output reads only one of the two tables; and `DISTINCT`, `COUNT(DISTINCT)`
   or `IN` / `EXISTS` queries in which one of the two tables is read for
   nothing but `person_id`. A person-plus-date-containment or same-start-date
-  join is reported. An unlinked comma join is left to
-  `anti_patterns.comma_separated_cross_join`. Absorbs
+  join is reported. Absorbs
   `joins.visit_detail_join_validation`.
 
 - **`joins.visit_occurrence_inner_join_validation` works per SELECT and only
@@ -1452,18 +1440,6 @@ between minor versions.
   derived tables and casts, and recognises POSITION / STRPOS / CHARINDEX,
   `REGEXP_CONTAINS` and `LIKE ANY`.
 
-- **`anti_patterns.having_without_group_by` reports only the form the engine
-  rejects.** A query with HAVING and no GROUP BY is valid SQL: the rows form
-  one group, and the query returns one row when the condition holds and none
-  otherwise (`SELECT COUNT(*) FROM drug_exposure HAVING COUNT(*) > 3`). Such
-  queries were reported as ERRORs; they are now silent. The rule fires when
-  the SELECT list or the HAVING clause reads a column outside an aggregate
-  (`SELECT person_id, COUNT(*) … HAVING COUNT(*) > 3`, or `SELECT *`), which
-  PostgreSQL and DuckDB reject with "must appear in the GROUP BY clause or be
-  used in an aggregate function". The message names the column, and the patch
-  inserts `GROUP BY <column>` before HAVING. The finding is an ERROR for the
-  `postgres` and `duckdb` dialects and a WARNING for other dialects.
-
 - **`anti_patterns.no_string_identification` is a WARNING and judges only
   columns with a concept counterpart.** The CDM conventions discourage
   `*_source_value` columns for standard analytics and allow them for quality
@@ -1480,32 +1456,6 @@ between minor versions.
   by the CDM v5.4 specification (`value_as_concept_id`,
   `note_class_concept_id`, ...), and is omitted when the column is read
   through a CTE or derived table.
-
-- **`anti_patterns.comma_separated_cross_join` is a WARNING, renamed
-  "Cartesian Product With Clinical Rows", and judges predicates instead of
-  spelling.** PostgreSQL defines `FROM a, b`, `a CROSS JOIN b` and `a JOIN b
-  ON TRUE` as the same operation, yet only the comma form was reported, and
-  with `dialect="bigquery"` or `"spark"` (where the comma parses as CROSS)
-  nothing was. All spellings are now judged alike, as a WARNING, because
-  whether a product was meant cannot be read from the SQL.
-  - **Order independence.** The verdict no longer depends on the order of the
-    FROM list. A CTE or derived table was exempt only in second position, so
-    `FROM t, person p` with a one-row total CTE was an ERROR while `FROM
-    person p, t` was clean. Each source is now judged on its own: a one-row
-    side (primary key equated to a literal, aggregate or LIMIT 1 query) and
-    row generators (`VALUES`, `UNNEST`, `generate_series`) multiply nothing,
-    and a CTE or derived table over clinical tables is judged like the table.
-  - **Table list.** The hand-picked list of 13 "large" tables is replaced by
-    every patient-level table of the CDM v5.4 specification. This adds
-    observation_period, the era tables, payer_plan_period, note_nlp, cost and
-    episode_event.
-  - **What ties two sources.** Two columns equated to the same literal tie
-    their tables (`p.person_id = 5 AND d.person_id = 5`). `<>` and predicates
-    under NOT no longer count as ties, and an OR ties a source only when every
-    branch ties it.
-  - **Overlap.** CDM_SOURCE / METADATA pairings are left to
-    `anti_patterns.singleton_metadata_clinical_join`, so they are reported
-    once.
 
 - **`anti_patterns.singleton_metadata_clinical_join` is a WARNING, renamed
   "Instance Metadata Paired With Clinical Rows".** Pairing CDM_SOURCE or
@@ -1556,29 +1506,6 @@ between minor versions.
   - **Batch context.** A table created unqualified or TEMP earlier in the same
     input now shadows the CDM name in `validate_sql_structured` too, not only
     in the API.
-
-- **`anti_patterns.null_comparison_operator` catches every NULL comparison
-  form and states the configuration caveat.**
-  - **New forms.** `x NOT IN (..., NULL)` (never true), `x IN (NULL)`,
-    `BETWEEN` with a NULL bound, `CASE x WHEN NULL`, and NULL under a cast or
-    parentheses are now reported. A negated BETWEEN with one NULL bound is a
-    WARNING, not "never holds" (see the ERROR-tier corrections entry).
-  - **Severity.** ERROR for PostgreSQL and DuckDB. On PostgreSQL a bare `x =
-    NULL` is a WARNING, because `transform_null_equals` rewrites that form
-    (and only that form) to `x IS NULL`. Other dialects get a WARNING (SQL
-    Server `ANSI_NULLS OFF`).
-  - **Fixes.** DuckDB named arguments (`read_csv(..., nullstr = NULL)`) are no
-    longer reported. The rule's example now uses `<> NULL`.
-
-- **`anti_patterns.limit_without_order_by` checks OFFSET and ROWNUM, and stays
-  silent when the kept rows cannot matter.**
-  - **Newly checked.** OFFSET without ORDER BY, and Oracle `WHERE ROWNUM <= n`
-    (except over an ordered subquery).
-  - **No longer reported.** A limited subquery whose reader only counts its
-    rows (`SELECT COUNT(*) FROM (... LIMIT 1) q`, a common emptiness probe). A
-    SELECT without FROM. A read of one-row CTEs or derived tables. `GROUP BY
-    ()` aggregates. Tables pinned by their primary key. Each of these returns
-    the same result whichever row is kept.
 
 - **`anti_patterns.concept_code_requires_vocabulary_id` follows lineage and no
   longer guesses vocabularies.**
@@ -1896,9 +1823,7 @@ between minor versions.
   `joins.visit_occurrence_id_join_validation`. Findings carry a REPLACE patch
   to the table's foreign key when it is unique. The `location_history` entry,
   which is not a v5.4 table, is gone. The rule absorbs the wrong-key case of
-  `joins.note_nlp_note_join_validation` (`nnlp.note_nlp_id = n.note_id`); a
-  `note_nlp` and `note` read together without any join is reported by
-  `anti_patterns.comma_separated_cross_join`.
+  `joins.note_nlp_note_join_validation` (`nnlp.note_nlp_id = n.note_id`).
 
 - **`joins.care_site_id_join_validation` covers care-site and location keys by
   lineage, and absorbs `joins.care_site_location_join_validation`.** Renamed
@@ -2062,9 +1987,7 @@ between minor versions.
     (`joins.period_join_requires_date_overlap` reads the pair as a containment
     attempt).
   - Two person-level tables with no predicate between them:
-    `joins.clinical_person_id_linkage_validation`
-    (`anti_patterns.comma_separated_cross_join` keeps every other pair, such
-    as a clinical table crossed with `concept`).
+    `joins.clinical_person_id_linkage_validation`.
   - An entity key equated with a concept id (`v.care_site_id = c.concept_id`):
     `anti_patterns.join_key_validation` (`joins.care_site_id_join_validation`
     and `joins.clinical_pk_cross_join_validation` skip it).
@@ -2074,20 +1997,17 @@ between minor versions.
     `joins.cohort_clinical_join_validation` (WARNING), since the CDM allows
     visit cohorts.
 
-  Two consequence warnings are dropped by the validator's deduplication
-  instead of by the rules. A `joins.clinical_person_id_linkage_validation`
+  A consequence warning is dropped by the validator's deduplication
+  instead of by the rule. A `joins.clinical_person_id_linkage_validation`
   WARNING is dropped when every equality it found between the two sources is
   named by an ERROR of another rule (`co.person_id = p.person_source_value` by
   `data_quality.column_type_validation`, `co.visit_occurrence_id =
   vd.visit_detail_id` by `joins.visit_occurrence_id_join_validation`); it
   stays when the sources are not equated, are equated on non-key columns such
   as two dates, or on a wrong pair that no ERROR reports (`co.person_id =
-  de.quantity`). An `anti_patterns.limit_without_order_by` WARNING is dropped
-  when `concept_standardization.multiple_maps_to_targets` reports the same
-  LIMIT, whose message gives the OMOP reason. To support this, rules that
+  de.quantity`). To support this, rules that
   judge one equality record it in `details["predicate"]`, the linkage rule
-  records the equalities it found in `details["predicates"]`, and both LIMIT
-  rules record the limited SELECT in `details["limit_scope"]`; `details` is
+  records the equalities it found in `details["predicates"]`; `details` is
   in-process only and not part of the JSON output. Calling a single rule's
   `validate()` directly still returns its own finding.
 
@@ -2344,26 +2264,6 @@ between minor versions.
   (1502-1511, 1602-1608). Tests:
   `tests/test_rules.py::TestCostEventIdPolymorphicResolution`.
 
-- **`anti_patterns.comma_separated_cross_join` now resolves unqualified
-  columns against the schema catalogue.** Previously the rule's
-  theta-join detector only saw column references that were qualified to
-  a table alias; predicates like Achilles 1410's
-  `ppp.payer_plan_period_start_date <= obs_month_start` (where
-  `obs_month_start` lives on the comma-joined `temp_dates_1410` scratch
-  table but is written unqualified) were treated as referencing only
-  one table and the comma-joined scratch table was flagged as a
-  Cartesian. The detector now reads `fastssv.schemas.CDM_COLUMN_TYPES`
-  to attribute unqualified columns: a column that exists on exactly one
-  scope table is attributed to that table; a column owned by no OMOP
-  scope table and there is exactly one non-OMOP scope table (CTE, temp
-  / scratch table, or derived view) is attributed to that lone
-  non-OMOP candidate. Ambiguous cases (e.g. bare `person_id` shared by
-  every clinical table) stay unattributed so genuine missing-join bugs
-  still fire. Tests:
-  `tests/test_rules.py::TestCommaSeparatedCrossJoin::test_gap_035_achilles_1410_unqualified_scratch_columns`,
-  `…test_gap_035_unqualified_resolves_to_unique_omop_owner`,
-  `…test_gap_035_ambiguous_unqualified_column_still_fires`.
-
 - **`domain_specific.visit_detail_visit_occurrence_reference` narrowed to a
   linkage-correctness check.** The previous version fired on every query that
   referenced `visit_detail` without `visit_occurrence` on the assumption that
@@ -2383,30 +2283,6 @@ between minor versions.
   package are unchanged). The rule title in the docs reference is now "Visit
   Detail Visit Occurrence Linkage". Its later per-SELECT pairing check and
   WARNING severity are described in the entry above.
-
-- **`anti_patterns.comma_separated_cross_join` now recognises theta-joins and
-  function-wrapped columns as valid join predicates.** Previously the rule
-  walked WHERE for `exp.EQ` only and required both sides to be bare
-  `exp.Column` nodes — two compounding limitations that produced false
-  positives on every legitimate range-join (common in temporal OMOP queries:
-  `event_date BETWEEN window_start AND window_end`, `period_start <=
-  event_year`) and on every join expressed through a function wrapper
-  (`EXTRACT(YEAR FROM op1.x) <= t1.y`). The detection now (a) walks all
-  comparison ops — EQ/NEQ/LT/LTE/GT/GTE/Between/In — inside both WHERE *and*
-  every explicit JOIN's ON clause, (b) extracts column references via
-  `find_all(exp.Column)` so function wrappers are transparent, and (c) treats
-  a comma-joined table as "joined" if any predicate connects it to *any* table
-  in the SELECT's scope, not just to other comma-set members (the original
-  logic missed setups where the comma table was connected to an INNER-JOIN
-  target rather than the FROM table — the OHDSI Achilles `tmpach_116`
-  pattern).  Message and suggested_fix were rewritten to name the unjoined
-  table(s) and to emphasise *adding* a predicate (typically on `person_id`)
-  rather than mere syntactic conversion to JOIN ... ON.
-  `details["unjoined_tables"]` exposes the offenders for downstream consumers.
-  Tests: 6 new cases under `tests/test_rules.py::TestCommaSeparatedCrossJoin`
-  covering BETWEEN joins, inequality joins, function-wrapped columns, the
-  Achilles 116 shape, ON-clause connectivity, and three-way comma sets with
-  one dangling table.
 
 - **`ANALYZE <table>` is now accepted at the parse layer.** Added
   `sqlglot.exp.Analyze` to `_VALID_TOP_LEVEL_STATEMENTS` in
@@ -2446,8 +2322,25 @@ between minor versions.
 
 ### Removed
 
+- **Seven rules that check general SQL rather than the OMOP CDM.** FastSSV's
+  scope is OMOP compliance: a finding must rest on what the CDM defines
+  (tables, columns, column types, vocabulary values, OHDSI conventions).
+  Whether SQL is valid, or idiomatic, on a given database is left to that
+  database. These rules needed no OMOP knowledge and are removed:
+  `anti_patterns.having_without_group_by`,
+  `anti_patterns.null_comparison_operator`,
+  `anti_patterns.limit_without_order_by`,
+  `anti_patterns.comma_separated_cross_join`,
+  `joins.left_join_then_where_on_right_table`,
+  `temporal.date_diff_interval_comparison` and
+  `data_quality.non_standard_date_literal_format`. A query that pairs two
+  person-level tables without linking them is still reported by
+  `joins.clinical_person_id_linkage_validation`. Selecting a removed id
+  (`--rules …`, API `rule_ids`) raises `KeyError`.
+
 - **Rule-set revision: 74 rule ids removed (one of them renamed), 12 added;
-  the registry goes from 154 rules (0.3.0) to 92 (37 ERROR, 55 WARNING).** The
+  with the seven general-SQL rules above removed as well, the registry goes
+  from 154 rules (0.3.0) to 85 (34 ERROR, 51 WARNING).** The
   warning tier was re-checked against the OMOP CDM v5.4 specification and the
   Study 1 adjudication, and then every rule was audited against its cited
   sources. 34 rules were retired because their claim does not hold under OMOP
@@ -2682,8 +2575,8 @@ between minor versions.
 
 - **`data_quality.standard_concept_null_handling`.** Its `= 'N'` and `= NULL`
   findings duplicated the ERRORs of
-  `concept_standardization.standard_concept_value_validation` and
-  `anti_patterns.null_comparison_operator`; the empty-string case moved to
+  `concept_standardization.standard_concept_value_validation` and of the
+  NULL-comparison rule (since retired); the empty-string case moved to
   `standard_concept_value_validation`.
 
 - **`anti_patterns.type_concept_id_domain_filter` and
@@ -2742,8 +2635,7 @@ between minor versions.
 - **`joins.join_path_validation`.** It could not follow concept-set CTE chains
   or scalar-subquery lookups, so every agent-corpus finding (12) was a false
   observation; the defects it aimed at (cross joins with `concept`, joins on
-  the wrong concept column) are reported as errors by
-  `anti_patterns.comma_separated_cross_join` and
+  the wrong concept column) are reported by
   `joins.concept_join_validation`.
 
 - **`domain_specific.measurement_duplicate_detection`.** CDM v5.4 gives
@@ -2841,8 +2733,6 @@ between minor versions.
   - `concept_standardization.concept_domain_validation` keys domain filters by
     SELECT scope: a `c.domain_id` filter in one CTE no longer counts for
     another CTE's alias `c`, which produced a false domain-mismatch ERROR.
-  - `anti_patterns.null_comparison_operator` flags only the `NULL` keyword,
-    not the string literal `'NULL'` (a valid `concept_code` lookup).
   - `domain_specific.visit_detail_visit_occurrence_reference` no longer fires
     when every SELECT reading both tables is cut to its first row per
     partition (`ROW_NUMBER() OVER (PARTITION BY …) AS rn` … `WHERE rn = 1`),
@@ -3008,42 +2898,6 @@ between minor versions.
   `…test_omop_043_void_comparison_predicate_does_not_fire`,
   and `…test_omop_043_void_equality_to_literal_still_fires`.
 
-- **`anti_patterns.limit_without_order_by` no longer warns on scalar
-  aggregations.** A `SELECT COUNT(DISTINCT person_id) … LIMIT 1000` —
-  the textbook Atlas/OHDSI patient-count shape — returns exactly one
-  row, so `LIMIT N` is a no-op and the missing-`ORDER BY` warning is a
-  false positive (4/5 FPs of this shape in audit sampling). The rule
-  now skips a `Select` when (a) it has no `GROUP BY` / `HAVING`, (b) no
-  projection contains a window function (`f(...) OVER (...)`; windowed
-  aggregates are per-row, not row-collapsing), (c) at least one
-  projection contains a non-windowed aggregate, and (d) no projection
-  has a bare (non-aggregated) `Column` reference. Star projections,
-  bare-column projections, window functions, and `GROUP BY`-driven
-  multi-row results continue to warn as before. Regression tests:
-  `tests/test_rules.py::TestLimitWithoutOrderBy` (10 cases including
-  three windowed-aggregate shapes — `SUM(x) OVER ()`,
-  `ROW_NUMBER() OVER (ORDER BY …)`, and
-  `COUNT(*) OVER (PARTITION BY …)` — added after code review caught
-  an earlier draft that treated the inner `AggFunc` inside an
-  `exp.Window` as scalar-agg evidence).
-
-- **`joins.left_join_then_where_on_right_table` is now scope-aware.**
-  The rule previously built a tree-wide pool of "right tables that appear
-  on the right of any `LEFT JOIN`" and matched it against every `WHERE`
-  in the tree, so a `LEFT JOIN omop.concept_relationship cr` declared in
-  one CTE got cross-linked with a `WHERE cr.relationship_id = 'Maps to'`
-  living in a *different* sibling CTE that re-used the alias `cr` for an
-  ordinary `INNER JOIN` — producing spurious _"LEFT JOIN followed by
-  WHERE filtering right table column(s): concept_relationship.relationship_id"_
-  reports on standard Maps-to vocabulary plumbing. The check is now done
-  per `Select` scope: each scope's LEFT-JOIN right-tables are matched
-  only against that scope's own `WHERE`, with column resolution going
-  through a scope-local alias map (mirroring the `comprehensive_schema_validation`
-  pattern from the previous fix). True positives within a single scope
-  still fire as before. Regression tests:
-  `tests/test_rules.py::TestLeftJoinThenWhereOnRightTable::test_omop_149_alias_collision_across_ctes_does_not_false_positive`
-  and `…test_omop_149_left_join_in_inner_cte_still_fires_in_own_scope`.
-
 - **OMOP-table-targeting rules no longer false-positive on user CTEs that
   shadow OMOP table names.** `core.helpers.has_table_reference` is the
   gating check used by ~50 rules that key off specific OMOP tables
@@ -3112,18 +2966,6 @@ between minor versions.
   test_schema_qualified_table_checked_inside_same_named_cte`,
   `…::test_unqualified_reference_still_shadowed_by_cte`,
   `…::test_cte_name_never_reported_as_missing_table`.
-
-- **`anti_patterns.comma_separated_cross_join` recognises correlated
-  subqueries.** `EXISTS (SELECT 1 FROM drug_exposure d1, drug_exposure d2
-  WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id …)`
-  anchors every comma-joined table to the outer row, which is a join, not
-  a Cartesian product. The predicate analysis previously resolved
-  `p.person_id` through the tree-global alias map, found `person` outside
-  the subquery's own FROM list and counted each `drug_exposure` as
-  unjoined. A column whose alias is not bound in the subquery's own
-  FROM/JOIN now counts as an edge to the enclosing scope. 17/17 agent-corpus
-  findings of this rule (Study 1) were this shape; all now pass, and the
-  genuine `FROM a, b WHERE a.x = 1` case still fires.
 
 - **`joins.cohort_clinical_join_validation` no longer flags INSERT targets,
   unrelated CTEs, or the `cohort → person → clinical` bridge written with
@@ -3275,15 +3117,6 @@ between minor versions.
   pair already joined by `concept_id` (e.g. `AND cs.concept_synonym_name =
   c.concept_name`) is a filter and is no longer an ERROR.
 
-- **`anti_patterns.null_comparison_operator` ignores assignments.** `UPDATE …
-  SET col = NULL`, MERGE `… THEN UPDATE SET col = NULL`, `ON CONFLICT DO
-  UPDATE SET` / `ON DUPLICATE KEY UPDATE` and `SET @var = NULL` were reported
-  as ERRORs, and the patch rewrote them to the invalid `col IS NULL`.
-  Comparisons in the same statement's WHERE are still flagged. T-SQL variable
-  assignment (`SELECT @x = NULL [FROM …]`) is not reported either, and a `CASE
-  WHEN col <> NULL` finding says "in CASE expression" instead of "in IF
-  statement".
-
 - **`data_quality.schema_validation` resolves unqualified columns outward like
   PostgreSQL.** An unqualified column missing from a subquery's only CDM table
   used to be reported against that table even when it was a correlated
@@ -3315,17 +3148,6 @@ between minor versions.
   `person_id` is no longer an error. The REPLACE autofix (`<other>.person_id`)
   is emitted only when the other table has a `person_id` column; otherwise the
   fix is prose.
-
-- **`anti_patterns.comma_separated_cross_join` no longer treats `JOIN … USING
-  (…)` or `NATURAL JOIN` as a comma join, checks connectivity by alias, and
-  checks only stored tables.** USING and NATURAL joins carry their own join
-  condition. A comma self-join linked by a predicate (`FROM
-  condition_occurrence c1, condition_occurrence c2 WHERE c1.person_id =
-  c2.person_id`) and tables linked through a comma-joined derived table are no
-  longer reported. CTE references and table functions in a comma list (the
-  one-row `total` CTE percentage idiom, `generate_series(…)`) are treated like
-  derived tables and not checked; a table function previously also produced an
-  empty name in the message.
 
 - **An OR-ed join key no longer counts as a required concept join** in
   `concept_standardization.domain_vocabulary_validation`,

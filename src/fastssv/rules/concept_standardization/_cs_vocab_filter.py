@@ -12,11 +12,6 @@ from sqlglot import exp
 
 from ._cs_scope import ColumnFilter, Link, instance_filters, instance_is_null_extended, links
 
-# Book of OHDSI: PostgreSQL compares strings case-sensitively, SQL Server does not. Checked on DuckDB and PostgreSQL;
-# on other engines a case-only mismatch is reported as a WARNING.
-CASE_VERIFIED_DIALECTS = {"postgres", "postgresql", "duckdb"}
-CASE_INSENSITIVE_DIALECTS = {"tsql", "mysql"}
-
 # Concept 0 ("No matching concept") is in vocabulary 'None'; the CDM stores it for unmapped records.
 UNMAPPED_VOCABULARY = "None"
 
@@ -35,7 +30,7 @@ def _like_regex(pattern: str, case_insensitive: bool) -> "re.Pattern[str]":
     return re.compile(f"^{body}$", re.IGNORECASE if case_insensitive else 0)
 
 
-def _admitted(flt: ColumnFilter, known: FrozenSet[str], case_insensitive: bool) -> Optional[List[str]]:
+def _admitted(flt: ColumnFilter, known: FrozenSet[str]) -> Optional[List[str]]:
     """The vocabulary_id values a required positive filter admits. A LIKE pattern is expanded to the known
     vocabularies it matches; it is left alone when it matches none (it may target a local vocabulary)."""
     if not (flt.required and not flt.outer_join_on and flt.complete):
@@ -46,7 +41,7 @@ def _admitted(flt: ColumnFilter, known: FrozenSet[str], case_insensitive: bool) 
         pattern = flt.values[0]
         if not any(ch in pattern for ch in "%_"):
             return [pattern]
-        regex = _like_regex(pattern, case_insensitive or flt.case_folded or isinstance(flt.node, exp.ILike))
+        regex = _like_regex(pattern, flt.case_folded or isinstance(flt.node, exp.ILike))
         matched = sorted(v for v in known if regex.match(v))
         return matched or None
     return None
@@ -56,12 +51,11 @@ def mismatches(
     tree: exp.Expression,
     allowed_for: Callable[[Tuple[str, str]], Optional[FrozenSet[str]]],
     known: FrozenSet[str],
-    dialect: str,
 ) -> Iterator[VocabularyMismatch]:
     """Required vocabulary_id filters on concept rows matched to a column for which ``allowed_for`` gives the
     vocabularies that can occur. A value outside the release's known vocabularies is left alone: it may be a local
-    vocabulary."""
-    case_insensitive = dialect in CASE_INSENSITIVE_DIALECTS
+    vocabulary. vocabulary_id is case-sensitive, so a value that differs from an allowed one only in case does not
+    match it."""
     known_by_lower: Dict[str, str] = {v.lower(): v for v in known}
     filters = instance_filters(tree, "concept", "vocabulary_id")
     seen: Set[int] = set()
@@ -75,14 +69,10 @@ def mismatches(
         allowed = allowed | {UNMAPPED_VOCABULARY}
         allowed_lower = {v.lower() for v in allowed}
         for flt in filters.get(link.instance, []):
-            values = _admitted(flt, known, case_insensitive)
+            values = _admitted(flt, known)
             if not values or id(flt.node) in seen:
                 continue
-            exact_ok = [
-                v
-                for v in values
-                if v in allowed or ((case_insensitive or flt.case_folded) and v.lower() in allowed_lower)
-            ]
+            exact_ok = [v for v in values if v in allowed or (flt.case_folded and v.lower() in allowed_lower)]
             impossible: List[str] = []
             case_only: List[str] = []
             for v in values:
@@ -108,8 +98,6 @@ def mismatches(
 
 
 __all__ = [
-    "CASE_INSENSITIVE_DIALECTS",
-    "CASE_VERIFIED_DIALECTS",
     "UNMAPPED_VOCABULARY",
     "VocabularyMismatch",
     "mismatches",

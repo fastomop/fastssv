@@ -2,14 +2,14 @@
 
 This document provides comprehensive documentation for FastSSV's validation rules.
 
-**Current registry: 92 rules across 6 categories** (37 ERROR, 55 WARNING).
+**Current registry: 85 rules across 6 categories** (34 ERROR, 51 WARNING).
 
-- **anti_patterns**: 15 rules
+- **anti_patterns**: 11 rules
 - **concept_standardization**: 14 rules
-- **data_quality**: 14 rules
+- **data_quality**: 13 rules
 - **domain_specific**: 19 rules
-- **joins**: 23 rules
-- **temporal**: 7 rules
+- **joins**: 22 rules
+- **temporal**: 6 rules
 
 > **Note:** The prose descriptions below reflect the stable rule set. Rule
 > removals and rule renames are tracked in [CHANGELOG.md](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md).
@@ -83,7 +83,6 @@ For each rule you will find:
 | `joins.drug_exposure_drug_strength_join_validation` | [Drug Exposure to Drug Strength Join Validation](#joins-drug-exposure-drug-strength-join-validation) | ERROR | joins |
 | `joins.era_forbidden_join_validation` | [Era to Visit Join Without Date Relation](#joins-era-forbidden-join-validation) | WARNING | joins |
 | `joins.fact_relationship_join_validation` | [Fact Relationship Polymorphic Join Validation](#joins-fact-relationship-join-validation) | WARNING | joins |
-| `joins.left_join_then_where_on_right_table` | [Left Join Then Where On Right Table](#joins-left-join-then-where-on-right-table) | WARNING | joins |
 | `joins.maps_to_direction` | [Maps To Direction](#joins-maps-to-direction) | WARNING | joins |
 | `joins.observation_period_unlinked` | [Observation Period Not Linked on person_id](#joins-observation-period-unlinked) | WARNING | joins |
 | `joins.period_join_requires_date_overlap` | [Period Join Requires Date Overlap](#joins-period-join-requires-date-overlap) | WARNING | joins |
@@ -93,7 +92,6 @@ For each rule you will find:
 | `joins.provider_join_validation` | [Provider Join Validation](#joins-provider-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_id_join_validation` | [Visit Occurrence ID Join Validation](#joins-visit-occurrence-id-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_inner_join_validation` | [Visit Occurrence INNER JOIN Validation](#joins-visit-occurrence-inner-join-validation) | WARNING | joins |
-| `temporal.date_diff_interval_comparison` | [DATE difference compared with INTERVAL](#temporal-date-diff-interval-comparison) | ERROR | temporal |
 | `temporal.datetime_between_date_literal` | [Datetime Column With a Date-Only Inclusive Upper Bound](#temporal-datetime-between-date-literal) | WARNING | temporal |
 | `temporal.end_before_start_validation` | [End Before Start Validation](#temporal-end-before-start-validation) | WARNING | temporal |
 | `temporal.implausible_date_filter` | [Implausible Date Filter](#temporal-implausible-date-filter) | WARNING | temporal |
@@ -107,7 +105,6 @@ For each rule you will find:
 | `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | WARNING | data_quality |
 | `data_quality.free_text_column_misuse` | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | WARNING | data_quality |
 | `data_quality.negative_concept_id_validation` | [Negative Concept ID Validation](#data-quality-negative-concept-id-validation) | ERROR | data_quality |
-| `data_quality.non_standard_date_literal_format` | [Non-Standard Date Literal Format](#data-quality-non-standard-date-literal-format) | WARNING | data_quality |
 | `data_quality.note_nlp_nlp_date_for_temporal_filtering` | [Note NLP nlp_date for Temporal Filtering](#data-quality-note-nlp-nlp-date-for-temporal-filtering) | WARNING | data_quality |
 | `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
 | `data_quality.schema_validation` | [OMOP Schema Validation](#data-quality-schema-validation) | ERROR | data_quality |
@@ -115,18 +112,14 @@ For each rule you will find:
 | `data_quality.union_vs_union_all_clinical_events` | [UNION vs UNION ALL for Clinical Events](#data-quality-union-vs-union-all-clinical-events) | WARNING | data_quality |
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
 | `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | ERROR | anti_patterns |
-| `anti_patterns.comma_separated_cross_join` | [Cartesian Product With Clinical Rows](#anti-patterns-comma-separated-cross-join) | WARNING | anti_patterns |
 | `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | WARNING | anti_patterns |
 | `anti_patterns.concept_name_lookup` | [Concept Name Lookup Anti-pattern](#anti-patterns-concept-name-lookup) | WARNING | anti_patterns |
 | `anti_patterns.concept_relationship_transitive_misuse` | [Concept Relationship Transitive Misuse](#anti-patterns-concept-relationship-transitive-misuse) | WARNING | anti_patterns |
 | `anti_patterns.cte_shadows_omop_table` | [CTE Shadows OMOP CDM Table](#anti-patterns-cte-shadows-omop-table) | WARNING | anti_patterns |
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
-| `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
-| `anti_patterns.limit_without_order_by` | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
 | `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | WARNING | anti_patterns |
-| `anti_patterns.null_comparison_operator` | [NULL Comparison Must Use IS NULL / IS NOT NULL](#anti-patterns-null-comparison-operator) | ERROR | anti_patterns |
 | `anti_patterns.singleton_metadata_clinical_join` | [Instance Metadata Paired With Clinical Rows](#anti-patterns-singleton-metadata-clinical-join) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_misuse` | [Type Concept ID Not For Clinical Filtering](#anti-patterns-type-concept-id-misuse) | ERROR | anti_patterns |
 | `domain_specific.cost_currency_concept_id` | [Cost Currency Concept ID For Multi-Currency](#domain-specific-cost-currency-concept-id) | WARNING | domain_specific |
@@ -379,11 +372,11 @@ REPLACE: the concept alias's domain_id filter WITH the column's domain (e.g. 'Co
 
 #### Intent
 
-Concept columns with an fkDomain hold Standard concepts of that domain, and Standard concepts come from a few vocabularies per domain (Book of OHDSI Table 5.2: SNOMED and ICDO3 for conditions; RxNorm, RxNorm Extension and CVX for drugs). The vocabularies are taken from the Athena release v5.0 27-AUG-25. Requiring the joined concept row to come only from a vocabulary with no Standard concept in that domain (ICD10CM, ICD9CM, NDC, SPL, ATC, MedDRA, Read, ...) returns zero rows, also when the query lists or groups by vocabulary_id. Filter the *_source_concept_id column instead, or map the source codes to standard concepts with concept_relationship 'Maps to'. Unknown vocabulary names (site-local vocabularies) and lists that also admit a vocabulary that occurs are not reported.
+Concept columns with an fkDomain hold Standard concepts of that domain, and Standard concepts come from a few vocabularies per domain (Book of OHDSI Table 5.2: SNOMED and ICDO3 for conditions; RxNorm, RxNorm Extension and CVX for drugs). The vocabularies are taken from the Athena release v5.0 27-AUG-25. Requiring the joined concept row to come only from a vocabulary with no Standard concept in that domain (ICD10CM, ICD9CM, NDC, SPL, ATC, MedDRA, Read, ...) returns zero rows, also when the query lists or groups by vocabulary_id. Filter the *_source_concept_id column instead, or map the source codes to standard concepts with concept_relationship 'Maps to'. A value that differs from an allowed vocabulary_id only in case ('snomed') is not that vocabulary, since vocabulary IDs are case-sensitive: an ERROR on every dialect. Unknown vocabulary names (site-local vocabularies) and lists that also admit a vocabulary that occurs are not reported.
 
 #### How it works
 
-Ties each match of a concept column with an fkDomain (the same field-to-domain table as `concept_standardization.concept_domain_validation`, including the four fields whose domain only the specification text gives) to one concept instance by lineage and reads that instance's required vocabulary_id restriction (=, IN, LIKE expanded against the release's vocabularies). It reports when every admitted vocabulary is known to the release and has no Standard concept in the column's domain. Unit columns belong to unit_vocabulary_validation. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
+Ties each match of a concept column with an fkDomain (the same field-to-domain table as `concept_standardization.concept_domain_validation`, including the four fields whose domain only the specification text gives) to one concept instance by lineage and reads that instance's required vocabulary_id restriction (=, IN, LIKE expanded against the release's vocabularies). It reports when every admitted vocabulary is known to the release and has no Standard concept in the column's domain; a value is compared with the vocabulary IDs case-sensitively, as they are defined, unless the SQL folds case itself (ILIKE, LOWER, UPPER). The verdict is the same on every dialect. Unit columns belong to unit_vocabulary_validation. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
 
 #### Examples
 
@@ -394,6 +387,15 @@ SELECT co.person_id
 FROM condition_occurrence co
 JOIN concept c ON co.condition_concept_id = c.concept_id
 WHERE c.vocabulary_id = 'ICD10CM';
+```
+
+**Case-only mismatch: the vocabulary ID is 'SNOMED', on every dialect (ERROR):**
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'snomed';
 ```
 
 **Correct pattern:**
@@ -412,6 +414,7 @@ REPLACE: `c.vocabulary_id = '<source_vocab>'` WITH a vocabulary of the column's 
 #### Sources
 
 - [The Book of OHDSI, ch. 5: Standardized Vocabularies, Standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#standardConcepts)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
 - [OMOP CDM: Data Model Conventions, Source values, source concept ids and standard concept ids](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-values-source-concept-ids-and-standard-concept-ids)
 - [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 - [OMOP CDM v5.4 specification: CDM_SOURCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#cdm_source)
@@ -748,11 +751,11 @@ REPLACE: the `*_source_concept_id` in the concept_ancestor comparison WITH the p
 
 #### Intent
 
-The CDM v5.4 specification allows exactly 'S' (Standard), 'C' (Classification) and NULL in concept.standard_concept. A required filter on any other string ('N', 'Y', an empty string) matches no concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' does the same on PostgreSQL and DuckDB, which compare strings case-sensitively (ERROR there, WARNING on other case-sensitive engines, accepted on SQL Server and MySQL). A list that also contains a valid value (IN ('S', 'Y')) still returns rows and is a WARNING about the dead value; so is a comparison under OR, in a CASE label or in an outer join's ON clause. A negated impossible value (<> 'N', NOT IN ('')) excludes nothing and equals IS NOT NULL (WARNING). `standard_concept = '' OR standard_concept IS NULL` is accepted. A number or boolean compared with this varchar column (`= 1`, `IN ('S', 1)`, `= TRUE`) is a type defect and is reported by [`data_quality.column_type_validation`](#data-quality-column-type-validation), not here.
+The CDM v5.4 specification allows exactly 'S' (Standard), 'C' (Classification) and NULL in concept.standard_concept. A required filter on any other string ('N', 'Y', an empty string) matches no concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' is not a CDM value either, an ERROR on every dialect whatever collation an engine would compare it under. A list that also contains a valid value (IN ('S', 'Y')) still returns rows and is a WARNING about the dead value; so is a comparison under OR, in a CASE label or in an outer join's ON clause. A negated impossible value (<> 'N', NOT IN ('')) excludes nothing and equals IS NOT NULL (WARNING). `standard_concept = '' OR standard_concept IS NULL` is accepted. A number or boolean compared with this varchar column (`= 1`, `IN ('S', 1)`, `= TRUE`) is a type defect and is reported by [`data_quality.column_type_validation`](#data-quality-column-type-validation), not here.
 
 #### How it works
 
-Follows standard_concept to the concept table by lineage and classifies every comparison of it with string literals: required and impossible is an ERROR (case-only mismatches only on PostgreSQL and DuckDB), dead values in a list, non-restricting positions and negated impossible values are WARNINGs. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
+Follows standard_concept to the concept table by lineage and classifies every comparison of it with string literals: required and impossible is an ERROR (case-only mismatches included, on every dialect), dead values in a list, non-restricting positions and negated impossible values are WARNINGs. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
 
 #### Examples
 
@@ -788,6 +791,14 @@ FROM concept
 WHERE standard_concept = '';
 ```
 
+**Lowercase: the CDM values are the uppercase 'S' and 'C', on every dialect (ERROR):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept = 's';
+```
+
 **Correct pattern:**
 
 ```sql
@@ -804,7 +815,7 @@ REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'`
 
 - [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
 - [The Book of OHDSI, ch. 5: Standardized Vocabularies, Non-standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#non-standard-concepts)
-- [The Book of OHDSI, ch. 9: SQL and R, Case sensitivity in string comparisons](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#case-sensitivity-in-string-comparisons)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
@@ -815,11 +826,11 @@ REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'`
 
 #### Intent
 
-Unit columns (measurement / observation / device_exposure / dose_era unit_concept_id, and drug_strength's unit columns) hold Standard Unit-domain concepts. In the Athena release v5.0 27-AUG-25 every valid Standard Unit concept is in UCUM; the Unit concepts of SNOMED, Nebraska Lexicon, CDISC and CIEL are non-standard. Restricting the joined concept row to another known vocabulary therefore finds no unit concepts and returns no rows, also when the query lists or groups by vocabulary_id. A list that also admits 'UCUM' or 'None' (concept 0, an unmapped unit) is not reported.
+Unit columns (measurement / observation / device_exposure / dose_era unit_concept_id, and drug_strength's unit columns) hold Standard Unit-domain concepts. In the Athena release v5.0 27-AUG-25 every valid Standard Unit concept is in UCUM; the Unit concepts of SNOMED, Nebraska Lexicon, CDISC and CIEL are non-standard. Restricting the joined concept row to another known vocabulary therefore finds no unit concepts and returns no rows, also when the query lists or groups by vocabulary_id. Lowercase 'ucum' is not the UCUM vocabulary either, since vocabulary IDs are case-sensitive: an ERROR on every dialect. A list that also admits 'UCUM' or 'None' (concept 0, an unmapped unit) is not reported.
 
 #### How it works
 
-Ties each match of a unit column (fkDomain 'Unit', plus drug_strength's unit columns) to one concept instance by lineage and reads its required vocabulary_id restriction; it reports when every admitted vocabulary is known to the release and holds no Standard unit concept.
+Ties each match of a unit column (fkDomain 'Unit', plus drug_strength's unit columns) to one concept instance by lineage and reads its required vocabulary_id restriction; it reports when every admitted vocabulary is known to the release and holds no Standard unit concept. Values are compared with the vocabulary IDs case-sensitively, as they are defined, unless the SQL folds case itself; the verdict is the same on every dialect.
 
 #### Examples
 
@@ -830,6 +841,15 @@ SELECT m.person_id
 FROM measurement m
 JOIN concept c ON m.unit_concept_id = c.concept_id
 WHERE c.vocabulary_id = 'LOINC';
+```
+
+**Case-only mismatch: the vocabulary ID is 'UCUM', on every dialect (ERROR):**
+
+```sql
+SELECT m.person_id
+FROM measurement m
+JOIN concept c ON m.unit_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'ucum';
 ```
 
 **Correct pattern:**
@@ -849,6 +869,7 @@ REPLACE: the vocabulary_id filter WITH `vocabulary_id = 'UCUM'`, OR remove it.
 
 - [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
 - [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
 - [OHDSI Forums: Measurement entity - which vocabulary to consider](https://forums.ohdsi.org/t/measurement-entity-which-vocabulary-to-consider/5813)
 
 ---
@@ -1944,82 +1965,7 @@ your fact_relationship holds.
 
 ---
 
-### 14. Left Join Then Where On Right Table { #joins-left-join-then-where-on-right-table }
-
-**Rule ID:** `joins.left_join_then_where_on_right_table`
-**Severity:** WARNING
-
-#### Intent
-
-A LEFT JOIN keeps every left-side row; rows without a match get NULL in every right-side column. A WHERE conjunct
-that can never be true when a right-side column is NULL (a null-rejecting predicate) removes exactly those rows, so the
-LEFT JOIN behaves like an INNER JOIN. Whether that is intended depends on the query, so the finding is a warning.
-
-#### How it works
-
-For each SELECT with a LEFT JOIN, every AND-conjunct of its WHERE clause is tested. A conjunct is null-rejecting for a
-right-side column when it is a comparison, `IN`, `LIKE`, `BETWEEN` or `IS NOT NULL` on that column, possibly through
-functions that return NULL for a NULL argument (`LOWER`, `CAST`, arithmetic, `EXTRACT`, `DATE_TRUNC`, `DATEDIFF`,
-`YEAR`, …), or `(predicate) IS TRUE` of such a predicate. Only columns the SELECT reads from a LEFT JOIN's right-side
-source count: a qualified alias, or an unqualified name only that source supplies. `IS NULL`, `COALESCE`, `CASE`,
-`IS DISTINCT FROM` and an `OR` with another branch keep the NULL-extended rows and are not reported.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT p.person_id FROM person p
-LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id
-WHERE vo.visit_start_date >= DATE '2023-01-01';
-```
-
-```sql
-SELECT p.person_id FROM person p
-LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id
-WHERE DATE_TRUNC('year', vo.visit_start_date) = DATE '2023-01-01';
-```
-
-**Correct patterns:**
-
-```sql
-SELECT p.person_id FROM person p
-LEFT JOIN visit_occurrence vo
-  ON p.person_id = vo.person_id
-  AND vo.visit_start_date >= DATE '2023-01-01';
-```
-
-```sql
-SELECT p.person_id FROM person p
-LEFT JOIN death d ON d.person_id = p.person_id
-WHERE d.person_id IS NULL;
-```
-
-<!-- extra-examples:start -->
-**Warning variant: An IS NOT NULL test on the right table keeps exactly the rows an INNER JOIN would.**
-
-```sql
-SELECT co.condition_occurrence_id FROM condition_occurrence co
-LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-WHERE vo.visit_occurrence_id IS NOT NULL;
-```
-
-<!-- extra-examples:end -->
-
-#### Suggested fix
-
-Move the predicate into the JOIN ON clause (`LEFT JOIN ... ON ... AND <right>.<col> <op> <val>`) to keep the
-left-outer semantics, or accept that the join is an inner join and write `INNER JOIN`.
-
-#### Sources
-
-- [PostgreSQL documentation: Joined Tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
-- [PostgreSQL documentation: The WHERE Clause](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-WHERE)
-- [PostgreSQL documentation: Comparison Functions and Operators](https://www.postgresql.org/docs/current/functions-comparison.html)
-
----
-
-### 15. Maps To Direction { #joins-maps-to-direction }
+### 14. Maps To Direction { #joins-maps-to-direction }
 
 **Rule ID:** `joins.maps_to_direction`
 **Severity:** WARNING
@@ -2084,7 +2030,7 @@ Match the source concept id to `cr.concept_id_1` for `'Maps to'` (or `cr.concept
 
 ---
 
-### 16. Observation Period Not Linked on person_id { #joins-observation-period-unlinked }
+### 15. Observation Period Not Linked on person_id { #joins-observation-period-unlinked }
 
 **Rule ID:** `joins.observation_period_unlinked`
 **Severity:** WARNING
@@ -2162,7 +2108,7 @@ Add `op.person_id = <clinical>.person_id` to the JOIN ON (or WHERE) that brings 
 
 ---
 
-### 17. Period Join Requires Date Overlap { #joins-period-join-requires-date-overlap }
+### 16. Period Join Requires Date Overlap { #joins-period-join-requires-date-overlap }
 
 **Rule ID:** `joins.period_join_requires_date_overlap`
 **Severity:** WARNING
@@ -2252,7 +2198,7 @@ person can hold more than one at a time.
 
 ---
 
-### 18. Person ID Join Validation { #joins-person-id-join-validation }
+### 17. Person ID Join Validation { #joins-person-id-join-validation }
 
 **Rule ID:** `joins.person_id_join_validation`
 **Severity:** ERROR
@@ -2331,7 +2277,7 @@ read straight from a table, the finding carries a REPLACE patch.
 
 ---
 
-### 19. Preceding Visit Occurrence Validation { #joins-preceding-visit-occurrence-validation }
+### 18. Preceding Visit Occurrence Validation { #joins-preceding-visit-occurrence-validation }
 
 **Rule ID:** `joins.preceding_visit_occurrence_validation`
 **Severity:** ERROR
@@ -2402,7 +2348,7 @@ straight from a table, the finding carries a REPLACE patch.
 
 ---
 
-### 20. Provider Join Validation { #joins-provider-join-validation }
+### 19. Provider Join Validation { #joins-provider-join-validation }
 
 **Rule ID:** `joins.provider_join_validation`
 **Severity:** ERROR
@@ -2470,7 +2416,7 @@ carries a REPLACE patch that swaps it for that table's column holding the other 
 
 ---
 
-### 21. Provider to Care Site Join Validation { #joins-provider-care-site-join-validation }
+### 20. Provider to Care Site Join Validation { #joins-provider-care-site-join-validation }
 
 **Rule ID:** `joins.provider_care_site_join_validation`
 **Severity:** ERROR
@@ -2529,7 +2475,7 @@ from a table, the finding carries a REPLACE patch.
 
 ---
 
-### 22. Visit Occurrence ID Join Validation { #joins-visit-occurrence-id-join-validation }
+### 21. Visit Occurrence ID Join Validation { #joins-visit-occurrence-id-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_id_join_validation`
 **Severity:** ERROR
@@ -2600,7 +2546,7 @@ carries a REPLACE patch (a visit / visit detail mix-up keeps the visit detail ke
 
 ---
 
-### 23. Visit Occurrence INNER JOIN Validation { #joins-visit-occurrence-inner-join-validation }
+### 22. Visit Occurrence INNER JOIN Validation { #joins-visit-occurrence-inner-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_inner_join_validation`
 **Severity:** WARNING
@@ -3123,69 +3069,6 @@ REPLACE: the reversed bounds WITH `<event_date> BETWEEN op.observation_period_st
 
 ---
 
-### 7. DATE difference compared with INTERVAL { #temporal-date-diff-interval-comparison }
-
-**Rule ID:** `temporal.date_diff_interval_comparison`
-**Severity:** ERROR
-
-#### Intent
-
-PostgreSQL defines date - date as an integer number of days and timestamp - timestamp as an interval. There is no comparison operator between an integer and an interval, so a day difference compared with INTERVAL '30 days', with a cast or computed interval, or tested BETWEEN two intervals is rejected before any row is read; DuckDB rejects it in the same way. Operand types are settled by lineage: a column is followed through CTEs and derived tables to its CDM column or to the expression that produces it, so a timestamp that happens to be called first_date is not reported and a date that was renamed is. The rule runs under the postgres and duckdb dialects only; other engines type DATE − DATE differently.
-
-#### How it works
-
-For every comparison (`=`, `<>`, `<`, `<=`, `>`, `>=`) and `BETWEEN`, the rule types both sides. A
-side is a day count when it contains a subtraction of two DATE operands and its overall type is integer; the other
-side (or a BETWEEN bound) must be an interval: `INTERVAL '30 days'`, `'30 days'::interval`, `CAST(... AS INTERVAL)`,
-`n * INTERVAL '1 day'`, `make_interval(...)`. DATE operands are CDM date columns (typed from the CDM v5.4 field-level
-CSV), `CURRENT_DATE`, `DATE '...'`, casts to DATE, and `MIN` / `MAX` / `COALESCE` / `GREATEST` / `LEAST` over them.
-Columns are followed through CTEs, derived tables, set operations and renames; a projected expression is typed with
-the PostgreSQL operator rules (`date + interval` is a timestamp, `timestamp - timestamp` an interval), so a column's
-name never decides its type. A column of a table outside the CDM is not judged. The rule runs only under the postgres
-and duckdb dialects, where every flagged form was executed and rejected.
-
-#### Examples
-
-**Violation pattern:**
-
-```sql
-SELECT COUNT(*)
-FROM drug_exposure a
-JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id
-WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days';
-```
-
-**Correct pattern:**
-
-```sql
-SELECT COUNT(*)
-FROM drug_exposure a
-JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id
-WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30;
-```
-
-<!-- extra-examples:start -->
-**Error variant: Day difference from CURRENT_DATE tested BETWEEN two intervals**
-
-```sql
-SELECT COUNT(*)
-FROM drug_exposure
-WHERE (CURRENT_DATE - drug_exposure_start_date) BETWEEN INTERVAL '0 days' AND INTERVAL '30 days';
-```
-
-<!-- extra-examples:end -->
-
-#### Suggested fix
-
-REPLACE: the INTERVAL WITH an integer number of days (e.g. `<= 30`), OR subtract *_datetime / TIMESTAMP values so the difference is an interval.
-
-#### Sources
-
-- [PostgreSQL documentation: Date/Time Functions and Operators, Date/Time Operators](https://www.postgresql.org/docs/current/functions-datetime.html#OPERATORS-DATETIME-TABLE)
-- [DuckDB documentation: Date Functions, Date Operators](https://duckdb.org/docs/stable/sql/functions/date.html)
-
----
-
 ## Data Quality Rules
 
 These rules validate data quality, schema compliance, and proper handling of edge cases.
@@ -3195,11 +3078,11 @@ These rules validate data quality, schema compliance, and proper handling of edg
 ### 1. Column Type Validation (SCHEMA Layer) { #data-quality-column-type-validation }
 
 **Rule ID:** `data_quality.column_type_validation`
-**Severity:** ERROR on PostgreSQL; ERROR or WARNING on other dialects (see below)
+**Severity:** ERROR on every dialect (WARNING for `value_as_string` ordered against a quoted number)
 
 #### Intent
 
-OMOP columns have declared types: `*_id` and `*_concept_id` columns are integers, `*_source_value` columns and vocabulary identifiers such as `domain_id` are varchar, `*_date` columns are dates. PostgreSQL gives a quoted literal the type of the column it is compared with, so `year_of_birth = '1980'` and `condition_start_date >= '2020-01-01'` are valid. It has no operator comparing a string with a number, or a date with a number, and no implicit cast between those families, so `domain_id = 19` and `person_id = person_source_value` fail at plan time. DuckDB rejects a date compared with a number, a literal that does not convert to the column's type, and `<`, `>`, `BETWEEN` between varchar and a number; for `=`, `<>` and `IN` it casts the varchar side, as SQL Server and MySQL do, and fails only when a stored value does not convert. `value_as_string` compared with `<` or `>` against a quoted number runs everywhere and orders text, so `'9' > '100'`.
+The OMOP CDM v5.4 field-level specification declares every column's type: `*_id` and `*_concept_id` columns are integers, `*_source_value` columns and vocabulary identifiers such as `domain_id` are varchar, `*_date` columns are dates. A comparison whose operand is not a value of the column's type deviates from the CDM: `domain_id = 19`, `condition_start_date >= 2020`, `year_of_birth = 'unknown'`, `person_id = person_source_value`. The verdict follows the CDM's types and is the same on every dialect; whether a given engine would cast its way past the mismatch is not the question. A quoted literal that is a value of the column's type is accepted (`year_of_birth = '1980'`, `condition_start_date >= '2020-01-01'`). `value_as_string` compared with `<` or `>` against a quoted number agrees in type but orders text, so `'9' > '100'`.
 
 #### How it works
 
@@ -3207,11 +3090,11 @@ The rule checks `=`, `<>`, `<`, `<=`, `>`, `>=`, `IN (...)`, `IN (SELECT <one co
 
 - a varchar column against a numeric literal (`domain_id = 19`, `value_as_string > 100`);
 - a date column against a numeric literal or a quoted word that is not a date (`death_date = 'unknown'`);
-- a numeric column against a quoted literal that is not a number (`year_of_birth = 'unknown'`). For an integer column, what converts depends on the engine: PostgreSQL's integer input takes an optional sign, digits with underscores and `0x` / `0o` / `0b` prefixes, and rejects `'1e3'` and `'1.5'`; DuckDB parses the string as a number and rounds it, so it accepts `'1e3'` and `'1.5'` but rejects `'0o17'` and a signed `'-0x1F'`. Both syntaxes were checked against the engines, and `data_quality.concept_id_string_comparison` uses the same definition;
+- a numeric column against a quoted literal that is not a number (`year_of_birth = 'unknown'`). For an integer column an integer literal is optional surrounding whitespace, an optional sign and decimal digits, so `'1980'` and `' -3 '` are accepted and `'1e3'`, `'1.5'`, `'0x1F'` and `'8_507'` are not; `data_quality.concept_id_string_comparison` uses the same definition;
 - two columns of different type families (`person_id = person_source_value`, `measurement_event_id = specimen_source_id`);
 - WARNING: `value_as_string` (a result value stored as text) ordered against a quoted number (`value_as_string > '100'`). Other varchar columns, such as code ranges on `concept_code`, are ordered as text on purpose and are not flagged.
 
-Severity: ERROR on PostgreSQL for the first four; on DuckDB ERROR for the date and unconvertible-literal cases and for `<` / `>` / BETWEEN between varchar and a number; WARNING otherwise (the outcome depends on the data). Not flagged: quoted literals on `*_concept_id` columns (data_quality.concept_id_string_comparison), date formats (data_quality.non_standard_date_literal_format), `note_nlp.offset` (data_quality.note_nlp_offset_is_character_position), template parameters (`'@start_date'`), explicit casts, computed columns and T-SQL `#temp` tables.
+Severity: ERROR for the first four, on every dialect; WARNING for the `value_as_string` ordering. Not flagged: quoted literals on `*_concept_id` columns (data_quality.concept_id_string_comparison), `note_nlp.offset` (data_quality.note_nlp_offset_is_character_position), template parameters (`'@start_date'`), explicit casts, computed columns and T-SQL `#temp` tables.
 
 `relationship.is_hierarchical` and `relationship.defines_ancestry` are left to `domain_specific.vocabulary_relationship_boolean_comparison`, which knows their value set. This rule owns a number or boolean compared with a varchar code column such as `concept.standard_concept` or `cost.cost_domain_id`, and `note_nlp.term_modifiers` compared with a concept id.
 
@@ -3275,9 +3158,10 @@ Replace the literal with one of the column's type (quoted text for varchar, a nu
 
 #### Sources
 
-- [PostgreSQL documentation: Type Conversion, Operators](https://www.postgresql.org/docs/current/typeconv-oper.html)
-- [The Book of OHDSI, ch. 9: SQL and R, Implicit casts](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#implicit-casts)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 - [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
 - [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
 - [OMOP CDM v5.4 specification: SPECIMEN](https://ohdsi.github.io/CommonDataModel/cdm54.html#specimen)
 
@@ -3286,18 +3170,18 @@ Replace the literal with one of the column's type (quoted text for varchar, a nu
 ### 2. Concept ID String Comparison { #data-quality-concept-id-string-comparison }
 
 **Rule ID:** `data_quality.concept_id_string_comparison`
-**Severity:** WARNING (a value that is not an integer: ERROR on PostgreSQL and DuckDB)
+**Severity:** WARNING for a quoted integer; ERROR on every dialect for a value that is not an integer
 
 #### Intent
 
-Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal compared with it depends on coercion: PostgreSQL gives the untyped literal the column's type and DuckDB casts it, so `gender_concept_id = '8532'` runs there, but BigQuery does not coerce string literals to numbers ("String literals don't coerce to numeric types"). A literal that is not an integer (`'FEMALE'`, `''`) cannot be converted: PostgreSQL ("invalid input syntax for type integer") and DuckDB ("Could not convert string") reject the query.
+Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal that is not an integer (`'FEMALE'`, `''`, `'1.5'`) is not a value of that type and not a concept id, on every dialect. A quoted integer (`gender_concept_id = '8532'`) names a concept id as text and depends on the engine coercing it: BigQuery does not coerce string literals to numbers ("String literals don't coerce to numeric types").
 
 #### How it works
 
 The checked columns are `CONCEPT.concept_id` and every CDM v5.4 column with a foreign key to `CONCEPT` (generated from the field-level CSV, so `concept_id_1` and `domain_concept_id_1` are included), when the column's lineage is that CDM column. A value recast to text in a CTE and columns of non-CDM tables are not judged, nor are unrendered SqlRender parameters (`'@gender_concept_ids'`). Comparisons are `=`, `<>`, `<`, `<=`, `>`, `>=`, `IN`, `NOT IN` and `BETWEEN`, in any clause.
 
-- A quoted integer: WARNING (portability). What counts as an integer is the dialect's integer input, shared with `data_quality.column_type_validation`. On PostgreSQL that is an optional sign and surrounding spaces, digits with underscores, and `0x` / `0o` / `0b` prefixes, so `'8_507'` and `'0x1F'` convert. DuckDB parses the string as a number and rounds it, so `'1e3'` and `'1.5'` convert there too, while `'0o17'` and `'-0x1F'` do not.
-- A literal that is not an integer: ERROR on PostgreSQL and DuckDB, WARNING on other dialects.
+- A quoted integer: WARNING (portability). An integer literal is optional surrounding whitespace, an optional sign and decimal digits, the definition shared with `data_quality.column_type_validation`; `'1e3'`, `'1.5'`, `'0x1F'` and `'8_507'` are not integers.
+- A literal that is not an integer: ERROR on every dialect.
 
 #### Examples
 
@@ -3351,8 +3235,8 @@ Write the value as an integer literal (`gender_concept_id = 8532`); the finding 
 
 - [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
 - [BigQuery documentation: Conversion rules, Literal coercion](https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#literal_coercion)
-- [PostgreSQL documentation: Type Conversion, Operators](https://www.postgresql.org/docs/current/typeconv-oper.html)
-- [The Book of OHDSI, ch. 9: SQL and R, Implicit casts](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#implicit-casts)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
@@ -3742,7 +3626,7 @@ Every column a query reads from a CDM table must exist in the OMOP CDM v5.4 spec
 
 #### How it works
 
-- **Columns.** Each reference is resolved the way the engine resolves it: a qualified name through the alias of its own SELECT, then enclosing SELECTs (correlated subqueries), and through CTEs and derived tables including `SELECT *`; an unqualified name against every source of its SELECT and of the enclosing ones. It is reported only when every source that could supply the name is known not to. When several CDM tables are in scope and none has the column, the finding names all of them. `JOIN ... USING (col)` names must exist on both sides, and `INSERT INTO <cdm table> (col, ...)` lists are checked.
+- **Columns.** Each reference is resolved the way the engine resolves it: a qualified name through the alias of its own SELECT, then enclosing SELECTs (correlated subqueries), and through CTEs and derived tables including `SELECT *`; an unqualified name against every source of its SELECT and of the enclosing ones. It is reported only when every source that could supply the name is known not to. When several CDM tables are in scope and none has the column, the finding names all of them. `JOIN ... USING (col)` names must exist on both sides, and `INSERT INTO <cdm table> (col, ...)` lists are checked. An engine's system columns (PostgreSQL's `ctid`, `xmin`, ...) are not CDM columns and are reported like any other, on every dialect.
 - **COHORT and COHORT_DEFINITION.** The field-level CSV places these two tables in a separate schema (`databaseSchema` = cohort), not with the CDM or vocabulary tables, and analytic tools create their own tables under those names with columns of their own. A column missing from their CDM v5.4 definition (`cohort_definition.cohort_name`, `cohort.row_id`) is therefore a WARNING saying the table may be a tool's own and the column was not checked. The set of such tables is read from the CSV's `databaseSchema` column.
 - **Output aliases** of the same SELECT are not base columns: `SELECT measurement_date AS measurement_start_date ... GROUP BY measurement_start_date` is not flagged.
 - **Tables.** A table missing from the specification and not defined in the same input is an ERROR. When its name is one or two edits from a CDM table (one edit for names under seven letters) and it stands where a CDM table is expected (unqualified, or in the schema the statement reads its CDM tables from), the finding names that table; a table removed in v5.4 (`attribute_definition`) is reported as removed. To use a results or scratch table, define it in the same input (CTE, `CREATE TABLE`, `SELECT ... INTO`, temp table).
@@ -3994,17 +3878,17 @@ Remove the statement and read the vocabulary instead. Load vocabulary changes fr
 ### 11. Canonical Vocabulary String Value Validation { #data-quality-canonical-string-value-validation }
 
 **Rule ID:** `data_quality.canonical_string_value_validation`
-**Severity:** ERROR on PostgreSQL and DuckDB; WARNING on other dialects and for misspelt IDs
+**Severity:** ERROR on every dialect for a wrong case; WARNING for misspelt IDs
 
 #### Intent
 
-`vocabulary_id`, `domain_id` and `concept_class_id` are short case-sensitive IDs (Book of OHDSI, ch. 5). A literal that names one of them with the wrong case matches no row on an engine that compares strings case-sensitively, as PostgreSQL and DuckDB do. SQL Server and MySQL compare case-insensitively under their default collations, so there the filter works but is not portable. Vocabulary IDs generally omit the dashes of the vocabulary's name (`ICD-9-CM` is `ICD9CM`), so a dashed form of a known ID matches no row unless a site has loaded a local ID with that spelling.
+`vocabulary_id`, `domain_id` and `concept_class_id` are short case-sensitive IDs defined by the vocabulary (Book of OHDSI, ch. 5; the `VOCABULARY`, `DOMAIN` and `CONCEPT_CLASS` tables). A literal that names one of them with the wrong case is not the ID the vocabulary defines, so it is an ERROR on every dialect, whatever collation an engine would compare it under. Vocabulary IDs generally omit the dashes of the vocabulary's name (`ICD-9-CM` is `ICD9CM`), so a dashed form of a known ID matches no row unless a site has loaded a local ID with that spelling.
 
 #### How it works
 
 The known IDs are every `vocabulary_id`, `domain_id` and `concept_class_id` of one Athena release (named in the generated module `_dq_vocab_ids.py`). The checked columns are the keys of `VOCABULARY`, `DOMAIN` and `CONCEPT_CLASS` and every CDM v5.4 column with a foreign key to one of them (`concept.vocabulary_id`, `concept.domain_id`, `concept.concept_class_id`, `source_to_concept_map.target_vocabulary_id`, `cost.cost_domain_id`). A column is checked when its lineage, through CTEs, derived tables and casts, is one of those columns; a value recomputed on the way (`LOWER(domain_id) AS domain_id`) is not. Comparisons are `=`, `<>`, `IN`, `NOT IN`, `BETWEEN` and `LIKE` without wildcards, in any clause.
 
-- Wrong case of a known ID: ERROR on PostgreSQL and DuckDB, WARNING on other dialects.
+- Wrong case of a known ID: ERROR on every dialect.
 - A known ID written with dashes, spaces or underscores it does not have: WARNING.
 - The message follows the operator. With `=`, `IN` or `LIKE` the filter matches no row. With `<>`, `NOT IN` or a negated `=`, no row holds the value, so the filter excludes nothing and keeps every row, including the rows of the ID that was meant (`vocabulary_id <> 'snomed'` keeps the SNOMED concepts).
 - Not flagged: `ILIKE`, comparisons on `LOWER()` / `UPPER()` of the column, and values that are not a variant of any known ID (local vocabularies).
@@ -4062,7 +3946,9 @@ Replace the literal with the ID as the vocabulary spells it (`'snomed'` -> `'SNO
 - [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
 - [The Book of OHDSI, ch. 5: Standardized Vocabularies, Domains](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptDomains)
 - [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept classes](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#concept-classes)
-- [The Book of OHDSI, ch. 9: SQL and R, Case sensitivity in string comparisons](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#case-sensitivity-in-string-comparisons)
+- [OMOP CDM v5.4 specification: VOCABULARY](https://ohdsi.github.io/CommonDataModel/cdm54.html#vocabulary)
+- [OMOP CDM v5.4 specification: DOMAIN](https://ohdsi.github.io/CommonDataModel/cdm54.html#domain)
+- [OMOP CDM v5.4 specification: CONCEPT_CLASS](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_class)
 
 ---
 
@@ -4140,74 +4026,7 @@ Remove the match against the vocabulary and join `concept` on the row's `*_conce
 
 ---
 
-### 13. Non-Standard Date Literal Format { #data-quality-non-standard-date-literal-format }
-
-**Rule ID:** `data_quality.non_standard_date_literal_format`
-**Severity:** WARNING (ERROR on DuckDB where DuckDB rejects the literal)
-
-#### Intent
-
-A string used as a date is read by the engine's date input routine, and only ISO 8601 `YYYY-MM-DD` reads the same everywhere. PostgreSQL reads `'1/8/1999'` as "January 8 in MDY mode; August 1 in DMY mode", and SQL Server reads slash dates by `SET DATEFORMAT`, so the same query selects different days on differently configured servers. PostgreSQL reads `'08-Jan-1999'` the same in every mode, but SQL Server and Oracle read month names in the session language, and a two-digit year is ambiguous (PostgreSQL rejects `'08-Jan-99'` in YMD mode). `'19990108'` (ISO 8601 basic format) reads the same on PostgreSQL ("in any mode") and SQL Server. DuckDB documents ISO 8601 `YYYY-MM-DD` input and reads every date year first: year, month and day separated by `-`, `/` or a space, with a one- or two-digit day (checked on DuckDB 2.0). It rejects the dot, month-name and `YYYYMMDD` forms and a slash date with a four-digit year (`'01/31/2020'`). A slash date whose last field has two digits is accepted when the fields form a valid year-first date, and read as that date: `'01/02/20'` is 0001-02-20.
-
-#### How it works
-
-A literal is judged when the statement uses it as a date: compared (`=`, `<>`, `<`, `>`, `BETWEEN`, `IN`) with a column whose lineage is a CDM date or datetime column, cast to a date type (`DATE '...'`, `CAST('...' AS DATE)`, `::date`, `CONVERT(DATE, '...')` without a style), or passed as a date to `DATEDIFF` / `DATEADD`. Formats reported: slash and dot dates (with or without a time part), `DD-MON-YYYY`, `DD-MON-YY`, and on DuckDB also `YYYYMMDD`.
-
-- ERROR on DuckDB when DuckDB rejects the literal: the query fails.
-- WARNING on DuckDB when it accepts the literal as a year-first date (`'01/02/20'`, read as 0001-02-20): the query runs, and only the rows are wrong when another date was meant. The message names the date DuckDB reads.
-- WARNING on other dialects: the result depends on server settings or on the engine the query is moved to.
-- Not flagged: ISO 8601 (`2020-01-31`, `2020-01-31 00:00:00`, `2020-01-31T00:00:00`), `YYYYMMDD` outside DuckDB, conversions with an explicit format (`TO_DATE('31/01/2020', 'DD/MM/YYYY')`, `CONVERT(DATE, '01/31/2020', 101)`), and text columns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-FROM condition_occurrence
-WHERE condition_start_date = '01/31/2020';
-```
-
-```sql
-SELECT person_id
-FROM drug_exposure
-WHERE drug_exposure_start_date >= '01-JAN-2020';
-```
-
-```sql
-SELECT *
-FROM visit_occurrence
-WHERE visit_start_datetime >= '01/31/2020 00:00:00';
-```
-
-**Correct patterns:**
-
-```sql
-SELECT *
-FROM condition_occurrence
-WHERE condition_start_date = DATE '2020-01-31';
-```
-
-```sql
-SELECT *
-FROM condition_occurrence
-WHERE condition_start_date = TO_DATE('31/01/2020', 'DD/MM/YYYY');
-```
-
-#### Suggested fix
-
-Write the date in ISO 8601 (`DATE '2020-01-31'`); the finding carries a REPLACE patch for `DD-MON-YYYY` and `YYYYMMDD` literals, whose meaning is unambiguous. To keep another format, convert it with an explicit format string.
-
-#### Sources
-
-- [PostgreSQL documentation: Date/Time Types, Date input](https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-DATETIME-INPUT-DATES)
-- [SQL Server documentation: SET DATEFORMAT](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-dateformat-transact-sql)
-- [Oracle Database 19c Reference: NLS_DATE_LANGUAGE](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/NLS_DATE_LANGUAGE.html)
-- [DuckDB documentation: Date Types](https://duckdb.org/docs/stable/sql/data_types/date)
-
----
-
-### 14. Source Value Field Usage { #data-quality-source-value-field-usage }
+### 13. Source Value Field Usage { #data-quality-source-value-field-usage }
 
 **Rule ID:** `data_quality.source_value_field_usage`
 **Severity:** WARNING
@@ -4293,15 +4112,15 @@ These rules detect common SQL anti-patterns and mistakes when working with OMOP 
 
 #### Intent
 
-PostgreSQL: "The correlation name and separating dot can be omitted if the column name is unique across all the tables being used in the current query." When two or more FROM / JOIN sources of a SELECT expose the same column, an unqualified reference to it cannot be resolved. The database rejects the query (PostgreSQL: `column reference "x" is ambiguous`, SQLSTATE 42702; DuckDB raises the equivalent binder error).
+PostgreSQL: "The correlation name and separating dot can be omitted if the column name is unique across all the tables being used in the current query." Many CDM tables share column names (`person_id`, `visit_occurrence_id`, `provider_id`), so when two or more CDM tables of a SELECT define the same column, an unqualified reference to it cannot be resolved and the database rejects the query. Knowing which CDM tables share a name needs the CDM specification; a clash between CTEs or derived tables the query defines itself does not, and is left to the database. Engines differ in how they resolve some names (USING-merged columns, select-list aliases), so the rule reports only names that are ambiguous under every engine's scoping, and its verdict is the same on every dialect.
 
 #### How it works
 
-The check is scope-aware. Only the sources of the SELECT that owns the reference are counted. Base CDM tables are resolved through the CDM v5.4 column catalogue. CTEs, derived tables and LATERAL subqueries expose only the columns they project, including `*` expansion and `AS t(col, ...)` lists. Parenthesised join trees contribute each of their tables. A source whose columns cannot be determined is never counted, so every finding is a certain ambiguity.
+The check is scope-aware. Only the CDM tables of the SELECT that owns the reference are counted as providers, resolved through the CDM v5.4 column catalogue; parenthesised join trees contribute each of their tables. CTEs, derived tables, LATERAL subqueries and table functions are never counted, but the columns they project (including `*` expansion and `AS t(col, ...)` lists) are still read to know which names they expose. A source whose columns cannot be determined is never counted, so every finding is a certain ambiguity.
 
-- `JOIN ... USING (col)` and `NATURAL JOIN` merge the joined columns.
+- `JOIN ... USING (col)` and `NATURAL JOIN` merge the joined columns. A name merged by any visible USING / NATURAL join is not reported, even when a further source exposes it too: DuckDB binds it to the merged column.
 - An ON clause sees only the sources joined so far. This also holds for a correlated subquery inside the ON clause, and for a LATERAL source: the JOIN of the SELECT being judged sets what is visible, not a JOIN inside the subquery.
-- A bare `ORDER BY` / `DISTINCT ON` name may name an output column; outside PostgreSQL, select-list aliases are also accepted in GROUP BY, HAVING and WHERE.
+- A name that matches an output column (outside the ON clauses) is not reported: ORDER BY / DISTINCT ON resolve it to that column, and engines such as BigQuery, DuckDB and Snowflake accept select-list aliases in GROUP BY, HAVING and WHERE. Within the select list, only an alias defined earlier in the list counts.
 - An unqualified column of a subquery that no source of the subquery can supply is resolved in the enclosing SELECT, as the database does.
 
 #### Examples
@@ -4342,100 +4161,10 @@ Qualify the column with the alias of the source you mean (e.g. `co.person_id`), 
 
 - [PostgreSQL documentation: Value Expressions, column references](https://www.postgresql.org/docs/current/sql-expressions.html#SQL-EXPRESSIONS-COLUMN-REFS)
 - [PostgreSQL documentation: Table Expressions, joined tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
-- [PostgreSQL documentation: Error Codes (42702 ambiguous_column)](https://www.postgresql.org/docs/current/errcodes-appendix.html#ERRCODES-TABLE)
 
 ---
 
-### 2. Cartesian Product With Clinical Rows { #anti-patterns-comma-separated-cross-join }
-
-**Rule ID:** `anti_patterns.comma_separated_cross_join`
-**Severity:** WARNING
-
-#### Intent
-
-Two sources of one SELECT that no predicate ties together form a Cartesian product: if they hold N and M rows, the result holds N * M. PostgreSQL defines the comma, `CROSS JOIN` and `JOIN ... ON TRUE` as the same operation, so the rule judges the predicates, not the spelling. When one side is a patient-level table, each clinical record is paired with every row of the other side, and the combinations correspond to no recorded event. Usually a `person_id` (or `visit_occurrence_id`) predicate is missing. Whether a product was intended cannot be read from the SQL, so the finding is a WARNING.
-
-#### How it works
-
-For each SELECT, the rule groups its FROM / JOIN sources by the predicates that tie them. These count as ties:
-
-- equality, range and `IN` predicates in WHERE or any ON clause, including function-wrapped columns;
-- `USING` and `NATURAL`;
-- two columns equated to the same literal;
-- a column of an enclosing query, read in a predicate or inside a derived table, which ties the source to the outer row;
-- a derived or LATERAL table whose query reads another source.
-
-A predicate under `NOT`, and `<>`, tie nothing; an `OR` ties a source only when every branch ties it to another source. Unqualified columns are attributed to the one source that can supply them (CDM catalogue, CTE and derived-table projections).
-
-The rule warns when two or more groups multiply rows and at least one contains a patient-level source. Patient-level tables have a `person_id` column or refer to a table that has one, per the CDM v5.4 field-level specification. CTEs and derived tables count by the tables they read. These sources multiply nothing:
-
-- a side that returns one row: a primary key equated to a literal, an aggregate query without GROUP BY, or LIMIT 1;
-- row generators (`VALUES`, `UNNEST`, `generate_series`);
-- CDM_SOURCE and METADATA, which [Instance Metadata Paired With Clinical Rows](#anti-patterns-singleton-metadata-clinical-join) reports.
-
-Two person-level tables left untied (`condition_occurrence` crossed with `drug_exposure`) are reported by [`joins.clinical_person_id_linkage_validation`](#joins-clinical-person-id-linkage-validation) instead, so the pair is reported once; this rule keeps every other pair, such as a clinical table crossed with a vocabulary table.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT co.condition_occurrence_id, c.concept_name
-FROM condition_occurrence co, concept c
-WHERE co.condition_concept_id = 201820;
-```
-
-```sql
-SELECT co.condition_occurrence_id, c.concept_name
-FROM condition_occurrence co
-CROSS JOIN concept c
-WHERE co.condition_concept_id = 201820;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT co.condition_occurrence_id, c.concept_name
-FROM condition_occurrence co
-JOIN concept c
-  ON co.condition_concept_id = c.concept_id
-WHERE co.condition_concept_id = 201820;
-```
-
-```sql
--- two person-level tables: reported by joins.clinical_person_id_linkage_validation, not here
-SELECT co.condition_occurrence_id, de.drug_exposure_id
-FROM condition_occurrence co, drug_exposure de
-WHERE co.condition_concept_id = 201820;
-```
-
-```sql
--- one-row side: the total used for a percentage
-WITH t AS (SELECT COUNT(*) AS n FROM person)
-SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) AS pct
-FROM t, person p
-GROUP BY p.gender_concept_id;
-```
-
-```sql
--- range predicate ties the two sources
-SELECT co.condition_occurrence_id
-FROM condition_occurrence co, observation_period op
-WHERE co.person_id = op.person_id
-  AND co.condition_start_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date;
-```
-
-#### Suggested fix
-
-Add a predicate tying the sources, typically on `person_id` (or `visit_occurrence_id` when both sides belong to the same visit). Range predicates such as `event_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date` count as ties too.
-
-#### Sources
-
-- [PostgreSQL documentation: Table Expressions, joined tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
-
----
-
-### 3. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
+### 2. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
 
 **Rule ID:** `anti_patterns.concept_code_requires_vocabulary_id`
 **Severity:** WARNING (ERROR in strict mode)
@@ -4498,7 +4227,7 @@ Add `AND <alias>.vocabulary_id = '<vocab>'` (or a join on vocabulary_id) alongsi
 
 ---
 
-### 4. Concept Name Lookup Anti-pattern { #anti-patterns-concept-name-lookup }
+### 3. Concept Name Lookup Anti-pattern { #anti-patterns-concept-name-lookup }
 
 **Rule ID:** `anti_patterns.concept_name_lookup`
 **Severity:** WARNING
@@ -4573,7 +4302,7 @@ Replace `WHERE c.concept_name = '<name>'` with `WHERE c.concept_code = '<code>' 
 
 ---
 
-### 5. Concept Relationship Transitive Misuse { #anti-patterns-concept-relationship-transitive-misuse }
+### 4. Concept Relationship Transitive Misuse { #anti-patterns-concept-relationship-transitive-misuse }
 
 **Rule ID:** `anti_patterns.concept_relationship_transitive_misuse`
 **Severity:** WARNING
@@ -4635,7 +4364,7 @@ Use concept_ancestor (`descendant_concept_id` walking down, `ancestor_concept_id
 
 ---
 
-### 6. Destructive Operations on Clinical Tables { #anti-patterns-destructive-operations-on-clinical-tables }
+### 5. Destructive Operations on Clinical Tables { #anti-patterns-destructive-operations-on-clinical-tables }
 
 **Rule ID:** `anti_patterns.destructive_operations_on_clinical_tables`
 **Severity:** ERROR (target is the CDM table); WARNING (target in another schema)
@@ -4705,66 +4434,7 @@ Remove the statement that writes to the CDM table. Write results to the Results 
 
 ---
 
-### 7. Having Without Group By { #anti-patterns-having-without-group-by }
-
-**Rule ID:** `anti_patterns.having_without_group_by`
-**Severity:** ERROR (PostgreSQL, DuckDB); WARNING for other dialects
-
-#### Intent
-
-A query with HAVING and no GROUP BY is a grouped query whose rows form one single group. Its SELECT list and HAVING clause may therefore read table columns only inside aggregate functions. A column read outside an aggregate makes PostgreSQL and DuckDB reject the query (`must appear in the GROUP BY clause or be used in an aggregate function`).
-
-The aggregate-only form is valid SQL: it returns one row when the HAVING condition holds and none otherwise. The rule does not report it.
-
-#### How it works
-
-For each SELECT that has HAVING and no GROUP BY, the rule collects the columns that the SELECT list or the HAVING clause reads outside an aggregate. Columns inside scalar subqueries, and columns of an enclosing query, are not counted. A column in an aggregate's `FILTER (WHERE …)` or in an ordered-set aggregate's `WITHIN GROUP (ORDER BY …)` (`mode()`, `percentile_cont`, `percentile_disc`) is aggregated. Every aggregate the dialect defines counts: sqlglot's aggregate classes plus the aggregate function names of the PostgreSQL and DuckDB documentation (DuckDB `list(x)`, `histogram`, `arg_max`, `string_agg`, ...). Outside the `postgres` dialect, an unqualified HAVING name that matches a select-list alias names that aggregate (DuckDB accepts `SELECT count(*) AS n FROM person HAVING n > 0`) and is not counted. A window function does not count as an aggregate, because its arguments must themselves be grouped. If any such column exists, the rule reports it by name. The finding is an ERROR for the `postgres` and `duckdb` dialects, where the rejection was verified, and a WARNING for other dialects, because some engines accept an ungrouped column under a permissive SQL mode and return an arbitrary value for it.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT person_id, COUNT(*) AS n_exposures
-FROM drug_exposure
-HAVING COUNT(*) > 3;
-```
-
-```sql
-SELECT * FROM condition_occurrence
-HAVING COUNT(*) > 5
-```
-
-**Correct patterns:**
-
-```sql
-SELECT person_id, COUNT(*) AS n_exposures
-FROM drug_exposure
-GROUP BY person_id
-HAVING COUNT(*) > 3;
-```
-
-```sql
--- one group: returns the count only when it reaches the threshold
-SELECT COUNT(DISTINCT person_id) AS n
-FROM condition_occurrence
-WHERE condition_concept_id = 201826
-HAVING COUNT(DISTINCT person_id) >= 5
-```
-
-#### Suggested fix
-
-Add `GROUP BY` for the ungrouped columns before `HAVING`, or wrap the column in an aggregate, or move a row-level condition from `HAVING` to `WHERE`.
-
-#### Sources
-
-- [PostgreSQL documentation: SELECT, HAVING clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-HAVING)
-- [PostgreSQL documentation: Aggregate Functions](https://www.postgresql.org/docs/current/functions-aggregate.html)
-- [DuckDB documentation: Aggregate Functions](https://duckdb.org/docs/stable/sql/functions/aggregates)
-
----
-
-### 8. Join Key Validation { #anti-patterns-join-key-validation }
+### 6. Join Key Validation { #anti-patterns-join-key-validation }
 
 **Rule ID:** `anti_patterns.join_key_validation`
 **Severity:** ERROR
@@ -4815,7 +4485,7 @@ Join on a pair the CDM defines: `person_id = person_id` across clinical tables, 
 
 ---
 
-### 9. Instance Metadata Paired With Clinical Rows { #anti-patterns-singleton-metadata-clinical-join }
+### 7. Instance Metadata Paired With Clinical Rows { #anti-patterns-singleton-metadata-clinical-join }
 
 **Rule ID:** `anti_patterns.singleton_metadata_clinical_join`
 **Severity:** WARNING
@@ -4828,7 +4498,7 @@ When a SELECT reads one of them next to a patient-level table and no predicate t
 
 #### How it works
 
-The rule uses the same source grouping as [Cartesian Product With Clinical Rows](#anti-patterns-comma-separated-cross-join). It reports a CDM_SOURCE or METADATA source, read directly or through a CTE or derived table, that shares a SELECT with a patient-level source in either of two cases:
+It reports a CDM_SOURCE or METADATA source, read directly or through a CTE or derived table, that shares a SELECT with a patient-level source in either of two cases:
 
 - no predicate ties the two, and the metadata source is not provably one row;
 - an equality ties an identifier column of the metadata source to an identifier column of the clinical source (`m.metadata_id = p.person_id`). No key relates them, so equal values are a coincidence.
@@ -4878,7 +4548,7 @@ Replace the join with a scalar subquery in the SELECT list, e.g. `(SELECT cdm_ve
 
 ---
 
-### 10. No DISTINCT on Primary Key Column { #anti-patterns-no-distinct-on-primary-key-column }
+### 8. No DISTINCT on Primary Key Column { #anti-patterns-no-distinct-on-primary-key-column }
 
 **Rule ID:** `anti_patterns.no_distinct_on_primary_key_column`
 **Severity:** WARNING
@@ -4934,7 +4604,7 @@ Remove DISTINCT (the structured patch does this when the statement has one DISTI
 
 ---
 
-### 11. No String Identification { #anti-patterns-no-string-identification }
+### 9. No String Identification { #anti-patterns-no-string-identification }
 
 **Rule ID:** `anti_patterns.no_string_identification`
 **Severity:** WARNING
@@ -5005,7 +4675,7 @@ Replace the string filter with a filter on the paired concept column: the standa
 
 ---
 
-### 12. Type Concept ID Not For Clinical Filtering { #anti-patterns-type-concept-id-misuse }
+### 10. Type Concept ID Not For Clinical Filtering { #anti-patterns-type-concept-id-misuse }
 
 **Rule ID:** `anti_patterns.type_concept_id_misuse`
 **Severity:** ERROR (every compared id is a known non-Type concept); WARNING otherwise
@@ -5080,7 +4750,7 @@ Move the clinical concept to the primary column: `<x>_type_concept_id = <id>` be
 
 ---
 
-### 13. CTE Shadows OMOP CDM Table { #anti-patterns-cte-shadows-omop-table }
+### 11. CTE Shadows OMOP CDM Table { #anti-patterns-cte-shadows-omop-table }
 
 **Rule ID:** `anti_patterns.cte_shadows_omop_table`
 **Severity:** WARNING
@@ -5137,161 +4807,6 @@ Rename the CTE to a name that is not a CDM table (e.g. `WITH my_concepts AS ...`
 #### Sources
 
 - [PostgreSQL documentation: SELECT, FROM clause (WITH query names)](https://www.postgresql.org/docs/current/sql-select.html#SQL-FROM)
-
----
-
-### 14. LIMIT Without ORDER BY { #anti-patterns-limit-without-order-by }
-
-**Rule ID:** `anti_patterns.limit_without_order_by`
-**Severity:** WARNING
-
-#### Intent
-
-PostgreSQL: "When using LIMIT, it is important to use an ORDER BY clause that constrains the result rows into a unique order. Otherwise you will get an unpredictable subset of the query's rows." SQL Server gives the same advice for TOP. A limited query without ORDER BY can return different rows on different runs, plans or engines. When it feeds an enclosing query (a CTE, a derived table, an `IN` list), the enclosing result is arbitrary too.
-
-#### How it works
-
-Every SELECT and set operation that declares a row limit is checked: LIMIT, TOP, FETCH FIRST, OFFSET, and Oracle `WHERE ROWNUM <= n`. It is reported when it has no ORDER BY. The rule stays silent when the result cannot depend on which rows are kept:
-
-- the query of an `EXISTS (...)`;
-- a limited derived table or CTE whose only reader counts its rows (`SELECT COUNT(*) FROM (... LIMIT 1) q`);
-- a query that returns at most one row by construction: no FROM clause, an aggregate without GROUP BY (or with `GROUP BY ()`), or a FROM list whose sources are all one row (a primary key equated to a literal, an aggregate or LIMIT 1 subquery);
-- a set operation whose arms are all one-row aggregates with a LIMIT no smaller than the arm count;
-- `LIMIT 0`, `LIMIT ALL`, `LIMIT NULL`, `OFFSET 0`, and the Oracle idiom of ROWNUM over an ordered subquery.
-
-When `concept_standardization.multiple_maps_to_targets` reports the same LIMIT (a `'Maps to'` lookup cut to one target), the validator keeps only that finding, whose message gives the OMOP reason; `ORDER BY` alone would not fix it.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT person_id, condition_concept_id
-FROM condition_occurrence
-LIMIT 100;
-```
-
-```sql
-WITH sample_patients AS (
-    SELECT person_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826
-    LIMIT 100
-)
-SELECT COUNT(*)
-FROM drug_exposure de
-JOIN sample_patients sp ON de.person_id = sp.person_id;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT person_id, condition_concept_id
-FROM condition_occurrence
-ORDER BY condition_occurrence_id
-LIMIT 100;
-```
-
-```sql
--- one row by construction
-SELECT COUNT(DISTINCT person_id) FROM condition_occurrence LIMIT 1000;
-```
-
-```sql
--- only the row count of the limited subquery is read
-SELECT COUNT(*) AS n FROM (SELECT person.* FROM person LIMIT 1) q01;
-```
-
-#### Suggested fix
-
-Add `ORDER BY <stable_key>` before the row-limiting clause, using the table's primary key (e.g. `ORDER BY condition_occurrence_id`) or a composite key that identifies a row.
-
-#### Sources
-
-- [PostgreSQL documentation: LIMIT and OFFSET](https://www.postgresql.org/docs/current/queries-limit.html)
-- [SQL Server documentation: TOP (Transact-SQL), best practices](https://learn.microsoft.com/en-us/sql/t-sql/queries/top-transact-sql#best-practices)
-
----
-
-### 15. NULL Comparison Must Use IS NULL / IS NOT NULL { #anti-patterns-null-comparison-operator }
-
-**Rule ID:** `anti_patterns.null_comparison_operator`
-**Severity:** ERROR (PostgreSQL, DuckDB); WARNING for a bare `= NULL` on PostgreSQL and for other dialects
-
-#### Intent
-
-PostgreSQL: "Ordinary comparison operators yield null (signifying 'unknown'), not true or false, when either input is null." A predicate that compares with the NULL keyword never holds, so a WHERE, ON or HAVING filter built on it removes every row, and a CASE branch built on it is never taken. `IS NULL` and `IS NOT NULL` test for null.
-
-#### How it works
-
-The rule reports comparisons with the NULL keyword. NULL may be bare, parenthesised or cast, and on either side. The forms covered are:
-
-- `=`, `<>` / `!=`, `<`, `<=`, `>`, `>=`;
-- `IN (NULL)`, when every member is NULL;
-- `NOT IN (..., NULL, ...)`, because a NULL member makes NOT IN never true;
-- `BETWEEN` with a NULL bound;
-- `CASE x WHEN NULL`, which compares `x = NULL`.
-
-A negated BETWEEN with one NULL bound is different. `x BETWEEN NULL AND y` is false where `x > y` and unknown elsewhere, so `x NOT BETWEEN NULL AND y` (or `NOT (x BETWEEN NULL AND y)`) is true exactly where `x > y` (`x < y` for `x NOT BETWEEN y AND NULL`) and unknown for every other row. It does not "never hold", so it is always a WARNING whose message states that result.
-
-Severity depends on the dialect:
-
-- PostgreSQL and DuckDB: ERROR, where the outcome was verified. The exception is a bare `x = NULL` on PostgreSQL, which the `transform_null_equals` setting rewrites to `x IS NULL`; that form is a WARNING.
-- Other dialects: WARNING, because engine settings such as SQL Server `ANSI_NULLS OFF` change NULL comparisons.
-
-The rule does not report:
-
-- assignments: `UPDATE ... SET col = NULL`, MERGE / ON CONFLICT updates, `SET @var = NULL`, T-SQL `SELECT @var = NULL`;
-- named arguments of table functions, such as DuckDB `read_csv(..., nullstr = NULL)`;
-- the string `'NULL'`;
-- an IN list that still holds a non-null member.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT person_id
-FROM death
-WHERE death_date <> NULL;
-```
-
-```sql
-SELECT person_id
-FROM death
-WHERE cause_concept_id NOT IN (1, NULL);
-```
-
-**Correct patterns:**
-
-```sql
-SELECT person_id
-FROM death
-WHERE death_date IS NOT NULL;
-```
-
-```sql
-UPDATE my_results SET flag = NULL WHERE flag IS NULL;
-```
-
-<!-- extra-examples:start -->
-**Warning variant: Bare `= NULL` on PostgreSQL: transform_null_equals would rewrite it to IS NULL**
-
-```sql
-SELECT person_id
-FROM death
-WHERE death_date = NULL;
-```
-
-<!-- extra-examples:end -->
-
-#### Suggested fix
-
-Replace `<col> = NULL` with `<col> IS NULL`, and `<col> <> NULL` / `<col> != NULL` with `<col> IS NOT NULL` (the structured patch does this). Remove NULL from a NOT IN list, and write `CASE WHEN <col> IS NULL THEN ...` instead of `CASE <col> WHEN NULL`.
-
-#### Sources
-
-- [PostgreSQL documentation: Comparison Functions and Operators](https://www.postgresql.org/docs/current/functions-comparison.html)
 
 ---
 
@@ -6740,14 +6255,14 @@ ADD: a visit_concept_id restriction to inpatient-like visits before aggregating 
 
 #### Intent
 
-`relationship.is_hierarchical` and `relationship.defines_ancestry` are `varchar(1)` columns holding `'1'` or `'0'` (OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans. Any other value never matches a row, and in PostgreSQL and BigQuery an integer or boolean operand is a type error.
+`relationship.is_hierarchical` and `relationship.defines_ancestry` are `varchar(1)` columns holding `'1'` or `'0'` (OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans. Any other value never matches a row, and an integer or boolean operand treats the column as a type the CDM does not define it as. Both are ERRORs on every dialect.
 
 #### How it works
 
 The rule checks comparisons on the two flag columns, resolved through lineage so a derived column that reuses the name is not checked; `LOWER`, `UPPER` and `TRIM` around the column are looked through. A CTE or derived table that projects the flag through a cast (`is_hierarchical::int AS is_hierarchical`) ends the check.
 
 - In every dialect: a string other than `'1'` / `'0'` (`'true'`, `'Y'`, `'yes'`, `''`), an integer other than 1 / 0, or a `LIKE` pattern that neither `'1'` nor `'0'` matches is reported, since the flag never holds it: `=` / `IN` / `LIKE` match no rows, `<>` / `NOT IN` filter nothing.
-- In PostgreSQL and BigQuery: an integer (`= 1`) or boolean (`= TRUE`, `IS TRUE`) operand, or the column used by itself as a condition (`WHERE is_hierarchical`), is reported. Neither engine casts between a string column and an integer or boolean implicitly. Engines that coerce (DuckDB, SQL Server) accept `= 1`, and the rule does not flag it there.
+- In every dialect as well: an integer (`= 1`) or boolean (`= TRUE`, `IS TRUE`) operand, or the column used by itself as a condition (`WHERE is_hierarchical`), is reported. The CDM defines the column as `varchar(1)`; whether an engine would coerce `= 1` is not the question.
 
 #### Examples
 
@@ -6770,13 +6285,13 @@ SELECT relationship_id FROM relationship WHERE LOWER(is_hierarchical) = 'true';
 SELECT relationship_id FROM relationship WHERE defines_ancestry = 2;
 ```
 
-*PostgreSQL: operator does not exist: character varying = integer*
+*an integer against the varchar(1) column*
 
 ```sql
 SELECT relationship_id FROM relationship WHERE is_hierarchical = 1;
 ```
 
-*PostgreSQL: argument of IS TRUE must be type boolean*
+*a boolean test on the varchar(1) column*
 
 ```sql
 SELECT relationship_id FROM relationship WHERE is_hierarchical IS TRUE;
@@ -6806,7 +6321,7 @@ SELECT relationship_id FROM relationship WHERE CAST(is_hierarchical AS INTEGER) 
 ```
 
 <!-- extra-examples:start -->
-**Error variant: integer operand: a type error in PostgreSQL and BigQuery**
+**Error variant: integer operand: the CDM defines the column as varchar(1) holding '0' / '1'**
 
 ```sql
 SELECT relationship_id FROM relationship
@@ -6822,8 +6337,6 @@ REPLACE: the comparison value WITH the string '1' (true) or '0' (false), e.g. `i
 #### Sources
 
 - [OMOP CDM v5.4 specification: RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#relationship)
-- [PostgreSQL 8.3 release notes: non-character types are no longer cast to text implicitly](https://www.postgresql.org/docs/8.3/release-8-3.html)
-- [PostgreSQL: SELECT, WHERE clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-WHERE)
-- [BigQuery: Conversion rules, comparison of casting and coercion](https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#comparison_chart)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---

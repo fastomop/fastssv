@@ -1,24 +1,16 @@
 """Concept ID String Comparison Rule.
 
-Every column that holds a concept_id is an INTEGER in CDM v5.4. Comparing one with a quoted literal
-(``gender_concept_id = '8507'``, ``IN ('201826', ...)``) works only where the engine converts the string: PostgreSQL
-gives the untyped literal the column's type and DuckDB casts it, but BigQuery does not coerce a string literal to a
-number ("String literals don't coerce to numeric types"). A literal that is not an integer (``= 'FEMALE'``) cannot be
-converted at all: PostgreSQL ("invalid input syntax for type integer") and DuckDB ("Could not convert string") reject
-the query.
+Every column that holds a concept_id is an INTEGER in CDM v5.4. Comparing one with a quoted literal that is not an
+integer (``gender_concept_id = 'FEMALE'``, ``= ''``) compares the column with a value its CDM type cannot hold: an
+ERROR on every dialect. A quoted integer (``gender_concept_id = '8507'``, ``IN ('201826', ...)``) names a valid
+concept id but as text; it relies on the engine coercing the literal, which BigQuery does not do ("String literals
+don't coerce to numeric types"), so it is a WARNING. An integer literal is
+``column_type_validation.is_integer_input``: optional surrounding whitespace, an optional sign, decimal digits.
 
 Checked columns: CONCEPT.concept_id and every CDM v5.4 column with a foreign key to CONCEPT (generated from the
 field-level CSV), when the column's lineage is that CDM column; a value recast in a CTE (``CAST(gender_concept_id AS
 VARCHAR) AS gender_concept_id``) or a column of a non-CDM table is not. Unrendered SqlRender parameters
 (``'@gender_concept_ids'``) are skipped: their rendered value is unknown.
-
-Severity:
-    * ERROR for a literal that is not an integer, on PostgreSQL and DuckDB (verified to reject it). Integer input
-      follows ``column_type_validation.is_integer_input``: PostgreSQL's syntax (optional sign and surrounding
-      spaces, digits with underscores, 0x / 0o / 0b prefixes: ``'8_507'``, ``'0x1F'`` convert), and on DuckDB its
-      numeric parser, which also rounds decimal and exponent forms (``'1e3'``, ``'1.5'``);
-    * WARNING for a quoted integer (portable only to engines that coerce), and for a non-integer literal on other
-      dialects.
 
 Comparisons: ``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``, ``IN`` / ``NOT IN`` and ``BETWEEN``, in any clause.
 """
@@ -43,17 +35,15 @@ from fastssv.core.helpers import (
     parse_sql,
 )
 from fastssv.core.patch import locate, replace as patch_replace
-from fastssv.core.references import BOOK_SQL, cdm_table, section
+from fastssv.core.references import CDM_FIELD_LEVEL, cdm_table
 from fastssv.core.registry import register
 
 from ._dq_concept_columns import CONCEPT_ID_COLUMNS
-from .column_type_validation import is_integer_input  # one integer input syntax per dialect for both rules
+from .column_type_validation import is_integer_input  # one integer literal syntax for both rules
 
 OPERATORS = {exp.EQ: "=", exp.NEQ: "<>", exp.LT: "<", exp.LTE: "<=", exp.GT: ">", exp.GTE: ">="}
 _PLACEHOLDER_RE = re.compile(r"@\w+")
-_DIGITS_RE = re.compile(r"\s*[+-]?\d+\s*")
 _INTEGER_TYPES = {exp.DataType.Type.INT, exp.DataType.Type.BIGINT, exp.DataType.Type.SMALLINT}
-_REJECTS_NON_INTEGER = {"postgres", "postgresql", "duckdb"}
 
 
 def _recast_to_non_integer(col: exp.Column, depth: int) -> bool:
@@ -132,18 +122,19 @@ class ConceptIdStringComparisonRule(Rule):
     name = "Concept ID String Comparison"
 
     description = (
-        "Concept id columns are INTEGER. A quoted non-integer ('FEMALE') cannot be converted and fails on "
-        "PostgreSQL and DuckDB; a quoted integer ('8532') relies on implicit coercion, which BigQuery does not do."
+        "Concept id columns are INTEGER in the CDM. A quoted value that is not an integer ('FEMALE') is not a "
+        "concept id (ERROR); a quoted integer ('8532') relies on implicit coercion, which BigQuery does not do "
+        "(WARNING)."
     )
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `<col>_concept_id = '<digits>'` (string literal) WITH `<col>_concept_id = <digits>` (integer literal). Concept id columns are INTEGER."
     long_description = (
-        "Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal compared with it depends "
-        "on coercion: PostgreSQL gives the untyped literal the column's type and DuckDB casts it, but BigQuery does "
-        "not coerce string literals to numbers, so '8532' is a portability WARNING. A literal that is not an "
-        "integer ('FEMALE', '') cannot be converted: PostgreSQL and DuckDB reject the query, an ERROR on those "
-        "dialects (a WARNING elsewhere). Write the value as an integer literal; to find a concept by name, join "
-        "concept."
+        "Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal that is not an integer "
+        "('FEMALE', '', '1.5') is not a value of that type, so the comparison is an ERROR on every dialect; an "
+        "integer literal is optional whitespace, an optional sign and decimal digits. A quoted integer ('8532') "
+        "names a concept id as text and depends on the engine coercing it: BigQuery does not coerce string "
+        "literals to numbers, so it is a portability WARNING. Write the value as an integer literal; to find a "
+        "concept by name, join concept."
     )
     example_bad = "SELECT person_id\nFROM person\nWHERE gender_concept_id = '8532';"
     example_good = "SELECT person_id\nFROM person\nWHERE gender_concept_id = 8532;"
@@ -151,7 +142,7 @@ class ConceptIdStringComparisonRule(Rule):
         RuleExample(
             sql="SELECT person_id\nFROM person\nWHERE gender_concept_id = 'FEMALE';",
             severity=Severity.ERROR,
-            note="Not an integer: PostgreSQL and DuckDB cannot convert it; the concept id for FEMALE is 8532.",
+            note="Not an integer, so not a concept id: the concept id for FEMALE is 8532.",
         ),
     )
     references = (
@@ -160,11 +151,8 @@ class ConceptIdStringComparisonRule(Rule):
             "BigQuery documentation: Conversion rules, Literal coercion",
             "https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#literal_coercion",
         ),
-        Reference(
-            "PostgreSQL documentation: Type Conversion, Operators",
-            "https://www.postgresql.org/docs/current/typeconv-oper.html",
-        ),
-        section(BOOK_SQL, "implicit-casts", "Implicit casts"),
+        cdm_table("concept"),
+        CDM_FIELD_LEVEL,
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -190,24 +178,18 @@ class ConceptIdStringComparisonRule(Rule):
                 if key in seen:
                     continue
                 seen.add(key)
-                violations.append(self._violation(sql, column, op, quoted, dialect))
+                violations.append(self._violation(sql, column, op, quoted))
         return violations
 
-    def _violation(self, sql: str, column: exp.Column, op: str, quoted: List[str], dialect: str) -> RuleViolation:
+    def _violation(self, sql: str, column: exp.Column, op: str, quoted: List[str]) -> RuleViolation:
         col = column.sql()
-        non_integer = [v for v in quoted if not is_integer_input(v, dialect)]
+        non_integer = [v for v in quoted if not is_integer_input(v)]
         shown = ", ".join(f"'{v}'" for v in quoted[:3]) + (", ..." if len(quoted) > 3 else "")
-        if non_integer and dialect in _REJECTS_NON_INTEGER:
+        if non_integer:
             severity = Severity.ERROR
             message = (
-                f"Concept id column compared with a value that is not an integer: {col} {op} {shown}. {col} is "
-                f"INTEGER and '{non_integer[0]}' cannot be converted, so the query fails."
-            )
-        elif non_integer:
-            severity = Severity.WARNING
-            message = (
-                f"Concept id column compared with a value that is not an integer: {col} {op} {shown}. {col} is "
-                f"INTEGER; engines that convert the literal fail on '{non_integer[0]}'."
+                f"Concept id column compared with a value that is not an integer: {col} {op} {shown}. The CDM "
+                f"defines {col} as INTEGER, and '{non_integer[0]}' is not a concept id."
             )
         else:
             severity = Severity.WARNING
@@ -216,8 +198,7 @@ class ConceptIdStringComparisonRule(Rule):
                 f"comparison relies on coercing the literal, which BigQuery does not do."
             )
         patch = None
-        # Only plain digits are written the same way as an unquoted literal ('0x1F' unquoted is not portable).
-        if not non_integer and len(quoted) == 1 and _DIGITS_RE.fullmatch(quoted[0]):
+        if not non_integer and len(quoted) == 1:
             for q in ("'", '"'):
                 span = locate(sql, f"{q}{quoted[0]}{q}")
                 if span is not None:

@@ -226,6 +226,16 @@ def normalize_name(s: str) -> str:
     return s.lower().strip()
 
 
+def display_sql(node: exp.Expression) -> str:
+    """``node`` rendered for a finding's message, the same whichever dialect parsed it."""
+    node = node.copy()
+    # Parsers record their engine's division semantics (DuckDB: x / 0 is NULL), which would render as NULLIF.
+    for div in node.find_all(exp.Div):
+        div.set("safe", None)
+        div.set("typed", None)
+    return node.sql()
+
+
 # Top-level statement types sqlglot returns for real SQL. Anything else
 # (e.g. a bare `Alias`, `Literal`, `Column`, `Anonymous`) means sqlglot
 # tokenized the text but it isn't actually a SQL statement.
@@ -818,6 +828,7 @@ __all__ = [
     "detect_dialect",
     "looks_like_prose",
     "normalize_name",
+    "display_sql",
     "parse_sql",
     "collect_locally_defined_tables",
     "collect_locally_defined_unqualified_tables",

@@ -153,27 +153,6 @@ def _violations(sql: str, rule_id: str):
     return rules[rule_id]().validate(sql)
 
 
-def test_null_comparison_emits_replace_patch():
-    sql = "SELECT person_id FROM death WHERE death_date = NULL"
-    violations = _violations(sql, "anti_patterns.null_comparison_operator")
-    assert violations
-    patch = violations[0].suggested_fix_patch
-    assert patch is not None
-    assert patch["action"] == "REPLACE"
-    fixed = apply_patch(sql, patch)
-    assert fixed == "SELECT person_id FROM death WHERE death_date IS NULL"
-
-
-def test_null_comparison_neq_emits_is_not_null():
-    sql = "SELECT person_id FROM death WHERE death_date <> NULL"
-    violations = _violations(sql, "anti_patterns.null_comparison_operator")
-    assert violations
-    patch = violations[0].suggested_fix_patch
-    assert patch["action"] == "REPLACE"
-    fixed = apply_patch(sql, patch)
-    assert "IS NOT NULL" in fixed
-
-
 def test_concept_code_emits_add_patch_with_inferred_vocab():
     sql = "SELECT c.concept_id FROM concept c WHERE c.concept_code = '250.00'"
     violations = _violations(sql, "anti_patterns.concept_code_requires_vocabulary_id")
@@ -228,18 +207,6 @@ def test_visit_occurrence_id_join_emits_replace_with_aliased_sql():
     assert patch["action"] == "REPLACE"
     fixed = apply_patch(sql, patch)
     assert "m.visit_detail_id = vd.visit_detail_id" in fixed
-
-
-def test_violation_to_dict_emits_patch_dict_for_mechanical():
-    """Mechanical (REPLACE/ADD/REMOVE) violations serialise `fix` as the
-    structured patch dict — no separate prose field."""
-    sql = "SELECT 1 FROM death WHERE death_date = NULL"
-    violations = _violations(sql, "anti_patterns.null_comparison_operator")
-    d = violations[0].to_dict()
-    assert "suggested_fix" not in d
-    assert "suggested_fix_patch" not in d
-    assert isinstance(d["fix"], dict)
-    assert d["fix"]["action"] == "REPLACE"
 
 
 def test_violation_freeform_serialises_as_prose_string():

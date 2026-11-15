@@ -51,7 +51,6 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
-from fastssv.core.deduplication import scope_key
 from fastssv.core.references import BOOK_VOCABULARIES, section
 from fastssv.core.helpers import has_table_reference, normalize_name, parse_sql, relationship_filters, side_reads
 from fastssv.core.registry import register
@@ -284,7 +283,7 @@ class MultipleMapsToTargetsRule(Rule):
                             f"REMOVE: `{what.split(' without')[0]}` and keep every target, OR REPLACE WITH explicit "
                             "aggregation (e.g. `MIN(concept_id_2)`) so the choice is deterministic."
                         ),
-                        details={"context": select.sql(), **({"limit_scope": scope_key(select)} if capped else {})},
+                        details={"context": select.sql()},
                     )
                 )
 

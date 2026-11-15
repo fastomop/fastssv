@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![OMOP CDM](https://img.shields.io/badge/OMOP-CDM%20v5.4-5C4EE5)
-![Rules](https://img.shields.io/badge/rules-92-orange)
+![Rules](https://img.shields.io/badge/rules-85-orange)
 ![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Tests](https://github.com/fastomop/fastSSV/actions/workflows/tests.yml/badge.svg)
@@ -128,7 +128,7 @@ Mounted at `/mcp` and built per the [Streamable HTTP transport spec](https://mod
 | Architecture overview | [docs/architecture.md](docs/architecture.md) |
 | Plugin system / writing a rule | [docs/plugin_architecture.md](docs/plugin_architecture.md) |
 | Reasoning behind each rule category | [docs/semantic_rules_guide.md](docs/semantic_rules_guide.md) |
-| Per-rule catalog (all 92, with examples and sources) | [docs/rules_reference.md](docs/rules_reference.md) |
+| Per-rule catalog (all 85, with examples and sources) | [docs/rules_reference.md](docs/rules_reference.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
 | MCP server | [docs/mcp.md](docs/mcp.md) |
 | JSON report format | [docs/json_output.md](docs/json_output.md) |

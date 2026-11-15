@@ -236,7 +236,7 @@ class NoteNlpOffsetIsCharacterPositionRule(Rule):
             if not tree:
                 continue
             for kind, detail, col in _findings(tree):
-                col_sql = col.sql(dialect=dialect)
+                col_sql = col.sql()
                 key = (kind, detail, col_sql)
                 if key in seen:
                     continue

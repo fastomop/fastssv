@@ -138,7 +138,7 @@ class DatetimeBetweenDateLiteralRule(Rule):
                 if key in seen:
                     continue
                 seen.add(key)
-                name = col.sql(dialect=dialect)
+                name = col.sql()
                 details = {"column": name, "end": day, "issue": "datetime_inclusive_date_upper_bound"}
                 if isinstance(predicate, exp.Between):
                     low = literal_datetime(predicate.args.get("low"))
@@ -147,7 +147,7 @@ class DatetimeBetweenDateLiteralRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"`{predicate.sql(dialect=dialect)[:120]}` bounds the timestamp `{name}` inclusively by "
+                            f"`{predicate.sql()[:120]}` bounds the timestamp `{name}` inclusively by "
                             f"the date {day}, which compares as {day} 00:00:00: records later on {day} are "
                             "excluded. If the data carries times of day, use a half-open bound or compare the day."
                         ),

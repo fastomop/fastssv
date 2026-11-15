@@ -4,9 +4,8 @@ CDM v5.4 field-level specification, concept.standard_concept: "The allowable val
 'C' (Classification Concept), otherwise the content is NULL." A comparison with any other value matches nothing.
 
 * ERROR: a required filter (AND-joined to WHERE / HAVING / an inner join's ON) that admits only values the column
-  never holds: ``= 'Y'``, ``= 'N'``, ``= ''`` (non-standard is NULL, not an empty string), ``IN ('N')``. On
-  PostgreSQL and DuckDB, which compare strings case-sensitively, a lowercase ``'s'`` / ``'c'`` is also an ERROR; on
-  other case-sensitive engines it is a WARNING and on SQL Server / MySQL it is accepted.
+  never holds: ``= 'Y'``, ``= 'N'``, ``= ''`` (non-standard is NULL, not an empty string), ``IN ('N')``, and a
+  lowercase ``'s'`` / ``'c'`` (the CDM values are uppercase), on every dialect.
 * WARNING: the same comparison where it does not restrict the result (under OR, in a CASE label, in an outer join's
   ON clause), a list that mixes valid and impossible values (``IN ('S', 'Y')``: the extra value is dead), and a
   negated impossible value (``<> 'N'``, ``NOT IN ('')``), which excludes nothing and equals ``IS NOT NULL``.
@@ -25,7 +24,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import normalize_name, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
-from fastssv.core.references import BOOK_SQL, BOOK_VOCABULARIES, cdm_table, section
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_FIELD_LEVEL, cdm_table, section
 from fastssv.core.registry import register
 
 from ._cs_scope import ColumnFilter, dead_scalar_column, instance_filters
@@ -34,10 +33,6 @@ CONCEPT_TABLE = "concept"
 STANDARD_CONCEPT_COLUMN = "standard_concept"
 VALID_VALUES = {"S", "C"}
 
-# Book of OHDSI: "PostgreSQL ... always case sensitive", SQL Server case-insensitive. Lowercase was checked to match
-# nothing on DuckDB and PostgreSQL; other engines are reported at WARNING.
-_CASE_VERIFIED_DIALECTS = {"postgres", "postgresql", "duckdb"}
-_CASE_INSENSITIVE_DIALECTS = {"tsql", "mysql"}
 _TRUE_LIKE = {"Y", "YES", "TRUE", "T", "1"}
 _FALSE_LIKE = {"N", "NO", "FALSE", "F", "0"}
 
@@ -57,7 +52,7 @@ def _note(raw: str) -> str:
     if raw == "":
         return "'' is not a standard_concept value; non-standard concepts carry NULL (use IS NULL)."
     if raw.upper() in VALID_VALUES:
-        return f"'{raw}' is lowercase; standard_concept holds 'S' / 'C' and the comparison is case-sensitive here."
+        return f"'{raw}' is lowercase; the CDM values are the uppercase 'S' / 'C'."
     if raw.upper() in _FALSE_LIKE:
         return f"'{raw}' is not a standard_concept value; non-standard concepts carry NULL (use IS NULL)."
     return f"'{raw}' is not a standard_concept value."
@@ -140,8 +135,8 @@ class StandardConceptValueValidationRule(Rule):
     name = "Standard Concept Value Validation"
     description = (
         "standard_concept holds only 'S', 'C' or NULL. A required filter on any other string ('N', 'Y', '', a "
-        "case-sensitive lowercase 's') returns no rows (ERROR); a dead value next to valid ones, a negated impossible "
-        "value or a comparison that does not restrict the rows is a WARNING."
+        "lowercase 's') returns no rows (ERROR); a dead value next to valid ones, a negated impossible value or a "
+        "comparison that does not restrict the rows is a WARNING."
     )
     severity = Severity.ERROR
     suggested_fix = (
@@ -151,9 +146,9 @@ class StandardConceptValueValidationRule(Rule):
     long_description = (
         "The CDM v5.4 specification allows exactly 'S' (Standard), 'C' (Classification) and NULL in "
         "concept.standard_concept. A required filter on any other string ('N', 'Y', an empty string) matches no "
-        "concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' does the same on PostgreSQL and "
-        "DuckDB, which compare strings case-sensitively (ERROR there, WARNING on other case-sensitive engines, "
-        "accepted on SQL Server and MySQL). A list that also contains a valid value (IN ('S', 'Y')) still returns "
+        "concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' is not a CDM value either and is "
+        "an ERROR on every dialect, whatever collation an engine would compare it under. A list that also contains "
+        "a valid value (IN ('S', 'Y')) still returns "
         "rows and is a WARNING about the dead value; so is a comparison under OR, in a CASE label or in an outer "
         "join's ON clause. A negated impossible value (<> 'N', NOT IN ('')) excludes nothing and equals IS NOT NULL "
         "(WARNING). `standard_concept = '' OR standard_concept IS NULL` is accepted."
@@ -163,7 +158,7 @@ class StandardConceptValueValidationRule(Rule):
     references = (
         cdm_table("concept"),
         section(BOOK_VOCABULARIES, "non-standard-concepts", "Non-standard concepts"),
-        section(BOOK_SQL, "case-sensitivity-in-string-comparisons", "Case sensitivity in string comparisons"),
+        CDM_FIELD_LEVEL,
     )
     extra_examples = (
         RuleExample(
@@ -181,6 +176,11 @@ class StandardConceptValueValidationRule(Rule):
             severity=Severity.ERROR,
             note="Empty string: non-standard concepts carry NULL, so nothing matches",
         ),
+        RuleExample(
+            sql="SELECT concept_id\nFROM concept\nWHERE standard_concept = 's';",
+            severity=Severity.ERROR,
+            note="Lowercase: the CDM values are the uppercase 'S' and 'C', on every dialect",
+        ),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -189,7 +189,6 @@ class StandardConceptValueValidationRule(Rule):
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-        dialect_norm = normalize_name(dialect or "postgres")
         violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
@@ -200,7 +199,7 @@ class StandardConceptValueValidationRule(Rule):
                     if id(flt.node) in seen or not flt.complete:
                         continue
                     seen.add(id(flt.node))
-                    finding = self._judge(flt, dialect_norm)
+                    finding = self._judge(flt)
                     if finding is not None:
                         severity, message, raw = finding
                         patch = _eq_patch(sql, flt, raw) if severity == Severity.ERROR and flt.op == "eq" else None
@@ -217,8 +216,8 @@ class StandardConceptValueValidationRule(Rule):
                         )
         return violations
 
-    def _judge(self, flt: ColumnFilter, dialect: str):
-        case_sensitive = dialect not in _CASE_INSENSITIVE_DIALECTS and not flt.case_folded
+    def _judge(self, flt: ColumnFilter):
+        case_sensitive = not flt.case_folded
         values = _string_values(flt)
         if not values:
             return None
@@ -244,10 +243,9 @@ class StandardConceptValueValidationRule(Rule):
                 "standard concepts are wanted.",
                 impossible[0],
             )
-        only_case = all(v.upper() in VALID_VALUES for v in impossible)
         all_dead = len(impossible) == len(values)
         restricts = flt.required and not flt.outer_join_on
-        if all_dead and restricts and (not only_case or dialect in _CASE_VERIFIED_DIALECTS):
+        if all_dead and restricts:
             dead = dead_scalar_column(flt.node)
             consequence = dead or "the query returns no rows"
             return (
@@ -259,10 +257,8 @@ class StandardConceptValueValidationRule(Rule):
             )
         if not all_dead:
             reason = "the other values still return rows, but these never match"
-        elif not restricts:
-            reason = "it never matches; here it does not restrict the result, but the branch is dead"
         else:
-            reason = "it matches nothing where string comparison is case-sensitive"
+            reason = "it never matches; here it does not restrict the result, but the branch is dead"
         return (
             Severity.WARNING,
             f"`{flt.sql}`: {', '.join(repr(v) for v in impossible)} is not a standard_concept value; {reason}. "

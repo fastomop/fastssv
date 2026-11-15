@@ -1,13 +1,13 @@
 """Relationship Flag Comparison Rule.
 
 relationship.is_hierarchical and relationship.defines_ancestry are varchar(1) columns holding '1' or '0'
-(OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans:
+(OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans. On every dialect:
 
-* any other string ('true', 'Y', 'yes', '') or integer (2, -1) never occurs, in every dialect: ``=`` / ``IN``
-  against it match no rows, ``<>`` / ``NOT IN`` filter nothing;
-* in PostgreSQL and BigQuery an integer (``= 1``) or boolean (``= TRUE``) operand, or using the column itself as a
-  condition (``WHERE is_hierarchical``), is a type error: neither casts between a string column and an integer or
-  boolean implicitly. Engines that coerce implicitly (SQL Server, ...) accept ``= 1``.
+* any other string ('true', 'Y', 'yes', '') or integer (2, -1) never occurs: ``=`` / ``IN`` against it match no rows,
+  ``<>`` / ``NOT IN`` filter nothing;
+* an integer (``= 1``) or boolean (``= TRUE``) operand, ``IS TRUE`` / ``IS FALSE``, or the column used itself as a
+  condition (``WHERE is_hierarchical``) treats the varchar(1) column as a number or a boolean, which the CDM does not
+  define it as.
 
 Correct:
     SELECT relationship_id FROM relationship WHERE is_hierarchical = '1'
@@ -16,8 +16,8 @@ Correct:
 Violations:
     WHERE is_hierarchical = 'true'      -- no row holds 'true'
     WHERE defines_ancestry = 2          -- no such value
-    WHERE is_hierarchical = 1           -- PostgreSQL: operator does not exist: character varying = integer
-    WHERE is_hierarchical               -- PostgreSQL: argument of WHERE must be type boolean
+    WHERE is_hierarchical = 1           -- integer against a varchar(1) column
+    WHERE is_hierarchical               -- varchar(1) column used as a boolean
 """
 
 import re
@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import (
     _explicit_projection,
     _pick_source,
@@ -39,14 +39,12 @@ from fastssv.core.helpers import (
     parse_sql,
 )
 from fastssv.core.patch import locate, replace as patch_replace
-from fastssv.core.references import cdm_table
+from fastssv.core.references import CDM_FIELD_LEVEL, cdm_table
 from fastssv.core.registry import register
 
 RELATIONSHIP_TABLE = "relationship"
 FLAG_COLUMNS = {"is_hierarchical", "defines_ancestry"}
 VALID_VALUES = {"0", "1"}
-# Engines without an implicit cast between a string column and an integer / boolean operand.
-_STRICT_TYPING_DIALECTS = {"postgres": "PostgreSQL", "postgresql": "PostgreSQL", "bigquery": "BigQuery"}
 
 _TRUE_STRINGS = {"y", "yes", "true", "t"}
 _FALSE_STRINGS = {"n", "no", "false", "f"}
@@ -120,33 +118,25 @@ def _impossible(col_name: str, shown: str, op: str) -> str:
     return head + "an ordering comparison against it is meaningless. Use = '1' (true) or = '0' (false)."
 
 
-def _judge(col_name: str, value: exp.Expression, typing_dialect: Optional[str], op: str) -> Optional[str]:
-    """Message when ``value`` cannot correctly be compared with the varchar(1) flag, else None. ``typing_dialect``
-    names the engine that rejects varchar-vs-integer/boolean comparisons, or is None where they coerce."""
+def _judge(col_name: str, value: exp.Expression, op: str) -> Optional[str]:
+    """Message when ``value`` is not a value of the varchar(1) flag, else None."""
     if isinstance(value, exp.Literal) and value.is_string:
         if value.this in VALID_VALUES:
             return None
         return _impossible(col_name, f"the string '{value.this}'", op)
     if isinstance(value, exp.Literal):
         if value.this in VALID_VALUES:
-            if typing_dialect is None:
-                return None
-            engine_error = (
-                "operator does not exist: character varying = integer"
-                if typing_dialect == "PostgreSQL"
-                else "no implicit cast between a string column and an integer"
-            )
             return (
-                f"relationship.{col_name} is varchar(1); comparing it with the integer {value.this} is a type error "
-                f"in {typing_dialect} ({engine_error}). Use '{value.this}'."
+                f"relationship.{col_name} is varchar(1) in the CDM, holding the strings '1' and '0'; the integer "
+                f"{value.this} is not a value of that type. Use '{value.this}'."
             )
         return _impossible(col_name, f"{value.this} (an invalid value)", op)
     if isinstance(value, exp.Neg) and isinstance(value.this, exp.Literal):
         return _impossible(col_name, f"{value.sql()} (an invalid value)", op)
-    if isinstance(value, exp.Boolean) and typing_dialect is not None:
+    if isinstance(value, exp.Boolean):
         return (
-            f"relationship.{col_name} is varchar(1), not boolean; comparing it with {value.sql()} is a type error in "
-            f"{typing_dialect}. Use '{'1' if value.this else '0'}'."
+            f"relationship.{col_name} is varchar(1) in the CDM, not boolean; {value.sql()} is not a value of that "
+            f"type. Use '{'1' if value.this else '0'}'."
         )
     return None
 
@@ -176,9 +166,7 @@ def _used_as_condition(col: exp.Column) -> bool:
     return False
 
 
-def _find_violations(
-    tree: exp.Expression, strict_typing: Optional[str]
-) -> List[Tuple[str, Optional[exp.Expression], Optional[str]]]:
+def _find_violations(tree: exp.Expression) -> List[Tuple[str, Optional[exp.Expression], Optional[str]]]:
     """(message, offending literal, replacement text) per violation."""
     aliases = extract_aliases(tree)
     cte_names = {normalize_name(c.alias_or_name) for c in tree.find_all(exp.CTE) if c.alias_or_name}
@@ -201,7 +189,7 @@ def _find_violations(
             col = flag_column(side)
             if col is None:
                 continue
-            message = _judge(normalize_name(col.name), value, strict_typing, type(comp).__name__.upper())
+            message = _judge(normalize_name(col.name), value, type(comp).__name__.upper())
             if message:
                 replacement = None
                 if isinstance(value, exp.Literal) and value.is_string:
@@ -227,35 +215,34 @@ def _find_violations(
             continue
         name = normalize_name(col.name)
         op = "NOT_IN" if isinstance(in_expr.parent, exp.Not) else "IN"
-        messages = [m for m in (_judge(name, v, strict_typing, op) for v in in_expr.expressions or []) if m]
+        messages = [m for m in (_judge(name, v, op) for v in in_expr.expressions or []) if m]
         if messages:
             values = ", ".join(v.sql() for v in in_expr.expressions or [])
             out.append((f"IN list ({values}) has invalid values: " + " ".join(dict.fromkeys(messages)), None, None))
 
-    if strict_typing:
-        for is_node in tree.find_all(exp.Is):
-            col = flag_column(is_node.this)
-            if col is not None and isinstance(is_node.expression, exp.Boolean):
-                name = normalize_name(col.name)
-                out.append(
-                    (
-                        f"relationship.{name} is varchar(1), not boolean; `IS {is_node.expression.sql()}` is a type "
-                        f"error in {strict_typing}. Write `{name} = '{'1' if is_node.expression.this else '0'}'`.",
-                        None,
-                        None,
-                    )
+    for is_node in tree.find_all(exp.Is):
+        col = flag_column(is_node.this)
+        if col is not None and isinstance(is_node.expression, exp.Boolean):
+            name = normalize_name(col.name)
+            out.append(
+                (
+                    f"relationship.{name} is varchar(1) in the CDM, not boolean; `IS {is_node.expression.sql()}` "
+                    f"treats it as one. Write `{name} = '{'1' if is_node.expression.this else '0'}'`.",
+                    None,
+                    None,
                 )
-        for col in tree.find_all(exp.Column):
-            if flag(col) and _used_as_condition(col):
-                name = normalize_name(col.name)
-                out.append(
-                    (
-                        f"relationship.{name} is varchar(1), not boolean; using it directly as a condition is a type "
-                        f"error in {strict_typing} (the condition must be boolean). Write `{name} = '1'`.",
-                        None,
-                        None,
-                    )
+            )
+    for col in tree.find_all(exp.Column):
+        if flag(col) and _used_as_condition(col):
+            name = normalize_name(col.name)
+            out.append(
+                (
+                    f"relationship.{name} is varchar(1) in the CDM, not boolean; using it directly as a condition "
+                    f"treats it as one. Write `{name} = '1'`.",
+                    None,
+                    None,
                 )
+            )
     return out
 
 
@@ -267,8 +254,8 @@ class RelationshipBooleanComparisonRule(Rule):
     name = "Relationship Flag Comparison"
     description = (
         "relationship.is_hierarchical and defines_ancestry are varchar(1) holding '1' or '0'. Other values never "
-        "occur; in PostgreSQL and BigQuery integer or boolean operands, or using the column as a condition, are type "
-        "errors."
+        "occur, and integer or boolean operands, or using the column as a condition, treat the varchar column as a "
+        "number or boolean: ERROR on every dialect."
     )
     severity = Severity.ERROR
     suggested_fix = (
@@ -277,9 +264,10 @@ class RelationshipBooleanComparisonRule(Rule):
     long_description = (
         "In OMOP CDM v5.4 relationship.is_hierarchical and relationship.defines_ancestry are varchar(1) columns "
         "whose values are '1' and '0'. 'true', 'Y', 'yes' or 2 never occur: `=` against them matches no row and "
-        "`<>` filters nothing. PostgreSQL and BigQuery also refuse to compare a string column with an integer or "
-        "boolean, so `is_hierarchical = 1`, `= TRUE` and a bare `WHERE is_hierarchical` fail there; engines with "
-        "implicit coercion accept `= 1`. Comparing with the strings '1' / '0' works everywhere."
+        "`<>` filters nothing. An integer or boolean operand (`is_hierarchical = 1`, `= TRUE`, `IS TRUE`) or a bare "
+        "`WHERE is_hierarchical` treats the column as a number or a boolean, which the CDM does not define it as: "
+        "an ERROR on every dialect, whether or not an engine would cast its way past it. Compare with the strings "
+        "'1' / '0'."
     )
     example_bad = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = 'yes';"
     example_good = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = '1';"
@@ -287,7 +275,7 @@ class RelationshipBooleanComparisonRule(Rule):
         RuleExample(
             sql="SELECT relationship_id FROM relationship\nWHERE defines_ancestry = 1;",
             severity=Severity.ERROR,
-            note="integer operand: a type error in PostgreSQL and BigQuery",
+            note="integer operand: the CDM defines the column as varchar(1) holding '0' / '1'",
         ),
         RuleExample(
             sql="SELECT relationship_id FROM relationship\nWHERE is_hierarchical;",
@@ -297,18 +285,7 @@ class RelationshipBooleanComparisonRule(Rule):
     )
     references = (
         cdm_table("relationship"),
-        Reference(
-            "PostgreSQL 8.3 release notes: non-character types are no longer cast to text implicitly",
-            "https://www.postgresql.org/docs/8.3/release-8-3.html",
-        ),
-        Reference(
-            "PostgreSQL: SELECT, WHERE clause",
-            "https://www.postgresql.org/docs/current/sql-select.html#SQL-WHERE",
-        ),
-        Reference(
-            "BigQuery: Conversion rules, comparison of casting and coercion",
-            "https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#comparison_chart",
-        ),
+        CDM_FIELD_LEVEL,
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -321,13 +298,12 @@ class RelationshipBooleanComparisonRule(Rule):
         if parse_error:
             return []
 
-        strict_typing = _STRICT_TYPING_DIALECTS.get(normalize_name(dialect or "postgres"))
         violations: List[RuleViolation] = []
         seen: Set[str] = set()
         for tree in trees:
             if not tree:
                 continue
-            for message, value_node, replacement in _find_violations(tree, strict_typing):
+            for message, value_node, replacement in _find_violations(tree):
                 if message in seen:
                     continue
                 seen.add(message)

@@ -19,7 +19,6 @@ from .fact_relationship_requires_relationship_concept_filter import (
     FactRelationshipRequiresRelationshipConceptFilterRule,
 )
 from .free_text_column_misuse import FreeTextColumnMisuseRule
-from .non_standard_date_literal_format import NonStandardDateLiteralFormatRule
 
 __all__ = [
     "SourceValueFieldUsageRule",
@@ -35,5 +34,4 @@ __all__ = [
     "EpisodeRequiresConceptFilterRule",
     "FactRelationshipRequiresRelationshipConceptFilterRule",
     "FreeTextColumnMisuseRule",
-    "NonStandardDateLiteralFormatRule",
 ]

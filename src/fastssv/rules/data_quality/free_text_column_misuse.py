@@ -249,7 +249,7 @@ class FreeTextColumnMisuseRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"{table}.{column} is free text cast to {to.sql(dialect=dialect)}. The cast fails on the "
+                            f"{table}.{column} is free text cast to {to.sql()}. The cast fails on the "
                             "first value that is not a number, so whether the query runs depends on the data."
                         ),
                         suggested_fix=(

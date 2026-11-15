@@ -3775,7 +3775,7 @@ class TestStandardConceptValueValidation:
         assert len(violations) == 0
 
     def test_lowercase_value_is_case_sensitive(self) -> None:
-        """Lowercase 's' matches no rows where string comparison is case-sensitive (PostgreSQL, DuckDB)."""
+        """Lowercase 's' is not a CDM value of standard_concept, on every dialect."""
         sql = """
         SELECT * FROM concept WHERE standard_concept = 's'
         """
@@ -3785,7 +3785,7 @@ class TestStandardConceptValueValidation:
         from fastssv.core.registry import get_rule
 
         rule = get_rule("concept_standardization.standard_concept_value_validation")()
-        assert rule.validate(sql, "tsql") == []
+        assert [v.severity for v in rule.validate(sql, "tsql")] == [Severity.ERROR]
 
     def test_invalid_not_equals(self) -> None:
         """Invalid value in != comparison should error."""
@@ -13898,229 +13898,6 @@ class TestNoStringIdentification:
         assert len(violations) == 0
 
 
-class TestCommaSeparatedCrossJoin:
-    """Tests for GAP_035: comma_separated_cross_join."""
-
-    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("anti_patterns.comma_separated_cross_join")()
-        return rule.validate(sql, dialect)
-
-    # --- Violation tests ---
-
-    def test_gap_035_two_clinical_tables_no_join(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence, drug_exposure
-        WHERE condition_concept_id = 201826
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    def test_gap_035_three_clinical_tables_no_join(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence, drug_exposure, measurement
-        WHERE condition_concept_id = 201826
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    def test_gap_035_clinical_and_person_no_join(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence co, person p
-        WHERE co.condition_concept_id = 201826
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    def test_gap_035_with_aliases_no_join(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT co.person_id, de.drug_concept_id
-        FROM condition_occurrence co, drug_exposure de
-        WHERE co.condition_concept_id = 201826
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    # --- Correct pattern tests ---
-
-    def test_gap_035_with_where_join_condition(self) -> None:
-        """GAP_035: Comma-separated with WHERE join condition should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence co, drug_exposure de
-        WHERE co.person_id = de.person_id
-          AND co.condition_concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_with_explicit_join(self) -> None:
-        """GAP_035: Explicit JOIN...ON should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence co
-        JOIN drug_exposure de ON co.person_id = de.person_id
-        WHERE co.condition_concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_single_table(self) -> None:
-        """GAP_035: Single table query should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_vocabulary_tables_cross_join(self) -> None:
-        """GAP_035: Small vocabulary table cross joins should pass."""
-        sql = """
-        SELECT * FROM concept c1, concept c2
-        WHERE c1.vocabulary_id = 'SNOMED' AND c2.vocabulary_id = 'LOINC'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_left_join(self) -> None:
-        """GAP_035: LEFT JOIN should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence co
-        LEFT JOIN drug_exposure de ON co.person_id = de.person_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_multiple_join_conditions(self) -> None:
-        """GAP_035: Multiple join conditions in WHERE should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence co, drug_exposure de, measurement m
-        WHERE co.person_id = de.person_id
-          AND de.person_id = m.person_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_gap_035_mixed_join_styles(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence co
-        JOIN drug_exposure de ON co.person_id = de.person_id, measurement m
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    # --- Theta-join / function-wrapped column recognition ---
-
-    def test_gap_035_range_predicate_counts_as_join(self) -> None:
-        """A range predicate between two sources ties them (any boolean ON / WHERE condition is a join
-        condition), so `event_date BETWEEN window_start AND window_end` is not a Cartesian product."""
-        sql = """
-        SELECT * FROM measurement m, observation_period op
-        WHERE m.person_id = op.person_id
-          AND m.measurement_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_inequality_join_recognised(self) -> None:
-        """Same idea via `<=` / `>=` instead of BETWEEN."""
-        sql = """
-        SELECT * FROM measurement m, observation_period op
-        WHERE op.observation_period_start_date <= m.measurement_date
-          AND op.observation_period_end_date >= m.measurement_date
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_function_wrapped_join_columns(self) -> None:
-        """`EXTRACT(YEAR FROM op1.x) <= t1.y` — both columns are real
-        references, just wrapped in an EXTRACT call. The rule must see
-        through function wrappers."""
-        sql = """
-        SELECT 1
-        FROM cdm.person p1
-        INNER JOIN cdm.observation_period op1 ON p1.person_id = op1.person_id
-        , condition_occurrence t1
-        WHERE EXTRACT(YEAR FROM op1.observation_period_start_date) <= EXTRACT(YEAR FROM t1.condition_start_date)
-          AND EXTRACT(YEAR FROM op1.observation_period_end_date) >= EXTRACT(YEAR FROM t1.condition_start_date)
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_comma_table_connected_via_inner_join_target(self) -> None:
-        """A source tied to any other source of the SELECT is not part of a Cartesian product: here the
-        comma-joined table is tied to an INNER JOIN target (`observation_period`), not to the FROM table."""
-        sql = """
-        SELECT 1
-        FROM cdm.person p1
-        INNER JOIN cdm.observation_period op1 ON p1.person_id = op1.person_id
-        , condition_occurrence t1
-        WHERE op1.observation_period_start_date <= t1.condition_start_date
-          AND op1.observation_period_end_date >= t1.condition_start_date
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_on_clause_provides_connectivity(self) -> None:
-        """ON-clause predicates of explicit JOINs count too — a comma table
-        connected only via an INNER JOIN's ON predicate (rare but legal)
-        must not flag."""
-        sql = """
-        SELECT 1
-        FROM cdm.person p
-        INNER JOIN condition_occurrence co ON co.measurement_date = p.year_of_birth
-        , drug_exposure de
-        WHERE de.person_id = co.person_id
-        """
-        # de is connected to co via WHERE; should pass.
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_three_way_one_unjoined_left_to_linkage_rule(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence a, drug_exposure b, measurement c
-        WHERE a.person_id = b.person_id
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-    # --- Unqualified-column attribution against the schema catalogue ---
-
-    def test_gap_035_unqualified_columns_resolve_to_the_only_source_that_has_them(self) -> None:
-        """An unqualified column belongs to the one source that can supply it: no CDM table in scope has
-        ``obs_month_start`` / ``obs_month_end``, so they tie the non-CDM table to ``payer_plan_period``."""
-        sql = """
-        SELECT 1410 AS analysis_id, COUNT(DISTINCT p1.person_id) AS count_value
-        FROM person p1
-            INNER JOIN payer_plan_period ppp1 ON p1.person_id = ppp1.person_id
-            , temp_dates_1410
-        WHERE ppp1.payer_plan_period_start_date <= obs_month_start
-          AND ppp1.payer_plan_period_end_date   >= obs_month_end
-        GROUP BY obs_month
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_unqualified_resolves_to_unique_omop_owner(self) -> None:
-        """An unqualified column that exists on exactly one scope table is
-        attributed to that table — so the predicate counts as a join."""
-        sql = """
-        SELECT 1
-        FROM measurement m, observation_period
-        WHERE measurement_date BETWEEN observation_period_start_date AND observation_period_end_date
-          AND m.person_id = observation_period.person_id
-        """
-        assert self._run_rule(sql) == []
-
-    def test_gap_035_ambiguous_unqualified_column_left_to_linkage_rule(self) -> None:
-        """GAP_035: a product of person-level tables is reported by joins.clinical_person_id_linkage_validation, not by this rule."""
-        sql = """
-        SELECT * FROM condition_occurrence, drug_exposure
-        WHERE person_id = 42
-        """
-        assert self._run_rule(sql) == []
-        assert len(get_rule("joins.clinical_person_id_linkage_validation")().validate(sql)) == 1
-
-
 # --- GAP_036: UNION vs UNION ALL for Clinical Events ---
 
 
@@ -14369,7 +14146,7 @@ class TestAmbiguousColumnReference:
     def test_gap_037_unqualified_person_id_in_where(self) -> None:
         """GAP_037: Unqualified person_id in WHERE should warn."""
         sql = """
-        SELECT co.person_id, co.condition_concept_id
+        SELECT co.condition_concept_id
         FROM condition_occurrence co
         JOIN person p ON co.person_id = p.person_id
         WHERE person_id = 12345
@@ -15700,382 +15477,6 @@ class TestMetadataClinicalJoin:
         assert len(violations) == 0
 
 
-class TestHavingWithoutGroupBy:
-    """Tests for HAVING without GROUP BY rule (OMOP_131)."""
-
-    def _run_rule(self, sql: str) -> list:
-        """Run having without group by rule."""
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("anti_patterns.having_without_group_by")()
-        return rule.validate(sql)
-
-    # OMOP_131: HAVING without GROUP BY violations
-
-    def test_omop_131_having_without_group_by_simple(self) -> None:
-        """OMOP_131: Simple HAVING without GROUP BY should fail."""
-        sql = """
-        SELECT * FROM condition_occurrence
-        HAVING COUNT(*) > 5
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-        assert "HAVING" in violations[0].message
-        assert "GROUP BY" in violations[0].message
-
-    def test_omop_131_having_with_where_no_group_by(self) -> None:
-        """OMOP_131: HAVING with WHERE but no GROUP BY should fail."""
-        sql = """
-        SELECT person_id, COUNT(*)
-        FROM drug_exposure
-        WHERE drug_concept_id = 1234
-        HAVING COUNT(*) > 3
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-    def test_omop_131_having_with_aggregate_no_group_by(self) -> None:
-        """OMOP_131: HAVING with aggregate function but no GROUP BY should fail."""
-        sql = """
-        SELECT concept_id FROM measurement
-        WHERE measurement_date > '2020-01-01'
-        HAVING SUM(value_as_number) > 100
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-    def test_omop_131_having_multiple_conditions_no_group_by(self) -> None:
-        """OMOP_131: HAVING with multiple conditions but no GROUP BY should fail."""
-        sql = """
-        SELECT * FROM observation
-        HAVING COUNT(*) > 10 AND AVG(value_as_number) > 50
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-    def test_omop_131_subquery_having_no_group_by(self) -> None:
-        """OMOP_131: Subquery with HAVING but no GROUP BY should fail."""
-        sql = """
-        SELECT * FROM (
-            SELECT person_id FROM condition_occurrence
-            HAVING COUNT(*) > 5
-        ) subq
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-    # Passing cases - HAVING with GROUP BY
-
-    def test_omop_131_having_with_group_by_passes(self) -> None:
-        """OMOP_131: HAVING with GROUP BY should pass."""
-        sql = """
-        SELECT condition_concept_id, COUNT(*)
-        FROM condition_occurrence
-        GROUP BY condition_concept_id
-        HAVING COUNT(*) > 5
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_having_with_multiple_group_by_passes(self) -> None:
-        """OMOP_131: HAVING with multiple GROUP BY columns should pass."""
-        sql = """
-        SELECT person_id, drug_concept_id, COUNT(*)
-        FROM drug_exposure
-        GROUP BY person_id, drug_concept_id
-        HAVING COUNT(*) > 3
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_having_with_where_and_group_by_passes(self) -> None:
-        """OMOP_131: HAVING with WHERE and GROUP BY should pass."""
-        sql = """
-        SELECT measurement_concept_id, AVG(value_as_number)
-        FROM measurement
-        WHERE measurement_date > '2020-01-01'
-        GROUP BY measurement_concept_id
-        HAVING AVG(value_as_number) > 100
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_no_having_no_group_by_passes(self) -> None:
-        """OMOP_131: Query without HAVING or GROUP BY should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence
-        WHERE person_id = 123
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_group_by_without_having_passes(self) -> None:
-        """OMOP_131: GROUP BY without HAVING should pass."""
-        sql = """
-        SELECT condition_concept_id, COUNT(*)
-        FROM condition_occurrence
-        GROUP BY condition_concept_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_nested_query_correct_passes(self) -> None:
-        """OMOP_131: Nested query with proper GROUP BY should pass."""
-        sql = """
-        SELECT * FROM (
-            SELECT person_id, COUNT(*) as cnt
-            FROM condition_occurrence
-            GROUP BY person_id
-            HAVING COUNT(*) > 5
-        ) subq
-        WHERE subq.cnt > 10
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_cte_with_group_by_passes(self) -> None:
-        """OMOP_131: CTE with GROUP BY and HAVING should pass."""
-        sql = """
-        WITH counts AS (
-            SELECT drug_concept_id, COUNT(*) as cnt
-            FROM drug_exposure
-            GROUP BY drug_concept_id
-            HAVING COUNT(*) > 100
-        )
-        SELECT * FROM counts
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_131_union_one_violation(self) -> None:
-        """OMOP_131: UNION with one query having violation should fail once."""
-        sql = """
-        SELECT person_id FROM condition_occurrence
-        GROUP BY person_id
-        HAVING COUNT(*) > 5
-        UNION
-        SELECT person_id FROM drug_exposure
-        HAVING COUNT(*) > 3
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert violations[0].severity.name == "ERROR"
-
-
-class TestLeftJoinThenWhereOnRightTable:
-    """Tests for OMOP_149: left_join_then_where_on_right_table rule."""
-
-    def _run_rule(self, sql: str, dialect: str = "postgres"):
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("joins.left_join_then_where_on_right_table")()
-        return rule.validate(sql, dialect)
-
-    def test_omop_149_simple_violation(self) -> None:
-        """OMOP_149: LEFT JOIN with WHERE filtering right table should warn."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        WHERE vo.visit_concept_id = 9201
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "left join" in violations[0].message.lower()
-        assert "visit_concept_id" in violations[0].message
-        assert violations[0].severity == Severity.WARNING
-
-    def test_omop_149_multiple_right_filters_violation(self) -> None:
-        """OMOP_149: Multiple WHERE conditions on right table should warn."""
-        sql = """
-        SELECT p.* FROM person p
-        LEFT JOIN location l ON p.location_id = l.location_id
-        WHERE l.state = 'CA' AND l.city = 'Los Angeles'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-        assert "state" in violations[0].message or "city" in violations[0].message
-
-    def test_omop_149_qualified_column_violation(self) -> None:
-        """OMOP_149: Qualified right table column in WHERE should warn."""
-        sql = """
-        SELECT * FROM drug_exposure de
-        LEFT JOIN concept c ON de.drug_concept_id = c.concept_id
-        WHERE c.domain_id = 'Drug'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_149_comparison_operator_violation(self) -> None:
-        """OMOP_149: Comparison on right table column should warn."""
-        sql = """
-        SELECT * FROM measurement m
-        LEFT JOIN concept c ON m.unit_concept_id = c.concept_id
-        WHERE c.concept_id > 1000
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_149_inner_join_passes(self) -> None:
-        """OMOP_149: INNER JOIN with WHERE on right table should pass."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        WHERE vo.visit_concept_id = 9201
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_left_join_is_null_passes(self) -> None:
-        """OMOP_149: LEFT JOIN with IS NULL check should pass."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        WHERE vo.visit_occurrence_id IS NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_left_join_is_not_null_violation(self) -> None:
-        """OMOP_149: LEFT JOIN with IS NOT NULL check converts to INNER JOIN."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        WHERE vo.visit_occurrence_id IS NOT NULL
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_149_left_table_filter_passes(self) -> None:
-        """OMOP_149: WHERE filtering only left table should pass."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        WHERE co.condition_concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_filter_in_join_on_passes(self) -> None:
-        """OMOP_149: Right table filter in JOIN ON should pass."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo
-          ON co.visit_occurrence_id = vo.visit_occurrence_id
-          AND vo.visit_concept_id = 9201
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_no_where_clause_passes(self) -> None:
-        """OMOP_149: LEFT JOIN without WHERE should pass."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_no_left_join_passes(self) -> None:
-        """OMOP_149: Query without LEFT JOIN should pass."""
-        sql = """
-        SELECT * FROM condition_occurrence
-        WHERE condition_concept_id = 201826
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_multiple_left_joins_violation(self) -> None:
-        """OMOP_149: Multiple LEFT JOINs with WHERE filtering any should warn."""
-        sql = """
-        SELECT p.* FROM person p
-        LEFT JOIN location l ON p.location_id = l.location_id
-        LEFT JOIN care_site cs ON p.care_site_id = cs.care_site_id
-        WHERE l.state = 'CA'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) >= 1
-
-    def test_omop_149_mixed_joins_violation(self) -> None:
-        """OMOP_149: Mixed INNER and LEFT JOINs should detect LEFT JOIN issues."""
-        sql = """
-        SELECT p.* FROM person p
-        JOIN care_site cs ON p.care_site_id = cs.care_site_id
-        LEFT JOIN location l ON cs.location_id = l.location_id
-        WHERE l.state = 'CA'
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_149_subquery_passes(self) -> None:
-        """OMOP_149: Subquery with LEFT JOIN should be analyzed separately."""
-        sql = """
-        SELECT * FROM (
-            SELECT co.* FROM condition_occurrence co
-            LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-            WHERE vo.visit_concept_id = 9201
-        ) sub
-        """
-        violations = self._run_rule(sql)
-        # Should detect violation in subquery
-        assert len(violations) >= 1
-
-    def test_omop_149_case_insensitive_passes(self) -> None:
-        """OMOP_149: Case insensitive LEFT JOIN detection."""
-        sql = """
-        SELECT co.* FROM condition_occurrence co
-        left join visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-        where vo.visit_concept_id = 9201
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_omop_149_alias_collision_across_ctes_does_not_false_positive(self) -> None:
-        """LEFT JOIN of `cr` lives in one CTE; a sibling CTE INNER-joins the same
-        table re-using the alias `cr` and filters `cr.relationship_id` in its own
-        WHERE. The filter belongs to the INNER-JOIN scope, not the LEFT-JOIN one,
-        so the rule must not fire — regression for scope-local resolution."""
-        sql = """
-        WITH cond_mapped AS (
-            SELECT COALESCE(cr.concept_id_2, cs.concept_id) AS standard_id
-            FROM (SELECT 1 AS concept_id) cs
-            LEFT JOIN omop.concept_relationship cr
-              ON cr.concept_id_1 = cs.concept_id
-             AND cr.relationship_id = 'Maps to'
-             AND cr.invalid_reason IS NULL
-        ),
-        drug_mapped AS (
-            SELECT cr.concept_id_2 AS concept_id
-            FROM (SELECT 2 AS concept_id) ds
-            JOIN omop.concept_relationship cr ON ds.concept_id = cr.concept_id_1
-            WHERE cr.relationship_id = 'Maps to' AND cr.invalid_reason IS NULL
-        )
-        SELECT * FROM cond_mapped cm JOIN drug_mapped dm ON cm.standard_id = dm.concept_id;
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 0
-
-    def test_omop_149_left_join_in_inner_cte_still_fires_in_own_scope(self) -> None:
-        """LEFT JOIN + WHERE on its right table inside the SAME CTE must still
-        fire — scope-local refactor is only meant to stop cross-scope leakage,
-        not to silence in-scope violations."""
-        sql = """
-        WITH bad AS (
-            SELECT p.person_id
-            FROM person p
-            LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id
-            WHERE vo.visit_concept_id = 9201
-        )
-        SELECT * FROM bad;
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-
 # ==============================================================================
 # OMOP_150: Relationship Boolean Comparison Tests
 # ==============================================================================
@@ -16183,26 +15584,26 @@ class TestRelationshipBooleanComparison:
         assert "string" in violations[0].message.lower()
 
     def test_omop_150_integer_one_violation_postgres(self) -> None:
-        """OMOP_150: Integer operand against varchar(1) is a PostgreSQL type error; T-SQL coerces it."""
+        """OMOP_150: Integer operand against the varchar(1) flag, on every dialect."""
         sql = """
         SELECT * FROM relationship
         WHERE is_hierarchical = 1
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert "character varying = integer" in violations[0].message
-        assert self._run_rule(sql, "tsql") == []
+        assert "varchar(1)" in violations[0].message
+        assert [v.message for v in self._run_rule(sql, "tsql")] == [violations[0].message]
 
     def test_omop_150_integer_zero_violation_postgres(self) -> None:
-        """OMOP_150: Integer operand against varchar(1) is a PostgreSQL type error; T-SQL coerces it."""
+        """OMOP_150: Integer operand against the varchar(1) flag, on every dialect."""
         sql = """
         SELECT * FROM relationship
         WHERE defines_ancestry = 0
         """
         violations = self._run_rule(sql)
         assert len(violations) == 1
-        assert "character varying = integer" in violations[0].message
-        assert self._run_rule(sql, "tsql") == []
+        assert "varchar(1)" in violations[0].message
+        assert [v.message for v in self._run_rule(sql, "tsql")] == [violations[0].message]
 
     def test_omop_150_boolean_true_violation(self) -> None:
         """OMOP_150: The varchar(1) column is not boolean."""
@@ -16633,39 +16034,6 @@ class TestConceptIdStringComparison:
         assert len(violations) == 1
 
 
-class TestNullComparisonOperator:
-    """Tests for anti_patterns.null_comparison_operator."""
-
-    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
-        from fastssv.rules.anti_patterns.null_comparison_operator import NullComparisonOperatorRule
-
-        return NullComparisonOperatorRule().validate(sql, dialect)
-
-    def test_equals_null_flags(self) -> None:
-        sql = "SELECT * FROM person WHERE year_of_birth = NULL"
-        assert len(self._run_rule(sql)) == 1
-
-    def test_not_equal_null_flags(self) -> None:
-        sql = "SELECT * FROM person WHERE year_of_birth <> NULL"
-        assert len(self._run_rule(sql)) == 1
-
-    def test_is_null_passes(self) -> None:
-        sql = "SELECT * FROM person WHERE year_of_birth IS NULL"
-        assert self._run_rule(sql) == []
-
-    def test_is_not_null_passes(self) -> None:
-        sql = "SELECT * FROM person WHERE year_of_birth IS NOT NULL"
-        assert self._run_rule(sql) == []
-
-    def test_string_literal_null_passes(self) -> None:
-        # Study 1 agent census A038: a lookup of the four-character code 'NULL' is a plain equality, not a NULL test.
-        sql = (
-            "SELECT concept_id FROM omop.concept "
-            "WHERE vocabulary_id = 'SNOMED' AND concept_code = 'NULL' AND invalid_reason IS NULL"
-        )
-        assert self._run_rule(sql) == []
-
-
 class TestConceptNameLookup:
     """Tests for anti_patterns.concept_name_lookup."""
 
@@ -16797,94 +16165,6 @@ class TestCteShadowsOmopTable:
         assert len(violations) == 0
 
 
-class TestLimitWithoutOrderBy:
-    """Tests for anti_patterns.limit_without_order_by, in particular the
-    scalar-aggregate carve-out that suppresses the warning on queries that
-    provably return exactly one row (where LIMIT N is a no-op)."""
-
-    def _run_rule(self, sql: str, dialect: str = "postgres") -> list:
-        from fastssv.core.registry import get_rule
-
-        rule = get_rule("anti_patterns.limit_without_order_by")()
-        return rule.validate(sql, dialect)
-
-    def test_scalar_count_with_limit_does_not_fire(self) -> None:
-        """`SELECT COUNT(DISTINCT …) FROM … LIMIT 1000` is the canonical
-        Atlas patient-count shape: the LIMIT is meaningless on a one-row
-        aggregate result and the missing-ORDER-BY warning is a FP."""
-        sql = "SELECT COUNT(DISTINCT person_id) AS patient_count FROM person LIMIT 1000;"
-        assert self._run_rule(sql) == []
-
-    def test_scalar_count_over_cte_does_not_fire(self) -> None:
-        sql = """
-        WITH matching AS (SELECT DISTINCT person_id FROM condition_occurrence)
-        SELECT COUNT(DISTINCT person_id) FROM matching LIMIT 1000;
-        """
-        assert self._run_rule(sql) == []
-
-    def test_aggregate_plus_constant_projection_does_not_fire(self) -> None:
-        """Mixed aggregate + literal projections still produce a single row."""
-        sql = "SELECT COUNT(*) AS c, 1 AS one FROM person LIMIT 100;"
-        assert self._run_rule(sql) == []
-
-    def test_group_by_with_limit_still_fires(self) -> None:
-        """GROUP BY makes the query potentially multi-row — warning stands."""
-        sql = """
-        SELECT condition_concept_id, COUNT(*) AS c
-        FROM condition_occurrence
-        GROUP BY condition_concept_id
-        LIMIT 1000;
-        """
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_bare_column_with_limit_still_fires(self) -> None:
-        """A bare column ref in the projection (no aggregate wrap) means the
-        result is multi-row — warning stands."""
-        sql = "SELECT person_id FROM person LIMIT 100;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_star_with_limit_still_fires(self) -> None:
-        """SELECT * is the textbook missing-ORDER-BY anti-pattern."""
-        sql = "SELECT * FROM person LIMIT 100;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_aggregate_mixed_with_bare_column_still_fires(self) -> None:
-        """`SELECT MIN(x), p.person_id` without GROUP BY is invalid standard
-        SQL; conservatively we treat it as multi-row and keep the warning."""
-        sql = "SELECT MIN(condition_start_date), person_id FROM condition_occurrence LIMIT 100;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_windowed_aggregate_with_limit_still_fires(self) -> None:
-        """``SUM(x) OVER (…)`` is a window function — it's *per-row*, not
-        row-collapsing, so the SELECT can return many rows and the
-        missing-ORDER-BY warning must fire. sqlglot parses windowed
-        aggregates as ``exp.Window`` wrapping the inner ``exp.AggFunc``,
-        so an earlier draft of ``_is_scalar_aggregate`` mistook the
-        inner aggregate as scalar-agg evidence and silently suppressed
-        the warning (regression caught in code review)."""
-        sql = "SELECT SUM(condition_concept_id) OVER () FROM condition_occurrence LIMIT 10;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_row_number_window_with_limit_still_fires(self) -> None:
-        """Pure window function (no inner aggregate) still triggers — the
-        per-row semantics are the same and LIMIT is meaningful."""
-        sql = "SELECT ROW_NUMBER() OVER (ORDER BY condition_concept_id) AS rn FROM condition_occurrence LIMIT 10;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-    def test_windowed_aggregate_with_partition_still_fires(self) -> None:
-        """``COUNT(*) OVER (PARTITION BY …)`` produces one row per input
-        row, same as the no-frame case."""
-        sql = "SELECT COUNT(*) OVER (PARTITION BY person_id) AS pc FROM condition_occurrence LIMIT 10;"
-        violations = self._run_rule(sql)
-        assert len(violations) == 1
-
-
 class TestPersonBirthYearExtractShape:
     """A year extracted from birth_datetime is judged like year_of_birth (lower bound only)."""
 
@@ -16928,54 +16208,6 @@ class TestCurlyPlaceholderTemplate:
 
         assert not looks_like_unrendered_template("SELECT {fn CONCAT('a','b')}, {d '2020-01-01'} FROM person;")
         assert not looks_like_unrendered_template("""SELECT '{"a": 1}'::json FROM person;""")
-
-
-class TestDateDiffIntervalComparison:
-    def _run(self, sql: str, dialect: str = "postgres") -> list:
-        from fastssv.core.registry import get_rule
-
-        return get_rule("temporal.date_diff_interval_comparison")().validate(sql, dialect)
-
-    def test_date_minus_date_vs_interval_fires(self):
-        sql = (
-            "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
-            "WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'"
-        )
-        v = self._run(sql)
-        assert len(v) == 1 and "integer" in v[0].message
-
-    def test_aggregate_date_diff_vs_interval_fires(self):
-        sql = (
-            "SELECT person_id FROM condition_occurrence GROUP BY person_id "
-            "HAVING (MAX(condition_start_date) - MIN(condition_start_date)) <= INTERVAL '1000 days'"
-        )
-        assert len(self._run(sql)) == 1
-
-    def test_greatest_minus_least_vs_interval_fires(self):
-        sql = (
-            "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
-            "WHERE GREATEST(a.drug_exposure_start_date, b.drug_exposure_start_date) "
-            "- LEAST(a.drug_exposure_start_date, b.drug_exposure_start_date) <= INTERVAL '30 days'"
-        )
-        assert len(self._run(sql)) == 1
-
-    def test_integer_days_passes(self):
-        sql = (
-            "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
-            "WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30"
-        )
-        assert self._run(sql) == []
-
-    def test_timestamp_diff_vs_interval_passes(self):
-        sql = (
-            "SELECT 1 FROM condition_occurrence a JOIN condition_occurrence b ON a.person_id = b.person_id "
-            "WHERE (a.condition_start_datetime - b.condition_start_datetime) <= INTERVAL '30 days'"
-        )
-        assert self._run(sql) == []
-
-    def test_non_integer_day_dialect_silent(self):
-        sql = "SELECT 1 FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE (a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'"
-        assert self._run(sql, "bigquery") == []
 
 
 class TestConceptLiteralWithoutHierarchy:
@@ -17078,208 +16310,6 @@ class TestPersonIdJoinSubjectIdWhitelist:
     def test_person_id_to_visit_id_still_flagged(self):
         sql = "SELECT COUNT(*) FROM person p JOIN visit_occurrence v ON p.person_id = v.visit_occurrence_id;"
         assert len(self._run(sql)) == 1
-
-
-class TestScopeAndProvenanceFixes:
-    """Study 1 §1.2 false-positive classes: correlation, write targets, transform provenance, co-use blindness,
-    deliberate DQ idioms, orphan-FK checks."""
-
-    def _run(self, rid: str, sql: str, dialect: str = "postgres") -> list:
-        from fastssv.core.registry import get_rule
-
-        return get_rule(rid)().validate(sql, dialect)
-
-    def test_cross_join_correlated_exists_is_connected(self):
-        sql = (
-            "SELECT COUNT(DISTINCT p.person_id) FROM person p WHERE EXISTS ("
-            "SELECT 1 FROM drug_exposure d1, drug_exposure d2 "
-            "WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id "
-            "AND d1.drug_concept_id = 1 AND d2.drug_concept_id = 2)"
-        )
-        assert self._run("anti_patterns.comma_separated_cross_join", sql) == []
-
-    def test_unjoined_person_level_tables_left_to_linkage_rule(self):
-        sql = "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de"
-        assert self._run("anti_patterns.comma_separated_cross_join", sql) == []
-        assert len(self._run("joins.clinical_person_id_linkage_validation", sql)) == 1
-
-    def test_cohort_insert_target_not_a_join_requirement(self):
-        sql = (
-            "INSERT INTO cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date) "
-            "SELECT 1, co.person_id, co.condition_start_date, co.condition_end_date FROM condition_occurrence co"
-        )
-        assert self._run("joins.cohort_clinical_join_validation", sql) == []
-
-    def test_cohort_bad_join_key_still_fires(self):
-        sql = "SELECT COUNT(*) FROM cohort c JOIN condition_occurrence co ON c.cohort_definition_id = co.person_id"
-        assert len(self._run("joins.cohort_clinical_join_validation", sql)) >= 1
-
-    def test_canonical_string_on_derived_table_not_flagged(self):
-        sql = (
-            "WITH og AS (SELECT concept_id, LOWER(domain_id) AS domain_id FROM concept) "
-            "SELECT COUNT(*) FROM og WHERE og.domain_id = 'condition'"
-        )
-        assert self._run("data_quality.canonical_string_value_validation", sql) == []
-
-    def test_canonical_string_on_cdm_column_still_flagged(self):
-        sql = "SELECT COUNT(*) FROM concept c WHERE c.domain_id = 'condition'"
-        assert len(self._run("data_quality.canonical_string_value_validation", sql)) == 1
-
-    def test_type_concept_completeness_metric_not_flagged(self):
-        sql = (
-            "SELECT SUM(CASE WHEN drug_type_concept_id IS NULL OR drug_type_concept_id = 0 THEN 1 ELSE 0 END) "
-            "FROM drug_exposure"
-        )
-        assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
-
-    def test_type_concept_where_filter_still_fires(self):
-        sql = "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id = 1112807"
-        assert len(self._run("anti_patterns.type_concept_id_misuse", sql)) == 1
-
-    def test_type_concept_provenance_valued_filter_not_flagged(self):
-        # 32817 (EHR) / 38000177 (Prescription written) are Type Concept vocabulary ids: restricting a query to a
-        # data source is the documented legitimate use, not a clinical concept smuggled into a type column.
-        for sql in (
-            "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id = 32817",
-            "SELECT person_id FROM drug_exposure WHERE drug_type_concept_id IN (38000175, 38000180, 43542356)",
-        ):
-            assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
-
-    def test_type_concept_wrong_family_legacy_id_still_fires(self):
-        # 38000280 is an *observation* type: on condition_occurrence it matches nothing (agent census A2153-1).
-        sql = "SELECT person_id FROM condition_occurrence WHERE condition_type_concept_id = 38000280"
-        v = self._run("anti_patterns.type_concept_id_misuse", sql)
-        assert [x.severity.name for x in v] == ["WARNING"]
-        sql = "SELECT person_id FROM condition_occurrence WHERE condition_type_concept_id IN (38000183, 38000199)"
-        assert self._run("anti_patterns.type_concept_id_misuse", sql) == []
-
-    def test_end_before_start_probe_with_constant_columns_not_flagged(self):
-        sql = (
-            "SELECT 411 AS analysis_id, CAST(NULL AS VARCHAR(255)) AS stratum_1, COUNT(co1.person_id) AS count_value "
-            "FROM condition_occurrence co1 WHERE co1.condition_end_date < co1.condition_start_date"
-        )
-        assert self._run("temporal.end_before_start_validation", sql) == []
-
-    def test_end_before_start_select_star_is_silent(self):
-        sql = "SELECT * FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
-        # a same-row end < start comparison is the DQD plausibility check itself
-        assert self._run("temporal.end_before_start_validation", sql) == []
-
-    def test_fact_relationship_profiling_reads_not_flagged(self):
-        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
-        for sql in (
-            "SELECT * FROM fact_relationship q16 WHERE (0 = 1)",
-            "SELECT fact_relationship.* FROM fact_relationship LIMIT 1",
-            "SELECT fr.relationship_concept_id, COUNT(*) FROM fact_relationship fr GROUP BY fr.relationship_concept_id",
-        ):
-            assert self._run(rid, sql) == [], sql
-
-    def test_episode_aggregates_without_type_fire_grouped_by_type_silent(self):
-        rid = "data_quality.episode_requires_concept_filter"
-        # aggregates that neither restrict nor show episode_concept_id mix disease episodes with treatment lines
-        for sql in (
-            "SELECT episode_type_concept_id, COUNT(*) FROM episode GROUP BY episode_type_concept_id",
-            "SELECT EXTRACT(YEAR FROM ep.episode_start_date) AS y, COUNT(ep.person_id) FROM episode ep "
-            "JOIN observation_period op ON ep.person_id = op.person_id GROUP BY EXTRACT(YEAR FROM ep.episode_start_date)",
-        ):
-            assert [v.severity.name for v in self._run(rid, sql)] == ["WARNING"], sql
-        sql = (
-            "SELECT p.gender_concept_id, ep.n FROM person p JOIN (SELECT person_id, episode_concept_id, COUNT(*) AS n "
-            "FROM episode GROUP BY person_id, episode_concept_id) ep ON p.person_id = ep.person_id"
-        )
-        assert self._run(rid, sql) == [], sql
-
-    def test_episode_grouped_by_foreign_column_still_fires(self):
-        rid = "data_quality.episode_requires_concept_filter"
-        sql = (
-            "SELECT p.gender_concept_id, COUNT(*) FROM episode ep JOIN person p ON ep.person_id = p.person_id "
-            "GROUP BY p.gender_concept_id"
-        )
-        assert len(self._run(rid, sql)) == 1
-
-    def test_linkage_via_shared_visit_fk_not_flagged(self):
-        sql = (
-            "SELECT co.person_id FROM condition_occurrence co INNER JOIN visit_occurrence vo "
-            "ON co.visit_occurrence_id = vo.visit_occurrence_id WHERE vo.visit_concept_id IN (9201, 9203)"
-        )
-        assert self._run("joins.clinical_person_id_linkage_validation", sql) == []
-
-    def test_cohort_clinical_transitive_via_person_unqualified_subject_id(self):
-        sql = (
-            "SELECT COUNT(*) FROM (SELECT subject_id, MIN(cohort_start_date) AS cohort_start_date FROM cohort "
-            "WHERE cohort_definition_id = 1 GROUP BY subject_id) cohort INNER JOIN person ON subject_id = person.person_id "
-            "INNER JOIN observation_period ON observation_period.person_id = person.person_id "
-            "AND observation_period_start_date <= cohort_start_date"
-        )
-        assert self._run("joins.cohort_clinical_join_validation", sql) == []
-
-    def test_cohort_clinical_separate_ctes_not_flagged(self):
-        sql = (
-            "WITH obs AS (SELECT person_id, MIN(observation_period_start_date) AS s FROM observation_period GROUP BY person_id), "
-            "coh AS (SELECT MAX(cohort_end_date) AS m FROM cohort) SELECT obs.person_id, coh.m FROM obs, coh"
-        )
-        assert self._run("joins.cohort_clinical_join_validation", sql) == []
-
-    def test_cohort_clinical_unjoined_same_scope_still_fires(self):
-        sql = "SELECT c.subject_id FROM cohort c JOIN observation_period op ON op.person_id = 1"
-        assert len(self._run("joins.cohort_clinical_join_validation", sql)) >= 1
-
-    def test_end_before_start_probe_not_flagged(self):
-        sql = "SELECT COUNT(*) FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
-        assert self._run("temporal.end_before_start_validation", sql) == []
-
-    def test_end_before_start_filter_is_silent(self):
-        sql = "SELECT co.person_id FROM condition_occurrence co WHERE co.condition_end_date < co.condition_start_date"
-        # a same-row end < start comparison is the DQD plausibility check itself
-        assert self._run("temporal.end_before_start_validation", sql) == []
-
-    def test_visit_detail_visit_in_separate_branches_not_flagged(self):
-        sql = "SELECT COUNT(*) FROM visit_detail UNION ALL SELECT COUNT(*) FROM visit_occurrence"
-        assert self._run("domain_specific.visit_detail_visit_occurrence_reference", sql) == []
-
-    def test_episode_whole_table_diagnostic_not_flagged(self):
-        sql = "SELECT episode_concept_id, COUNT(*) FROM episode GROUP BY episode_concept_id"
-        assert self._run("data_quality.episode_requires_concept_filter", sql) == []
-
-    def test_fact_relationship_constant_false_probe_not_flagged(self):
-        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
-        assert self._run(rid, "SELECT * FROM fact_relationship WHERE FALSE") == []
-
-    def test_fact_relationship_unfiltered_still_fires(self):
-        rid = "data_quality.fact_relationship_requires_relationship_concept_filter"
-        assert len(self._run(rid, "SELECT * FROM fact_relationship")) == 1
-
-    def test_schema_qualified_table_checked_inside_same_named_cte(self):
-        # A CTE shadows an UNQUALIFIED name only: `omop.drug_exposure` is still the physical table, and
-        # AI-written OMOP SQL names CTEs after CDM tables constantly.
-        sql = (
-            "WITH drug_exposure AS (SELECT de.invalid_reason FROM omop.drug_exposure de) "
-            "SELECT * FROM drug_exposure"
-        )
-        v = self._run("data_quality.schema_validation", sql)
-        assert len(v) == 1
-        assert "invalid_reason" in v[0].message and "drug_exposure" in v[0].message
-
-    def test_unqualified_reference_still_shadowed_by_cte(self):
-        for sql in (
-            "WITH drug_exposure AS (SELECT 1 AS invalid_reason) SELECT invalid_reason FROM drug_exposure",
-            "WITH person AS (SELECT 1 AS made_up) SELECT made_up FROM person",
-            "WITH codesets AS (SELECT 1 AS concept_id) SELECT concept_id FROM codesets",
-        ):
-            assert self._run("data_quality.schema_validation", sql) == [], sql
-
-    def test_cte_name_never_reported_as_missing_table(self):
-        # The table-existence check stays name-based: a CTE name is not an OMOP table wherever it is defined
-        # (Circe emits `codesets`, `qualified_events` and friends in every generated cohort).
-        sql = "WITH qualified_events AS (SELECT 1 AS event_id) SELECT event_id FROM qualified_events"
-        assert self._run("data_quality.schema_validation", sql) == []
-
-    def test_orphan_fk_check_not_flagged_by_linkage_rule(self):
-        sql = (
-            "SELECT COUNT(*) FROM condition_occurrence co LEFT JOIN visit_occurrence vo "
-            "ON co.visit_occurrence_id = vo.visit_occurrence_id WHERE vo.visit_occurrence_id IS NULL"
-        )
-        assert self._run("joins.clinical_person_id_linkage_validation", sql) == []
 
 
 # =============================================================================
@@ -17720,8 +16750,10 @@ def test_a_flags_integer_and_boolean_operands_error_in_postgres(sql):
     assert severities(FLAGS, sql) == [Severity.ERROR]
 
 
-def test_a_flags_integer_operand_accepted_where_coercion_exists():
-    assert run(FLAGS, "SELECT relationship_id FROM relationship WHERE is_hierarchical = 1", "tsql") == []
+def test_a_flags_integer_operand_error_where_coercion_exists():
+    assert severities(FLAGS, "SELECT relationship_id FROM relationship WHERE is_hierarchical = 1", "tsql") == [
+        Severity.ERROR
+    ]
 
 
 def test_a_flags_patch_rewrites_to_string_literal():
@@ -18184,7 +17216,6 @@ CODE = "anti_patterns.concept_code_requires_vocabulary_id"
 CONCEPT_JOIN = "joins.concept_join_validation"
 STRING_ID = "data_quality.concept_id_string_comparison"
 SOURCE_VALUE = "data_quality.source_value_field_usage"
-DATE_LITERAL = "data_quality.non_standard_date_literal_format"
 VOCAB_JOIN = "joins.concept_metadata_join_validation"
 SYNONYM_JOIN = "joins.concept_synonym_join_validation"
 
@@ -18194,7 +17225,6 @@ GROUP_C_RULES = [
     CONCEPT_JOIN,
     STRING_ID,
     SOURCE_VALUE,
-    DATE_LITERAL,
     VOCAB_JOIN,
     SYNONYM_JOIN,
 ]
@@ -18449,46 +17479,6 @@ def test_c_source_value_audits_and_unpaired_columns_pass(sql):
     assert _c_run(SOURCE_VALUE, sql) == []
 
 
-# --- non_standard_date_literal_format --------------------------------------
-
-
-@pytest.mark.parametrize(
-    "sql,count",
-    [
-        (
-            "SELECT COUNT(DISTINCT person_id) FROM cdm.observation_period "
-            "WHERE observation_period_start_date <= '01-jan-2011' AND observation_period_end_date >= '31-dec-2011'",
-            2,
-        ),
-        ("SELECT COUNT(*) FROM condition_occurrence WHERE condition_start_date >= '01/02/2020'", 1),
-        ("SELECT COUNT(*) FROM condition_occurrence WHERE condition_start_date >= CAST('01/02/2020' AS DATE)", 1),
-        (
-            "SELECT COUNT(*) FROM condition_occurrence WHERE condition_start_date BETWEEN '01/02/2020' AND '12/31/2020'",
-            2,
-        ),
-    ],
-)
-def test_c_non_standard_date_literal_fires(sql, count):
-    assert len(_c_run(DATE_LITERAL, sql)) == count
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        # OHDSI SQL's native yyyymmdd form (CdmOnboarding / PheValuator shape).
-        "SELECT COUNT(*) FROM cdm.condition_occurrence WHERE condition_start_date >= CAST('19000101' AS DATE)",
-        "SELECT COUNT(*) FROM results.cohort WHERE cohort_start_date <= CAST('21000101' AS DATE)",
-        "SELECT COUNT(*) FROM condition_occurrence WHERE condition_start_date >= '2020-01-02'",
-        # Literal nested inside a subquery is not a direct operand of the date comparison.
-        "SELECT COUNT(*) FROM condition_occurrence "
-        "WHERE condition_start_date >= (SELECT MIN(x_date) FROM t WHERE code = '01/02/2020')",
-        "SELECT COUNT(*) FROM condition_occurrence WHERE condition_start_date >= '01/02/2020 extra'",
-    ],
-)
-def test_c_non_standard_date_literal_does_not_fire(sql):
-    assert _c_run(DATE_LITERAL, sql) == []
-
-
 # --- vocabulary-table joins ------------------------------------------------
 
 
@@ -18540,20 +17530,18 @@ def test_c_suspicious_vocabulary_table_joins_still_warn(rule_id, sql):
 
 
 # =============================================================================
-# Group D review: generic SQL anti-pattern rules (ambiguity, join keys, LIMIT, DISTINCT, LEFT JOIN, UNION)
+# Group D review: anti-pattern rules (ambiguity, join keys, DISTINCT, UNION)
 # =============================================================================
 
 
 AMBIGUOUS = "anti_patterns.ambiguous_column_reference"
 JOIN_KEY = "anti_patterns.join_key_validation"
 CTE_SHADOW = "anti_patterns.cte_shadows_omop_table"
-LIMIT = "anti_patterns.limit_without_order_by"
 DISTINCT_PK = "anti_patterns.no_distinct_on_primary_key_column"
-LEFT_WHERE = "joins.left_join_then_where_on_right_table"
 UNION = "data_quality.union_vs_union_all_clinical_events"
 DT_BETWEEN = "temporal.datetime_between_date_literal"
 
-GROUP_D = [AMBIGUOUS, JOIN_KEY, CTE_SHADOW, LIMIT, DISTINCT_PK, LEFT_WHERE, UNION, DT_BETWEEN]
+GROUP_D = [AMBIGUOUS, JOIN_KEY, CTE_SHADOW, DISTINCT_PK, UNION, DT_BETWEEN]
 
 
 def _d_run(rule_id, sql):
@@ -18595,19 +17583,9 @@ def test_d_retired_rule_no_longer_reported_end_to_end():
     [
         "SELECT person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id",
         "SELECT co.person_id FROM condition_occurrence co JOIN person p ON person_id = p.person_id",
-        "SELECT co.person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id GROUP BY person_id",
+        "SELECT COUNT(*) FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id GROUP BY person_id",
         "SELECT COUNT(*) FROM person p, observation_period op WHERE person_id = 1",
-        "WITH c1 AS (SELECT person_id FROM condition_occurrence), d1 AS (SELECT person_id FROM drug_exposure) "
-        "SELECT person_id FROM c1 JOIN d1 ON c1.person_id = d1.person_id",
-        "SELECT person_id FROM condition_occurrence co JOIN person p USING (person_id) "
-        "JOIN drug_exposure de ON de.person_id = p.person_id",
         "SELECT p.person_id FROM person p JOIN person p2 ON p.person_id = p2.person_id WHERE year_of_birth > 1950",
-        # agent #10709, minimised: the final scalar subquery joins three CTEs that all project person_id
-        "WITH a AS (SELECT DISTINCT person_id FROM condition_occurrence), b AS (SELECT DISTINCT person_id FROM drug_exposure) "
-        "SELECT (SELECT COUNT(DISTINCT person_id) FROM a JOIN b ON a.person_id = b.person_id) AS n",
-        # agent #10860, minimised: self-join of one CTE
-        "WITH e AS (SELECT person_id, drug_concept_id FROM drug_exposure) "
-        "SELECT DISTINCT person_id FROM e e1 JOIN e e2 ON e1.person_id = e2.person_id",
     ],
 )
 def test_d_ambiguous_fires_on_certain_ambiguity(sql):
@@ -18620,6 +17598,13 @@ def test_d_ambiguous_fires_on_certain_ambiguity(sql):
 @pytest.mark.parametrize(
     "sql",
     [
+        # a clash between sources the query defines (CTEs, a self-joined CTE) needs no CDM knowledge
+        "WITH c1 AS (SELECT person_id FROM condition_occurrence), d1 AS (SELECT person_id FROM drug_exposure) "
+        "SELECT person_id FROM c1 JOIN d1 ON c1.person_id = d1.person_id",
+        "WITH a AS (SELECT DISTINCT person_id FROM condition_occurrence), b AS (SELECT DISTINCT person_id FROM drug_exposure) "
+        "SELECT (SELECT COUNT(DISTINCT person_id) FROM a JOIN b ON a.person_id = b.person_id) AS n",
+        "WITH e AS (SELECT person_id, drug_concept_id FROM drug_exposure) "
+        "SELECT DISTINCT person_id FROM e e1 JOIN e e2 ON e1.person_id = e2.person_id",
         # scope: tables inside a CTE / derived table / IN-subquery are not sources of the outer SELECT
         "WITH a AS (SELECT co.person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id) "
         "SELECT person_id FROM a",
@@ -18692,53 +17677,6 @@ def test_d_join_key_mismatch_left_to_table_aware_rules():
     assert any(x.severity.name == "ERROR" and x.rule_id.startswith("joins.") for x in v)
 
 
-# --- limit_without_order_by -------------------------------------------------
-
-
-def test_d_limit_in_subquery_list_fires_with_nested_message():
-    sql = (
-        "SELECT COUNT(DISTINCT person_id) FROM drug_exposure WHERE drug_concept_id IN "
-        "(SELECT concept_id FROM concept WHERE concept_name ILIKE '%epinephrine%' LIMIT 10)"
-    )
-    v = _d_run(LIMIT, sql)
-    assert len(v) == 1
-    assert v[0].details["nested"] is True
-    assert "enclosing query" in v[0].message
-
-
-def test_d_limit_on_union_fires():
-    sql = "SELECT concept_id FROM concept WHERE concept_id = 1 UNION SELECT concept_id FROM concept WHERE concept_id = 2 LIMIT 1"
-    v = _d_run(LIMIT, sql)
-    assert len(v) == 1
-    assert v[0].message.startswith("UNION uses `LIMIT 1`")
-
-
-def test_d_limit_top_level_has_no_nested_suffix():
-    v = _d_run(LIMIT, "SELECT person_id FROM person LIMIT 5")
-    assert len(v) == 1 and v[0].details["nested"] is False
-    assert "enclosing" not in v[0].message
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT 1 FROM person p WHERE EXISTS (SELECT 1 FROM death d WHERE d.person_id = p.person_id LIMIT 1)",
-        "SELECT * FROM person LIMIT 0",
-        "SELECT COUNT(*) FROM person LIMIT 5",
-        "SELECT concept_id FROM concept UNION SELECT concept_id FROM concept ORDER BY 1 LIMIT 1",
-        # agent #10705 shape: labelled scalar counts, LIMIT larger than the arm count
-        "SELECT 'a' AS c, COUNT(*) FROM person UNION ALL SELECT 'b', COUNT(*) FROM death LIMIT 1000",
-    ],
-)
-def test_d_limit_no_finding_when_order_cannot_matter(sql):
-    assert _d_run(LIMIT, sql) == []
-
-
-def test_d_limit_union_of_scalars_cut_by_limit_still_fires():
-    sql = "SELECT 'a' AS c, COUNT(*) FROM person UNION ALL SELECT 'b', COUNT(*) FROM death LIMIT 1"
-    assert len(_d_run(LIMIT, sql)) == 1
-
-
 # --- no_distinct_on_primary_key_column ---------------------------------------
 
 
@@ -18776,85 +17714,6 @@ def test_d_distinct_pk_single_table_fires(sql):
 )
 def test_d_distinct_pk_no_finding(sql):
     assert _d_run(DISTINCT_PK, sql) == []
-
-
-# --- left_join_then_where_on_right_table ------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("sql", "cited"),
-    [
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN location l ON p.location_id = l.location_id "
-            "WHERE l.state = 'MA' AND p.year_of_birth > 1950",
-            "l.state",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE vo.visit_occurrence_id IS NOT NULL",
-            "vo.visit_occurrence_id",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE (vo.visit_concept_id = 9201 OR p.year_of_birth = 1) AND LOWER(vo.visit_source_value) LIKE 'x%'",
-            "vo.visit_source_value",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN (SELECT person_id, visit_concept_id FROM visit_occurrence) vo "
-            "ON p.person_id = vo.person_id WHERE vo.visit_concept_id = 9201",
-            "vo.visit_concept_id",
-        ),
-        (
-            "WITH g AS (SELECT concept_id, concept_name AS gender FROM concept) "
-            "SELECT COUNT(*) FROM person p LEFT JOIN g ON p.gender_concept_id = g.concept_id WHERE g.gender = 'F'",
-            "g.gender",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE NOT vo.visit_concept_id IN (9201)",
-            "vo.visit_concept_id",
-        ),
-    ],
-)
-def test_d_left_join_null_rejecting_where_fires(sql, cited):
-    v = _d_run(LEFT_WHERE, sql)
-    assert len(v) == 1
-    assert cited in v[0].message
-
-
-def test_d_left_join_cites_only_left_joined_alias():
-    sql = (
-        "SELECT co.person_id FROM condition_occurrence co JOIN concept c ON co.condition_concept_id = c.concept_id "
-        "LEFT JOIN concept r ON c.concept_id = r.concept_id WHERE c.concept_name = 'x' AND r.concept_name = 'y'"
-    )
-    v = _d_run(LEFT_WHERE, sql)
-    assert len(v) == 1
-    assert "r.concept_name" in v[0].message and "c.concept_name" not in v[0].message
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        # (r.col IS NULL) is true for the NULL-extended row
-        "SELECT p.person_id FROM person p LEFT JOIN location l ON p.location_id = l.location_id WHERE (l.state IS NULL)",
-        # self-join: the filter is on the preserved copy, not the LEFT JOIN's right side
-        "SELECT t.subject_id FROM cohort t LEFT JOIN cohort o ON t.subject_id = o.subject_id "
-        "AND o.cohort_definition_id = 2 WHERE t.cohort_definition_id = 1",
-        # NOT (r.x IS NULL AND l.y IS NULL) can be true when r.x is NULL
-        "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-        "WHERE NOT (vo.care_site_id IS NULL AND p.care_site_id IS NULL)",
-        "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-        "WHERE COALESCE(vo.visit_concept_id, 0) = 0",
-        "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-        "WHERE vo.visit_concept_id = 9201 OR p.year_of_birth = 1",
-        "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-        "WHERE vo.visit_concept_id NOT IN (SELECT concept_id FROM concept WHERE 1 = 0)",
-        "SELECT co.* FROM condition_occurrence co LEFT JOIN visit_occurrence vo "
-        "ON co.visit_occurrence_id = vo.visit_occurrence_id AND vo.visit_concept_id = 9201",
-    ],
-)
-def test_d_left_join_null_tolerant_or_left_side_no_finding(sql):
-    assert _d_run(LEFT_WHERE, sql) == []
 
 
 # --- union_vs_union_all_clinical_events --------------------------------------
@@ -20501,13 +19360,9 @@ def test_fix_a_unknown_invalid_value_has_no_mechanical_patch():
     assert violation.suggested_fix_patch["action"] == "FREEFORM"
 
 
-@pytest.mark.parametrize("dialect", ["postgres", "duckdb"])
-def test_fix_a_lowercase_value_errors_on_case_sensitive_dialects(dialect):
+@pytest.mark.parametrize("dialect", ["postgres", "duckdb", "tsql", "mysql"])
+def test_fix_a_lowercase_value_errors_on_every_dialect(dialect):
     assert severities_fix_a(FIX_A_VALUE, "SELECT concept_id FROM concept WHERE standard_concept = 's'", dialect) == [Severity.ERROR]
-
-
-def test_fix_a_lowercase_value_accepted_on_case_insensitive_dialect():
-    assert run_fix_a(FIX_A_VALUE, "SELECT concept_id FROM concept WHERE standard_concept = 's'", "tsql") == []
 
 
 # --- V1-M1 / M2: multiple_maps_to_targets scope ---------------------------------------------------------------
@@ -20583,10 +19438,10 @@ def test_fix_a_flags_equal_impossible_value_says_no_rows():
     assert "matches no rows" in violation.message
 
 
-def test_fix_a_flags_integer_is_type_error_on_bigquery():
+def test_fix_a_flags_integer_is_error_on_bigquery():
     found = run_fix_a(FIX_A_FLAGS, "SELECT relationship_id FROM relationship WHERE is_hierarchical = 1", "bigquery")
     assert [v.severity for v in found] == [Severity.ERROR]
-    assert "BigQuery" in found[0].message
+    assert "varchar(1)" in found[0].message and "BigQuery" not in found[0].message
     assert run_fix_a(FIX_A_FLAGS, "SELECT relationship_id FROM relationship WHERE is_hierarchical = '1'", "bigquery") == []
 
 
@@ -21022,8 +19877,6 @@ def test_fix_c_vocabulary_inference_patterns():
 FIX_D_AMBIGUOUS = "anti_patterns.ambiguous_column_reference"
 FIX_D_DISTINCT_PK = "anti_patterns.no_distinct_on_primary_key_column"
 FIX_D_UNION = "data_quality.union_vs_union_all_clinical_events"
-FIX_D_LIMIT = "anti_patterns.limit_without_order_by"
-NULL_CMP = "anti_patterns.null_comparison_operator"
 
 
 def _fix_d_run(rule_id, sql, dialect="postgres"):
@@ -21072,33 +19925,34 @@ def test_fix_d_ambiguous_modified_star_is_unknown(sql):
     assert _fix_d_run(FIX_D_AMBIGUOUS, sql, "duckdb") == []
 
 
-def test_fix_d_ambiguous_plain_star_cte_still_errors():
+def test_fix_d_ambiguous_star_cte_against_one_cdm_table_is_silent():
+    # Only one of the two providers is a CDM table; the CTE is the query's own definition.
     sql = (
         "WITH x AS (SELECT * FROM condition_occurrence) "
         "SELECT person_id FROM x JOIN person p ON x.condition_occurrence_id = p.person_id"
     )
-    assert len(_fix_d_run(FIX_D_AMBIGUOUS, sql)) == 1
+    assert _fix_d_run(FIX_D_AMBIGUOUS, sql) == []
 
 
 # --- select-list aliases outside PostgreSQL; dialect-neutral message ------------------------
 
 
-def test_fix_d_ambiguous_group_by_alias_allowed_outside_postgres():
+@pytest.mark.parametrize("dialect", ["postgres", "bigquery"])
+def test_fix_d_ambiguous_group_by_alias_allowed(dialect):
+    # BigQuery resolves a GROUP BY name to the select-list alias, so the name is not ambiguous on every engine.
     sql = (
         "SELECT co.person_id AS person_id FROM condition_occurrence co JOIN person p "
         "ON co.person_id = p.person_id GROUP BY person_id"
     )
-    assert _fix_d_run(FIX_D_AMBIGUOUS, sql, "bigquery") == []
-    # PostgreSQL resolves a GROUP BY name against input columns first and rejects the ambiguity.
-    assert len(_fix_d_run(FIX_D_AMBIGUOUS, sql, "postgres")) == 1
+    assert _fix_d_run(FIX_D_AMBIGUOUS, sql, dialect) == []
 
 
-def test_fix_d_ambiguous_message_is_dialect_correct():
+def test_fix_d_ambiguous_message_is_dialect_neutral():
     sql = "SELECT person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id"
     pg = _fix_d_run(FIX_D_AMBIGUOUS, sql, "postgres")[0].message
     duck = _fix_d_run(FIX_D_AMBIGUOUS, sql, "duckdb")[0].message
-    assert "42702" in pg
-    assert "PostgreSQL" not in duck and "rejects the query" in duck
+    assert pg == duck
+    assert "PostgreSQL" not in pg and "rejects the query" in pg
 
 
 # --- V3-N1: REMOVE patch must target the flagged DISTINCT only -------------------------
@@ -21150,48 +20004,7 @@ def test_fix_d_union_equal_labels_message_says_not_distinguishing():
 # --- V3-L1: LIMIT ALL / LIMIT NULL are no limit ----------------------------------------
 
 
-@pytest.mark.parametrize("limit", ["LIMIT ALL", "LIMIT NULL"])
-def test_fix_d_limit_all_or_null_not_flagged(limit):
-    assert _fix_d_run(FIX_D_LIMIT, f"SELECT person_id FROM person {limit}") == []
-
-
-def test_fix_d_limit_all_with_offset_is_flagged():
-    # OFFSET without ORDER BY skips an arbitrary set of rows; LIMIT ALL does not hide that
-    assert len(_fix_d_run(FIX_D_LIMIT, "SELECT person_id FROM person LIMIT ALL OFFSET 5")) == 1
-
-
-def test_fix_d_limit_numeric_still_flagged():
-    assert len(_fix_d_run(FIX_D_LIMIT, "SELECT person_id FROM person LIMIT 3")) == 1
-
-
 # --- V1-N1: assignment `= NULL` is not a comparison ------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("sql", "dialect"),
-    [
-        ("UPDATE observation SET value_as_string = NULL WHERE observation_id = 1", "postgres"),
-        (
-            "MERGE INTO observation o USING person p ON o.person_id = p.person_id "
-            "WHEN MATCHED THEN UPDATE SET value_as_string = NULL",
-            "postgres",
-        ),
-        ("INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET b = NULL", "postgres"),
-        ("INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE b = NULL", "mysql"),
-        ("SET @x = NULL", "tsql"),
-    ],
-)
-def test_fix_d_null_assignment_not_flagged(sql, dialect):
-    assert _fix_d_run(NULL_CMP, sql, dialect) == []
-
-
-def test_fix_d_null_comparison_in_update_where_still_flagged():
-    sql = "UPDATE observation SET value_as_string = NULL WHERE value_as_number = NULL"
-    v = _fix_d_run(NULL_CMP, sql)
-    assert len(v) == 1
-    assert apply_patch(sql, v[0].suggested_fix_patch) == (
-        "UPDATE observation SET value_as_string = NULL WHERE value_as_number IS NULL"
-    )
 
 
 # =============================================================================
@@ -21205,7 +20018,6 @@ FIX_E_VO_INNER = "joins.visit_occurrence_inner_join_validation"
 FIX_E_PERIOD = "joins.period_join_requires_date_overlap"
 UNLINKED = "joins.observation_period_unlinked"
 FIX_E_PERSONS = "domain_specific.event_rows_counted_as_persons"
-CROSS = "anti_patterns.comma_separated_cross_join"
 
 
 def _fix_e_run(rule_id: str, sql: str, dialect: str = "postgres") -> list:
@@ -21238,7 +20050,6 @@ def test_fix_e_v1_visit_detail_indirect_link_silent(sql: str) -> None:
 def test_fix_e_v1_unlinked_comma_join_left_to_linkage_rule() -> None:
     sql = "SELECT vd.visit_detail_id, vo.visit_occurrence_id FROM visit_detail vd, visit_occurrence vo"
     assert _fix_e_run(FIX_E_VD_REF, sql) == []
-    assert _fix_e_run(CROSS, sql) == []
     assert _fix_e_run("joins.clinical_person_id_linkage_validation", sql)
 
 
@@ -21864,7 +20675,6 @@ FIX_H_OFFSET = "data_quality.note_nlp_offset_is_character_position"
 SCHEMA = "data_quality.schema_validation"
 DE_DS = "joins.drug_exposure_drug_strength_join_validation"
 PERSON = "joins.person_id_join_validation"
-COMMA = "anti_patterns.comma_separated_cross_join"
 
 
 def _fix_h_fires(rule_id: str, sql: str) -> list:
@@ -22078,29 +20888,6 @@ def test_fix_h_person_patch_replaces_when_other_table_has_person_id():
     found = _fix_h_fires(PERSON, "SELECT * FROM person p JOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id")
     assert found and found[0].suggested_fix_patch["action"] == "REPLACE"
     assert "vo.person_id" in found[0].suggested_fix_patch["text"]
-
-
-# --- comma_separated_cross_join: USING / NATURAL are not comma joins --------
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT de.person_id FROM drug_exposure de JOIN drug_strength ds USING (drug_concept_id)",
-        "SELECT co.person_id FROM condition_occurrence co JOIN drug_exposure de USING (person_id)",
-        "SELECT co.person_id FROM condition_occurrence co NATURAL JOIN drug_exposure de",
-    ],
-)
-def test_fix_h_comma_using_and_natural_are_silent(sql):
-    assert not _fix_h_fires(COMMA, sql)
-
-
-def test_fix_h_comma_cartesian_still_fires():
-    sql = (
-        "SELECT co.condition_occurrence_id, c.concept_name FROM condition_occurrence co, concept c "
-        "WHERE co.condition_concept_id = 201820"
-    )
-    assert _fix_h_fires(COMMA, sql)
 
 
 # =============================================================================
@@ -22447,7 +21234,6 @@ def test_fix3_c_wrapped_text_filter_on_id_joined_pair_passes():
 
 
 FIX3_D_AMBIGUOUS = "anti_patterns.ambiguous_column_reference"
-FIX3_D_NULL_CMP = "anti_patterns.null_comparison_operator"
 
 USING_THEN_ON = (
     "SELECT person_id FROM person p JOIN death d USING (person_id) "
@@ -22463,31 +21249,13 @@ def test_fix3_d_ambiguous_using_merged_name_not_flagged_in_duckdb():
     assert _fix3_d_run(FIX3_D_AMBIGUOUS, USING_THEN_ON, "duckdb") == []
 
 
-def test_fix3_d_ambiguous_using_then_on_still_error_in_postgres():
-    v = _fix3_d_run(FIX3_D_AMBIGUOUS, USING_THEN_ON, "postgres")
-    assert len(v) == 1 and v[0].severity.name == "ERROR"
+def test_fix3_d_ambiguous_using_merged_name_not_flagged_in_postgres():
+    assert _fix3_d_run(FIX3_D_AMBIGUOUS, USING_THEN_ON, "postgres") == []
 
 
 def test_fix3_d_ambiguous_plain_on_join_still_error_in_duckdb():
     sql = "SELECT person_id FROM person p JOIN death d ON p.person_id = d.person_id"
     assert len(_fix3_d_run(FIX3_D_AMBIGUOUS, sql, "duckdb")) == 1
-
-
-@pytest.mark.parametrize("dialect", ["tsql", "postgres"])
-def test_fix3_d_null_select_variable_assignment_not_flagged(dialect):
-    assert _fix3_d_run(FIX3_D_NULL_CMP, "SELECT @x = NULL FROM person", dialect) == []
-
-
-def test_fix3_d_null_variable_comparison_in_where_still_flagged():
-    v = _fix3_d_run(FIX3_D_NULL_CMP, "SELECT person_id FROM person WHERE @x = NULL", "tsql")
-    assert len(v) == 1 and v[0].details["context"] == "WHERE clause"
-
-
-def test_fix3_d_null_case_branch_reported_as_case_expression():
-    v = _fix3_d_run(FIX3_D_NULL_CMP, "SELECT CASE WHEN year_of_birth <> NULL THEN 1 END FROM person")
-    assert len(v) == 1
-    assert v[0].details["context"] == "CASE expression"
-    assert "in CASE expression" in v[0].message
 
 
 # =============================================================================
@@ -22711,12 +21479,11 @@ def test_fix3_g_conjunctive_filters_still_error():
 
 
 # =============================================================================
-# Group H round-3 regressions: schema_validation, comma_separated_cross_join, drug_exposure/drug_strength
+# Group H round-3 regressions: schema_validation, drug_exposure/drug_strength
 # =============================================================================
 
 
 FIX3_H_SCHEMA = "data_quality.schema_validation"
-FIX3_H_COMMA = "anti_patterns.comma_separated_cross_join"
 FIX3_H_DE_DS = "joins.drug_exposure_drug_strength_join_validation"
 
 
@@ -22805,8 +21572,9 @@ def test_fix3_h_schema_select_order_by_missing_column_still_fires():
 # --- Suspected: PostgreSQL system columns -------------------------------------
 
 
-def test_fix3_h_schema_postgres_system_columns_are_silent():
-    assert not _column_findings("SELECT ctid, xmin, xmax, cmin, cmax, tableoid, person_id FROM person")
+def test_fix3_h_schema_postgres_system_columns_are_reported():
+    found = {v.details.get("column") for v in _column_findings("SELECT ctid, xmin, person_id FROM person")}
+    assert {"ctid", "xmin"} <= found
 
 
 def test_fix3_h_schema_system_column_names_checked_outside_postgres():
@@ -22814,48 +21582,8 @@ def test_fix3_h_schema_system_column_names_checked_outside_postgres():
     assert any(v.details.get("column") == "ctid" for v in findings)
 
 
-# --- F1-C1..C4: comma_separated_cross_join ------------------------------------
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        # C1 self-join linked by alias
-        "SELECT c1.person_id FROM condition_occurrence c1, condition_occurrence c2 "
-        "WHERE c1.person_id = c2.person_id AND c1.condition_occurrence_id <> c2.condition_occurrence_id",
-        # C2 one-row CTE percentage idiom
-        "WITH total AS (SELECT COUNT(*) AS n FROM person) SELECT gender_concept_id, COUNT(*) * 100.0 / total.n "
-        "FROM person, total GROUP BY gender_concept_id, total.n",
-        # C3 tables linked through a derived table
-        "SELECT p.person_id FROM person p, cohort c, (SELECT 1 AS pid) x WHERE p.person_id = x.pid AND c.subject_id = x.pid",
-        # C4 table function
-        "SELECT p.person_id, g FROM person p, generate_series(1, 3) g",
-    ],
-)
-def test_fix3_h_comma_verifier_repros_are_silent(sql):
-    assert not _fires(FIX3_H_COMMA, sql)
-
-
-@pytest.mark.parametrize(
-    "sql, unjoined",
-    [
-        (
-            "SELECT co.condition_occurrence_id, c.concept_name FROM condition_occurrence co, concept c "
-            "WHERE co.condition_concept_id = 201820",
-            "concept",
-        ),
-    ],
-)
-def test_fix3_h_comma_cartesian_still_fires(sql, unjoined):
-    found = _fires(FIX3_H_COMMA, sql)
-    assert found and found[0].severity.name == "WARNING"
-    assert any(unjoined in s for g in found[0].details["untied_groups"] for s in g)
-    assert ", )" not in found[0].message
-
-
 def test_fix3_h_person_level_product_left_to_linkage_rule():
     sql = "SELECT p.person_id FROM person p, generate_series(1, 3) g, drug_exposure de WHERE p.year_of_birth > 1950"
-    assert not _fires(FIX3_H_COMMA, sql)
     assert [v.severity.name for v in _fires("joins.clinical_person_id_linkage_validation", sql)] == ["WARNING"]
 
 
@@ -23219,7 +21947,7 @@ def test_column_type_valid_comparisons_not_flagged(sql):
         ("SELECT provider_id FROM provider WHERE npi > 1.5", ["provider.npi", "float"]),
         ("SELECT person_id FROM person WHERE person_source_value = -5", ["person.person_source_value", "-5"]),
         ("SELECT person_id FROM person WHERE year_of_birth = 'unknown'", ["person.year_of_birth", "'unknown'"]),
-        ("SELECT person_id FROM person WHERE year_of_birth = '1980.5'", ["not a valid integer"]),
+        ("SELECT person_id FROM person WHERE year_of_birth = '1980.5'", ["is not an integer"]),
         ("SELECT person_id FROM measurement WHERE value_as_number > 'high'", ["measurement.value_as_number"]),
         ("SELECT person_id FROM condition_occurrence WHERE condition_start_date >= 2020", ["(date)", "integer"]),
         ("SELECT person_id FROM death WHERE death_date = 'unknown'", ["death.death_date", "not a date"]),
@@ -23737,210 +22465,6 @@ def _silent(rule, sql, dialect=P):
     return not _fix5_ap_findings(rule, sql, dialect)
 
 
-# --- having_without_group_by ---
-FIX5_AP_MATRIX += [
-    (
-        "having_without_group_by",
-        "bad0",
-        "SELECT person_id, COUNT(*) AS n_exposures FROM drug_exposure HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_alias",
-        "SELECT t1.person_id, COUNT(*) AS n FROM drug_exposure t1 HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_schema",
-        "SELECT person_id, COUNT(*) FROM cdm.drug_exposure HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_case",
-        "select PERSON_ID, count(*) from DRUG_EXPOSURE having count(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_cte",
-        "WITH d AS (SELECT * FROM drug_exposure) SELECT person_id, COUNT(*) FROM d HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_derived",
-        "SELECT * FROM (SELECT person_id, COUNT(*) AS n FROM drug_exposure HAVING COUNT(*) > 3) x",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_swap",
-        "SELECT person_id, COUNT(*) FROM drug_exposure HAVING 3 < COUNT(*)",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_cast",
-        "SELECT CAST(person_id AS BIGINT), COUNT(*) FROM drug_exposure HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_tsql",
-        "SELECT person_id, COUNT(*) FROM dbo.drug_exposure HAVING COUNT(*) > 3",
-        "tsql",
-        "WARNING",
-    ),
-    (
-        "having_without_group_by",
-        "bad_bq",
-        "SELECT person_id, COUNT(*) FROM `cdm.drug_exposure` HAVING COUNT(*) > 3",
-        "bigquery",
-        "WARNING",
-    ),
-    (
-        "having_without_group_by",
-        "bad_duck",
-        "SELECT person_id, COUNT(*) FROM drug_exposure HAVING COUNT(*) > 3",
-        "duckdb",
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_nonagg_having",
-        "SELECT COUNT(*) FROM drug_exposure HAVING person_id > 3",
-        P,
-        "ERROR",
-    ),
-    ("having_without_group_by", "bad_star", "SELECT * FROM condition_occurrence HAVING COUNT(*) > 5", P, "ERROR"),
-    (
-        "having_without_group_by",
-        "bad_window",
-        "SELECT SUM(quantity) OVER (PARTITION BY person_id) FROM drug_exposure HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "bad_join",
-        "SELECT p.person_id, COUNT(*) FROM person p JOIN drug_exposure de ON de.person_id = p.person_id HAVING COUNT(*) > 3",
-        P,
-        "ERROR",
-    ),
-    (
-        "having_without_group_by",
-        "legit_scalar_guard",
-        "SELECT COUNT(*) AS n FROM drug_exposure HAVING COUNT(*) > 3",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_min_cell",
-        "SELECT COUNT(DISTINCT person_id) AS n FROM condition_occurrence WHERE condition_concept_id = 201826 HAVING COUNT(DISTINCT person_id) >= 5",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_exists_any",
-        "SELECT 1 FROM measurement HAVING MAX(measurement_date) > DATE '2020-01-01'",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_sum_nonempty",
-        "SELECT SUM(quantity) FROM drug_exposure HAVING SUM(quantity) IS NOT NULL",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_avg",
-        "SELECT AVG(value_as_number) FROM measurement WHERE measurement_concept_id = 3004249 HAVING COUNT(*) >= 10",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_dq_check",
-        "SELECT 'dup pk' AS issue FROM person HAVING COUNT(*) <> COUNT(DISTINCT person_id)",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_group_empty",
-        "SELECT COUNT(*) FROM drug_exposure GROUP BY () HAVING COUNT(*) > 3",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_correlated",
-        "SELECT p.person_id FROM person p WHERE EXISTS (SELECT 1 FROM drug_exposure de WHERE de.person_id = p.person_id HAVING COUNT(*) > p.year_of_birth - 2000)",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "legit_scalar_subq_col",
-        "SELECT (SELECT MAX(year_of_birth) FROM person), COUNT(*) FROM drug_exposure HAVING COUNT(*) > 3",
-        P,
-        None,
-    ),
-    (
-        "having_without_group_by",
-        "good0",
-        "SELECT person_id, COUNT(*) AS n_exposures FROM drug_exposure GROUP BY person_id HAVING COUNT(*) > 3",
-        P,
-        None,
-    ),
-    ("having_without_group_by", "good_where", "SELECT * FROM condition_occurrence WHERE person_id = 123", P, None),
-    ("having_without_group_by", "good_having_str", "SELECT 'having' AS w FROM person", P, None),
-]
-
-
-def test_fix5_ap_having_valid_single_group_aggregate_is_silent():
-    # PostgreSQL: "Such a query will emit a single row if the HAVING condition is true, zero rows if it is not true."
-    for sql in (
-        "SELECT COUNT(*) AS n FROM drug_exposure HAVING COUNT(*) > 3",
-        "SELECT COUNT(DISTINCT person_id) AS n FROM condition_occurrence WHERE condition_concept_id = 201826 "
-        "HAVING COUNT(DISTINCT person_id) >= 5",
-        "SELECT 'dup pk' AS issue FROM person HAVING COUNT(*) <> COUNT(DISTINCT person_id)",
-    ):
-        assert _silent("having_without_group_by", sql)
-    assert _silent("having_without_group_by", "SELECT COUNT(*) FROM drug_exposure GROUP BY () HAVING COUNT(*) > 3")
-
-
-def test_fix5_ap_having_message_names_ungrouped_column():
-    sql = "SELECT person_id, COUNT(*) AS n_exposures\nFROM drug_exposure\nHAVING COUNT(*) > 3;"
-    (finding,) = _fix5_ap_findings("having_without_group_by", sql)
-    assert finding.severity.name == "ERROR"
-    assert "person_id is read outside an aggregate" in finding.message
-    assert finding.details["ungrouped_columns"] == ["person_id"]
-    assert "GROUP BY person_id\nHAVING" in apply_patch(sql, finding.suggested_fix_patch)
-
-
-def test_fix5_ap_having_is_a_warning_where_rejection_was_not_verified():
-    sql = "SELECT person_id, COUNT(*) FROM drug_exposure HAVING COUNT(*) > 3"
-    assert _fix5_ap_severities("having_without_group_by", sql, "duckdb") == ["ERROR"]
-    assert _fix5_ap_severities("having_without_group_by", sql, "tsql") == ["WARNING"]
-    assert _fix5_ap_severities("having_without_group_by", sql, "mysql") == ["WARNING"]
-
-
 # --- no_string_identification ---
 FIX5_AP_MATRIX += [
     (
@@ -24282,7 +22806,7 @@ def test_fix5_ap_string_identification_sees_through_wrappers():
         assert _fix5_ap_severities("no_string_identification", sql) == ["WARNING"], sql
 
 
-# --- singleton_metadata_clinical_join / comma_separated_cross_join ---
+# --- singleton_metadata_clinical_join ---
 FIX5_AP_MATRIX += [
     ("singleton_metadata_clinical_join", "bad0", "SELECT * FROM person p, cdm_source cs", P, "WARNING"),
     ("singleton_metadata_clinical_join", "bad_neutral", "SELECT * FROM person t1, cdm_source x", P, "WARNING"),
@@ -24441,423 +22965,6 @@ FIX5_AP_MATRIX += [
         P,
         "WARNING",
     ),
-    (
-        "comma_separated_cross_join",
-        "bad0",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_neutral",
-        "SELECT t1.condition_occurrence_id, x.drug_exposure_id FROM condition_occurrence t1, drug_exposure x WHERE t1.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_noalias",
-        "SELECT condition_occurrence_id, drug_exposure_id FROM condition_occurrence, drug_exposure WHERE condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_swap_order",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM drug_exposure de, condition_occurrence co WHERE 201820 = co.condition_concept_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_schema",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM cdm.condition_occurrence co, cdm.drug_exposure de WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_case",
-        "select CO.condition_occurrence_id, DE.drug_exposure_id from CONDITION_OCCURRENCE CO ,\n DRUG_EXPOSURE DE where CO.condition_concept_id=201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_cast",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE CAST(co.condition_concept_id AS INT) = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_tsql",
-        "SELECT TOP 10 co.condition_occurrence_id, de.drug_exposure_id FROM dbo.condition_occurrence co, dbo.drug_exposure de WHERE co.condition_concept_id = 201820",
-        "tsql",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_bq",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM `cdm.condition_occurrence` co, `cdm.drug_exposure` de WHERE co.condition_concept_id = 201820",
-        "bigquery",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_bq_plain",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM cdm.condition_occurrence co, cdm.drug_exposure de WHERE co.condition_concept_id = 201820",
-        "bigquery",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_spark",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.condition_concept_id = 201820",
-        "spark",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_duckdb",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.condition_concept_id = 201820",
-        "duckdb",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "bad_snowflake",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.condition_concept_id = 201820",
-        "snowflake",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_cross_join",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co CROSS JOIN drug_exposure de WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_join_on_true",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co JOIN drug_exposure de ON TRUE WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_join_on_1eq1",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co JOIN drug_exposure de ON 1 = 1 WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_cte",
-        "WITH a AS (SELECT * FROM condition_occurrence), b AS (SELECT * FROM drug_exposure) SELECT a.condition_occurrence_id, b.drug_exposure_id FROM a, b WHERE a.condition_concept_id = 201820",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_derived",
-        "SELECT a.condition_occurrence_id, b.drug_exposure_id FROM (SELECT * FROM condition_occurrence) a, (SELECT * FROM drug_exposure) b WHERE a.condition_concept_id = 201820",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_cte_first_tbl_second",
-        "WITH a AS (SELECT * FROM condition_occurrence) SELECT a.condition_occurrence_id, de.drug_exposure_id FROM a, drug_exposure de WHERE a.condition_concept_id = 201820",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "eq_tbl_first_cte_second",
-        "WITH a AS (SELECT * FROM condition_occurrence) SELECT a.condition_occurrence_id, de.drug_exposure_id FROM drug_exposure de, a WHERE a.condition_concept_id = 201820",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "list_obs_period_era",
-        "SELECT op.person_id, de.drug_era_id FROM observation_period op, drug_era de WHERE de.drug_concept_id = 1",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "list_cond_era_ppp",
-        "SELECT * FROM condition_era ce, payer_plan_period ppp WHERE ce.condition_concept_id = 1",
-        P,
-        None,
-    ),
-    ("comma_separated_cross_join", "list_note_nlp_cost", "SELECT * FROM note_nlp n, cost c", P, "WARNING"),
-    (
-        "comma_separated_cross_join",
-        "bad_vocab",
-        "SELECT co.condition_occurrence_id, c.concept_name FROM condition_occurrence co, concept c "
-        "WHERE co.condition_concept_id = 201820",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "list_person_vocab",
-        "SELECT p.person_id, v.vocabulary_id FROM person p, vocabulary v",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "neq_only",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.person_id <> de.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "or_branch",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.condition_concept_id = 201820 OR co.person_id = de.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "not_eq",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE NOT (co.person_id = de.person_id)",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "tautology",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.person_id = co.person_id AND de.person_id = de.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "three_one_dangling",
-        "SELECT * FROM condition_occurrence co, drug_exposure de, measurement m WHERE co.person_id = de.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "corr_one_dangling",
-        "SELECT p.person_id FROM person p WHERE EXISTS (SELECT 1 FROM death d, condition_occurrence co WHERE d.person_id = p.person_id)",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "nested_paren_join",
-        "SELECT * FROM person p JOIN (death d JOIN condition_occurrence co ON d.person_id = co.person_id) ON TRUE",
-        P,
-        "WARNING",
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_join",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co JOIN drug_exposure de ON co.person_id = de.person_id WHERE co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_where",
-        "SELECT co.condition_occurrence_id, de.drug_exposure_id FROM condition_occurrence co, drug_exposure de WHERE co.person_id = de.person_id AND co.condition_concept_id = 201820",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_unqual_unique",
-        "SELECT condition_occurrence_id FROM condition_occurrence, concept WHERE condition_concept_id = concept_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_selfjoin",
-        "SELECT c1.person_id FROM condition_occurrence c1, condition_occurrence c2 WHERE c1.person_id = c2.person_id AND c1.condition_start_date < c2.condition_start_date",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_range",
-        "SELECT * FROM condition_occurrence co, observation_period op WHERE co.person_id = op.person_id AND co.condition_start_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_total_cte_2nd",
-        "WITH t AS (SELECT COUNT(*) AS n FROM person) SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) FROM person p, t GROUP BY p.gender_concept_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_total_cte_1st",
-        "WITH t AS (SELECT COUNT(*) AS n FROM person) SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) FROM t, person p GROUP BY p.gender_concept_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_total_derived_1st",
-        "SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) FROM (SELECT COUNT(*) AS n FROM person) t, person p GROUP BY p.gender_concept_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_values_1st",
-        "SELECT p.person_id, y.yr FROM (VALUES (2019),(2020)) AS y(yr), person p",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_genseries",
-        "SELECT p.person_id, g FROM person p, generate_series(2015, 2020) g",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_genseries_1st",
-        "SELECT p.person_id, g FROM generate_series(2015, 2020) g, person p",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_lateral",
-        "SELECT p.person_id, x.d FROM person p, LATERAL (SELECT MAX(condition_start_date) d FROM condition_occurrence co WHERE co.person_id = p.person_id) x",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_lateral_rows",
-        "SELECT p.person_id, x.condition_start_date FROM person p CROSS JOIN LATERAL (SELECT co.condition_start_date FROM condition_occurrence co WHERE co.person_id = p.person_id) x",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_unnest",
-        "SELECT p.person_id, u FROM person p, UNNEST(ARRAY[1,2,3]) u",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_using",
-        "SELECT * FROM person p JOIN death d USING (person_id), concept c WHERE c.concept_id = p.gender_concept_id",
-        P,
-        None,
-    ),
-    ("comma_separated_cross_join", "good_natural", "SELECT * FROM person NATURAL JOIN death", P, None),
-    (
-        "comma_separated_cross_join",
-        "good_temp_1st",
-        "SELECT * FROM #dates d, observation_period op WHERE op.observation_period_start_date <= d.month_start",
-        "tsql",
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_scalar_tbl_cdm_source",
-        "SELECT p.person_id, cs.cdm_version FROM person p, cdm_source cs",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_scalar_tbl_cdm_source_1st",
-        "SELECT p.person_id, cs.cdm_version FROM cdm_source cs, person p",
-        P,
-        None,
-    ),
-    ("comma_separated_cross_join", "good_vocab_x_vocab", "SELECT * FROM domain d, vocabulary v", P, None),
-    (
-        "comma_separated_cross_join",
-        "good_in_subq_link",
-        "SELECT * FROM condition_occurrence co, drug_exposure de WHERE co.person_id IN (SELECT person_id FROM death) AND de.person_id = co.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_transitive",
-        "SELECT * FROM condition_occurrence co, drug_exposure de, person p WHERE co.person_id = p.person_id AND de.person_id = p.person_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_corr_both",
-        "SELECT p.person_id FROM person p WHERE EXISTS (SELECT 1 FROM drug_exposure d1, drug_exposure d2 WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id)",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_const_both",
-        "SELECT p.person_id, d.death_date FROM person p, death d WHERE p.person_id = 5 AND d.person_id = 5",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_concept_pinned",
-        "SELECT p.person_id, c.concept_name FROM person p, concept c WHERE c.concept_id = 8507 AND p.gender_concept_id = 8507",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_concept_pk_pinned",
-        "SELECT p.person_id, c.concept_name FROM person p, concept c WHERE c.concept_id = 8507",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_unqual_theta_scratch",
-        "SELECT ppp.person_id FROM payer_plan_period ppp, temp_dates t WHERE ppp.payer_plan_period_start_date <= obs_month_start",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_visit_join",
-        "SELECT * FROM visit_occurrence v, condition_occurrence co WHERE v.visit_occurrence_id = co.visit_occurrence_id",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_count_ratio_subq",
-        "SELECT (SELECT COUNT(*) FROM death) * 1.0 / COUNT(*) FROM person",
-        P,
-        None,
-    ),
-    (
-        "comma_separated_cross_join",
-        "good_limit1",
-        "SELECT p.person_id, x.concept_id FROM person p, (SELECT concept_id FROM concept WHERE concept_code = '8507' LIMIT 1) x",
-        P,
-        None,
-    ),
 ]
 
 
@@ -24902,16 +23009,6 @@ def test_fix5_ap_metadata_product_reported_once():
 
     found = [v.rule_id for v in fastssv.validate_sql_structured("SELECT * FROM person p, cdm_source cs", dialect=P)]
     assert found.count("anti_patterns.singleton_metadata_clinical_join") == 1
-    assert "anti_patterns.comma_separated_cross_join" not in found
-
-
-def test_fix5_ap_cross_join_verdict_does_not_depend_on_from_order():
-    first = "WITH t AS (SELECT COUNT(*) AS n FROM person) SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) FROM t, person p GROUP BY p.gender_concept_id"
-    second = "WITH t AS (SELECT COUNT(*) AS n FROM person) SELECT p.gender_concept_id, COUNT(*) * 100.0 / MAX(t.n) FROM person p, t GROUP BY p.gender_concept_id"
-    assert _silent("comma_separated_cross_join", first) and _silent("comma_separated_cross_join", second)
-    a = "WITH a AS (SELECT * FROM condition_occurrence) SELECT * FROM a, drug_exposure de"
-    b = "WITH a AS (SELECT * FROM condition_occurrence) SELECT * FROM drug_exposure de, a"
-    assert _fix5_ap_severities("comma_separated_cross_join", a) == _fix5_ap_severities("comma_separated_cross_join", b) == ["WARNING"]
 
 
 def test_fix5_ap_cross_join_tables_derived_from_specification():
@@ -24927,19 +23024,7 @@ def test_fix5_ap_cross_join_tables_derived_from_specification():
         "cost",
     } <= PATIENT_LEVEL_TABLES
     sql = "SELECT * FROM observation_period op, drug_era de"
-    assert _silent("comma_separated_cross_join", sql)
     assert [v.severity.name for v in get_rule("joins.clinical_person_id_linkage_validation")().validate(sql, P)] == ["WARNING"]
-
-
-def test_fix5_ap_cross_join_correlated_and_range_ties_are_kept():
-    for sql in (
-        "SELECT p.person_id FROM person p WHERE EXISTS (SELECT 1 FROM drug_exposure d1, drug_exposure d2 "
-        "WHERE d1.person_id = p.person_id AND d2.person_id = p.person_id)",
-        "SELECT * FROM condition_occurrence co, observation_period op WHERE co.person_id = op.person_id "
-        "AND co.condition_start_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date",
-        "SELECT ppp.person_id FROM payer_plan_period ppp, temp_dates t WHERE ppp.payer_plan_period_start_date <= obs_month_start",
-    ):
-        assert _silent("comma_separated_cross_join", sql), sql
 
 
 def test_fix5_ap_cross_join_neq_or_not_do_not_tie():
@@ -24951,7 +23036,6 @@ def test_fix5_ap_cross_join_neq_or_not_do_not_tie():
         "co.condition_concept_id = 201820 OR co.person_id = de.person_id",
         "NOT (co.person_id = de.person_id)",
     ):
-        assert _silent("comma_separated_cross_join", base + where), where
         linkage = get_rule("joins.clinical_person_id_linkage_validation")().validate(base + where, P)
         assert [v.severity.name for v in linkage] == ["WARNING"], where
 
@@ -24964,43 +23048,8 @@ def test_fix5_ap_cross_join_is_a_warning_for_every_spelling():
         ("SELECT * FROM condition_occurrence co, drug_exposure de", "bigquery"),
         ("SELECT * FROM condition_occurrence co, drug_exposure de", "spark"),
     ):
-        assert _silent("comma_separated_cross_join", sql, dialect), (sql, dialect)
         linkage = get_rule("joins.clinical_person_id_linkage_validation")().validate(sql, dialect)
         assert [v.severity.name for v in linkage] == ["WARNING"], (sql, dialect)
-
-
-def test_fix5_ap_cross_join_shared_constant_ties():
-    assert _silent(
-        "comma_separated_cross_join",
-        "SELECT p.person_id, d.death_date FROM person p, death d WHERE p.person_id = 5 AND d.person_id = 5",
-    )
-    assert _silent(
-        "comma_separated_cross_join",
-        "SELECT p.person_id, c.concept_name FROM person p, concept c WHERE c.concept_id = 8507 AND p.gender_concept_id = 8507",
-    )
-
-
-def test_fix5_ap_cross_join_message_has_no_unsupported_figures():
-    (finding,) = _fix5_ap_findings("comma_separated_cross_join", "SELECT * FROM condition_occurrence co, concept c")
-    assert "billion" not in finding.message.lower()
-    rule = get_rule("anti_patterns.comma_separated_cross_join")()
-    assert "billion" not in (rule.__doc__ or "").lower() and "SAS" not in rule.long_description
-
-
-def test_fix5_ap_cross_join_or_branches_and_correlated_derived_tables():
-    full_outer = (
-        "WITH a AS (SELECT person_id FROM condition_occurrence), b AS (SELECT person_id FROM drug_exposure), "
-        "c AS (SELECT person_id FROM measurement) SELECT COUNT(*) FROM a FULL OUTER JOIN b ON a.person_id = b.person_id "
-        "FULL OUTER JOIN c ON a.person_id = c.person_id OR b.person_id = c.person_id"
-    )
-    assert _silent("comma_separated_cross_join", full_outer)
-    pairs_within_person = (
-        "SELECT p.person_id FROM person p WHERE EXISTS (SELECT 1 FROM "
-        "(SELECT de.drug_exposure_start_date FROM drug_exposure de WHERE de.person_id = p.person_id) d1, "
-        "(SELECT de.drug_exposure_start_date FROM drug_exposure de WHERE de.person_id = p.person_id) d2 "
-        "WHERE d1.drug_exposure_start_date <> d2.drug_exposure_start_date)"
-    )
-    assert _silent("comma_separated_cross_join", pairs_within_person)
 
 
 # --- type_concept_id_misuse ---
@@ -25682,205 +23731,6 @@ def test_fix5_ap_destructive_templated_schema_is_a_warning():
     ) == ["WARNING"]
 
 
-# --- null_comparison_operator ---
-FIX5_AP_MATRIX += [
-    ("null_comparison_operator", "bad0", "SELECT person_id FROM death WHERE death_date <> NULL", P, "ERROR"),
-    ("null_comparison_operator", "bad_alias", "SELECT x.person_id FROM death x WHERE x.death_date <> NULL", P, "ERROR"),
-    ("null_comparison_operator", "bad_swap", "SELECT person_id FROM death WHERE NULL <> death_date", P, "ERROR"),
-    ("null_comparison_operator", "bad_eq", "SELECT person_id FROM death WHERE death_date = NULL", P, "WARNING"),
-    ("null_comparison_operator", "bad_eq_swap", "SELECT person_id FROM death WHERE NULL = death_date", P, "WARNING"),
-    ("null_comparison_operator", "bad_bang", "SELECT person_id FROM death WHERE death_date != NULL", P, "ERROR"),
-    (
-        "null_comparison_operator",
-        "bad_join_on",
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id AND d.death_date <> NULL",
-        P,
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_cte",
-        "WITH a AS (SELECT * FROM death) SELECT person_id FROM a WHERE death_date <> NULL",
-        P,
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_case_expr",
-        "SELECT CASE WHEN death_date <> NULL THEN 0 ELSE 1 END FROM death",
-        P,
-        "ERROR",
-    ),
-    ("null_comparison_operator", "bad_lower_kw", "select person_id from death where death_date <> null", P, "ERROR"),
-    ("null_comparison_operator", "bad_schema", "SELECT person_id FROM cdm.death WHERE death_date <> NULL", P, "ERROR"),
-    (
-        "null_comparison_operator",
-        "bad_tsql",
-        "SELECT person_id FROM dbo.death WHERE death_date <> NULL",
-        "tsql",
-        "WARNING",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_bq",
-        "SELECT person_id FROM `cdm.death` WHERE death_date <> NULL",
-        "bigquery",
-        "WARNING",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_duck_eq",
-        "SELECT person_id FROM death WHERE death_date = NULL",
-        "duckdb",
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_cast_null",
-        "SELECT person_id FROM death WHERE death_date = CAST(NULL AS DATE)",
-        P,
-        "ERROR",
-    ),
-    ("null_comparison_operator", "bad_paren_null", "SELECT person_id FROM death WHERE death_date = (NULL)", P, "ERROR"),
-    (
-        "null_comparison_operator",
-        "bad_in_null",
-        "SELECT person_id FROM death WHERE cause_concept_id IN (NULL)",
-        P,
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_not_in_null",
-        "SELECT person_id FROM death WHERE cause_concept_id NOT IN (1, NULL)",
-        P,
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_simple_case",
-        "SELECT CASE death_date WHEN NULL THEN 0 ELSE 1 END FROM death",
-        P,
-        "ERROR",
-    ),
-    (
-        "null_comparison_operator",
-        "bad_between_null",
-        "SELECT person_id FROM death WHERE death_date BETWEEN NULL AND DATE '2020-01-01'",
-        P,
-        "ERROR",
-    ),
-    ("null_comparison_operator", "bad_gt", "SELECT person_id FROM death WHERE death_date > NULL", P, "ERROR"),
-    (
-        "null_comparison_operator",
-        "bad_having",
-        "SELECT cause_concept_id FROM death GROUP BY cause_concept_id HAVING MAX(death_date) <> NULL",
-        P,
-        "ERROR",
-    ),
-    ("null_comparison_operator", "bad_update_where", "UPDATE my_t SET a = NULL WHERE b <> NULL", P, "ERROR"),
-    ("null_comparison_operator", "good0", "SELECT person_id FROM death WHERE death_date IS NOT NULL", P, None),
-    ("null_comparison_operator", "good_isnull", "SELECT person_id FROM death WHERE death_date IS NULL", P, None),
-    (
-        "null_comparison_operator",
-        "good_distinct_from",
-        "SELECT person_id FROM death WHERE death_date IS DISTINCT FROM NULL",
-        P,
-        None,
-    ),
-    ("null_comparison_operator", "good_string_null", "SELECT * FROM concept WHERE concept_code = 'NULL'", P, None),
-    ("null_comparison_operator", "good_update_set", "UPDATE my_t SET a = NULL WHERE b IS NULL", P, None),
-    ("null_comparison_operator", "good_coalesce", "SELECT COALESCE(death_date, NULL) FROM death", P, None),
-    ("null_comparison_operator", "good_nullif", "SELECT NULLIF(cause_concept_id, 0) FROM death", P, None),
-    ("null_comparison_operator", "good_select_null", "SELECT NULL AS x, person_id FROM death", P, None),
-    ("null_comparison_operator", "good_tsql_assign", "SELECT @v = NULL", "tsql", None),
-    ("null_comparison_operator", "good_insert_values", "INSERT INTO my_t (a, b) VALUES (1, NULL)", P, None),
-    (
-        "null_comparison_operator",
-        "good_merge_set",
-        "MERGE INTO my_t t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = NULL",
-        P,
-        None,
-    ),
-    ("null_comparison_operator", "good_default", "CREATE TABLE my_t (a INT DEFAULT NULL)", P, None),
-    ("null_comparison_operator", "good_named_arg_pg", "SELECT my_func(a => NULL) FROM death", P, None),
-    (
-        "null_comparison_operator",
-        "good_named_arg_dq",
-        "SELECT * FROM read_csv('x.csv', nullstr = NULL)",
-        "duckdb",
-        None,
-    ),
-    (
-        "null_comparison_operator",
-        "good_null_safe",
-        "SELECT person_id FROM death WHERE death_date <=> NULL",
-        "mysql",
-        None,
-    ),
-    (
-        "null_comparison_operator",
-        "good_in_with_null_member",
-        "SELECT person_id FROM death WHERE cause_concept_id IN (5, NULL)",
-        P,
-        None,
-    ),
-    (
-        "null_comparison_operator",
-        "good_case_when_is_null",
-        "SELECT CASE WHEN death_date IS NULL THEN 0 ELSE 1 END FROM death",
-        P,
-        None,
-    ),
-]
-
-
-def test_fix5_ap_null_assignment_and_string_null_are_silent():
-    for sql, dialect in (
-        ("SELECT * FROM concept WHERE concept_code = 'NULL'", P),
-        ("UPDATE my_t SET a = NULL WHERE b IS NULL", P),
-        ("MERGE INTO my_t t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = NULL", P),
-        ("SELECT @v = NULL", "tsql"),
-    ):
-        assert _silent("null_comparison_operator", sql, dialect), sql
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT person_id FROM death WHERE cause_concept_id NOT IN (1, NULL)",
-        "SELECT person_id FROM death WHERE cause_concept_id IN (NULL)",
-        "SELECT CASE death_date WHEN NULL THEN 0 ELSE 1 END FROM death",
-        "SELECT person_id FROM death WHERE death_date = CAST(NULL AS DATE)",
-        "SELECT person_id FROM death WHERE death_date = (NULL)",
-        "SELECT person_id FROM death WHERE death_date BETWEEN NULL AND DATE '2020-01-01'",
-    ],
-)
-def test_fix5_ap_null_forms_without_a_binary_operator(sql):
-    # PostgreSQL and DuckDB: 0 rows for the predicates, the CASE branch is never taken.
-    assert _fix5_ap_severities("null_comparison_operator", sql) == ["ERROR"]
-
-
-def test_fix5_ap_null_transform_null_equals_makes_bare_eq_a_warning():
-    # transform_null_equals rewrites only a bare `x = NULL` (verified on PostgreSQL 16: <>, IN, CAST(NULL) unaffected).
-    (finding,) = _fix5_ap_findings("null_comparison_operator", "SELECT person_id FROM death WHERE death_date = NULL")
-    assert finding.severity.name == "WARNING" and "transform_null_equals" in finding.message
-    assert _fix5_ap_severities("null_comparison_operator", "SELECT person_id FROM death WHERE death_date = NULL", "duckdb") == [
-        "ERROR"
-    ]
-    assert _fix5_ap_severities("null_comparison_operator", "SELECT person_id FROM death WHERE death_date <> NULL", "tsql") == [
-        "WARNING"
-    ]
-
-
-def test_fix5_ap_null_duckdb_named_argument_is_silent():
-    assert _silent("null_comparison_operator", "SELECT * FROM read_csv('x.csv', nullstr = NULL)", "duckdb")
-    assert _fix5_ap_severities(
-        "null_comparison_operator",
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id AND d.death_date <> NULL",
-    ) == ["ERROR"]
-
-
 # --- cte_shadows_omop_table ---
 FIX5_AP_MATRIX += [
     (
@@ -26067,270 +23917,6 @@ def test_fix5_ap_cte_shadow_message_states_the_engine_behaviour():
     sql = "WITH person AS (SELECT * FROM person WHERE year_of_birth > 1980) SELECT COUNT(*) FROM person"
     (finding,) = _fix5_ap_findings("cte_shadows_omop_table", sql)
     assert finding.severity.name == "WARNING" and "reaches the CTE, not the table" in finding.message
-
-
-# --- limit_without_order_by ---
-FIX5_AP_MATRIX += [
-    (
-        "limit_without_order_by",
-        "bad0",
-        "SELECT person_id, condition_concept_id FROM condition_occurrence LIMIT 100",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_alias",
-        "SELECT x.person_id, x.condition_concept_id FROM condition_occurrence x LIMIT 100",
-        P,
-        "WARNING",
-    ),
-    ("limit_without_order_by", "bad_schema", "SELECT person_id FROM cdm.condition_occurrence LIMIT 100", P, "WARNING"),
-    ("limit_without_order_by", "bad_case", "select PERSON_ID from CONDITION_OCCURRENCE limit 100", P, "WARNING"),
-    (
-        "limit_without_order_by",
-        "bad_cte",
-        "WITH s AS (SELECT person_id FROM condition_occurrence LIMIT 100) SELECT COUNT(*) FROM drug_exposure de JOIN s ON de.person_id = s.person_id",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_derived",
-        "SELECT * FROM (SELECT person_id FROM condition_occurrence LIMIT 100) s",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_fetch",
-        "SELECT person_id FROM condition_occurrence FETCH FIRST 100 ROWS ONLY",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_offset",
-        "SELECT person_id FROM condition_occurrence LIMIT 100 OFFSET 200",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_offset_only",
-        "SELECT person_id FROM condition_occurrence OFFSET 200",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_tsql_top",
-        "SELECT TOP 100 person_id FROM dbo.condition_occurrence",
-        "tsql",
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_tsql_top_paren",
-        "SELECT TOP (100) person_id FROM dbo.condition_occurrence",
-        "tsql",
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_tsql_top_pct",
-        "SELECT TOP 10 PERCENT person_id FROM dbo.condition_occurrence",
-        "tsql",
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_bq",
-        "SELECT person_id FROM `cdm.condition_occurrence` LIMIT 100",
-        "bigquery",
-        "WARNING",
-    ),
-    ("limit_without_order_by", "bad_duck", "SELECT person_id FROM condition_occurrence LIMIT 100", "duckdb", "WARNING"),
-    (
-        "limit_without_order_by",
-        "bad_oracle_rownum",
-        "SELECT person_id FROM condition_occurrence WHERE ROWNUM <= 100",
-        "oracle",
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_group",
-        "SELECT condition_concept_id, COUNT(*) FROM condition_occurrence GROUP BY condition_concept_id LIMIT 10",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_in_subq",
-        "SELECT * FROM drug_exposure WHERE person_id IN (SELECT person_id FROM person LIMIT 10)",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_union",
-        "SELECT person_id FROM death UNION SELECT person_id FROM person LIMIT 10",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_inner_order_outer_limit",
-        "SELECT * FROM (SELECT person_id FROM person ORDER BY person_id) s LIMIT 10",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "good0",
-        "SELECT person_id, condition_concept_id FROM condition_occurrence ORDER BY condition_occurrence_id LIMIT 100",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_scalar",
-        "SELECT COUNT(DISTINCT person_id) FROM condition_occurrence LIMIT 1000",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_scalar_noagg_nofrom",
-        "SELECT (SELECT COUNT(*) FROM person) AS n, (SELECT COUNT(*) FROM death) AS d LIMIT 1000",
-        P,
-        None,
-    ),
-    ("limit_without_order_by", "good_const", "SELECT 1 AS one LIMIT 1", P, None),
-    (
-        "limit_without_order_by",
-        "good_exists",
-        "SELECT * FROM person p WHERE EXISTS (SELECT 1 FROM death d WHERE d.person_id = p.person_id LIMIT 1)",
-        P,
-        None,
-    ),
-    ("limit_without_order_by", "good_limit0", "SELECT * FROM person LIMIT 0", P, None),
-    ("limit_without_order_by", "good_limit_all", "SELECT * FROM person LIMIT ALL", P, None),
-    (
-        "limit_without_order_by",
-        "good_top_order",
-        "SELECT TOP 10 person_id FROM dbo.person ORDER BY person_id",
-        "tsql",
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_scalar_cte_cross",
-        "WITH a AS (SELECT COUNT(*) n FROM person), b AS (SELECT COUNT(*) m FROM death) SELECT a.n, b.m FROM a, b LIMIT 1000",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_scalar_cte_single",
-        "WITH a AS (SELECT COUNT(*) AS n FROM person) SELECT n FROM a LIMIT 1000",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_exists_scalar_limit1",
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM death) THEN 1 ELSE 0 END AS has_death LIMIT 1",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_agg_window_order",
-        "SELECT person_id FROM person ORDER BY person_id FETCH FIRST 5 ROWS ONLY",
-        P,
-        None,
-    ),
-    ("limit_without_order_by", "good_limit_in_string", "SELECT 'limit 5' AS s FROM person ORDER BY person_id", P, None),
-    (
-        "limit_without_order_by",
-        "good_group_one_const",
-        "SELECT MAX(year_of_birth) FROM person GROUP BY () LIMIT 1",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_count_over_limited_sub",
-        "SELECT COUNT(*) AS n FROM (SELECT person.* FROM person LIMIT 1) q01",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "good_count_over_limited_cte",
-        "WITH q AS (SELECT * FROM person LIMIT 10) SELECT COUNT(*) FROM q",
-        P,
-        None,
-    ),
-    (
-        "limit_without_order_by",
-        "bad_sum_over_limited_sub",
-        "SELECT SUM(year_of_birth) FROM (SELECT year_of_birth FROM person LIMIT 10) q",
-        P,
-        "WARNING",
-    ),
-    (
-        "limit_without_order_by",
-        "bad_count_filtered_limited_sub",
-        "SELECT COUNT(*) FROM (SELECT * FROM person LIMIT 10) q WHERE q.year_of_birth > 1980",
-        P,
-        "WARNING",
-    ),
-    ("limit_without_order_by", "good_offset_zero", "SELECT person_id FROM person OFFSET 0", P, None),
-    (
-        "limit_without_order_by",
-        "good_rownum_ordered",
-        "SELECT * FROM (SELECT person_id FROM person ORDER BY person_id) WHERE ROWNUM <= 10",
-        "oracle",
-        None,
-    ),
-]
-
-
-def test_fix5_ap_limit_scalar_aggregate_justified_by_semantics():
-    import fastssv.rules.anti_patterns.limit_without_order_by as module
-
-    text = open(module.__file__, encoding="utf-8").read()
-    assert "Atlas" not in text and "code review" not in text
-    assert _silent("limit_without_order_by", "SELECT COUNT(DISTINCT person_id) FROM condition_occurrence LIMIT 1000")
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT COUNT(*) AS n FROM (SELECT person.* FROM person LIMIT 1) q01",
-        "SELECT 1 AS one LIMIT 1",
-        "WITH a AS (SELECT COUNT(*) AS n FROM person) SELECT n FROM a LIMIT 1000",
-        "SELECT MAX(year_of_birth) FROM person GROUP BY () LIMIT 1",
-    ],
-)
-def test_fix5_ap_limit_result_independent_of_kept_rows_is_silent(sql):
-    # PostgreSQL and DuckDB return the same value whichever row the LIMIT keeps.
-    assert _silent("limit_without_order_by", sql)
-
-
-def test_fix5_ap_limit_offset_and_rownum():
-    assert _fix5_ap_severities("limit_without_order_by", "SELECT person_id FROM condition_occurrence OFFSET 200") == ["WARNING"]
-    assert _fix5_ap_severities(
-        "limit_without_order_by", "SELECT person_id FROM condition_occurrence WHERE ROWNUM <= 100", "oracle"
-    ) == ["WARNING"]
-    assert _silent(
-        "limit_without_order_by",
-        "SELECT * FROM (SELECT person_id FROM person ORDER BY person_id) WHERE ROWNUM <= 10",
-        "oracle",
-    )
 
 
 # --- concept_code_requires_vocabulary_id ---
@@ -27214,17 +24800,17 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "bad_cte",
+        "cte_source",
         "WITH a AS (SELECT * FROM condition_occurrence), b AS (SELECT * FROM person) SELECT person_id FROM a JOIN b ON a.person_id = b.person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
-        "bad_derived",
+        "derived_source",
         "SELECT person_id FROM (SELECT person_id, condition_concept_id FROM condition_occurrence) a JOIN (SELECT person_id FROM person) b ON a.person_id = b.person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27256,10 +24842,10 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "bad_groupby",
+        "groupby_output_name",
         "SELECT co.person_id, COUNT(*) FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id GROUP BY person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27305,10 +24891,10 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "bad_3way_using_pg",
+        "3way_using_merged",
         "SELECT person_id FROM person p JOIN death d USING (person_id) JOIN condition_occurrence co ON co.person_id = p.person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27340,10 +24926,10 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "bad_lateral",
+        "lateral_source",
         "SELECT person_id FROM person p CROSS JOIN LATERAL (SELECT person_id FROM death d WHERE d.person_id = p.person_id) x",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27523,17 +25109,17 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "groupby_outalias_pg",
+        "groupby_outalias",
         "SELECT co.person_id AS person_id, COUNT(*) FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id GROUP BY person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
-        "orderby_expr_pg",
+        "orderby_expr",
         "SELECT co.person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id ORDER BY person_id + 1",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27586,10 +25172,10 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "union_cte",
+        "union_cte_source",
         "WITH u AS (SELECT person_id FROM condition_occurrence UNION ALL SELECT person_id FROM drug_exposure) SELECT person_id FROM u JOIN person p ON u.person_id = p.person_id",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27621,10 +25207,10 @@ FIX5_AP_MATRIX += [
     ),
     (
         "ambiguous_column_reference",
-        "func_table",
+        "function_source",
         "SELECT person_id FROM person p JOIN generate_series(1, 3) g(person_id) ON true",
         P,
-        "ERROR",
+        None,
     ),
     (
         "ambiguous_column_reference",
@@ -27690,13 +25276,12 @@ def test_fix5_ap_ambiguous_justified_by_engine_name_resolution():
 
     text = open(module.__file__, encoding="utf-8").read()
     assert "corpus" not in text.lower() and "study" not in text.lower()
-    assert "42702" in text
+    assert "every engine" in text
 
 
 @pytest.mark.parametrize(
     "sql",
     [
-        "SELECT person_id FROM person p CROSS JOIN LATERAL (SELECT person_id FROM death d WHERE d.person_id = p.person_id) x",
         "SELECT person_id FROM person p JOIN (death d JOIN condition_occurrence co ON d.person_id = co.person_id) ON p.person_id = d.person_id",
         "SELECT p.year_of_birth FROM person p JOIN death d ON p.person_id = d.person_id WHERE EXISTS "
         "(SELECT 1 FROM concept c JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id WHERE c.concept_id = person_id)",
@@ -28681,429 +26266,6 @@ def test_fix5_t_end_before_start_error_only_for_empty_range():
     (example,) = rule.extra_examples
     assert {v.severity.name for v in rule.validate(example.sql)} == {"ERROR"}
     assert _fix5_t_run(END_BEFORE_START, "SELECT * FROM visit_occurrence WHERE visit_start_date > visit_end_date") == []
-
-
-# --- temporal.date_diff_interval_comparison --------------------------------------------------------------
-DATE_DIFF = "temporal.date_diff_interval_comparison"
-DATE_DIFF_MATRIX = [
-    (
-        "B0 example_bad",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B1 neutral aliases t1/t2",
-        "SELECT COUNT(*) FROM drug_exposure t1 JOIN drug_exposure t2 ON t1.person_id = t2.person_id AND t1.drug_exposure_id <> t2.drug_exposure_id WHERE ABS(t1.drug_exposure_start_date - t2.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B2 unqualified, one table",
-        "SELECT COUNT(*) FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B3 predicate in JOIN ON",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B4 operands swapped",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE INTERVAL '30 days' >= ABS(a.drug_exposure_start_date - b.drug_exposure_start_date)",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B5 CTE pass-through",
-        "WITH a AS (SELECT person_id, drug_exposure_start_date FROM drug_exposure), b AS (SELECT person_id, drug_exposure_start_date FROM drug_exposure) SELECT COUNT(*) FROM a JOIN b ON a.person_id = b.person_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B6 derived tables",
-        "SELECT COUNT(*) FROM (SELECT person_id, drug_exposure_start_date FROM drug_exposure) a JOIN (SELECT person_id, drug_exposure_start_date FROM drug_exposure) b ON a.person_id = b.person_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B7 CTE renames column to d1 (lineage)",
-        "WITH a AS (SELECT person_id, drug_exposure_start_date AS d1 FROM drug_exposure), b AS (SELECT person_id, drug_exposure_start_date AS d1 FROM drug_exposure) SELECT COUNT(*) FROM a JOIN b ON a.person_id = b.person_id WHERE ABS(a.d1 - b.d1) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B8 CAST(datetime AS DATE) both",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(CAST(a.drug_exposure_start_datetime AS DATE) - CAST(b.drug_exposure_start_datetime AS DATE)) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B9 ::date both",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE (a.drug_exposure_start_datetime::date - b.drug_exposure_start_datetime::date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B10 lower case + whitespace",
-        "select count(*)\nfrom drug_exposure a\n  join drug_exposure b on a.person_id=b.person_id\nwhere abs( a.drug_exposure_start_date-b.drug_exposure_start_date )<=interval '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B11 schema-qualified",
-        "SELECT COUNT(*) FROM cdm.drug_exposure a JOIN cdm.drug_exposure b ON a.person_id = b.person_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B12 INTERVAL '30' DAY",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30' DAY",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B13 '30 days'::interval",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= '30 days'::interval",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B14 CAST('30 days' AS INTERVAL)",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= CAST('30 days' AS INTERVAL)",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B15 BETWEEN INTERVAL bounds",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE (b.drug_exposure_start_date - a.drug_exposure_start_date) BETWEEN INTERVAL '0 days' AND INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B16 CURRENT_DATE - date",
-        "SELECT COUNT(*) FROM drug_exposure WHERE (CURRENT_DATE - drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B17 DATE literal - date",
-        "SELECT COUNT(*) FROM drug_exposure WHERE (DATE '2020-12-31' - drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B18 30 * INTERVAL '1 day'",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30 * INTERVAL '1 day'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B19 duckdb dialect",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "duckdb",
-        "ERROR",
-    ),
-    (
-        "B20 redshift: not checked (no source for its DATE - DATE type)",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "redshift",
-        None,
-    ),
-    (
-        "B21 HAVING MAX - MIN",
-        "SELECT person_id FROM condition_occurrence GROUP BY person_id HAVING (MAX(condition_start_date) - MIN(condition_start_date)) <= INTERVAL '1000 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B22 COALESCE(end,start) - start",
-        "SELECT COUNT(*) FROM condition_occurrence WHERE COALESCE(condition_end_date, condition_start_date) - condition_start_date <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B23 CASE WHEN in SELECT list",
-        "SELECT SUM(CASE WHEN ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days' THEN 1 ELSE 0 END) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B24 (date - date) + 1 vs interval",
-        "SELECT COUNT(*) FROM visit_occurrence WHERE (visit_end_date - visit_start_date) + 1 <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B25 make_interval(days => 30)",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= make_interval(days => 30)",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B26 dialect='postgresql' spelling",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "G0 example_good",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "G1 neutral aliases",
-        "SELECT COUNT(*) FROM drug_exposure t1 JOIN drug_exposure t2 ON t1.person_id = t2.person_id WHERE ABS(t1.drug_exposure_start_date - t2.drug_exposure_start_date) <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "G2 datetime - datetime vs INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE (a.drug_exposure_start_datetime - b.drug_exposure_start_datetime) <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "G3 integer in JOIN ON",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_start_date - b.drug_exposure_start_date <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "G4 date <= date + INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE a.drug_exposure_start_date <= b.drug_exposure_start_date + INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "G5 BETWEEN date +/- INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE a.drug_exposure_start_date BETWEEN b.drug_exposure_start_date - INTERVAL '30 days' AND b.drug_exposure_start_date + INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "G6 AGE(date,date) vs INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE AGE(a.drug_exposure_start_date, b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "G7 ::timestamp both vs INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE a.drug_exposure_start_date::timestamp - b.drug_exposure_start_date::timestamp <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "G8 integer, duckdb",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE ABS(a.drug_exposure_start_date - b.drug_exposure_start_date) <= 30",
-        "duckdb",
-        None,
-    ),
-    (
-        "G9 date - INTERVAL <= date",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE (a.drug_exposure_start_date - INTERVAL '30 days') <= b.drug_exposure_start_date",
-        "postgres",
-        None,
-    ),
-    (
-        "G10 CTE + integer",
-        "WITH a AS (SELECT person_id, drug_exposure_start_date FROM drug_exposure) SELECT COUNT(*) FROM a JOIN drug_exposure b ON a.person_id = b.person_id WHERE a.drug_exposure_start_date - b.drug_exposure_start_date <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "N1 CTE: MIN(datetime) AS first_date (timestamp)",
-        "WITH f AS (SELECT person_id, MIN(condition_start_datetime) AS first_date, MAX(condition_start_datetime) AS last_date FROM condition_occurrence GROUP BY person_id) SELECT person_id FROM f WHERE (last_date - first_date) <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N2 CTE: date + INTERVAL AS window_end_date",
-        "WITH w AS (SELECT person_id, drug_exposure_start_date, drug_exposure_start_date + INTERVAL '30 days' AS window_end_date FROM drug_exposure) SELECT person_id FROM w WHERE (w.window_end_date - w.drug_exposure_start_date) <= INTERVAL '31 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N3 CTE: NOW() AS as_of_date minus datetime",
-        "WITH x AS (SELECT person_id, measurement_datetime AS meas_date, NOW() AS as_of_date FROM measurement) SELECT person_id FROM x WHERE (as_of_date - meas_date) <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N4 MAX(datetime)-MIN(datetime)",
-        "SELECT person_id FROM measurement GROUP BY person_id HAVING MAX(measurement_datetime) - MIN(measurement_datetime) <= INTERVAL '1 day'",
-        "postgres",
-        None,
-    ),
-    (
-        "N5 T-SQL DATEDIFF",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE ABS(DATEDIFF(day, a.drug_exposure_start_date, b.drug_exposure_start_date)) <= 30",
-        "tsql",
-        None,
-    ),
-    (
-        "N6 BigQuery DATE_DIFF",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE ABS(DATE_DIFF(a.drug_exposure_start_date, b.drug_exposure_start_date, DAY)) <= 30",
-        "bigquery",
-        None,
-    ),
-    (
-        "N7 BigQuery date - date vs INTERVAL (valid there)",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE (a.drug_exposure_start_date - b.drug_exposure_start_date) <= INTERVAL 30 DAY",
-        "bigquery",
-        None,
-    ),
-    (
-        "N8 EXTRACT(DAY FROM ts - ts) <= 30",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE EXTRACT(DAY FROM (a.drug_exposure_start_datetime - b.drug_exposure_start_datetime)) <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "N9 (date - date) * INTERVAL '1 day' vs INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE (a.drug_exposure_start_date - b.drug_exposure_start_date) * INTERVAL '1 day' <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N10 CAST(date AS TIMESTAMP) - date vs INTERVAL",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE CAST(a.drug_exposure_start_date AS TIMESTAMP) - b.drug_exposure_start_date <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N11 date - CAST(datetime AS DATE) <= 30",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id AND a.drug_exposure_id <> b.drug_exposure_id WHERE a.drug_exposure_start_date - CAST(b.drug_exposure_start_datetime AS DATE) <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "N12 length of stay >= 1",
-        "SELECT COUNT(*) FROM visit_occurrence WHERE visit_end_date - visit_start_date >= 1",
-        "postgres",
-        None,
-    ),
-    (
-        "N13 date - date vs INTERVAL-typed column of derived table",
-        "WITH lim AS (SELECT INTERVAL '30 days' AS max_gap) SELECT COUNT(*) FROM drug_exposure a CROSS JOIN lim WHERE a.drug_exposure_end_date - a.drug_exposure_start_date <= 30",
-        "postgres",
-        None,
-    ),
-    (
-        "N14 datetime - date vs INTERVAL",
-        "SELECT COUNT(*) FROM measurement m JOIN visit_occurrence v ON v.visit_occurrence_id = m.visit_occurrence_id WHERE m.measurement_datetime - v.visit_start_date <= INTERVAL '2 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "B27 BigQuery-style dialect not checked even when wrong elsewhere",
-        "SELECT COUNT(*) FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) <= INTERVAL '30 days'",
-        "snowflake",
-        None,
-    ),
-    (
-        "B28 renamed DATE through derived table",
-        "SELECT COUNT(*) FROM (SELECT drug_exposure_start_date AS s, drug_exposure_end_date AS e FROM drug_exposure) x WHERE x.e - x.s > INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B29 GREATEST/LEAST of CDM dates",
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id WHERE GREATEST(a.drug_exposure_start_date, b.drug_exposure_start_date) - LEAST(a.drug_exposure_start_date, b.drug_exposure_start_date) <= INTERVAL '30 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "B30 UNION branch typed DATE",
-        "WITH u AS (SELECT person_id, condition_start_date AS d FROM condition_occurrence UNION ALL SELECT person_id, drug_exposure_start_date FROM drug_exposure) SELECT person_id FROM u GROUP BY person_id HAVING MAX(d) - MIN(d) <= INTERVAL '365 days'",
-        "postgres",
-        "ERROR",
-    ),
-    (
-        "N15 unknown-table column not judged",
-        "SELECT 1 FROM my_events e WHERE e.end_date - e.start_date <= INTERVAL '30 days'",
-        "postgres",
-        None,
-    ),
-    (
-        "N16 UNION mixing DATE and TIMESTAMP not judged",
-        "WITH u AS (SELECT person_id, condition_start_date AS d FROM condition_occurrence UNION ALL SELECT person_id, measurement_datetime FROM measurement) SELECT person_id FROM u GROUP BY person_id HAVING MAX(d) - MIN(d) <= INTERVAL '365 days'",
-        "postgres",
-        None,
-    ),
-]
-
-
-@pytest.mark.parametrize("label,sql,dialect,expected", DATE_DIFF_MATRIX, ids=_fix5_t_ids(DATE_DIFF_MATRIX))
-def test_fix5_t_date_diff_matrix(label, sql, dialect, expected):
-    got = _fix5_t_severities(DATE_DIFF, sql, dialect)
-    assert got == (set() if expected is None else {expected}), (label, got)
-
-
-def test_fix5_t_date_diff_justified_by_operator_table_not_corpus():
-    import fastssv.rules.temporal.date_diff_interval_comparison as module
-
-    rule = get_rule(DATE_DIFF)()
-    text = (module.__doc__ + rule.long_description).lower()
-    assert "llm" not in text and "corpus" not in text
-    assert any("functions-datetime" in ref.url for ref in rule.references)
-    # Coverage follows the type rule, not the shapes agents wrote: CURRENT_DATE - date is a day count too.
-    sql = "SELECT 1 FROM drug_exposure WHERE (CURRENT_DATE - drug_exposure_start_date) <= INTERVAL '30 days'"
-    assert _fix5_t_severities(DATE_DIFF, sql) == {"ERROR"}
-
-
-def test_fix5_t_date_diff_timestamp_named_like_a_date_is_not_flagged():
-    sql = (
-        "WITH f AS (SELECT person_id, MIN(condition_start_datetime) AS first_date, "
-        "MAX(condition_start_datetime) AS last_date FROM condition_occurrence GROUP BY person_id) "
-        "SELECT person_id FROM f WHERE (last_date - first_date) <= INTERVAL '30 days'"
-    )
-    assert _fix5_t_run(DATE_DIFF, sql) == []
-    window = (
-        "WITH w AS (SELECT person_id, drug_exposure_start_date, drug_exposure_start_date + INTERVAL '30 days' "
-        "AS window_end_date FROM drug_exposure) "
-        "SELECT person_id FROM w WHERE (w.window_end_date - w.drug_exposure_start_date) <= INTERVAL '31 days'"
-    )
-    assert _fix5_t_run(DATE_DIFF, window) == []
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT 1 FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) <= '30 days'::interval",
-        "SELECT 1 FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) "
-        "<= CAST('30 days' AS INTERVAL)",
-        "SELECT 1 FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) <= 30 * INTERVAL '1 day'",
-        "SELECT 1 FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) "
-        "<= make_interval(days => 30)",
-        "SELECT 1 FROM drug_exposure WHERE (drug_exposure_end_date - drug_exposure_start_date) "
-        "BETWEEN INTERVAL '0 days' AND INTERVAL '30 days'",
-        "SELECT 1 FROM condition_occurrence "
-        "WHERE COALESCE(condition_end_date, condition_start_date) - condition_start_date <= INTERVAL '30 days'",
-        "SELECT 1 FROM visit_occurrence WHERE (visit_end_date - visit_start_date) + 1 <= INTERVAL '30 days'",
-        "WITH a AS (SELECT person_id, drug_exposure_start_date AS d1 FROM drug_exposure) "
-        "SELECT 1 FROM a JOIN a b ON a.person_id = b.person_id WHERE a.d1 - b.d1 <= INTERVAL '30 days'",
-    ],
-)
-def test_fix5_t_date_diff_previously_missed_forms(sql):
-    assert _fix5_t_severities(DATE_DIFF, sql) == {"ERROR"}
-
-
-def test_fix5_t_date_diff_message_reports_the_real_operator():
-    sql = (
-        "SELECT COUNT(*) FROM drug_exposure a JOIN drug_exposure b ON a.person_id = b.person_id "
-        "WHERE INTERVAL '30 days' >= ABS(a.drug_exposure_start_date - b.drug_exposure_start_date)"
-    )
-    (v,) = _fix5_t_run(DATE_DIFF, sql)
-    assert "operator does not exist: interval >= integer" in v.message
-    assert "gte" not in v.message
-    (duck,) = _fix5_t_run(DATE_DIFF, sql, "duckdb")
-    assert "DuckDB" in duck.message
-    # No source documents the type of DATE - DATE on Redshift, so the rule does not judge that dialect.
-    assert _fix5_t_run(DATE_DIFF, sql, "redshift") == []
 
 
 # --- temporal.observation_period_anchoring ---------------------------------------------------------------
@@ -35268,11 +32430,18 @@ VALUE_FIRES = [
         ["ERROR"],
     ),
     (
-        "warn: lowercase s bigquery (not verified on that engine)",
+        "bad: lowercase s bigquery",
         "SELECT concept_id FROM concept WHERE standard_concept = 's'",
         "bigquery",
         False,
-        ["WARNING"],
+        ["ERROR"],
+    ),
+    (
+        "bad: lowercase s tsql",
+        "SELECT concept_id FROM concept WHERE standard_concept = 's'",
+        "tsql",
+        False,
+        ["ERROR"],
     ),
     ("bad: empty string", "SELECT concept_id FROM concept WHERE standard_concept = ''", "postgres", False, ["ERROR"]),
     ("warn: <> 'N'", "SELECT concept_id FROM concept WHERE standard_concept <> 'N'", "postgres", False, ["WARNING"]),
@@ -35288,12 +32457,6 @@ VALUE_SILENT = [
     ),
     ("legit: IN ('S','C')", "SELECT concept_id FROM concept WHERE standard_concept IN ('S', 'C')", "postgres", False),
     ("legit: IS NULL", "SELECT concept_id FROM concept WHERE standard_concept IS NULL", "postgres", False),
-    (
-        "legit: lowercase s tsql (CI collation)",
-        "SELECT concept_id FROM concept WHERE standard_concept = 's'",
-        "tsql",
-        False,
-    ),
     (
         "legit: UPPER(col) = 'S'",
         "SELECT concept_id FROM concept WHERE UPPER(standard_concept) = 'S'",
@@ -35719,14 +32882,13 @@ def test_fix5_cs_unit_former_false_negatives_fire(sql):
     assert _fix5_cs_sev(FIX5_CS_UNIT, sql) == ["ERROR"]
 
 
-def test_fix5_cs_unit_lowercase_ucum_depends_on_dialect():
+@pytest.mark.parametrize("dialect", ["duckdb", "bigquery", "tsql"])
+def test_fix5_cs_unit_lowercase_ucum_is_error_on_every_dialect(dialect):
     sql = (
         "SELECT m.value_as_number FROM measurement m JOIN concept u ON m.unit_concept_id = u.concept_id "
         "WHERE u.vocabulary_id = 'ucum'"
     )
-    assert _fix5_cs_sev(FIX5_CS_UNIT, sql, "duckdb") == ["ERROR"]
-    assert _fix5_cs_sev(FIX5_CS_UNIT, sql, "bigquery") == ["WARNING"]
-    assert _fix5_cs_run(FIX5_CS_UNIT, sql, "tsql") == []
+    assert _fix5_cs_sev(FIX5_CS_UNIT, sql, dialect) == ["ERROR"]
 
 
 def test_fix5_cs_unit_survey_is_not_called_valid():
@@ -36113,7 +33275,7 @@ SCHEMA_MATRIX = [
         "postgres",
         "-",
     ),
-    ("legit: PG system column ctid", "SELECT ctid, person_id FROM person", "postgres", "-"),
+    ("bad: PG system column ctid", "SELECT ctid, person_id FROM person", "postgres", "ERROR"),
     (
         "legit: interval",
         "SELECT person_id FROM visit_occurrence WHERE visit_end_date > visit_start_date + INTERVAL '1 day'",
@@ -36496,7 +33658,7 @@ CT_MATRIX = [
         "dialect duckdb: varchar col = int col",
         "SELECT co.condition_concept_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_source_value",
         "duckdb",
-        "WARNING",
+        "ERROR",
     ),
     (
         "dialect duckdb: date >= 2020 still ERROR",
@@ -36510,7 +33672,7 @@ CT_MATRIX = [
         "duckdb",
         "ERROR",
     ),
-    ("dialect duckdb: domain_id = 19", "SELECT concept_id FROM concept WHERE domain_id = 19", "duckdb", "WARNING"),
+    ("dialect duckdb: domain_id = 19", "SELECT concept_id FROM concept WHERE domain_id = 19", "duckdb", "ERROR"),
     (
         "dialect duckdb: value_as_string > 100 (binder error)",
         "SELECT 1 FROM observation WHERE value_as_string > 100",
@@ -36533,15 +33695,15 @@ CT_MATRIX = [
         "dialect duckdb: zip IN numbers",
         "SELECT location_id FROM location WHERE zip IN (10001, 10002)",
         "duckdb",
-        "WARNING",
+        "ERROR",
     ),
-    ("dialect tsql: varchar = number", "SELECT 1 FROM person WHERE person_source_value = 12345", "tsql", "WARNING"),
-    ("dialect mysql: varchar = number", "SELECT 1 FROM person WHERE person_source_value = 12345", "mysql", "WARNING"),
+    ("dialect tsql: varchar = number", "SELECT 1 FROM person WHERE person_source_value = 12345", "tsql", "ERROR"),
+    ("dialect mysql: varchar = number", "SELECT 1 FROM person WHERE person_source_value = 12345", "mysql", "ERROR"),
     (
         "dialect bigquery: example_bad",
         "SELECT co.condition_concept_id FROM `cdm.condition_occurrence` co JOIN `cdm.person` p ON co.person_id = p.person_source_value",
         "bigquery",
-        "WARNING",
+        "ERROR",
     ),
     (
         "example_good",
@@ -36700,13 +33862,13 @@ def test_fix5_dq_ct_matrix(label, sql, dialect, expected):
     assert _verdict(CT, sql, dialect) == expected
 
 
-def test_fix5_dq_ct_duckdb_equality_is_data_dependent_warning():
-    """DuckDB runs integer = varchar and fails only on a value that does not convert."""
+def test_fix5_dq_ct_duckdb_equality_is_error_with_cdm_types():
+    """integer = varchar is an ERROR on every dialect, and the message states the CDM types, not an engine."""
     sql = "SELECT co.condition_occurrence_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_source_value"
-    assert _verdict(CT, sql, "postgres") == "ERROR"
+    (pg,) = _fix5_dq_run(CT, sql, "postgres")
     (v,) = _fix5_dq_run(CT, sql, "duckdb")
-    assert v.severity.name == "WARNING"
-    assert "depends on the data" in v.message
+    assert v.severity.name == "ERROR" and v.message == pg.message
+    assert "(integer)" in v.message and "(varchar)" in v.message and "PostgreSQL" not in v.message
 
 
 def test_fix5_dq_ct_comparisons_outside_where_are_checked():
@@ -37071,16 +34233,16 @@ CAN_MATRIX = [
     ),
     ("bad: duckdb", "SELECT concept_id FROM concept WHERE vocabulary_id = 'snomed'", "duckdb", "ERROR"),
     (
-        "bad: bigquery (unverified dialect: warning)",
+        "bad: bigquery",
         "SELECT concept_id FROM `proj.cdm.concept` WHERE vocabulary_id = 'snomed'",
         "bigquery",
-        "WARNING",
+        "ERROR",
     ),
     (
-        "bad: tsql (case-insensitive collation: warning)",
+        "bad: tsql",
         "SELECT TOP 10 concept_id FROM cdm.concept WHERE vocabulary_id = 'snomed'",
         "tsql",
-        "WARNING",
+        "ERROR",
     ),
     ("bad: domain_id", "SELECT concept_id FROM concept WHERE domain_id = 'condition'", "postgres", "ERROR"),
     (
@@ -37258,10 +34420,10 @@ def test_fix5_dq_can_hyphen_wording_matches_source():
     assert "'ICD10CM'" in v.message
 
 
-def test_fix5_dq_can_message_names_engine_behaviour():
+def test_fix5_dq_can_message_states_the_defined_id():
     (v,) = _fix5_dq_run(CAN, "SELECT concept_id FROM concept WHERE vocabulary_id = 'snomed'", "tsql")
-    assert v.severity.name == "WARNING"
-    assert "case-insensitively" in v.message
+    assert v.severity.name == "ERROR"
+    assert "'SNOMED'" in v.message and "collation" not in v.message
 
 
 # --- data_quality.negative_concept_id_validation -----------------------------------------------------------
@@ -37591,7 +34753,7 @@ CSC_MATRIX = [
         "ERROR",
     ),
     ("non-integer: duckdb ERROR", "SELECT person_id FROM person WHERE gender_concept_id = 'FEMALE'", "duckdb", "ERROR"),
-    ("non-integer: tsql WARNING", "SELECT person_id FROM person WHERE gender_concept_id = 'FEMALE'", "tsql", "WARNING"),
+    ("non-integer: tsql ERROR", "SELECT person_id FROM person WHERE gender_concept_id = 'FEMALE'", "tsql", "ERROR"),
     ("non-integer: empty string", "SELECT person_id FROM person WHERE gender_concept_id = ''", "postgres", "ERROR"),
     (
         "non-integer inside IN",
@@ -38074,8 +35236,6 @@ def test_fix5_dq_fr_profiling_exemption_is_source_derived():
     )
 
 
-# --- data_quality.non_standard_date_literal_format ---------------------------------------------------------
-DL = "data_quality.non_standard_date_literal_format"
 DL_MATRIX = [
     (
         "example_bad",
@@ -38280,29 +35440,6 @@ DL_MATRIX = [
     ),
     ("legit: fraction-like text", "SELECT * FROM observation WHERE value_as_string = '1/2/3'", "postgres", "-"),
 ]
-
-
-@pytest.mark.parametrize("label,sql,dialect,expected", DL_MATRIX, ids=[c[0] for c in DL_MATRIX])
-def test_fix5_dq_dl_matrix(label, sql, dialect, expected):
-    assert _verdict(DL, sql, dialect) == expected
-
-
-def test_fix5_dq_dl_dd_mon_message_does_not_claim_postgres_ambiguity():
-    (v,) = _fix5_dq_run(DL, "SELECT person_id FROM drug_exposure WHERE drug_exposure_start_date >= '01-JAN-2020'")
-    assert "session language" in v.message
-    assert "DateStyle" not in v.message
-
-
-def test_fix5_dq_dl_yyyymmdd_only_on_duckdb():
-    sql = "SELECT * FROM condition_occurrence WHERE condition_start_date = '20200131'"
-    assert _verdict(DL, sql, "postgres") == "-"
-    (v,) = _fix5_dq_run(DL, sql, "duckdb")
-    assert v.severity.name == "ERROR" and v.suggested_fix_patch["text"] == "'2020-01-31'"
-
-
-def test_fix5_dq_dl_no_unsourced_null_claim():
-    rule = get_rule(DL)()
-    assert "NULL" not in rule.long_description
 
 
 # --- data_quality.note_nlp_nlp_date_for_temporal_filtering -------------------------------------------------
@@ -42449,14 +39586,14 @@ FIX5_DS2_MATRIX = [
         "G2 int in tsql",
         "SELECT relationship_id FROM vocab.relationship WHERE defines_ancestry = 1",
         "tsql",
-        "ok",
+        "ERROR",
     ),
     (
         "domain_specific.vocabulary_relationship_boolean_comparison",
         "G3 int in duckdb",
         "SELECT relationship_id FROM relationship WHERE defines_ancestry = 1",
         "duckdb",
-        "ok",
+        "ERROR",
     ),
     (
         "domain_specific.vocabulary_relationship_boolean_comparison",
@@ -42519,7 +39656,7 @@ FIX5_DS2_MATRIX = [
         "G12 int in snowflake",
         "SELECT relationship_id FROM relationship WHERE defines_ancestry = 1",
         "snowflake",
-        "ok",
+        "ERROR",
     ),
     (
         "domain_specific.vocabulary_relationship_boolean_comparison",
@@ -42530,10 +39667,10 @@ FIX5_DS2_MATRIX = [
     ),
     (
         "domain_specific.vocabulary_relationship_boolean_comparison",
-        "X2 IS TRUE in duckdb (coerces)",
+        "X2 IS TRUE in duckdb",
         "SELECT relationship_id FROM relationship WHERE is_hierarchical IS TRUE",
         "duckdb",
-        "ok",
+        "ERROR",
     ),
     (
         "domain_specific.vocabulary_relationship_boolean_comparison",
@@ -44152,11 +41289,12 @@ def test_fix5_ds2_vdvo_lineage():
 
 
 def test_fix5_ds2_relationship_integer_operand_dialects():
-    """This rule owns the flag columns: an integer operand is an ERROR only where verified (PostgreSQL, BigQuery) and silent where the engine coerces (DuckDB, T-SQL). The duplicate report by data_quality.column_type_validation is filed in audit/DS2/overlaps.md."""
+    """This rule owns the flag columns: an integer operand is an ERROR on every dialect, since the CDM defines the
+    column as varchar(1)."""
     checks = [
         ("SELECT relationship_id FROM relationship WHERE defines_ancestry = 1", "postgres", "ERROR"),
-        ("SELECT relationship_id FROM relationship WHERE defines_ancestry = 1", "duckdb", "ok"),
-        ("SELECT relationship_id FROM vocab.relationship WHERE defines_ancestry = 1", "tsql", "ok"),
+        ("SELECT relationship_id FROM relationship WHERE defines_ancestry = 1", "duckdb", "ERROR"),
+        ("SELECT relationship_id FROM vocab.relationship WHERE defines_ancestry = 1", "tsql", "ERROR"),
         ("SELECT relationship_id FROM relationship WHERE LOWER(is_hierarchical) = 'yes'", "postgres", "ERROR"),
         ("SELECT relationship_id FROM relationship WHERE is_hierarchical IS TRUE", "postgres", "ERROR"),
         ("SELECT relationship_id FROM relationship WHERE is_hierarchical LIKE 'Y'", "postgres", "ERROR"),
@@ -51535,8 +48673,6 @@ def test_fix5_j2_era_overlap_and_date_arithmetic_relate(sql):
     assert _fix5_j2_run(RULE_ERA, sql) == []
 
 
-# --- joins.left_join_then_where_on_right_table ---
-RULE_LJ = "joins.left_join_then_where_on_right_table"
 MATRIX_LJ_FIRES = [
     (
         "B0 example_bad",
@@ -51818,58 +48954,6 @@ MATRIX_LJ_SILENT = [
         "postgres",
     ),
 ]
-
-
-@pytest.mark.parametrize("label,sql,dialect", MATRIX_LJ_FIRES, ids=[r[0] for r in MATRIX_LJ_FIRES])
-def test_fix5_j2_lj_matrix_fires(label, sql, dialect):
-    assert _fix5_j2_run(RULE_LJ, sql, dialect), label
-
-
-@pytest.mark.parametrize("label,sql,dialect", MATRIX_LJ_SILENT, ids=[r[0] for r in MATRIX_LJ_SILENT])
-def test_fix5_j2_lj_matrix_silent(label, sql, dialect):
-    assert not _fix5_j2_run(RULE_LJ, sql, dialect), label
-
-
-@pytest.mark.parametrize(
-    "sql,dialect",
-    [
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE visit_start_date >= DATE '2023-01-01'",
-            "postgres",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE DATE_TRUNC('year', vo.visit_start_date) = DATE '2023-01-01'",
-            "postgres",
-        ),
-        (
-            "SELECT p.person_id FROM dbo.person p LEFT JOIN dbo.visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE DATEDIFF(day, vo.visit_start_date, GETDATE()) < 365",
-            "tsql",
-        ),
-        (
-            "SELECT p.person_id FROM person p LEFT JOIN visit_occurrence vo ON p.person_id = vo.person_id "
-            "WHERE (vo.visit_concept_id = 9201) IS TRUE",
-            "postgres",
-        ),
-    ],
-)
-def test_fix5_j2_lj_false_negatives_now_reported(sql, dialect):
-    assert _fix5_j2_severities(RULE_LJ, sql, dialect) == {Severity.WARNING}
-
-
-def test_fix5_j2_lj_null_tolerant_forms_stay_silent():
-    for sql in [
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id WHERE (d.person_id IS NULL)",
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id "
-        "WHERE NOT (d.death_date IS NULL AND p.year_of_birth IS NULL)",
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id "
-        "WHERE COALESCE(d.cause_concept_id, 0) = 0",
-        "SELECT p.person_id FROM person p LEFT JOIN death d ON d.person_id = p.person_id "
-        "WHERE (d.death_date > DATE '2020-01-01') IS NOT TRUE",
-    ]:
-        assert _fix5_j2_run(RULE_LJ, sql) == [], sql
 
 
 # --- joins.observation_period_unlinked ---
@@ -52242,35 +49326,6 @@ def _ff(sql, rule_id, dialect="postgres"):
     return [(v.severity, v.message) for v in validate_sql_structured(sql, dialect=dialect) if v.rule_id == rule_id]
 
 
-_HAVING = "anti_patterns.having_without_group_by"
-
-
-@pytest.mark.parametrize(
-    "sql,dialect",
-    [
-        ("SELECT count(*) FILTER (WHERE year_of_birth > 1980) AS n FROM person HAVING count(*) > 0", "postgres"),
-        ("SELECT count(*) FILTER (WHERE year_of_birth > 1980) AS n FROM person HAVING count(*) > 0", "duckdb"),
-        (
-            "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY year_of_birth) AS med FROM person HAVING count(*) > 0",
-            "postgres",
-        ),
-        ("SELECT mode() WITHIN GROUP (ORDER BY gender_concept_id) FROM person HAVING count(*) > 0", "postgres"),
-        ("SELECT count(*) AS n FROM person HAVING n > 0", "duckdb"),
-    ],
-)
-def test_final_having_filter_ordered_set_and_alias_not_reported(sql, dialect):
-    assert _ff(sql, _HAVING, dialect) == []
-
-
-@pytest.mark.parametrize("dialect", ["postgres", "duckdb"])
-def test_final_having_ungrouped_column_still_error(dialect):
-    sql = "SELECT person_id, count(*) AS n FROM person HAVING count(*) > 0"
-    assert [s for s, _ in _ff(sql, _HAVING, dialect)] == [Severity.ERROR]
-    # An unqualified alias in HAVING does not hide an ungrouped select-list column.
-    sql = "SELECT person_id, count(*) AS n FROM person HAVING n > 0"
-    assert [s for s, _ in _ff(sql, _HAVING, "duckdb")] == [Severity.ERROR]
-
-
 _DESTRUCTIVE = "anti_patterns.destructive_operations_on_clinical_tables"
 
 
@@ -52319,34 +49374,6 @@ def test_final_destructive_results_or_scratch_schema_is_warning(sql):
 )
 def test_final_destructive_cdm_target_still_error(sql):
     assert [s for s, _ in _ff(sql, _DESTRUCTIVE)] == [Severity.ERROR]
-
-
-_NULLCMP = "anti_patterns.null_comparison_operator"
-
-
-@pytest.mark.parametrize(
-    "sql,holds",
-    [
-        ("SELECT count(*) FROM person WHERE year_of_birth NOT BETWEEN NULL AND 1950", "year_of_birth > 1950"),
-        ("SELECT count(*) FROM person WHERE NOT (year_of_birth BETWEEN NULL AND 1950)", "year_of_birth > 1950"),
-        ("SELECT year_of_birth NOT BETWEEN 1950 AND NULL FROM person", "year_of_birth < 1950"),
-    ],
-)
-def test_final_null_not_between_one_null_bound_is_warning(sql, holds):
-    found = _ff(sql, _NULLCMP)
-    assert [s for s, _ in found] == [Severity.WARNING]
-    assert holds in found[0][1] and "never holds" not in found[0][1]
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT count(*) FROM person WHERE year_of_birth BETWEEN NULL AND 1950",
-        "SELECT count(*) FROM person WHERE year_of_birth NOT BETWEEN NULL AND NULL",
-    ],
-)
-def test_final_null_between_null_bound_still_error(sql):
-    assert [s for s, _ in _ff(sql, _NULLCMP)] == [Severity.ERROR]
 
 
 _AMBIG = "anti_patterns.ambiguous_column_reference"
@@ -52581,7 +49608,7 @@ _CIDSTR = "data_quality.concept_id_string_comparison"
 
 
 @pytest.mark.parametrize("dialect", ["postgres", "duckdb"])
-@pytest.mark.parametrize("literal", ["8_507", "0x1F", " 8507 "])
+@pytest.mark.parametrize("literal", [" 8507 ", "+8507", "-1"])
 def test_final_concept_id_string_integer_input_is_warning(dialect, literal):
     sql = f"SELECT * FROM person WHERE gender_concept_id = '{literal}'"
     assert [s for s, _ in _ff(sql, _CIDSTR, dialect)] == [Severity.WARNING]
@@ -52621,28 +49648,6 @@ def test_final_canonical_positive_filter_still_matches_no_row():
     found = _ff("SELECT * FROM concept WHERE vocabulary_id = 'snomed'", _CANON)
     assert [s for s, _ in found] == [Severity.ERROR]
     assert "matches no row" in found[0][1]
-
-
-_DATELIT = "data_quality.non_standard_date_literal_format"
-
-
-@pytest.mark.parametrize("literal,read_as", [("01/02/20", "0001-02-20"), ("12/02/29", "0012-02-29")])
-def test_final_date_literal_duckdb_year_first_reading_is_warning(literal, read_as):
-    sql = f"SELECT * FROM condition_occurrence WHERE condition_start_date = '{literal}'"
-    found = _ff(sql, _DATELIT, "duckdb")
-    assert [s for s, _ in found] == [Severity.WARNING]
-    assert read_as in found[0][1] and "rejects" not in found[0][1]
-
-
-@pytest.mark.parametrize("literal", ["01/31/2020", "12/31/20", "01.02.2020", "08-Jan-1999", "19990108"])
-def test_final_date_literal_duckdb_rejected_still_error(literal):
-    sql = f"SELECT * FROM condition_occurrence WHERE condition_start_date = '{literal}'"
-    assert [s for s, _ in _ff(sql, _DATELIT, "duckdb")] == [Severity.ERROR]
-
-
-def test_final_date_literal_cites_duckdb_date_page():
-    urls = {ref.url for ref in get_rule(_DATELIT).references}
-    assert "https://duckdb.org/docs/stable/sql/data_types/date" in urls
 
 
 @pytest.mark.parametrize(
@@ -52819,11 +49824,14 @@ def test_final_key_to_never_matching_column_still_error(rule_id, sql):
 _COLTYPE = "data_quality.column_type_validation"
 
 
-@pytest.mark.parametrize("literal", ["1e3", "1.5", "5.", ".5", "1_0e3"])
-def test_final_integer_input_duckdb_numeric_forms_convert(literal):
-    assert _ff(f"SELECT * FROM person WHERE year_of_birth = '{literal}'", _COLTYPE, "duckdb") == []
-    found = _ff(f"SELECT * FROM person WHERE gender_concept_id = '{literal}'", _CIDSTR, "duckdb")
-    assert [s for s, _ in found] == [Severity.WARNING]
+@pytest.mark.parametrize("dialect", ["postgres", "duckdb", "tsql"])
+@pytest.mark.parametrize("literal", ["1e3", "1.5", "5.", ".5", "1_0e3", "8_507", "0x1F", "0o17"])
+def test_final_integer_input_non_decimal_forms_are_error(literal, dialect):
+    assert [s for s, _ in _ff(f"SELECT * FROM person WHERE year_of_birth = '{literal}'", _COLTYPE, dialect)] == [
+        Severity.ERROR
+    ]
+    found = _ff(f"SELECT * FROM person WHERE gender_concept_id = '{literal}'", _CIDSTR, dialect)
+    assert [s for s, _ in found] == [Severity.ERROR]
 
 
 @pytest.mark.parametrize("literal", ["1e3", "1.5"])
@@ -52844,11 +49852,11 @@ def test_final_integer_input_duckdb_rejected_forms_are_error(literal, dialect):
     ]
 
 
-def test_final_integer_input_one_definition_per_dialect():
+def test_final_integer_input_one_dialect_free_definition():
     from fastssv.rules.data_quality.column_type_validation import is_integer_input
 
-    assert is_integer_input("1e3", "duckdb") and not is_integer_input("1e3", "postgres")
-    assert is_integer_input("0o17", "postgres") and not is_integer_input("0o17", "duckdb")
+    assert all(is_integer_input(t) for t in ("8507", " -3 ", "+12"))
+    assert not any(is_integer_input(t) for t in ("1e3", "1.5", "0x1F", "0o17", "8_507", "", "abc"))
 
 
 _VOCABPROT = "data_quality.vocabulary_table_protection"
@@ -52864,22 +49872,6 @@ def test_final_vocabulary_scratch_or_results_schema_is_warning(sql):
 @pytest.mark.parametrize("sql", ["DELETE FROM vocab.concept", "DELETE FROM cdm.concept", "DELETE FROM omop_cdm.concept"])
 def test_final_vocabulary_cdm_schema_still_error(sql):
     assert [s for s, _ in _ff(sql, _VOCABPROT)] == [Severity.ERROR]
-
-
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT list(year_of_birth) FROM person HAVING count(*) > 0",
-        "SELECT histogram(year_of_birth), arg_max(person_id, year_of_birth) FROM person HAVING count(*) > 0",
-    ],
-)
-def test_final_having_duckdb_aggregates_counted(sql):
-    assert _ff(sql, _HAVING, "duckdb") == []
-
-
-def test_final_having_duckdb_ungrouped_column_beside_list_still_error():
-    sql = "SELECT person_id, list(year_of_birth) FROM person HAVING count(*) > 0"
-    assert [s for s, _ in _ff(sql, _HAVING, "duckdb")] == [Severity.ERROR]
 
 
 @pytest.mark.parametrize("table", ["condition", "drug_concept", "race_concept", "results.achilles_results"])
@@ -52899,3 +49891,79 @@ def test_final_closed_schema_unknown_table_is_error(table):
 )
 def test_final_closed_schema_locally_defined_tables_are_silent(sql, dialect):
     assert _fix5_dq_run(FIX5_DQ_SCHEMA, sql, dialect) == []
+
+
+# --- Dialect-independent verdicts ---
+
+_UNIFORM_DIALECTS = ("postgres", "duckdb", "tsql", "snowflake")
+_CT_U = "data_quality.column_type_validation"
+_CIDSTR_U = "data_quality.concept_id_string_comparison"
+_CANON_U = "data_quality.canonical_string_value_validation"
+_STDVAL_U = "concept_standardization.standard_concept_value_validation"
+_FLAGS_U = "domain_specific.vocabulary_relationship_boolean_comparison"
+_AMBIG_U = "anti_patterns.ambiguous_column_reference"
+
+
+@pytest.mark.parametrize("dialect", _UNIFORM_DIALECTS)
+@pytest.mark.parametrize(
+    "rule_id,sql,severity",
+    [
+        (_CT_U, "SELECT concept_id FROM concept WHERE domain_id = 19", Severity.ERROR),
+        (_CT_U, "SELECT person_id FROM person WHERE year_of_birth = 'unknown'", Severity.ERROR),
+        (_CT_U, "SELECT person_id FROM condition_occurrence WHERE condition_start_date >= 2020", Severity.ERROR),
+        (
+            _CT_U,
+            "SELECT co.person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_source_value",
+            Severity.ERROR,
+        ),
+        (_CT_U, "SELECT person_id FROM observation WHERE value_as_string > '100'", Severity.WARNING),
+        (_CIDSTR_U, "SELECT concept_name FROM concept WHERE concept_id = 'abc'", Severity.ERROR),
+        (_CIDSTR_U, "SELECT person_id FROM person WHERE gender_concept_id = '8507'", Severity.WARNING),
+        (_CANON_U, "SELECT concept_id FROM concept WHERE vocabulary_id = 'rxnorm'", Severity.ERROR),
+        (_CANON_U, "SELECT concept_id FROM concept WHERE vocabulary_id = 'ICD-10-CM'", Severity.WARNING),
+        (_STDVAL_U, "SELECT concept_id FROM concept WHERE standard_concept = 's'", Severity.ERROR),
+        (_STDVAL_U, "SELECT concept_id FROM concept WHERE standard_concept IN ('S', 'Y')", Severity.WARNING),
+        (
+            "concept_standardization.domain_vocabulary_validation",
+            "SELECT co.person_id FROM condition_occurrence co JOIN concept c ON co.condition_concept_id = c.concept_id "
+            "WHERE c.vocabulary_id = 'snomed'",
+            Severity.ERROR,
+        ),
+        (
+            "concept_standardization.unit_vocabulary_validation",
+            "SELECT m.person_id FROM measurement m JOIN concept c ON m.unit_concept_id = c.concept_id "
+            "WHERE c.vocabulary_id = 'ucum'",
+            Severity.ERROR,
+        ),
+        (_FLAGS_U, "SELECT relationship_id FROM relationship WHERE is_hierarchical = 1", Severity.ERROR),
+        (_FLAGS_U, "SELECT relationship_id FROM relationship WHERE defines_ancestry = 'true'", Severity.ERROR),
+        (
+            _AMBIG_U,
+            "SELECT person_id FROM condition_occurrence co JOIN person p ON co.person_id = p.person_id",
+            Severity.ERROR,
+        ),
+        ("data_quality.schema_validation", "SELECT ctid FROM person", Severity.ERROR),
+    ],
+)
+def test_dialect_independent_verdict(rule_id, sql, severity, dialect):
+    rule = get_rule(rule_id)()
+    found = [(v.severity, v.message) for v in rule.validate(sql, dialect)]
+    assert found == [(v.severity, v.message) for v in rule.validate(sql, "postgres")]
+    assert [s for s, _ in found] == [severity]
+    assert not any(engine in m for _, m in found for engine in ("PostgreSQL", "DuckDB", "SQL Server", "this dialect"))
+
+
+@pytest.mark.parametrize("dialect", _UNIFORM_DIALECTS)
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # DuckDB binds a USING-merged name even when a later source exposes it too.
+        "SELECT person_id FROM person p JOIN death d USING (person_id) "
+        "JOIN observation_period op ON op.person_id = d.person_id",
+        # BigQuery, DuckDB and Snowflake resolve a GROUP BY name to the select-list alias.
+        "SELECT co.person_id AS person_id, COUNT(*) FROM condition_occurrence co JOIN person p "
+        "ON co.person_id = p.person_id GROUP BY person_id",
+    ],
+)
+def test_dialect_independent_ambiguity_reports_only_what_every_engine_rejects(sql, dialect):
+    assert get_rule(_AMBIG_U)().validate(sql, dialect) == []

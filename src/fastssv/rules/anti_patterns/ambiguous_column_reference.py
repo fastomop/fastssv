@@ -1,38 +1,41 @@
 """Ambiguous Column Reference Rule.
 
 An unqualified column name must resolve to exactly one FROM/JOIN source of the
-SELECT it appears in. When two or more sources of that same SELECT expose the
-name, the database cannot resolve it and rejects the query (PostgreSQL:
-``column reference "x" is ambiguous``, SQLSTATE 42702; other engines raise the
-equivalent error).
+SELECT it appears in. When two or more OMOP CDM tables of that same SELECT
+define the name, the database cannot resolve it and rejects the query. Only
+CDM tables are counted: knowing which CDM tables share a column name (person_id,
+visit_occurrence_id, ...) needs the CDM specification, while a clash between
+sources the query defines itself (CTEs, derived tables) is ordinary SQL scoping
+that the database reports on its own. Only names that are ambiguous under every
+engine's scoping are reported, so the verdict is the same on every dialect.
 
     SELECT person_id
     FROM condition_occurrence co
     JOIN person p ON co.person_id = p.person_id
     -- ERROR: both co and p expose person_id
 
-Resolution is scope-correct and follows PostgreSQL's name lookup:
+Resolution is scope-correct:
 
 - Only the sources of the SELECT that owns the reference are counted. Tables
   read inside CTE bodies, derived tables or subqueries belong to their own
   scope; a derived table or CTE contributes only the columns it projects.
-- Base tables are resolved through the OMOP CDM v5.4 catalogue; CTEs and
-  derived tables through their projection lists (including ``*`` expansion and
-  ``AS t(col, ...)`` column lists). A source whose columns cannot be determined
+- CDM tables are resolved through the OMOP CDM v5.4 catalogue. CTEs and derived
+  tables are resolved through their projection lists (including ``*`` expansion
+  and ``AS t(col, ...)`` column lists) only to know which names they expose; they
+  are never counted as providers. A source whose columns cannot be determined
   is never counted, so every finding is a certain ambiguity.
 - ``JOIN ... USING (col)`` and ``NATURAL JOIN`` merge the joined columns into
-  one, so they do not make the name ambiguous. PostgreSQL still rejects the
-  name when a further source exposes it too; other engines (e.g. DuckDB) bind
-  it to the merged column, so for non-PostgreSQL dialects a name merged by any
-  visible USING / NATURAL join is never flagged.
+  one. A name merged by any visible USING / NATURAL join is never flagged: some
+  engines (DuckDB) bind it to the merged column even when a further source
+  exposes it too.
 - An ``ON`` clause only sees the sources joined up to and including its own
   JOIN, and so does a correlated subquery inside that ON clause or a LATERAL
   source.
-- A bare name in ``ORDER BY`` / ``DISTINCT ON`` that matches an output column
-  (including one produced by ``*`` / ``t.*``) resolves to that output column
-  first and is legal. Outside PostgreSQL, engines also accept select-list
-  aliases in GROUP BY / HAVING / WHERE or later projections, so such references
-  are not flagged for other dialects.
+- A name that matches an output column (including one produced by ``*`` /
+  ``t.*``) outside the ON clauses is not flagged: ORDER BY / DISTINCT ON resolve
+  it to the output column first, and engines such as BigQuery, DuckDB and
+  Snowflake also accept select-list aliases in GROUP BY / HAVING / WHERE. Inside
+  a projection, only an alias defined earlier in the same select list counts.
 - ``* EXCLUDE / EXCEPT / REPLACE / RENAME`` and ``COLUMNS(...)`` hide which
   names a source exposes; those sources are treated as unknown.
 """
@@ -46,11 +49,13 @@ from fastssv.core.helpers import (
     _find_cte,
     _has_modified_star,
     _provides,
+    _source_query,
     is_schema_qualified,
     normalize_name,
     parse_sql,
 )
 from fastssv.core.registry import register
+from fastssv.schemas.cdm_column_types import get_table_columns
 
 
 def _alias_columns(alias: Optional[exp.Expression]) -> Optional[List[str]]:
@@ -79,6 +84,12 @@ def _source_exposes(select: exp.Select, src: exp.Expression, name: str) -> Optio
     return _provides(select, src, name, 0)
 
 
+def _is_cdm_table(select: exp.Select, src: exp.Expression) -> bool:
+    if not isinstance(src, exp.Table) or _renamed_columns(select, src) is not None:
+        return False
+    return _source_query(select, src) is None and bool(get_table_columns(normalize_name(src.name)))
+
+
 def _merges_name(join: exp.Join, name: str) -> bool:
     if (join.args.get("method") or "").upper() == "NATURAL":
         return True
@@ -86,8 +97,9 @@ def _merges_name(join: exp.Join, name: str) -> bool:
 
 
 def _providers(select: exp.Select, sources: List[exp.Expression], joins: List[exp.Join], name: str) -> int:
-    """Number of distinct visible columns called ``name`` among ``sources`` (USING / NATURAL merges counted once)."""
-    exposes = [_source_exposes(select, s, name) is True for s in sources]
+    """Number of distinct visible CDM-table columns called ``name`` among ``sources`` (USING / NATURAL merges
+    counted once)."""
+    exposes = [_is_cdm_table(select, s) and _source_exposes(select, s, name) is True for s in sources]
     count = sum(exposes)
     for i, join in enumerate(joins, start=1):
         if i < len(exposes) and exposes[i] and any(exposes[:i]) and _merges_name(join, name):
@@ -97,10 +109,6 @@ def _providers(select: exp.Select, sources: List[exp.Expression], joins: List[ex
 
 def _owning_select(col: exp.Column) -> Optional[exp.Expression]:
     return col.find_ancestor(exp.Select, exp.SetOperation)
-
-
-def _is_postgres(dialect: Optional[str]) -> bool:
-    return (dialect or "postgres").lower() in ("postgres", "postgresql")
 
 
 def _is_star(proj: exp.Expression) -> bool:
@@ -171,28 +179,12 @@ def _top_projection(col: exp.Column, select: exp.Select) -> Optional[exp.Express
     return node if node.parent is select and node in select.expressions else None
 
 
-def _is_bare_order_or_distinct_on(col: exp.Column, select: exp.Select) -> bool:
-    parent = col.parent
-    if isinstance(parent, exp.Ordered) and parent.this is col:
-        order = parent.parent
-        return isinstance(order, exp.Order) and order.parent is select
-    if isinstance(parent, exp.Tuple) and isinstance(parent.parent, exp.Distinct):
-        return parent.parent.parent is select
-    return False
+def _may_name_output_column(col: exp.Column, select: exp.Select) -> bool:
+    """True when some engine can resolve ``col`` to an output column of ``select`` instead of a FROM source.
 
-
-def _may_name_output_column(col: exp.Column, select: exp.Select, strict: bool) -> bool:
-    """True when ``col`` can resolve to an output column of ``select`` instead of a FROM source.
-
-    PostgreSQL (``strict``) matches only a bare ORDER BY / DISTINCT ON name against output columns first; in
-    GROUP BY an input column wins and an ambiguous one is an error. Other engines also accept select-list aliases
-    in GROUP BY / HAVING / QUALIFY / WHERE or later projections (BigQuery, DuckDB, Snowflake, Redshift ...), so
-    any such reference to an output name is treated as possibly legal there."""
+    ORDER BY / DISTINCT ON match output columns first everywhere; BigQuery, DuckDB, Snowflake, Redshift ... also
+    accept select-list aliases in GROUP BY / HAVING / QUALIFY / WHERE or later projections."""
     name = normalize_name(col.name)
-    if strict:
-        if not _is_bare_order_or_distinct_on(col, select):
-            return False
-        return _output_count(select, name) != 0
     if _own_join(col, select) is not None:
         return False
     proj = _top_projection(col, select)
@@ -278,23 +270,22 @@ def _scope_columns(select: exp.Select) -> List[exp.Column]:
     return out
 
 
-def find_ambiguous_columns(select: exp.Select, dialect: str = "postgres") -> Dict[str, int]:
-    """Unqualified names in ``select``'s own scope that two or more of its sources expose → provider count."""
+def find_ambiguous_columns(select: exp.Select) -> Dict[str, int]:
+    """Unqualified names in ``select``'s own scope that two or more of its CDM tables expose → provider count."""
     sources, joins = _scope(select)
     if len(sources) < 2 or len(joins) != len(sources) - 1:
         return {}
-    strict = _is_postgres(dialect)
     found: Dict[str, int] = {}
     for col in _scope_columns(select):
         if col.table or isinstance(col.this, exp.Star):
             continue
         name = normalize_name(col.name)
-        if not name or name in found or _may_name_output_column(col, select, strict):
+        if not name or name in found or _may_name_output_column(col, select):
             continue
         visible, visible_joins = _visible_sources(col, select, sources, joins)
-        # DuckDB and others bind an unqualified name to a USING/NATURAL merged column even when a later
-        # source also exposes it; only PostgreSQL is known to reject that.
-        if not strict and any(_merges_name(j, name) for j in visible_joins):
+        # DuckDB binds an unqualified name to a USING/NATURAL merged column even when a later source also
+        # exposes it, so that is not ambiguous everywhere.
+        if any(_merges_name(j, name) for j in visible_joins):
             continue
         n = _providers(select, visible, visible_joins, name)
         if n >= 2:
@@ -304,15 +295,16 @@ def find_ambiguous_columns(select: exp.Select, dialect: str = "postgres") -> Dic
 
 @register
 class AmbiguousColumnReferenceRule(Rule):
-    """Unqualified column exposed by two or more sources of the same SELECT."""
+    """Unqualified column defined by two or more CDM tables of the same SELECT."""
 
     rule_id = "anti_patterns.ambiguous_column_reference"
     name = "Ambiguous Column Reference"
 
     description = (
         "Detects an unqualified column (e.g. person_id instead of co.person_id) that two or more "
-        "FROM/JOIN sources of the same SELECT expose. The database cannot resolve it and rejects "
-        "the query (PostgreSQL: 'column reference is ambiguous', SQLSTATE 42702)."
+        "OMOP CDM tables of the same SELECT define. The database cannot resolve it and rejects "
+        "the query. Clashes between CTEs or derived tables the query defines are left to the "
+        "database. Only names ambiguous under every engine's scoping are reported."
     )
 
     severity = Severity.ERROR
@@ -322,11 +314,15 @@ class AmbiguousColumnReferenceRule(Rule):
         "or join with USING (col) so the joined columns merge into one."
     )
     long_description = (
-        "When several sources of one SELECT expose the same column name, an unqualified reference "
-        "to it cannot be resolved and the database refuses to run the query. The check is "
-        "scope-aware: CTE bodies, derived tables and subqueries are separate scopes, a CTE or "
-        "derived table only exposes the columns it projects, and USING / NATURAL joins merge the "
-        "joined column. Base OMOP tables are resolved through the CDM v5.4 column catalogue."
+        "Many CDM tables share column names (person_id, visit_occurrence_id, provider_id). When two "
+        "or more CDM tables of one SELECT define the same column name, an unqualified reference to "
+        "it cannot be resolved and the database refuses to run the query. Only CDM tables, resolved "
+        "through the CDM v5.4 column catalogue, are counted; a clash between CTEs or derived tables "
+        "the query defines itself needs no CDM knowledge and is left to the database. The check is "
+        "scope-aware: CTE bodies, derived tables and subqueries are separate scopes, and USING / "
+        "NATURAL joins merge the joined column. A "
+        "name some engine resolves anyway (one merged by USING / NATURAL, or one matching a "
+        "select-list alias) is not reported, so the verdict is the same on every dialect."
     )
     example_bad = "SELECT person_id\nFROM condition_occurrence co\nJOIN person p ON co.person_id = p.person_id;"
     example_good = "SELECT co.person_id\nFROM condition_occurrence co\nJOIN person p ON co.person_id = p.person_id;"
@@ -338,10 +334,6 @@ class AmbiguousColumnReferenceRule(Rule):
         Reference(
             "PostgreSQL documentation: Table Expressions, joined tables",
             "https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN",
-        ),
-        Reference(
-            "PostgreSQL documentation: Error Codes (42702 ambiguous_column)",
-            "https://www.postgresql.org/docs/current/errcodes-appendix.html#ERRCODES-TABLE",
         ),
     )
 
@@ -355,18 +347,13 @@ class AmbiguousColumnReferenceRule(Rule):
             if tree is None:
                 continue
             for select_idx, select in enumerate(tree.find_all(exp.Select)):
-                for name, count in find_ambiguous_columns(select, dialect).items():
-                    engine_error = (
-                        f' (PostgreSQL: SQLSTATE 42702, column reference "{name}" is ambiguous)'
-                        if _is_postgres(dialect)
-                        else ""
-                    )
+                for name, count in find_ambiguous_columns(select).items():
                     violations.append(
                         self.create_violation(
                             message=(
                                 f"Ambiguous column reference '{name}': {count} sources of the same SELECT "
-                                f"expose it, so the database cannot resolve it and rejects the query"
-                                f"{engine_error}. Qualify it (e.g. alias.{name})."
+                                f"expose it, so the database cannot resolve it and rejects the query. "
+                                f"Qualify it (e.g. alias.{name})."
                             ),
                             severity=self.severity,
                             suggested_fix=self.suggested_fix,

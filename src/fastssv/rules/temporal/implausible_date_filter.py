@@ -416,9 +416,7 @@ class ImplausibleDateFilterRule(Rule):
                 seen.add(key)
                 violations.append(
                     self.create_violation(
-                        message=_MESSAGES[kind].format(
-                            table=table, col=col, sql=node.sql(dialect=dialect), floor=floor
-                        ),
+                        message=_MESSAGES[kind].format(table=table, col=col, sql=node.sql(), floor=floor),
                         details={
                             "table": table,
                             "column": col,

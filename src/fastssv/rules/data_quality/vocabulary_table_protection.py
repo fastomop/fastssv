@@ -203,7 +203,7 @@ class VocabularyTableProtectionRule(Rule):
                         continue
                     if _schema(table) is None and name in local:
                         continue
-                    shown = table.sql(dialect=dialect)
+                    shown = table.sql()
                     if _reaches_reference_schema(table):
                         severity = Severity.ERROR
                         message = (

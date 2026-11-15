@@ -15,22 +15,22 @@ nothing to match:
     JOIN concept c ON m.unit_concept_id = c.concept_id
     WHERE c.vocabulary_id = 'LOINC';      -- ERROR: no unit concept is in LOINC
 
-Lowercase ``'ucum'`` is an ERROR on PostgreSQL and DuckDB (case-sensitive comparison), a WARNING on other engines and
-accepted on SQL Server / MySQL. Not reported: a filter that also admits 'UCUM' or 'None' (concept 0, an unmapped
+Lowercase ``'ucum'`` is an ERROR too, on every dialect: vocabulary IDs are case-sensitive, so 'ucum' is not the 'UCUM'
+vocabulary. Not reported: a filter that also admits 'UCUM' or 'None' (concept 0, an unmapped
 unit), negated filters, filters under OR or in an outer join's ON clause, unknown (site-local) vocabulary names, and
 specimen.unit_concept_id, which has no fkDomain.
 """
 
 from typing import FrozenSet, List, Optional, Tuple
 
-from fastssv.core.base import Reference, Rule, RuleViolation, Severity
-from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
-from fastssv.core.references import CDM_FIELD_LEVEL, cdm_table
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_FIELD_LEVEL, cdm_table, section
 from fastssv.core.registry import register
 
 from ._cs_cdm_fields import FK_DOMAINS
-from ._cs_vocab_filter import CASE_VERIFIED_DIALECTS, mismatches
+from ._cs_vocab_filter import mismatches
 from ._cs_vocab_release import (
     DRUG_STRENGTH_UNIT_VOCABULARIES,
     KNOWN_VOCABULARIES,
@@ -74,7 +74,8 @@ class UnitVocabularyValidationRule(Rule):
         f"{VOCABULARY_RELEASE} every valid Standard Unit concept is in UCUM; the Unit concepts of SNOMED, Nebraska "
         "Lexicon, CDISC and CIEL are non-standard. Restricting the joined concept row to another known vocabulary "
         "therefore finds no unit concepts and returns no rows, also when the query lists or groups by vocabulary_id. "
-        "A list that also admits 'UCUM' or 'None' (concept 0, an unmapped unit) is not reported."
+        "Lowercase 'ucum' is not the UCUM vocabulary either, since vocabulary IDs are case-sensitive: an ERROR on "
+        "every dialect. A list that also admits 'UCUM' or 'None' (concept 0, an unmapped unit) is not reported."
     )
     example_bad = (
         "SELECT m.person_id\n"
@@ -88,9 +89,22 @@ class UnitVocabularyValidationRule(Rule):
         "JOIN concept c ON m.unit_concept_id = c.concept_id\n"
         "WHERE c.vocabulary_id = 'UCUM';"
     )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT m.person_id\n"
+                "FROM measurement m\n"
+                "JOIN concept c ON m.unit_concept_id = c.concept_id\n"
+                "WHERE c.vocabulary_id = 'ucum';"
+            ),
+            severity=Severity.ERROR,
+            note="Case-only mismatch: the vocabulary ID is 'UCUM', on every dialect",
+        ),
+    )
     references = (
         cdm_table("measurement"),
         CDM_FIELD_LEVEL,
+        section(BOOK_VOCABULARIES, "vocabularies", "Vocabularies"),
         Reference(
             "OHDSI Forums: Measurement entity - which vocabulary to consider",
             "https://forums.ohdsi.org/t/measurement-entity-which-vocabulary-to-consider/5813",
@@ -104,25 +118,22 @@ class UnitVocabularyValidationRule(Rule):
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-        dialect_norm = normalize_name(dialect or "postgres")
         violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-            for hit in mismatches(tree, _allowed, KNOWN_VOCABULARIES, dialect_norm):
+            for hit in mismatches(tree, _allowed, KNOWN_VOCABULARIES):
                 if hit.dead_only:
                     continue
                 table, column = hit.link.origin
                 shown = ", ".join(f"'{v}'" for v in hit.impossible)
                 if hit.only_case:
-                    severity = Severity.ERROR if dialect_norm in CASE_VERIFIED_DIALECTS else Severity.WARNING
                     message = (
                         f"Unit column '{table}.{column}' is restricted to vocabulary_id {shown}; the vocabulary is "
-                        f"'{VALID_UNIT_VOCABULARY}' and string comparison is case-sensitive on this engine, so the join "
-                        "finds no unit concepts."
+                        f"'{VALID_UNIT_VOCABULARY}', and vocabulary IDs are case-sensitive, so the join finds no unit "
+                        "concepts."
                     )
                 else:
-                    severity = Severity.ERROR
                     message = (
                         f"Unit column '{table}.{column}' is restricted to vocabulary_id {shown}. Standard unit "
                         f"concepts use '{VALID_UNIT_VOCABULARY}', not {shown}, so the join finds no unit concepts."
@@ -136,7 +147,7 @@ class UnitVocabularyValidationRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=message,
-                        severity=severity,
+                        severity=Severity.ERROR,
                         suggested_fix_patch=patch,
                         details={"unit_column": f"{table}.{column}", "incorrect_vocabulary": hit.impossible},
                     )

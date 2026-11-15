@@ -32,7 +32,7 @@ from typing import List, Optional, Set, Tuple
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
-from fastssv.core.helpers import has_table_reference, normalize_name, parse_sql
+from fastssv.core.helpers import display_sql, has_table_reference, normalize_name, parse_sql
 from fastssv.core.references import cdm_table
 from fastssv.core.registry import register
 from fastssv.rules.domain_specific._rows import (
@@ -145,7 +145,7 @@ def _los_operands(node: exp.Expression) -> Optional[Los]:
 _DIFF_CALL_RE = re.compile(r"\b(?:datediff|date_diff|timestampdiff)\s*\(", re.IGNORECASE)
 
 
-def _source_text(sql: str, node: exp.Expression, dialect: str) -> str:
+def _source_text(sql: str, node: exp.Expression) -> str:
     """The date-difference call as written in ``sql`` (sqlglot rewrites T-SQL DATEDIFF with casts), falling back
     to the rendered node."""
     if isinstance(node, (exp.DateDiff, exp.Anonymous)):
@@ -164,7 +164,7 @@ def _source_text(sql: str, node: exp.Expression, dialect: str) -> str:
                 text = sql[match.start() : end]
                 if all(n in text.lower() for n in names):
                     return text
-    return node.sql(dialect=dialect)
+    return display_sql(node)
 
 
 def _restriction_nodes(tree: exp.Expression) -> List[exp.Expression]:
@@ -508,7 +508,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
                     continue
                 agg = _enclosing_aggregate(node)
                 if agg is not None and self._diluted(tree, nodes, agg, los):
-                    dilution(_source_text(sql, node, dialect), agg)
+                    dilution(_source_text(sql, node), agg)
             # LOS projected by a CTE / derived table and aggregated outside
             for col in tree.find_all(exp.Column):
                 agg = _enclosing_aggregate(col)
@@ -521,7 +521,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
                 # outside (through the same source) share its path suffix.
                 expr, los = projected
                 if self._diluted(tree, nodes, agg, los):
-                    dilution(_source_text(sql, expr, dialect), agg)
+                    dilution(_source_text(sql, expr), agg)
 
             # Multi-day threshold on same-day visit types
             for cmp in nodes:
@@ -532,7 +532,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
                 literals, opaque = _row_type_restriction(nodes, row)
                 if opaque or not literals or not literals <= SAME_DAY_VISIT_CONCEPT_IDS:
                     continue
-                cmp_sql = cmp.sql(dialect=dialect)
+                cmp_sql = display_sql(cmp)
                 if ("same_day", cmp_sql) in seen:
                     continue
                 seen.add(("same_day", cmp_sql))
@@ -555,7 +555,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
         direct = _end_vs_start_bound(cmp)
         if direct is not None:
             row, on_dates, bound, strict = direct
-            return (row, cmp.sql()) if on_dates and _admits_only_above((bound, strict), 1) else None
+            return (row, display_sql(cmp)) if on_dates and _admits_only_above((bound, strict), 1) else None
         if not isinstance(cmp, (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.Between)):
             return None
         for side_name in ("this", "expression"):
@@ -573,7 +573,7 @@ class VisitLengthOfStayArithmeticRule(Rule):
             if los is None or not los[1]:
                 continue
             if _admits_only_above(_los_bound(cmp, side_name, los[0], offset), 1):
-                return los[2], cmp.sql()
+                return los[2], display_sql(cmp)
         return None
 
 

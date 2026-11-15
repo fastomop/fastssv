@@ -62,9 +62,6 @@ _SYSTEM_SCHEMAS = frozenset({"information_schema", "pg_catalog", "sys"})
 _DDL_TARGET_PARENTS = (exp.Create, exp.Drop, exp.Alter, exp.Analyze, exp.TruncateTable)
 _DML = (exp.Insert, exp.Update, exp.Delete, exp.Merge)
 
-# Columns PostgreSQL adds to every table (https://www.postgresql.org/docs/current/ddl-system-columns.html).
-_POSTGRES_SYSTEM_COLUMNS = frozenset({"ctid", "xmin", "xmax", "cmin", "cmax", "tableoid"})
-
 _TIME_UNIT_KEYWORDS = frozenset(
     {
         "day",
@@ -384,7 +381,7 @@ class ComprehensiveSchemaValidationRule(Rule):
             scope = _Scope(tree, local_tables)
             violations.extend(self._check_tables(sql, tree, scope))
             reported: Set[Tuple[str, ...]] = set()
-            violations.extend(self._check_columns(sql, tree, scope, dialect, reported))
+            violations.extend(self._check_columns(sql, tree, scope, reported))
             violations.extend(self._check_using(sql, tree, scope, reported))
             violations.extend(self._check_insert_columns(sql, tree, scope, reported))
         return violations
@@ -403,7 +400,9 @@ class ComprehensiveSchemaValidationRule(Rule):
             name = _norm(table.name)
             if not name or name in seen or _is_ddl_target(table) or _is_temp(table):
                 continue
-            if _norm(table.db) in _SYSTEM_SCHEMAS or name in scope.local_tables or name in scope.subquery_aliases:
+            # BigQuery's parser folds `information_schema.tables` into one dotted table name.
+            in_catalogue = _norm(table.db) in _SYSTEM_SCHEMAS or name.split(".")[0] in _SYSTEM_SCHEMAS
+            if in_catalogue or name in scope.local_tables or name in scope.subquery_aliases:
                 continue
             if name in scope.cte_names and not is_schema_qualified(table):
                 continue
@@ -601,7 +600,7 @@ class ComprehensiveSchemaValidationRule(Rule):
         return innermost
 
     def _check_columns(
-        self, sql: str, tree: exp.Expression, scope: _Scope, dialect: str, reported: Set[Tuple[str, ...]]
+        self, sql: str, tree: exp.Expression, scope: _Scope, reported: Set[Tuple[str, ...]]
     ) -> List[RuleViolation]:
         out: List[RuleViolation] = []
         for column in tree.find_all(exp.Column):
@@ -609,8 +608,6 @@ class ComprehensiveSchemaValidationRule(Rule):
             if not name or name == "*" or isinstance(column.this, exp.Star):
                 continue
             if _is_time_unit_arg(column) or _orders_set_operation(column):
-                continue
-            if name in _POSTGRES_SYSTEM_COLUMNS and dialect in ("postgres", "postgresql"):
                 continue
 
             via: Optional[str] = None

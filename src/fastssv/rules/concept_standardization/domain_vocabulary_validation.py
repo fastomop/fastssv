@@ -17,8 +17,8 @@ the query returns no rows:
     JOIN concept c ON co.condition_concept_id = c.concept_id
     WHERE c.vocabulary_id = 'ICD10CM';     -- ERROR: no ICD10CM concept is stored here
 
-A case-only mismatch (``'snomed'``) is an ERROR on PostgreSQL and DuckDB, which compare strings case-sensitively, a
-WARNING on other engines and accepted on SQL Server / MySQL. Not reported: a filter that also admits a vocabulary
+A case-only mismatch (``'snomed'``) is an ERROR too, on every dialect: vocabulary IDs are case-sensitive, so 'snomed'
+is not the 'SNOMED' vocabulary. Not reported: a filter that also admits a vocabulary
 that occurs (``IN ('SNOMED', 'ICD10CM')``), a negated filter, a filter under OR or in an outer join's ON clause, a
 vocabulary name the release does not know (it may be a site-local vocabulary), the same filter on a
 ``*_source_concept_id`` column, and unit columns (unit_vocabulary_validation owns them). 'None', the vocabulary of
@@ -27,14 +27,14 @@ concept 0, is accepted everywhere.
 
 from typing import FrozenSet, List, Optional, Tuple
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
 from fastssv.core.references import BOOK_VOCABULARIES, CDM_CONVENTIONS, CDM_FIELD_LEVEL, cdm_table, section
 from fastssv.core.registry import register
 
 from ._cs_cdm_fields import FK_DOMAINS
 from ._cs_scope import dead_scalar_column
-from ._cs_vocab_filter import CASE_VERIFIED_DIALECTS, mismatches
+from ._cs_vocab_filter import mismatches
 from ._cs_vocab_release import KNOWN_VOCABULARIES, STANDARD_VOCABULARIES_BY_DOMAIN, VOCABULARY_RELEASE
 
 UNIT_DOMAIN = "Unit"
@@ -76,8 +76,10 @@ class DomainVocabularyValidationRule(Rule):
         "Requiring the joined concept row to come only from a vocabulary with no Standard concept in that domain "
         "(ICD10CM, ICD9CM, NDC, SPL, ATC, MedDRA, Read, ...) returns zero rows, also when the query lists or groups "
         "by vocabulary_id. Filter the *_source_concept_id column instead, or map the source codes to standard "
-        "concepts with concept_relationship 'Maps to'. Unknown vocabulary names (site-local vocabularies) and lists "
-        "that also admit a vocabulary that occurs are not reported."
+        "concepts with concept_relationship 'Maps to'. A value that differs from an allowed vocabulary_id only in "
+        "case ('snomed') is not that vocabulary, since vocabulary IDs are case-sensitive: an ERROR on every dialect. "
+        "Unknown vocabulary names (site-local vocabularies) and lists that also admit a vocabulary that occurs are "
+        "not reported."
     )
     example_bad = (
         "SELECT co.person_id\n"
@@ -91,8 +93,21 @@ class DomainVocabularyValidationRule(Rule):
         "JOIN concept c ON co.condition_source_concept_id = c.concept_id\n"
         "WHERE c.vocabulary_id = 'ICD10CM';"
     )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT co.person_id\n"
+                "FROM condition_occurrence co\n"
+                "JOIN concept c ON co.condition_concept_id = c.concept_id\n"
+                "WHERE c.vocabulary_id = 'snomed';"
+            ),
+            severity=Severity.ERROR,
+            note="Case-only mismatch: the vocabulary ID is 'SNOMED', on every dialect",
+        ),
+    )
     references = (
         section(BOOK_VOCABULARIES, "standardConcepts", "Standard concepts"),
+        section(BOOK_VOCABULARIES, "vocabularies", "Vocabularies"),
         section(
             CDM_CONVENTIONS,
             "source-values-source-concept-ids-and-standard-concept-ids",
@@ -112,12 +127,11 @@ class DomainVocabularyValidationRule(Rule):
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-        dialect_norm = normalize_name(dialect or "postgres")
         violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-            for hit in mismatches(tree, allowed_vocabularies, KNOWN_VOCABULARIES, dialect_norm):
+            for hit in mismatches(tree, allowed_vocabularies, KNOWN_VOCABULARIES):
                 if hit.dead_only:
                     continue
                 table, column = hit.link.origin
@@ -125,14 +139,12 @@ class DomainVocabularyValidationRule(Rule):
                 allowed = allowed_vocabularies(hit.link.origin) or frozenset()
                 shown = ", ".join(f"'{v}'" for v in hit.impossible)
                 if hit.only_case:
-                    severity = Severity.ERROR if dialect_norm in CASE_VERIFIED_DIALECTS else Severity.WARNING
                     message = (
                         f"{table}.{column} joined to concept ({hit.link.alias}) is restricted to vocabulary_id "
-                        f"{shown}, which differs from the stored vocabulary_id only in case; string comparison is "
-                        "case-sensitive on this engine, so nothing matches."
+                        f"{shown}, which differs from the vocabulary's ID only in case. Vocabulary IDs are "
+                        "case-sensitive, so no concept of that vocabulary matches."
                     )
                 else:
-                    severity = Severity.ERROR
                     dead = dead_scalar_column(hit.flt.node)
                     message = (
                         f"{table}.{column} joined to concept ({hit.link.alias}) is restricted to vocabulary_id "
@@ -142,7 +154,7 @@ class DomainVocabularyValidationRule(Rule):
                 violations.append(
                     self.create_violation(
                         message=message,
-                        severity=severity,
+                        severity=Severity.ERROR,
                         details={"column": f"{table}.{column}", "vocabularies": hit.impossible},
                     )
                 )

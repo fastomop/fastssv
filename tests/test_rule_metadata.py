@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fastssv.core.base import Reference, RuleExample
+from fastssv.core.helpers import parse_sql
 from fastssv.core.registry import get_all_rules
 from fastssv.core.validation_context import with_strict_mode
 
@@ -84,3 +85,22 @@ def test_docs_section_has_examples_and_sources(rule):
     assert "#### Sources" in section
     for ref in rule.references:
         assert ref.url in section, f"docs section does not cite {ref.url}"
+
+
+_PARITY_DIALECTS = ("postgres", "duckdb", "tsql")
+
+
+@pytest.mark.parametrize("rule", RULES, ids=IDS)
+def test_examples_give_identical_findings_on_every_dialect(rule):
+    """The dialect is only used to parse: every example yields the same findings wherever it parses."""
+    examples = [(rule.example_bad, False), (rule.example_good, False)]
+    examples += [(e.sql, e.strict) for e in rule.extra_examples]
+    for sql, strict in examples:
+        by_dialect = {}
+        for dialect in _PARITY_DIALECTS:
+            if parse_sql(sql, dialect)[1]:
+                continue
+            with with_strict_mode(strict or rule.rule_id in STRICT_ONLY):
+                found = rule.validate(sql, dialect)
+            by_dialect[dialect] = sorted((v.rule_id, v.severity.name, v.message) for v in found)
+        assert len({tuple(f) for f in by_dialect.values()}) <= 1, f"{sql!r}: {by_dialect}"

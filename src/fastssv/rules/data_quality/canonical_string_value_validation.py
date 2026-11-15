@@ -1,9 +1,8 @@
 """Canonical Vocabulary String Value Validation Rule.
 
 vocabulary_id, domain_id and concept_class_id are "short case-sensitive unique alphanumeric" IDs (Book of OHDSI,
-ch. 5). A literal that names one of them with the wrong case, or with dashes the ID omits ('ICD-10-CM' for
-'ICD10CM'), matches no row on an engine that compares strings case-sensitively, and still matches no row on any
-engine when the spelling differs.
+ch. 5). A literal that names one of them with the wrong case is not the ID the vocabulary defines, on every dialect;
+one written with dashes the ID omits ('ICD-10-CM' for 'ICD10CM') is not the ID either.
 
 The known IDs are those of the Athena release named in ``_dq_vocab_ids.py`` (113 vocabularies, 50 domains, 433
 concept classes); the columns that hold them are the keys of VOCABULARY, DOMAIN and CONCEPT_CLASS and every CDM v5.4
@@ -12,11 +11,9 @@ cost.cost_domain_id, ...). A column is checked only when its lineage is that CDM
 derived tables and casts; a value recomputed on the way (``LOWER(domain_id) AS domain_id``) is not.
 
 Flagged, wherever the comparison appears (``=``, ``<>``, ``IN``, ``NOT IN``, ``LIKE`` without wildcards, BETWEEN):
-    * ERROR on PostgreSQL and DuckDB, which compare case-sensitively, when the literal differs from a known ID only
-      in letter case ('snomed' for 'SNOMED');
-    * WARNING on other dialects for the same: SQL Server and MySQL compare case-insensitively under their default
-      collations, so the query works there but not on case-sensitive engines;
-    * WARNING when the literal is a known ID written with dashes, spaces or underscores the ID does not have.
+    * ERROR when the literal differs from a known ID only in letter case ('snomed' for 'SNOMED');
+    * WARNING when the literal is a known ID written with dashes, spaces or underscores the ID does not have: a site
+      may have loaded a local ID with that spelling.
     The message follows the operator: ``=`` / IN with such a value match no row, while ``<>`` / NOT IN exclude
     nothing and keep every row.
 Not flagged: ILIKE and comparisons on LOWER / UPPER of the column (case-insensitive by construction), and values
@@ -30,7 +27,7 @@ from sqlglot import exp
 from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import DERIVED, column_origins, parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
-from fastssv.core.references import BOOK_SQL, BOOK_VOCABULARIES, section
+from fastssv.core.references import BOOK_VOCABULARIES, cdm_table, section
 from fastssv.core.registry import register
 
 from ._dq_vocab_ids import (
@@ -41,8 +38,6 @@ from ._dq_vocab_ids import (
     VOCABULARY_ID_COLUMNS,
     VOCABULARY_IDS,
 )
-
-_CASE_SENSITIVE = {"postgres", "postgresql", "duckdb"}
 
 
 def _key(value: str) -> str:
@@ -122,8 +117,8 @@ class CanonicalStringValueValidationRule(Rule):
 
     description = (
         "Filters on vocabulary_id, domain_id and concept_class_id must spell the ID exactly ('SNOMED', 'Condition', "
-        "'Ingredient'): the IDs are case-sensitive, so a wrong case matches no row on case-sensitive engines "
-        "(PostgreSQL, DuckDB), and an ID written with dashes it does not have ('ICD-10-CM') matches no row anywhere."
+        "'Ingredient'): the IDs are case-sensitive, so a wrong case is not the ID (ERROR), and an ID written with "
+        "dashes it does not have ('ICD-10-CM') is not either (WARNING: a site may load a local ID so spelled)."
     )
 
     severity = Severity.ERROR
@@ -133,10 +128,10 @@ class CanonicalStringValueValidationRule(Rule):
         "'icd10cm' -> 'ICD10CM', 'ICD-10-CM' -> 'ICD10CM', 'condition' -> 'Condition', 'ingredient' -> 'Ingredient'."
     )
     long_description = (
-        "vocabulary_id, domain_id and concept_class_id are short case-sensitive IDs. On PostgreSQL and DuckDB, "
-        "which compare strings case-sensitively, vocabulary_id = 'snomed' matches no row: an ERROR. SQL Server "
-        "and MySQL compare case-insensitively under their default collations, so on those dialects the same filter "
-        "works but is not portable: a WARNING. Vocabulary IDs generally omit the dashes of the vocabulary's name "
+        "vocabulary_id, domain_id and concept_class_id are short case-sensitive IDs defined by the vocabulary: "
+        "'SNOMED', 'Condition', 'Ingredient'. A literal that differs from a known ID only in letter case "
+        "(vocabulary_id = 'snomed') is not that ID, so it is an ERROR on every dialect, whatever collation an "
+        "engine would compare it under. Vocabulary IDs generally omit the dashes of the vocabulary's name "
         "('ICD-9-CM' is 'ICD9CM'), so a dashed form of a known ID is reported as a WARNING. The known IDs come from "
         "an Athena release; values that are not a variant of any of them are not judged, since sites may load "
         "local vocabularies. ILIKE and comparisons on LOWER() or UPPER() of the column are case-insensitive and "
@@ -156,7 +151,9 @@ class CanonicalStringValueValidationRule(Rule):
         section(BOOK_VOCABULARIES, "vocabularies", "Vocabularies"),
         section(BOOK_VOCABULARIES, "conceptDomains", "Domains"),
         section(BOOK_VOCABULARIES, "concept-classes", "Concept classes"),
-        section(BOOK_SQL, "case-sensitivity-in-string-comparisons", "Case sensitivity in string comparisons"),
+        cdm_table("vocabulary"),
+        cdm_table("domain"),
+        cdm_table("concept_class"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -189,12 +186,10 @@ class CanonicalStringValueValidationRule(Rule):
                     if expected is None:
                         continue
                     seen.add((label, value))
-                    violations.append(self._violation(sql, label, value, expected, dialect, excludes))
+                    violations.append(self._violation(sql, label, value, expected, excludes))
         return violations
 
-    def _violation(
-        self, sql: str, label: str, value: str, expected: str, dialect: str, excludes: bool = False
-    ) -> RuleViolation:
+    def _violation(self, sql: str, label: str, value: str, expected: str, excludes: bool = False) -> RuleViolation:
         # A negated filter on a value no row holds excludes nothing, so it keeps every row instead of matching none.
         outcome = (
             f"the filter excludes nothing: it keeps every row, including the '{expected}' rows"
@@ -203,20 +198,11 @@ class CanonicalStringValueValidationRule(Rule):
         )
         if value.lower() == expected.lower():
             issue = "case"
-            if dialect in _CASE_SENSITIVE:
-                severity = Severity.ERROR
-                message = (
-                    f"Incorrect {label} casing: '{value}'. The ID is '{expected}', and this dialect compares "
-                    f"strings case-sensitively, so {outcome}."
-                )
-            else:
-                severity = Severity.WARNING
-                elsewhere = "excludes nothing" if excludes else "matches no row"
-                message = (
-                    f"Incorrect {label} casing: '{value}'. The ID is '{expected}'. This dialect's default collation "
-                    f"compares case-insensitively, so the filter works here but {elsewhere} on case-sensitive "
-                    f"engines (PostgreSQL, DuckDB)."
-                )
+            severity = Severity.ERROR
+            message = (
+                f"Incorrect {label} casing: '{value}'. The vocabulary defines the ID as '{expected}' and IDs are "
+                f"case-sensitive, so '{value}' is not an ID it holds; compared as defined, {outcome}."
+            )
         else:
             issue = "spelling"
             severity = Severity.WARNING

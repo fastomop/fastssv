@@ -12,10 +12,8 @@ from fastssv.core.base import RuleViolation, Severity
 from fastssv.core.deduplication import deduplicate_violations
 
 LINKAGE = ("joins.clinical_person_id_linkage_validation", "WARNING")
-CROSS_JOIN = ("anti_patterns.comma_separated_cross_join", "WARNING")
 LITERAL_HIERARCHY = ("concept_standardization.concept_literal_without_hierarchy", "WARNING")
 COLUMN_TYPE_E = ("data_quality.column_type_validation", "ERROR")
-COLUMN_TYPE_W = ("data_quality.column_type_validation", "WARNING")
 BOTH = ("postgres", "duckdb")
 
 _CO_OP = (
@@ -33,34 +31,34 @@ CASES = [
     (
         "D1 defines_ancestry",
         "SELECT relationship_id FROM relationship WHERE defines_ancestry = 1",
-        {"postgres": {("domain_specific.vocabulary_relationship_boolean_comparison", "ERROR")}, "duckdb": set()},
+        {d: {("domain_specific.vocabulary_relationship_boolean_comparison", "ERROR")} for d in BOTH},
     ),
     (
         "D1 is_hierarchical",
         "SELECT relationship_id FROM relationship WHERE is_hierarchical = 1",
-        {"postgres": {("domain_specific.vocabulary_relationship_boolean_comparison", "ERROR")}, "duckdb": set()},
+        {d: {("domain_specific.vocabulary_relationship_boolean_comparison", "ERROR")} for d in BOTH},
     ),
     (
         "D2 IN with a number",
         "SELECT concept_id FROM concept WHERE standard_concept IN ('S', 1)",
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W}},
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D2 = number",
         "SELECT concept_id FROM concept WHERE standard_concept = 1",
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W}},
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D2 = TRUE",
         "SELECT concept_id FROM concept WHERE standard_concept = TRUE",
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W}},
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D3 person_id = person_source_value",
         "SELECT co.condition_concept_id FROM condition_occurrence co "
         "JOIN person p ON co.person_id = p.person_source_value",
-        # Only an ERROR on the predicate absorbs the linkage warning; DuckDB's type finding is a WARNING.
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W, LINKAGE}},
+        # The ERROR on the predicate absorbs the linkage warning.
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D4 BETWEEN with swapped bounds",
@@ -109,10 +107,10 @@ CASES = [
         {d: {LINKAGE, LITERAL_HIERARCHY} for d in BOTH},
     ),
     (
-        "D7 clinical x vocabulary keeps the cross-join warning",
+        "D7 clinical x vocabulary",
         "SELECT co.person_id, c.concept_name FROM condition_occurrence co, concept c "
         "WHERE co.condition_concept_id = 201820",
-        {d: {CROSS_JOIN, LITERAL_HIERARCHY} for d in BOTH},
+        {d: {LITERAL_HIERARCHY} for d in BOTH},
     ),
     (
         "D8 care_site_id = concept_id",
@@ -163,12 +161,12 @@ CASES = [
     (
         "D12 number on cost_domain_id",
         _COST + "c.cost_domain_id = 13",
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W}},
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D13 term_modifiers = concept_id",
         "SELECT * FROM note_nlp nn JOIN concept c ON nn.term_modifiers = c.concept_id",
-        {"postgres": {COLUMN_TYPE_E}, "duckdb": {COLUMN_TYPE_W}},
+        {d: {COLUMN_TYPE_E} for d in BOTH},
     ),
     (
         "D13 term_modifiers = another text column keeps the free-text warning",
@@ -223,15 +221,3 @@ def test_consequence_warning_not_absorbed_by_a_warning_or_its_own_rule() -> None
     assert deduplicate_violations([warning, type_warning]) == [warning, type_warning]
     own = _v(LINKAGE[0], Severity.ERROR, {"predicate": "a.x = b.y"})
     assert warning in deduplicate_violations([warning, own])
-
-
-def test_limit_finding_yields_to_a_rule_that_explains_the_same_limit() -> None:
-    limit = _v("anti_patterns.limit_without_order_by", Severity.WARNING, {"limit_scope": "select 1 limit 1"})
-    maps_to = _v(
-        "concept_standardization.multiple_maps_to_targets", Severity.WARNING, {"limit_scope": "select 1 limit 1"}
-    )
-    elsewhere = _v(
-        "concept_standardization.multiple_maps_to_targets", Severity.WARNING, {"limit_scope": "select 2 limit 1"}
-    )
-    assert deduplicate_violations([limit, maps_to]) == [maps_to]
-    assert deduplicate_violations([limit, elsewhere]) == [limit, elsewhere]
