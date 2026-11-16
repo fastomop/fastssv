@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from slowapi.util import get_remote_address
 
 from fastssv import validate_sql_structured
+from fastssv.api._validation import ValidationCapacityError, run_bounded
 from fastssv.api.config import Settings
 from fastssv.core.base import Severity
 from fastssv.core.helpers import split_sql_statements
@@ -138,6 +139,11 @@ async def rules_page(request: Request):
                 "long_description": getattr(r, "long_description", None),
                 "example_bad": getattr(r, "example_bad", None),
                 "example_good": getattr(r, "example_good", None),
+                "extra_examples": [
+                    {"sql": e.sql, "severity": e.severity.value, "note": e.note, "strict": e.strict}
+                    for e in r.extra_examples
+                ],
+                "references": [{"title": ref.title, "url": ref.url} for ref in r.references],
             }
             for r in get_all_rules()
         ),
@@ -194,11 +200,32 @@ async def ui_validate(
 
     statements = split_sql_statements(sql) or [sql]
 
+    request_id = getattr(request.state, "request_id", None)
+
+    # Same per-worker concurrency bound as /v1/validate: a timed-out parse
+    # keeps its thread busy, so refuse new work instead of pinning the pool.
+    # run_bounded holds the permit until the worker thread finishes.
+    limiter = getattr(request.app.state, "validation_limiter", None)
+
     started = time.perf_counter()
     try:
-        per_query = await asyncio.wait_for(
-            asyncio.to_thread(_validate_each, statements, dialect),
+        per_query = await run_bounded(
+            _validate_each,
+            statements,
+            dialect,
+            limiter=limiter,
             timeout=settings.parse_timeout_seconds,
+        )
+    except ValidationCapacityError:
+        logger.warning(
+            "ui_validation_capacity_exceeded",
+            extra={"sql_hash": _sql_hash(sql), "client": get_remote_address(request), "request_id": request_id},
+        )
+        return _render_results(
+            request,
+            error="Server busy.",
+            detail="Validation capacity is exhausted; retry in a moment.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     except asyncio.TimeoutError:
         logger.warning(
@@ -208,6 +235,7 @@ async def ui_validate(
                 "dialect": dialect,
                 "query_count": len(statements),
                 "client": get_remote_address(request),
+                "request_id": request_id,
             },
         )
         return _render_results(
@@ -217,7 +245,7 @@ async def ui_validate(
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
     except Exception:
-        logger.exception("ui_validation_error")
+        logger.exception("ui_validation_error", extra={"request_id": request_id})
         return _render_results(
             request,
             error="Internal error.",
@@ -295,6 +323,7 @@ async def ui_validate(
             "warnings": total_warnings,
             "duration_ms": round(duration_ms, 2),
             "client": get_remote_address(request),
+            "request_id": request_id,
         },
     )
 
@@ -345,6 +374,8 @@ def _render_results(
             "dialect": dialect,
             "full_report_json": full_report_json,
             "rules_loaded": _rules_loaded(),
+            # Parse-stage findings (parse.*, meta.*) have no catalogue entry to link to.
+            "catalogued_rule_ids": {r.rule_id for r in get_all_rules()},
         },
         status_code=status_code,
     )

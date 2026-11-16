@@ -14,11 +14,10 @@ in this package derives from it:
 A consistency test (``tests/test_schema_consistency.py``) freezes this
 contract in CI.
 
-Source for column lists and types: the OMOP CDM v5.4 ERD published by OHDSI
-(https://ohdsi.github.io/CommonDataModel/cdm54.html). Two legacy tables
-(``attribute_definition``, ``location_history``) are preserved with a marker
-comment because rules in fastssv detect their misuse, even though they are
-not part of the v5.4 core spec.
+Source for table names, column names and type families: the OMOP CDM v5.4 field-level specification
+(https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv), 39 tables.
+A table absent from that file is not a v5.4 table: ATTRIBUTE_DEFINITION was removed in v5.4 and LOCATION_HISTORY
+was never part of a v5.x release.
 """
 
 from typing import Dict, FrozenSet, Set
@@ -570,30 +569,6 @@ CDM_COLUMN_TYPES: Dict[str, Dict[str, str]] = {
         "cohort_definition_syntax": VARCHAR,
         "subject_concept_id": INTEGER,
         "cohort_initiation_date": DATE,
-    },
-    # =====================================================================
-    # LEGACY / EXTENSION TABLES
-    # Not in v5.4 core, but retained because fastssv ships rules that
-    # specifically detect their presence (legacy v5.3 holdover or optional
-    # extension).
-    # =====================================================================
-    "attribute_definition": {
-        # Removed in v5.4; carried forward for legacy detection.
-        "attribute_definition_id": INTEGER,
-        "attribute_name": VARCHAR,
-        "attribute_description": VARCHAR,
-        "attribute_type_concept_id": INTEGER,
-        "attribute_syntax": VARCHAR,
-    },
-    "location_history": {
-        # Optional v5.4 extension; ships with fastssv for sites that use it.
-        "location_history_id": INTEGER,
-        "location_id": INTEGER,
-        "relationship_type_concept_id": INTEGER,
-        "domain_id": VARCHAR,
-        "entity_id": INTEGER,
-        "start_date": DATE,
-        "end_date": DATE,
     },
 }
 

@@ -1,306 +1,196 @@
 """Drug Strength Numerator/Denominator for Concentration Rule.
 
-OMOP semantic rule GAP_016:
-drug_strength stores concentration-based drugs using numerator_value/numerator_unit_concept_id
-and denominator_value/denominator_unit_concept_id (e.g., 500mg/5mL). Queries that only check
-amount_value miss these liquid/injectable formulations entirely.
+CDM v5.4 conventions, Drug Strength: "Ingredient strength information is provided either as absolute amount (usually
+for solid formulations) or as concentration (usually for liquid formulations)." An absolute amount is stored in
+``amount_value`` / ``amount_unit_concept_id``; a concentration in ``numerator_value`` / ``numerator_unit_concept_id``
+over ``denominator_unit_concept_id``, with ``amount_value`` empty. The drug-dose page adds that inhalers may put the
+strength in the numerator, and the vocabulary stores rates (transdermal systems, extended-release forms) the same way.
 
-The Problem:
-    The drug_strength table has two different models for representing strength:
+For every read of ``drug_strength`` (one FROM / JOIN entry, followed through CTEs, derived tables and casts) the rule
+reports
 
-    1. Simple amount model (solid formulations):
-       - amount_value + amount_unit_concept_id
-       - Example: 500mg tablet → amount_value = 500, amount_unit_concept_id = mg
+- ``amount_value`` used (projected, computed with, aggregated, grouped or ordered on) while ``numerator_value`` of
+  the same read is never used: the value is NULL for concentration and rate rows;
+- ``amount_value`` filtered (a comparison, ``IN``, ``BETWEEN``, ``LIKE`` or ``IS NOT NULL`` in WHERE, JOIN ON or
+  HAVING) while no condition on the same read uses ``numerator_value``: the filter drops those rows, whatever is
+  projected.
 
-    2. Concentration model (liquid/injectable formulations):
-       - numerator_value + numerator_unit_concept_id (active ingredient)
-       - denominator_value + denominator_unit_concept_id (solution volume)
-       - Example: 500mg/5mL injection → numerator_value = 500, denominator_value = 5
-       - **amount_value is NULL** for these drugs
-
-    Critical issue: Queries that only check amount_value completely miss
-    liquid/injectable formulations, which use the numerator/denominator model.
-
-Common mistakes:
-    1. SELECT amount_value without numerator_value
-    2. WHERE amount_value > X (excludes all concentration drugs)
-    3. WHERE amount_value IS NOT NULL (excludes all concentration drugs)
-    4. Calculations using only amount_value
-
-Violation pattern:
-    SELECT ds.amount_value, ds.amount_unit_concept_id
-    FROM drug_strength ds
-    WHERE ds.drug_concept_id = 19078461
-    -- WRONG: Returns NULL for liquid/injectable formulations!
-
-Correct pattern:
-    SELECT
-      COALESCE(ds.amount_value, ds.numerator_value) AS dose_value,
-      COALESCE(ds.amount_unit_concept_id, ds.numerator_unit_concept_id) AS dose_unit,
-      ds.denominator_value,
-      ds.denominator_unit_concept_id
-    FROM drug_strength ds
-    WHERE ds.drug_concept_id = 19078461
-    -- Correct: Handles both solid AND liquid formulations
+It is a WARNING: an analysis may be meant for fixed-dose forms only. A read restricted to the amount model
+(``numerator_value IS NULL``, ``numerator_unit_concept_id IS NULL`` or ``denominator_unit_concept_id IS NULL``) states
+that intent and is not reported, nor is ``amount_value IS NULL``, which selects the concentration rows.
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import CDM_CONVENTIONS, CDM_DRUG_DOSE, cdm_table, section
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from .._ds1_scope import Hop, column_origins_with_paths, is_negated, predicate_root
 
 DRUG_STRENGTH = "drug_strength"
-
 AMOUNT_VALUE = "amount_value"
 NUMERATOR_VALUE = "numerator_value"
+AMOUNT_MODEL_MARKERS = {"numerator_value", "numerator_unit_concept_id", "denominator_unit_concept_id"}
+
+_COMPARISONS = (
+    exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Between, exp.Like, exp.ILike, exp.Is,
+)  # fmt: skip
+
+_CONCENTRATION_ROWS = (
+    "drugs whose strength is a concentration or rate (liquids, injectables, inhalers, transdermal systems, some "
+    "extended-release forms), stored in numerator_value / denominator_unit_concept_id"
+)
 
 
-# --- Helpers ---------------------------------------------------------------
+def _comparison(col: exp.Column) -> Optional[exp.Expression]:
+    node = col.parent
+    while node is not None and not isinstance(node, (exp.Select, exp.Where, exp.Join, exp.Having)):
+        if isinstance(node, _COMPARISONS):
+            return node
+        node = node.parent
+    return None
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _normalize_table(name: Optional[str]) -> Optional[str]:
-    return _norm(name.split(".")[-1]) if name else None
-
-
-def _is_drug_strength(table: Optional[str]) -> bool:
-    return _normalize_table(table) == DRUG_STRENGTH
-
-
-def _is_target_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    target: str,
-    has_ds: bool,
-) -> bool:
-    table, column = resolve_table_col(col, aliases)
-
-    if _norm(column) != _norm(target):
+def _passes_through(col: exp.Column) -> bool:
+    """``col`` is projected unchanged by a CTE or derived table: its use is decided where it is read from there."""
+    proj = col
+    while isinstance(proj.parent, (exp.Cast, exp.TryCast, exp.Paren, exp.Alias)):
+        proj = proj.parent
+    select = proj.parent
+    if not isinstance(select, exp.Select) or proj not in select.expressions:
         return False
-
-    if table:
-        return _is_drug_strength(table)
-
-    # Unqualified fallback only if drug_strength is present
-    return has_ds
+    holder = select.parent
+    while isinstance(holder, exp.SetOperation):
+        holder = holder.parent
+    return isinstance(holder, (exp.Subquery, exp.CTE))
 
 
-def _collect_columns(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    has_ds: bool,
-) -> Set[str]:
-    """Collect drug_strength-related column names used in node."""
-    cols: Set[str] = set()
-
-    for col in node.find_all(exp.Column):
-        table, column = resolve_table_col(col, aliases)
-
-        if not column:
-            continue
-
-        if table and _is_drug_strength(table):
-            cols.add(_norm(column))
-        elif not table and has_ds:
-            cols.add(_norm(column))
-
-    return cols
-
-
-def _has_coalesce_amount_numerator(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    has_ds: bool,
-) -> bool:
-    """Detect COALESCE(amount_value, numerator_value) even if nested."""
-    for coalesce in node.find_all(exp.Coalesce):
-        cols = _collect_columns(coalesce, aliases, has_ds)
-
-        if AMOUNT_VALUE in cols and NUMERATOR_VALUE in cols:
-            return True
-
-    return False
-
-
-def _has_numerator_usage(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    has_ds: bool,
-) -> bool:
-    """Check if numerator_value is used anywhere meaningfully."""
-    if _has_coalesce_amount_numerator(node, aliases, has_ds):
-        return True
-
-    for col in node.find_all(exp.Column):
-        if _is_target_column(col, aliases, NUMERATOR_VALUE, has_ds):
-            return True
-
-    return False
-
-
-def _has_amount_usage(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    has_ds: bool,
-) -> bool:
-    for col in node.find_all(exp.Column):
-        if _is_target_column(col, aliases, AMOUNT_VALUE, has_ds):
-            return True
-    return False
-
-
-def _is_in_aggregate(node: exp.Expression) -> bool:
-    """Check if node is inside an aggregation function."""
-    parent = node.parent
-    while parent:
-        if isinstance(parent, (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)):
-            return True
-        if isinstance(parent, exp.Select):
-            return False
-        parent = parent.parent
-    return False
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_select_violation(tree, aliases, has_ds) -> bool:
-    """Detect SELECT using amount_value without numerator_value."""
-    if not _has_amount_usage(tree, aliases, has_ds):
-        return False
-
-    if _has_numerator_usage(tree, aliases, has_ds):
-        return False
-
-    for select in tree.find_all(exp.Select):
-        for expr in select.expressions:
-            for col in expr.find_all(exp.Column):
-                if _is_in_aggregate(col):
-                    continue
-
-                if _is_target_column(col, aliases, AMOUNT_VALUE, has_ds):
-                    return True
-
-    return False
-
-
-def _detect_where_violation(tree, aliases, has_ds) -> bool:
-    """Detect WHERE filtering on amount_value without numerator alternative."""
-    comparison_types = (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ, exp.Is, exp.In, exp.Between)
-
-    has_amount = False
-    has_numerator = False
-
-    for where in tree.find_all(exp.Where):
-        if _has_coalesce_amount_numerator(where, aliases, has_ds):
-            return False  # safe usage
-
-        for node in where.find_all(*comparison_types):
-            for col in node.find_all(exp.Column):
-                if _is_target_column(col, aliases, AMOUNT_VALUE, has_ds):
-                    has_amount = True
-                if _is_target_column(col, aliases, NUMERATOR_VALUE, has_ds):
-                    has_numerator = True
-
-    return has_amount and not has_numerator
-
-
-# --- Rule ------------------------------------------------------------------
+def _reads(tree: exp.Expression) -> Dict[Hop, Dict[str, bool]]:
+    """Per base read of drug_strength: which roles its columns play anywhere in the statement."""
+    out: Dict[Hop, Dict[str, bool]] = {}
+    for col in tree.find_all(exp.Column):
+        for path, table, column in column_origins_with_paths(col):
+            if table != DRUG_STRENGTH or not path:
+                continue
+            roles = out.setdefault(
+                path[-1],
+                {
+                    "use": False,
+                    "filter": False,
+                    "numerator": False,
+                    "numerator_filter": False,
+                    "amount_model": False,
+                    "passed_through": False,
+                    "read_outside": False,
+                },
+            )
+            in_predicate = predicate_root(col) is not None
+            if column == NUMERATOR_VALUE:
+                roles["numerator"] = True
+                roles["numerator_filter"] |= in_predicate
+            comparison = _comparison(col) if in_predicate else None
+            if isinstance(comparison, exp.Is) and isinstance(comparison.expression, exp.Null):
+                if not is_negated(comparison):
+                    if column in AMOUNT_MODEL_MARKERS:
+                        roles["amount_model"] = True
+                    continue  # amount_value IS NULL keeps the concentration rows
+                if column == AMOUNT_VALUE:
+                    roles["filter"] = True
+                continue
+            if column != AMOUNT_VALUE:
+                continue
+            if len(path) > 1:
+                roles["read_outside"] = True
+            if comparison is not None:
+                roles["filter"] = True
+            elif not in_predicate:
+                if _passes_through(col):
+                    roles["passed_through"] = True
+                else:
+                    roles["use"] = True
+    for roles in out.values():
+        # Projected by a CTE / derived table and never read from it by name: the outer SELECT * returns it as is.
+        if roles["passed_through"] and not roles["read_outside"]:
+            roles["use"] = True
+    return out
 
 
 @register
 class DrugStrengthNumeratorDenominatorForConcentrationRule(Rule):
-    """Ensure both amount-based and concentration-based drugs are handled."""
+    """amount_value read without numerator_value, which holds the strength of concentrations and rates."""
 
     rule_id = "domain_specific.drug_strength_numerator_denominator_for_concentration"
     name = "Drug Strength Completeness (Amount vs Concentration)"
 
     description = (
-        "drug_strength stores solid formulations in amount_value and liquid/injectable "
-        "formulations in numerator_value/denominator_value. Queries using only amount_value "
-        "exclude concentration-based drugs."
+        "drug_strength stores an absolute amount in amount_value and a concentration or rate in numerator_value over "
+        "denominator_unit_concept_id, with amount_value empty. Filtering only on amount_value drops the "
+        "concentration rows; using only amount_value yields NULL for them."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "REPLACE: `WHERE amount_value <op> <n>` WITH `COALESCE(amount_value, numerator_value / NULLIF(denominator_value, 0))` to include concentration-based formulations (drug_strength stores liquid/injectable doses in numerator/denominator, not amount_value)."
+    suggested_fix = (
+        "REPLACE: `amount_value` WITH `COALESCE(amount_value, numerator_value)` and carry its unit, "
+        "`COALESCE(amount_unit_concept_id, numerator_unit_concept_id)`, together with denominator_value / "
+        "denominator_unit_concept_id: a concentration's numerator is per denominator unit (e.g. 125 mg per 5 mL), "
+        "so compare or compute with the units in view. If only fixed-dose forms are meant, say so with "
+        "`numerator_value IS NULL`."
+    )
     example_bad = "SELECT drug_concept_id, amount_value FROM drug_strength\nWHERE amount_value > 500;"
     example_good = (
         "SELECT drug_concept_id,\n"
-        "       COALESCE(amount_value, numerator_value / denominator_value) AS dose\n"
+        "       COALESCE(amount_value, numerator_value) AS strength_value,\n"
+        "       COALESCE(amount_unit_concept_id, numerator_unit_concept_id) AS strength_unit_concept_id,\n"
+        "       denominator_value, denominator_unit_concept_id\n"
         "FROM drug_strength;"
+    )
+    references = (
+        section(CDM_CONVENTIONS, "drug-strength", "Drug strength"),
+        CDM_DRUG_DOSE,
+        cdm_table("drug_strength"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "drug_strength" not in sql.lower():
+        lowered = (sql or "").lower()
+        if DRUG_STRENGTH not in lowered or AMOUNT_VALUE not in lowered:
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-
         violations: List[RuleViolation] = []
-        seen: Set[str] = set()
-
+        seen: Set[Tuple[str, ...]] = set()
         for tree in trees:
-            if not tree:
+            if tree is None:
                 continue
-
-            if not has_table_reference(tree, DRUG_STRENGTH):
-                continue
-
-            aliases = extract_aliases(tree)
-            has_ds = True  # already confirmed
-
-            if _detect_select_violation(tree, aliases, has_ds):
-                key = "select"
-                if key not in seen:
-                    seen.add(key)
-
+            for roles in _reads(tree).values():
+                if roles["amount_model"]:
+                    continue
+                if roles["use"] and not roles["numerator"] and ("use",) not in seen:
+                    seen.add(("use",))
                     violations.append(
                         self.create_violation(
                             message=(
-                                "amount_value selected without numerator_value. "
-                                "This excludes concentration-based drugs (liquids/injectables)."
+                                f"amount_value is used without numerator_value. It is NULL for {_CONCENTRATION_ROWS}."
                             ),
-                            severity=self.severity,
-                            suggested_fix=self.suggested_fix,
                             details={"type": "select"},
                         )
                     )
-
-            if _detect_where_violation(tree, aliases, has_ds):
-                key = "where"
-                if key not in seen:
-                    seen.add(key)
-
+                if roles["filter"] and not roles["numerator_filter"] and ("filter",) not in seen:
+                    seen.add(("filter",))
                     violations.append(
                         self.create_violation(
                             message=(
-                                "amount_value filtered without numerator_value alternative. "
-                                "This excludes concentration-based drugs (liquids/injectables)."
+                                f"amount_value filtered without numerator_value alternative. This excludes "
+                                f"{_CONCENTRATION_ROWS}."
                             ),
-                            severity=self.severity,
-                            suggested_fix=self.suggested_fix,
                             details={"type": "where"},
                         )
                     )
-
         return violations
 
 

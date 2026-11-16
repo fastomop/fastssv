@@ -5,7 +5,7 @@
 ## Quick reference
 
 ```bash
-uv run fastssv query.sql                       # writes output/validation_report.json
+uv run fastssv query.sql                       # writes output/query_report.json (named after the input file)
 uv run fastssv query.sql --output report.json  # custom path
 uv run fastssv query.sql --combined            # multi-statement input → single combined report
 ```
@@ -17,7 +17,7 @@ uv run fastssv query.sql --combined            # multi-statement input → singl
 | `0` | No `error`-severity violations (`is_valid: true` for the whole submission) |
 | `1` | One or more `error`-severity violations (`is_valid: false`) |
 
-`warning`-severity violations never affect the exit code under normal mode. Pass `--strict` to escalate best-practice warnings to errors — see the [Semantic rules guide](semantic_rules_guide.md) for which rules participate in strict mode.
+`warning`-severity violations never affect the exit code under normal mode. Pass `--strict` to run strict mode, which escalates one rule's warnings to errors and enables the strict-only checks — see [Strict mode](semantic_rules_guide.md#strict-mode) in the Semantic rules guide.
 
 ---
 
@@ -30,25 +30,13 @@ For input containing a single SQL statement (or multi-statement input with `--co
   "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
   "is_valid": true,
   "error_count": 0,
-  "warning_count": 3,
+  "warning_count": 1,
   "warnings": [
     {
       "rule_id": "anti_patterns.concept_name_lookup",
       "severity": "warning",
-      "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). This is highly unreliable as concept names can vary. Use concept_code + vocabulary_id or concept_id instead.",
+      "issue": "Query identifies concepts by pattern-matching names: c.concept_name LIKE '%aspirin%'. A name pattern can match unrelated concepts and miss differently named ones. Concept names are display text, not identifiers: not unique, and can be reworded between vocabulary releases. Use concept_id, or concept_code + vocabulary_id.",
       "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, OR with `WHERE c.concept_id = <id>` if the concept_id is known."
-    },
-    {
-      "rule_id": "concept_standardization.standard_concept_enforcement",
-      "severity": "warning",
-      "issue": "Query uses STANDARD concept fields without ensuring concepts are standard.",
-      "fix": "ADD: `JOIN concept c ON c.concept_id = <table>.<concept_id_col>` AND `WHERE c.standard_concept = 'S'` to filter to standard concepts."
-    },
-    {
-      "rule_id": "concept_standardization.concept_domain_validation",
-      "severity": "warning",
-      "issue": "drug_exposure.drug_concept_id joined to concept 'c' without domain_id filter. Expected domain 'Drug'.",
-      "fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
     }
   ]
 }
@@ -87,7 +75,7 @@ When the input file contains multiple `;`-separated statements, FastSSV validate
       "query": "SELECT * FROM drug_exposure de JOIN concept c ON de.drug_concept_id = c.concept_id WHERE c.concept_name LIKE '%aspirin%';",
       "is_valid": true,
       "error_count": 0,
-      "warning_count": 3,
+      "warning_count": 1,
       "warnings": [ ... ]
     }
   ]
@@ -115,14 +103,14 @@ Every entry in `errors[]` or `warnings[]` has the same shape:
 {
   "rule_id": "anti_patterns.concept_name_lookup",
   "severity": "warning",
-  "issue": "Query filters by concept_name with pattern matching ('%aspirin%'). ...",
+  "issue": "Query identifies concepts by pattern-matching names: c.concept_name LIKE '%aspirin%'. ...",
   "fix": "REPLACE: `WHERE c.concept_name = '<name>'` WITH `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, ..."
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
-| `rule_id` | string | Stable rule identifier, e.g. `joins.join_path_validation`. See the [Rules reference](rules_reference.md). |
+| `rule_id` | string | Stable rule identifier, e.g. `joins.concept_join_validation`. See the [Rules reference](rules_reference.md). |
 | `severity` | `"error"` \| `"warning"` | Lowercase. Mirrored as `severity` field on the violation. |
 | `issue` | string | Human-readable description of what's wrong and why it matters. |
 | `fix` | string \| object | See below — heterogeneous: prose for free-form fixes, patch dict for mechanical ones. |
@@ -133,7 +121,7 @@ Every entry in `errors[]` or `warnings[]` has the same shape:
 For free-form fixes (the default for ~60% of rules), `fix` is a prose string starting with an imperative verb (`REPLACE:`, `ADD:`, `JOIN:`, `FILTER:`, `GROUP BY:`, `CAST:`):
 
 ```json
-"fix": "ADD: `AND c.domain_id = 'Drug'` to the WHERE/JOIN-ON predicates."
+"fix": "ADD: `op.person_id = <clinical>.person_id` to the JOIN ON (or WHERE) that brings in observation_period."
 ```
 
 For mechanical fixes (~40% of rules — REPLACE / ADD / REMOVE patches that an outer correction loop can apply directly), `fix` is a patch object:
@@ -185,7 +173,7 @@ Filter at validation time instead of post-filtering:
 
 ```python
 violations = validate_sql_structured(sql, categories=["concept_standardization"])
-violations = validate_sql_structured(sql, rule_ids=["joins.join_path_validation"])
+violations = validate_sql_structured(sql, rule_ids=["joins.concept_join_validation"])
 violations = validate_sql_structured(sql, dialect="bigquery")
 ```
 

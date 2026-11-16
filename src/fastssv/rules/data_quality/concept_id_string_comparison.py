@@ -1,314 +1,222 @@
 """Concept ID String Comparison Rule.
 
-OMOP semantic rule OMOP_157:
-All *_concept_id columns are INTEGER type. Comparing them with string literals
-(e.g., concept_id = '201826') relies on implicit type casting and may fail or
-behave unexpectedly depending on the database engine.
+Every column that holds a concept_id is an INTEGER in CDM v5.4. Comparing one with a quoted literal that is not an
+integer (``gender_concept_id = 'FEMALE'``, ``= ''``) compares the column with a value its CDM type cannot hold: an
+ERROR on every dialect. A quoted integer (``gender_concept_id = '8507'``, ``IN ('201826', ...)``) names a valid
+concept id but as text; it relies on the engine coercing the literal, which BigQuery does not do ("String literals
+don't coerce to numeric types"), so it is a WARNING. An integer literal is
+``column_type_validation.is_integer_input``: optional surrounding whitespace, an optional sign, decimal digits.
 
-The Problem:
-    All columns ending in `_concept_id` store integer values representing OMOP concepts.
-    Comparing these columns with quoted string literals forces the database to perform
-    implicit type conversion, which:
+Checked columns: CONCEPT.concept_id and every CDM v5.4 column with a foreign key to CONCEPT (generated from the
+field-level CSV), when the column's lineage is that CDM column; a value recast in a CTE (``CAST(gender_concept_id AS
+VARCHAR) AS gender_concept_id``) or a column of a non-CDM table is not. Unrendered SqlRender parameters
+(``'@gender_concept_ids'``) are skipped: their rendered value is unknown.
 
-    - Degrades query performance (string-to-integer conversion for every row)
-    - May fail on some database engines with strict type checking
-    - Indicates sloppy coding practices
-    - Can produce unexpected results depending on database collation/casting rules
-
-Violation patterns:
-    SELECT * FROM condition_occurrence WHERE condition_concept_id = '201826'
-    -- WARNING: String literal '201826' requires implicit casting
-
-    SELECT * FROM measurement WHERE measurement_concept_id IN ('3004249', '3012888')
-    -- WARNING: String literals in IN clause require implicit casting
-
-    SELECT * FROM drug_exposure WHERE drug_concept_id != '1234567'
-    -- WARNING: String literal in comparison
-
-Correct patterns:
-    SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
-    -- OK: Integer literal, no casting needed
-
-    SELECT * FROM measurement WHERE measurement_concept_id IN (3004249, 3012888)
-    -- OK: Integer literals
-
-    SELECT * FROM drug_exposure WHERE drug_concept_id != 1234567
-    -- OK: Integer literal
-
-Note:
-    This is a WARNING, not an ERROR. Most databases will handle the implicit
-    conversion correctly, but it's a code quality issue that should be fixed.
+Comparisons: ``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``, ``IN`` / ``NOT IN`` and ``BETWEEN``, in any clause.
 """
 
-import logging
-from typing import Dict, List
+import re
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
 from fastssv.core.helpers import (
-    extract_aliases,
+    DERIVED,
+    _explicit_projection,
+    _pick_source,
+    _query_branches,
+    _select_sources,
+    _source_by_qualifier,
+    _source_query,
+    column_origins,
     is_string_literal,
     normalize_name,
     parse_sql,
-    resolve_table_col,
 )
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import CDM_FIELD_LEVEL, cdm_table
 from fastssv.core.registry import register
 
+from ._dq_concept_columns import CONCEPT_ID_COLUMNS
+from .column_type_validation import is_integer_input  # one integer literal syntax for both rules
 
-logger = logging.getLogger(__name__)
-
-
-# --- Constants ---------------------------------------------------------------
-
-OPERATOR_MAP: Dict[type, str] = {
-    exp.EQ: "=",
-    exp.NEQ: "!=",
-    exp.LT: "<",
-    exp.LTE: "<=",
-    exp.GT: ">",
-    exp.GTE: ">=",
-}
+OPERATORS = {exp.EQ: "=", exp.NEQ: "<>", exp.LT: "<", exp.LTE: "<=", exp.GT: ">", exp.GTE: ">="}
+_PLACEHOLDER_RE = re.compile(r"@\w+")
+_INTEGER_TYPES = {exp.DataType.Type.INT, exp.DataType.Type.BIGINT, exp.DataType.Type.SMALLINT}
 
 
-# --- Helpers -----------------------------------------------------------------
+def _recast_to_non_integer(col: exp.Column, depth: int) -> bool:
+    """Whether a CTE / derived-table projection on ``col``'s lineage casts it to a non-integer type.
 
-
-def _is_concept_id_column(col_name: str) -> bool:
-    if not col_name:
+    ``column_origins`` looks through casts, so the cast has to be checked separately."""
+    if depth > 12:
         return False
-    normalized = normalize_name(col_name)
-    return normalized == "concept_id" or normalized.endswith("_concept_id")
-
-
-def _safe_suggest_value(value: str) -> str:
-    """
-    Only suggest a replacement if it's a valid integer.
-    Otherwise return placeholder.
-    """
-    return value if value.isdigit() else "<integer_value>"
-
-
-def _check_comparison(sql: str, node: exp.Expression, aliases: dict) -> List[RuleViolation]:
-    violations = []
-
-    left = node.this
-    right = node.expression
-
-    if not left or not right:
-        return violations
-
-    operator = OPERATOR_MAP.get(type(node), "=")
-
-    # Handle both directions
-    for col_node, lit_node in [(left, right), (right, left)]:
-        if not isinstance(col_node, exp.Column):
+    select = col.find_ancestor(exp.Select)
+    if select is None:
+        return False
+    name = normalize_name(col.name)
+    if col.table:
+        scope, src = _source_by_qualifier(select, normalize_name(col.table))
+    else:
+        scope, src = select, _pick_source(select, _select_sources(select), name, depth)
+    if scope is None or src is None:
+        return False
+    query = _source_query(scope, src)
+    if query is None:
+        return False
+    for branch in _query_branches(query):
+        proj = _explicit_projection(branch, name)
+        if proj is None:
             continue
+        expr = proj.this if isinstance(proj, exp.Alias) else proj
+        while isinstance(expr, exp.Paren):
+            expr = expr.this
+        if isinstance(expr, (exp.Cast, exp.TryCast)):
+            if expr.to.this not in _INTEGER_TYPES:
+                return True
+            expr = expr.this
+        if isinstance(expr, exp.Column) and _recast_to_non_integer(expr, depth + 1):
+            return True
+    return False
 
-        if not is_string_literal(lit_node):
-            continue
 
-        table, col = resolve_table_col(col_node, aliases)
-        if not col:
-            col = col_node.name
+def _concept_id_column(node: Optional[exp.Expression]) -> Optional[exp.Column]:
+    """``node`` when it reads, unchanged, a CDM column that holds a concept_id."""
+    if not isinstance(node, exp.Column):
+        return None
+    origins = column_origins(node)
+    if not origins or any(t == DERIVED or (t, c) not in CONCEPT_ID_COLUMNS for t, c in origins):
+        return None
+    return None if _recast_to_non_integer(node, 0) else node
 
-        if not _is_concept_id_column(col):
-            continue
 
-        suggested_value = _safe_suggest_value(lit_node.this)
+def _quoted(node: Optional[exp.Expression]) -> Optional[str]:
+    if node is None or not is_string_literal(node):
+        return None
+    value = str(node.this or "")
+    return None if _PLACEHOLDER_RE.fullmatch(value) else value
 
-        # Structured patch: REPLACE the quoted string literal with its bare
-        # integer form when the value is digit-only. Try both quote styles.
-        # If the literal is not uniquely locatable, fall back to FREEFORM.
-        patch = None
-        raw = str(lit_node.this) if lit_node.this is not None else ""
-        if raw.isdigit():
-            for q in ("'", '"'):
-                span = locate(sql, f"{q}{raw}{q}")
-                if span is not None:
-                    patch = patch_replace(span, raw)
-                    break
 
-        violations.append(
-            RuleViolation(
-                rule_id="data_quality.concept_id_string_comparison",
-                severity=Severity.WARNING,
-                message=(
-                    f"Concept ID column compared with string literal: {col_node.sql()} {operator} {lit_node.sql()}"
-                ),
-                suggested_fix=(
-                    f"REPLACE: `{col_node.sql()} {operator} '<digits>'` (string literal) WITH "
-                    f"`{col_node.sql()} {operator} {suggested_value}` (integer literal). "
-                    f"All *_concept_id columns are INTEGER."
-                ),
-                suggested_fix_patch=patch,
-                details={
-                    "column": col,
-                    "table": table or "unknown",
-                    "operator": operator,
-                    "string_value": lit_node.this,
-                },
+def _comparisons(tree: exp.Expression) -> List[Tuple[exp.Expression, List[exp.Expression], str]]:
+    out: List[Tuple[exp.Expression, List[exp.Expression], str]] = []
+    for node in tree.find_all(*OPERATORS, exp.In, exp.Between):
+        if isinstance(node, exp.In):
+            op = "NOT IN" if isinstance(node.parent, exp.Not) else "IN"
+            out.append((node.this, list(node.expressions or []), op))
+        elif isinstance(node, exp.Between):
+            out.append(
+                (node.this, [b for b in (node.args.get("low"), node.args.get("high")) if b is not None], "BETWEEN")
             )
-        )
-
-    return violations
-
-
-def _check_in_clause(sql: str, node: exp.In, aliases: dict) -> List[RuleViolation]:
-    violations = []
-
-    col_expr = node.this
-    if not isinstance(col_expr, exp.Column):
-        return violations
-
-    string_values = [val.this for val in (node.expressions or []) if is_string_literal(val)]
-
-    if not string_values:
-        return violations
-
-    table, col = resolve_table_col(col_expr, aliases)
-    if not col:
-        col = col_expr.name
-
-    if not _is_concept_id_column(col):
-        return violations
-
-    # Check if parent is NOT (for NOT IN clause)
-    is_not = isinstance(node.parent, exp.Not)
-    operator = "NOT IN" if is_not else "IN"
-
-    sample = string_values[:3]
-    values_display = ", ".join(f"'{v}'" for v in sample)
-    if len(string_values) > 3:
-        values_display += ", ..."
-
-    suggested = ", ".join(_safe_suggest_value(v) for v in sample)
-    if len(string_values) > 3:
-        suggested += ", ..."
-
-    # Structured patch: when *every* value in the IN list is digit-only,
-    # REPLACE the entire IN expression with the integer-literal form. We
-    # locate the original IN SQL fragment in source and substitute with
-    # the corrected text. Falls back to FREEFORM for ambiguous matches.
-    patch = None
-    all_digits = [str(val.this) for val in (node.expressions or []) if is_string_literal(val)]
-    if all_digits and all(s.isdigit() for s in all_digits):
-        # Build a corrected IN body and try to locate the original IN node
-        # span in source. We try the node.sql() as a single fragment.
-        in_sql = node.sql()
-        corrected = in_sql
-        for q in ("'", '"'):
-            for raw in all_digits:
-                corrected = corrected.replace(f"{q}{raw}{q}", raw)
-        if corrected != in_sql:
-            span = locate(sql, in_sql)
-            if span is not None:
-                patch = patch_replace(span, corrected)
-
-    violations.append(
-        RuleViolation(
-            rule_id="data_quality.concept_id_string_comparison",
-            severity=Severity.WARNING,
-            message=(
-                f"Concept ID column compared with string literals in {operator} clause: "
-                f"{col_expr.sql()} {operator} ({values_display})"
-            ),
-            suggested_fix=(
-                f"REPLACE: `{col_expr.sql()} {operator} ('<digits>', ...)` (string literals) WITH "
-                f"`{col_expr.sql()} {operator} ({suggested})` (integer literals). "
-                f"All *_concept_id columns are INTEGER."
-            ),
-            suggested_fix_patch=patch,
-            details={
-                "column": col,
-                "table": table or "unknown",
-                "operator": operator,
-                "string_count": len(string_values),
-            },
-        )
-    )
-
-    return violations
-
-
-def _find_violations(sql: str, tree: exp.Expression) -> List[RuleViolation]:
-    violations: List[RuleViolation] = []
-
-    aliases = extract_aliases(tree)
-
-    # Comparisons
-    for node in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
-        violations.extend(_check_comparison(sql, node, aliases))
-
-    # IN (handles both IN and NOT IN by checking parent)
-    for node in tree.find_all(exp.In):
-        violations.extend(_check_in_clause(sql, node, aliases))
-
-    # Deduplicate by message
-    unique = {}
-    for v in violations:
-        unique[v.message] = v
-
-    return list(unique.values())
-
-
-# --- Rule --------------------------------------------------------------------
+        else:
+            out.append((node.this, [node.expression], OPERATORS[type(node)]))
+            out.append((node.expression, [node.this], OPERATORS[type(node)]))
+    return out
 
 
 @register
 class ConceptIdStringComparisonRule(Rule):
-    """
-    OMOP_157: Prevent comparing integer *_concept_id columns with string literals.
-    """
+    """Integer concept_id columns compared with quoted literals."""
 
     rule_id = "data_quality.concept_id_string_comparison"
     name = "Concept ID String Comparison"
 
     description = (
-        "All *_concept_id columns are INTEGER type. Comparing them with string literals "
-        "requires implicit casting and may lead to incorrect results."
+        "Concept id columns are INTEGER in the CDM. A quoted value that is not an integer ('FEMALE') is not a "
+        "concept id (ERROR); a quoted integer ('8532') relies on implicit coercion, which BigQuery does not do "
+        "(WARNING)."
     )
-
     severity = Severity.WARNING
-
-    suggested_fix = "REPLACE: `<col>_concept_id = '<digits>'` (string literal) WITH `<col>_concept_id = <digits>` (integer literal). All *_concept_id columns are INTEGER."
+    suggested_fix = "REPLACE: `<col>_concept_id = '<digits>'` (string literal) WITH `<col>_concept_id = <digits>` (integer literal). Concept id columns are INTEGER."
     long_description = (
-        "Every *_concept_id column in OMOP is an INTEGER. Comparing it to a "
-        "string literal forces the database to implicitly cast one side per "
-        "row. In PostgreSQL this usually works but bypasses the concept_id "
-        "index; in SQL Server and BigQuery it can raise a conversion error "
-        "or, worse, silently evaluate to FALSE for every row. Writing the "
-        "literal as a plain integer keeps index usage intact and the "
-        "semantics identical across every supported dialect."
+        "Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal that is not an integer "
+        "('FEMALE', '', '1.5') is not a value of that type, so the comparison is an ERROR on every dialect; an "
+        "integer literal is optional whitespace, an optional sign and decimal digits. A quoted integer ('8532') "
+        "names a concept id as text and depends on the engine coercing it: BigQuery does not coerce string "
+        "literals to numbers, so it is a portability WARNING. Write the value as an integer literal; to find a "
+        "concept by name, join concept."
     )
     example_bad = "SELECT person_id\nFROM person\nWHERE gender_concept_id = '8532';"
     example_good = "SELECT person_id\nFROM person\nWHERE gender_concept_id = 8532;"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT person_id\nFROM person\nWHERE gender_concept_id = 'FEMALE';",
+            severity=Severity.ERROR,
+            note="Not an integer, so not a concept id: the concept id for FEMALE is 8532.",
+        ),
+    )
+    references = (
+        cdm_table("person"),
+        Reference(
+            "BigQuery documentation: Conversion rules, Literal coercion",
+            "https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#literal_coercion",
+        ),
+        cdm_table("concept"),
+        CDM_FIELD_LEVEL,
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if not sql:
+        if not sql or "concept_id" not in sql.lower():
             return []
-
-        if "concept_id" not in sql.lower():
-            return []
-
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
-            logger.warning(
-                "SQL parsing failed for OMOP_157",
-                extra={"sql": sql[:500], "dialect": dialect},
-            )
             return []
 
         violations: List[RuleViolation] = []
-
         for tree in trees:
             if not tree:
                 continue
-
-            violations.extend(_find_violations(sql, tree))
-
+            seen: Set[Tuple[str, str]] = set()
+            for col_side, values, op in _comparisons(tree):
+                column = _concept_id_column(col_side)
+                if column is None:
+                    continue
+                quoted = [v for v in (_quoted(n) for n in values) if v is not None]
+                if not quoted:
+                    continue
+                key = (column.sql(), op + "|".join(quoted))
+                if key in seen:
+                    continue
+                seen.add(key)
+                violations.append(self._violation(sql, column, op, quoted))
         return violations
+
+    def _violation(self, sql: str, column: exp.Column, op: str, quoted: List[str]) -> RuleViolation:
+        col = column.sql()
+        non_integer = [v for v in quoted if not is_integer_input(v)]
+        shown = ", ".join(f"'{v}'" for v in quoted[:3]) + (", ..." if len(quoted) > 3 else "")
+        if non_integer:
+            severity = Severity.ERROR
+            message = (
+                f"Concept id column compared with a value that is not an integer: {col} {op} {shown}. The CDM "
+                f"defines {col} as INTEGER, and '{non_integer[0]}' is not a concept id."
+            )
+        else:
+            severity = Severity.WARNING
+            message = (
+                f"Concept ID column compared with string literal: {col} {op} {shown}. {col} is INTEGER; the "
+                f"comparison relies on coercing the literal, which BigQuery does not do."
+            )
+        patch = None
+        if not non_integer and len(quoted) == 1:
+            for q in ("'", '"'):
+                span = locate(sql, f"{q}{quoted[0]}{q}")
+                if span is not None:
+                    patch = patch_replace(span, quoted[0].strip())
+                    break
+        replacement = ", ".join(
+            v.strip() if v in quoted and v not in non_integer else "<integer_value>" for v in quoted[:3]
+        )
+        return self.create_violation(
+            message=message,
+            severity=severity,
+            suggested_fix=(
+                f"REPLACE: the quoted value(s) WITH integer literal(s): `{col} {op} {replacement}`. Concept id columns "
+                f"are INTEGER; to select a concept by name, join concept."
+            ),
+            suggested_fix_patch=patch,
+            details={"column": column.name, "operator": op, "string_count": len(quoted)},
+        )
 
 
 __all__ = ["ConceptIdStringComparisonRule"]

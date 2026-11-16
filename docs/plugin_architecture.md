@@ -17,7 +17,7 @@ All validation rules inherit from the abstract `Rule` class:
 
 ```python
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional, Tuple
 
 class Rule(ABC):
     """Abstract base class for validation rules."""
@@ -27,6 +27,12 @@ class Rule(ABC):
     description: str
     severity: Severity
     suggested_fix: str
+
+    # Metadata shown on the /rules page, in GET /v1/rules and in the rules reference.
+    example_bad: Optional[str] = None                 # SQL that triggers the rule
+    example_good: Optional[str] = None                # corrected version; must not trigger
+    extra_examples: Tuple[RuleExample, ...] = ()      # one per further severity / variant
+    references: Tuple[Reference, ...] = ()            # published sources of the claim
 
     @abstractmethod
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
@@ -45,7 +51,7 @@ from enum import Enum
 class Severity(Enum):
     """Severity level for rule violations."""
     ERROR = "error"      # Blocks validation (gates the CLI exit code)
-    WARNING = "warning"  # Best-practice issue; escalated under --strict
+    WARNING = "warning"  # Advice; gates the exit code only for rules escalated under --strict
 
 @dataclass
 class RuleViolation:
@@ -140,67 +146,83 @@ src/fastssv/rules/
 ```python
 # src/fastssv/rules/joins/my_new_rule.py
 
+from sqlglot import exp
+
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.registry import register
 from fastssv.core.helpers import parse_sql
+from fastssv.core.references import cdm_table
+from fastssv.core.registry import register
+
 
 @register
 class MyNewRule(Rule):
-    """
-    Detailed documentation of the rule.
-
-    Explains:
-    - What OMOP CDM constraint this validates
-    - Why this constraint matters
-    - Examples of violations
-    - How to fix violations
-    """
+    """payer_plan_period belongs to a person; a join to it must use person_id."""
 
     rule_id = "joins.my_new_rule"
     name = "My New Rule"
-    description = "Brief description of what this rule checks"
+    description = "payer_plan_period is joined without its person_id key."
     severity = Severity.ERROR
-    suggested_fix = "Specific recommendation for fixing this violation"
+    suggested_fix = "ADD: `ppp.person_id = <other>.person_id` to the JOIN ON clause."
+
+    # Required metadata: an example that triggers the rule, its corrected
+    # version, and the published sources the claim is derived from.
+    example_bad = (
+        "SELECT p.person_id, ppp.payer_concept_id\n"
+        "FROM person p\n"
+        "JOIN payer_plan_period ppp ON p.provider_id = ppp.payer_plan_period_id;"
+    )
+    example_good = (
+        "SELECT p.person_id, ppp.payer_concept_id\n"
+        "FROM person p\n"
+        "JOIN payer_plan_period ppp ON p.person_id = ppp.person_id;"
+    )
+    references = (cdm_table("payer_plan_period"),)
 
     def validate(self, sql: str, dialect: str = "postgres") -> list[RuleViolation]:
-        """
-        Validate SQL query against this rule.
-
-        Args:
-            sql: SQL query string to validate
-            dialect: SQL dialect (postgres, mysql, duckdb, etc.)
-
-        Returns:
-            List of RuleViolation objects. Empty list means no violations.
-        """
+        """Return one violation per offending join; an empty list means none."""
         violations = []
 
-        # Parse SQL into AST
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             # Skip validation if SQL doesn't parse
             return violations
 
-        # Validation logic here
-        if self._detect_violation(trees[0]):
-            violations.append(
-                RuleViolation(
-                    rule_id=self.rule_id,
-                    severity=Severity.ERROR,  # or Severity.WARNING
-                    message="Clear explanation of what went wrong",
-                    suggested_fix="Specific recommendation for fixing this violation",
-                    location="optional: table.column or line number",  # Optional
-                    details={"key": "value"}  # Optional structured metadata
-                )
-            )
+        for tree in trees:
+            for join in tree.find_all(exp.Join):
+                on = join.args.get("on")
+                if not isinstance(join.this, exp.Table) or on is None:
+                    continue
+                if join.this.name.lower() != "payer_plan_period":
+                    continue
+                if "person_id" not in {c.name.lower() for c in on.find_all(exp.Column)}:
+                    violations.append(
+                        self.create_violation(
+                            message="payer_plan_period is joined on a key other than person_id.",
+                            location=join.sql(dialect=dialect),  # Optional
+                            details={"on": on.sql(dialect=dialect)},  # Optional structured metadata
+                        )
+                    )
 
         return violations
-
-    def _detect_violation(self, tree) -> bool:
-        """Helper method for violation detection logic."""
-        # Implementation details
-        return False
 ```
+
+`example_bad`, `example_good` and `references` are required for every
+registered rule. `tests/test_rule_metadata.py` runs over the whole registry and
+fails when `example_bad` does not trigger the rule, when `example_good` does,
+or when `references` is empty.
+
+- `references` takes `Reference(title, url)` values (`fastssv.core.base`).
+  `fastssv.core.references` has helpers for the sources most rules share:
+  `cdm_table("<table>")` for a table's section of the CDM v5.4 specification,
+  page-level constants such as `CDM_CONVENTIONS` and `BOOK_VOCABULARIES`, and
+  `section(SOURCE, "anchor", "topic")` for a named section of one of them.
+  Write `Reference("Title", "https://…")` inline for anything else. Cite a
+  source only after reading the passage that supports the rule's claim.
+- If the rule emits a second severity or a materially different variant, add
+  `extra_examples = (RuleExample(sql, Severity.WARNING, "what this variant shows"),)`
+  (`RuleExample` is in `fastssv.core.base`; pass `strict=True` for a finding
+  that only appears in strict mode). The same test checks that each one emits
+  its declared severity.
 
 ### Step 3: Register the Rule
 
@@ -229,16 +251,23 @@ class TestMyNewRule:
         return MyNewRule()
 
     def test_valid_query_passes(self, rule):
-        sql = "SELECT * FROM person"
-        violations = rule.validate(sql)
+        violations = rule.validate(rule.example_good)
         assert len(violations) == 0
 
     def test_invalid_query_fails(self, rule):
-        sql = "SELECT * FROM invalid_table"
-        violations = rule.validate(sql)
+        violations = rule.validate(rule.example_bad)
         assert len(violations) > 0
         assert violations[0].rule_id == "joins.my_new_rule"
 ```
+
+### Step 5: Document the Rule
+
+Add a section for the rule to [rules_reference.md](rules_reference.md) and a row
+to its quick-reference table. The section needs an `#### Examples` block that
+contains `example_bad` and `example_good`, and a `#### Sources` list with every
+URL in `references`; `tests/test_rule_metadata.py` checks the section, the
+examples heading and each URL. The `/rules` page and `GET /v1/rules` pick the
+metadata up from the class, with no further wiring.
 
 ## Using Rules
 
@@ -258,7 +287,7 @@ uv run fastssv query.sql --categories joins temporal
 uv run fastssv query.sql --rules joins.my_new_rule
 
 # Run multiple specific rules
-uv run fastssv query.sql --rules joins.join_path_validation concept_standardization.standard_concept_enforcement
+uv run fastssv query.sql --rules joins.concept_join_validation concept_standardization.standard_concept_enforcement
 ```
 
 ### Python API
@@ -290,26 +319,25 @@ for v in violations:
 Current registered category counts (see [rules_reference.md](rules_reference.md)
 for the full list):
 
-- `anti_patterns`: 20
-- `concept_standardization`: 18
-- `data_quality`: 22
-- `domain_specific`: 48
-- `joins`: 36
-- `temporal`: 10
+- `anti_patterns`: 11
+- `concept_standardization`: 14
+- `data_quality`: 13
+- `domain_specific`: 19
+- `joins`: 22
+- `temporal`: 6
 
-**Total: 154**
+**Total: 85**
 
 Representative examples from the current public categories:
 
-- `joins.join_path_validation` - Table join validation against OMOP CDM v5.4 schema
-- `concept_standardization.standard_concept_enforcement` - Standard concept enforcement (concept.standard_concept = 'S')
+- `joins.concept_join_validation` - `*_concept_id` columns must join to `concept.concept_id`
+- `concept_standardization.standard_concept_enforcement` - Source concepts matched against concept_ancestor (strict mode: a WARNING when a standard field's concept row is not checked)
 - `concept_standardization.concept_ancestor_rollup_direction` - Validates ancestor/descendant direction of concept_ancestor rollups
-- `temporal.observation_period_anchoring` - Temporal constraints anchored to observation_period
+- `temporal.observation_period_anchoring` - Absence tests and event-per-person rates without observation_period
 - `joins.maps_to_direction` - Maps-to relationship direction validation (source → standard)
-- `data_quality.unmapped_concept_handling` - Unmapped concept (concept_id = 0) handling
 - `concept_standardization.invalid_reason_enforcement` - Invalid reason enforcement for vocabulary tables
-- `anti_patterns.no_string_identification` - String-based concept ID lookup detection
-- `anti_patterns.concept_name_lookup` - Concept table concept_name filter detection
+- `anti_patterns.no_string_identification` - String filters on `*_source_value` columns that have a concept counterpart
+- `anti_patterns.concept_name_lookup` - concept_name / concept_synonym_name lookup detection
 - `anti_patterns.concept_code_requires_vocabulary_id` - Concept code uniqueness enforcement (requires vocabulary_id)
 
 ### Adding New Categories

@@ -81,6 +81,10 @@
                     <header>
                       <span class="sev sev-{{ v.severity }}">{{ v.severity }}</span>
                       <code class="rule-id">{{ v.rule_id }}</code>
+                      {% if v.rule_id in catalogued_rule_ids %}
+                        <a class="rule-link" href="/rules#rule-{{ v.rule_id }}"
+                           title="Examples and sources for this rule">Examples &amp; sources</a>
+                      {% endif %}
                     </header>
                     <p class="issue">{{ v.issue }}</p>
                     {% if v.fix is mapping %}

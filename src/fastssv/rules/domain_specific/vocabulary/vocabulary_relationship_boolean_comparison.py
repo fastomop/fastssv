@@ -1,407 +1,318 @@
-"""Relationship Boolean Comparison Rule.
+"""Relationship Flag Comparison Rule.
 
-OMOP semantic rule OMOP_150:
-The relationship table has is_hierarchical and defines_ancestry columns.
-These are boolean flags that should be compared with proper boolean values
-(1, 0, TRUE, FALSE), not strings or other invalid types.
+relationship.is_hierarchical and relationship.defines_ancestry are varchar(1) columns holding '1' or '0'
+(OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans. On every dialect:
 
-The Problem:
-    The relationship vocabulary table uses boolean flags to indicate:
-    - is_hierarchical: Whether the relationship represents a hierarchy
-    - defines_ancestry: Whether the relationship defines ancestry paths
+* any other string ('true', 'Y', 'yes', '') or integer (2, -1) never occurs: ``=`` / ``IN`` against it match no rows,
+  ``<>`` / ``NOT IN`` filter nothing;
+* an integer (``= 1``) or boolean (``= TRUE``) operand, ``IS TRUE`` / ``IS FALSE``, or the column used itself as a
+  condition (``WHERE is_hierarchical``) treats the varchar(1) column as a number or a boolean, which the CDM does not
+  define it as.
 
-    When filtering these columns, developers sometimes use incorrect value types:
-    - String literals: 'true', 'false', '1', '0'
-    - Invalid integers: 2, -1, or any value other than 0 or 1
+Correct:
+    SELECT relationship_id FROM relationship WHERE is_hierarchical = '1'
+    SELECT relationship_id FROM relationship WHERE defines_ancestry IN ('0', '1')
 
-    This causes issues:
-    1. Type mismatch errors in strongly-typed databases
-    2. Incorrect comparisons (boolean vs string comparison semantics differ)
-    3. Performance problems (prevents index usage)
-    4. Silent failures or unexpected results
-
-Why this is wrong:
-    Boolean columns should be compared with boolean-compatible values:
-    - In most SQL dialects, booleans are represented as 1 (TRUE) or 0 (FALSE)
-    - Comparing with strings requires implicit conversion that may fail
-    - Using invalid integers (2, -1, etc.) is semantically meaningless
-    - String comparisons have different semantics than boolean comparisons
-
-Violation patterns:
-    SELECT * FROM relationship WHERE is_hierarchical = 'true'
-    -- ERROR: String comparison on boolean column
-
-    SELECT * FROM relationship WHERE defines_ancestry = '1'
-    -- ERROR: String '1' is not the same as integer 1
-
-    SELECT * FROM relationship WHERE is_hierarchical = 2
-    -- ERROR: Invalid boolean value (only 0 or 1 allowed)
-
-    SELECT * FROM relationship WHERE defines_ancestry IN ('true', 'false')
-    -- ERROR: String values in IN clause
-
-    SELECT r.* FROM concept_relationship cr
-    JOIN relationship r ON cr.relationship_id = r.relationship_id
-    WHERE r.is_hierarchical = 'Y'
-    -- ERROR: 'Y'/'N' pattern is wrong for boolean
-
-Correct patterns:
-    SELECT * FROM relationship WHERE is_hierarchical = 1
-    -- OK: Integer boolean comparison
-
-    SELECT * FROM relationship WHERE is_hierarchical = TRUE
-    -- OK: Boolean literal
-
-    SELECT * FROM relationship WHERE is_hierarchical
-    -- OK: Direct boolean usage
-
-    SELECT * FROM relationship WHERE is_hierarchical = 0
-    -- OK: Integer boolean comparison (FALSE)
-
-    SELECT * FROM relationship WHERE is_hierarchical IS NOT NULL
-    -- OK: NULL check is valid
-
-    SELECT * FROM relationship WHERE is_hierarchical IN (0, 1)
-    -- OK: Integer boolean values
-
-Note:
-    This is an ERROR, not a warning. Using incorrect types for boolean comparisons
-    can cause query failures or incorrect results. Parameterized queries are allowed
-    since we cannot validate the parameter type statically.
+Violations:
+    WHERE is_hierarchical = 'true'      -- no row holds 'true'
+    WHERE defines_ancestry = 2          -- no such value
+    WHERE is_hierarchical = 1           -- integer against a varchar(1) column
+    WHERE is_hierarchical               -- varchar(1) column used as a boolean
 """
 
-import logging
+import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import extract_aliases, normalize_name, parse_sql
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import (
+    _explicit_projection,
+    _pick_source,
+    _query_branches,
+    _select_sources,
+    _source_by_qualifier,
+    _source_query,
+    column_origins,
+    extract_aliases,
+    normalize_name,
+    parse_sql,
+)
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import CDM_FIELD_LEVEL, cdm_table
 from fastssv.core.registry import register
 
-
-# Map common truthy/falsy string spellings to the canonical 0/1 OMOP
-# representation. Used when the analyst wrote `is_hierarchical = 'yes'` and
-# we want to emit a deterministic REPLACE rather than freeform.
-_TRUE_STRINGS = {"y", "yes", "true", "t", "1"}
-_FALSE_STRINGS = {"n", "no", "false", "f", "0"}
-
-
-def _string_to_boolean_int(value: str) -> Optional[int]:
-    if not isinstance(value, str):
-        return None
-    norm = value.strip().lower()
-    if norm in _TRUE_STRINGS:
-        return 1
-    if norm in _FALSE_STRINGS:
-        return 0
-    return None
-
-
-logger = logging.getLogger(__name__)
-
-
-# --- Constants ---------------------------------------------------------------
-
 RELATIONSHIP_TABLE = "relationship"
-BOOLEAN_COLUMNS = {"is_hierarchical", "defines_ancestry"}
+FLAG_COLUMNS = {"is_hierarchical", "defines_ancestry"}
+VALID_VALUES = {"0", "1"}
+
+_TRUE_STRINGS = {"y", "yes", "true", "t"}
+_FALSE_STRINGS = {"n", "no", "false", "f"}
 
 
-# --- Helpers -----------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _extract_cte_names(tree: exp.Expression) -> Set[str]:
-    return {_norm(cte.alias_or_name) for cte in tree.find_all(exp.CTE) if cte.alias_or_name}
-
-
-def _is_relationship_table(name: Optional[str]) -> bool:
-    return name == RELATIONSHIP_TABLE
-
-
-def _is_boolean_column(name: Optional[str]) -> bool:
-    return name in BOOLEAN_COLUMNS
-
-
-def _is_valid_boolean_value(node: exp.Expression) -> bool:
-    if isinstance(node, (exp.Boolean, exp.Null)):
-        return True
-
-    if isinstance(node, (exp.Column, exp.Placeholder, exp.Parameter)):
-        return True
-
-    if isinstance(node, exp.Literal):
-        if node.is_string:
-            return False
-
-        try:
-            value = int(node.this)
-            return value in (0, 1)
-        except (ValueError, TypeError):
-            return False
-
-    if isinstance(node, (exp.Cast, exp.TryCast)):
-        return True
-
+def _cast_on_the_way(col: exp.Column, depth: int = 0) -> bool:
+    """True when a CTE / derived table between ``col`` and the base table projects the flag through a cast
+    (``is_hierarchical::int AS is_hierarchical``): the value reaching ``col`` is no longer varchar."""
+    if depth > 12:
+        return False
+    select = col.find_ancestor(exp.Select)
+    if select is None:
+        return False
+    name = normalize_name(col.name)
+    if col.table:
+        scope, src = _source_by_qualifier(select, normalize_name(col.table))
+    else:
+        scope, src = select, _pick_source(select, _select_sources(select), name, depth)
+    if scope is None or src is None:
+        return False
+    query = _source_query(scope, src)
+    if query is None:
+        return False
+    for branch in _query_branches(query):
+        proj = _explicit_projection(branch, name)
+        if proj is None:
+            continue
+        expr = proj.this if isinstance(proj, exp.Alias) else proj
+        while isinstance(expr, exp.Paren):
+            expr = expr.this
+        if isinstance(expr, (exp.Cast, exp.TryCast)):
+            return True
+        if isinstance(expr, exp.Column) and _cast_on_the_way(expr, depth + 1):
+            return True
     return False
 
 
-def _resolve_table_name(
-    table_name: Optional[str],
-    aliases: Dict[str, str],
-) -> Optional[str]:
-    if not table_name:
-        return None
-
-    table_name = _norm(table_name)
-    resolved = aliases.get(table_name)
-
-    if resolved:
-        return _norm(resolved)
-
-    return table_name
-
-
-def _collect_tables(tree: exp.Expression, cte_names: Set[str]) -> Set[str]:
-    """Collect all table names in the query (excluding CTEs)."""
-    tables = set()
-    for tbl in tree.find_all(exp.Table):
-        name = _norm(tbl.name)
-        if name and name not in cte_names:
-            tables.add(name)
-    return tables
+def _is_flag_column(col: exp.Column, aliases: Dict[str, str], cte_names: Set[str], tables: Set[str]) -> bool:
+    name = normalize_name(col.name)
+    if name not in FLAG_COLUMNS:
+        return False
+    if _cast_on_the_way(col):
+        return False
+    origins = column_origins(col)
+    if origins is not None:
+        return (RELATIONSHIP_TABLE, name) in origins
+    if col.table:
+        qualifier = normalize_name(col.table)
+        if qualifier in cte_names:
+            return False
+        return normalize_name(aliases.get(qualifier, qualifier)) == RELATIONSHIP_TABLE
+    return tables == {RELATIONSHIP_TABLE}
 
 
-def _check_comparison(
-    comparison: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[Tuple[str, Optional[exp.Expression]]]:
-    """Return (message, offending_value_side) when the comparison is invalid.
+def _canonical(value: str) -> Optional[str]:
+    norm = value.strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "1"
+    if norm in _FALSE_STRINGS:
+        return "0"
+    return None
 
-    ``offending_value_side`` is the AST node holding the bad literal, used
-    by the caller to build a REPLACE patch when the value is a string with
-    a known yes/no spelling.
-    """
-    left = comparison.this
-    right = comparison.expression
 
-    if not left or not right:
-        return None
+def _impossible(col_name: str, shown: str, op: str) -> str:
+    """Message for a value the flag never holds, worded for what the operator then does."""
+    head = f"relationship.{col_name} holds only the strings '1' and '0'; {shown} never occurs, so "
+    if op in ("EQ", "IN"):
+        return head + "the comparison matches no rows. Use '1' (true) or '0' (false)."
+    if op in ("NEQ", "NOT_IN"):
+        return head + "the comparison is true for every row and filters nothing. Use '1' (true) or '0' (false)."
+    return head + "an ordering comparison against it is meaningless. Use = '1' (true) or = '0' (false)."
 
-    # Handle BOTH directions (critical fix)
-    for col_side, value_side in [(left, right), (right, left)]:
-        if not isinstance(col_side, exp.Column):
+
+def _judge(col_name: str, value: exp.Expression, op: str) -> Optional[str]:
+    """Message when ``value`` is not a value of the varchar(1) flag, else None."""
+    if isinstance(value, exp.Literal) and value.is_string:
+        if value.this in VALID_VALUES:
+            return None
+        return _impossible(col_name, f"the string '{value.this}'", op)
+    if isinstance(value, exp.Literal):
+        if value.this in VALID_VALUES:
+            return (
+                f"relationship.{col_name} is varchar(1) in the CDM, holding the strings '1' and '0'; the integer "
+                f"{value.this} is not a value of that type. Use '{value.this}'."
+            )
+        return _impossible(col_name, f"{value.this} (an invalid value)", op)
+    if isinstance(value, exp.Neg) and isinstance(value.this, exp.Literal):
+        return _impossible(col_name, f"{value.sql()} (an invalid value)", op)
+    if isinstance(value, exp.Boolean):
+        return (
+            f"relationship.{col_name} is varchar(1) in the CDM, not boolean; {value.sql()} is not a value of that "
+            f"type. Use '{'1' if value.this else '0'}'."
+        )
+    return None
+
+
+def _like_matches(pattern: str, value: str, case_insensitive: bool) -> bool:
+    """SQL LIKE semantics (``%`` any run, ``_`` one character, default backslash escape)."""
+    regex, i = "", 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "\\" and i + 1 < len(pattern):
+            regex += re.escape(pattern[i + 1])
+            i += 2
             continue
+        regex += ".*" if ch == "%" else "." if ch == "_" else re.escape(ch)
+        i += 1
+    return re.fullmatch(regex, value, re.IGNORECASE if case_insensitive else 0) is not None
 
-        col_name = _norm(col_side.name)
-        table_name = _resolve_table_name(col_side.table, aliases)
 
-        # Handle unqualified columns
-        if not table_name:
-            # Only flag if relationship is the sole table
-            if tables_in_query == {RELATIONSHIP_TABLE} and _is_boolean_column(col_name):
-                table_name = RELATIONSHIP_TABLE
-            else:
+def _used_as_condition(col: exp.Column) -> bool:
+    parent = col.parent
+    if isinstance(parent, (exp.Where, exp.Having, exp.And, exp.Or)):
+        return True
+    if isinstance(parent, exp.Not):
+        return True
+    if isinstance(parent, exp.Join):
+        return parent.args.get("on") is col
+    return False
+
+
+def _find_violations(tree: exp.Expression) -> List[Tuple[str, Optional[exp.Expression], Optional[str]]]:
+    """(message, offending literal, replacement text) per violation."""
+    aliases = extract_aliases(tree)
+    cte_names = {normalize_name(c.alias_or_name) for c in tree.find_all(exp.CTE) if c.alias_or_name}
+    tables = {normalize_name(t.name) for t in tree.find_all(exp.Table) if normalize_name(t.name) not in cte_names}
+    out: List[Tuple[str, Optional[exp.Expression], Optional[str]]] = []
+
+    def flag_column(node: Optional[exp.Expression]) -> Optional[exp.Column]:
+        # LOWER / UPPER / TRIM keep a varchar a varchar: the value set stays '0' / '1'.
+        while isinstance(node, (exp.Lower, exp.Upper, exp.Trim, exp.Paren)):
+            node = node.this
+        if isinstance(node, exp.Column) and _is_flag_column(node, aliases, cte_names, tables):
+            return node
+        return None
+
+    def flag(col: exp.Expression) -> bool:
+        return flag_column(col) is not None
+
+    for comp in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
+        for side, value in ((comp.this, comp.expression), (comp.expression, comp.this)):
+            col = flag_column(side)
+            if col is None:
                 continue
+            message = _judge(normalize_name(col.name), value, type(comp).__name__.upper())
+            if message:
+                replacement = None
+                if isinstance(value, exp.Literal) and value.is_string:
+                    replacement = _canonical(value.this)
+                elif isinstance(value, exp.Literal) and value.this in VALID_VALUES:
+                    replacement = value.this
+                elif isinstance(value, exp.Boolean):
+                    replacement = "1" if value.this else "0"
+                out.append((message, value, f"'{replacement}'" if replacement else None))
 
-        if table_name in cte_names:
+    for match in tree.find_all(exp.Like, exp.ILike):
+        col = flag_column(match.this)
+        pattern = match.expression
+        if col is None or not (isinstance(pattern, exp.Literal) and pattern.is_string):
             continue
+        if not any(_like_matches(pattern.this, v, isinstance(match, exp.ILike)) for v in VALID_VALUES):
+            name = normalize_name(col.name)
+            out.append((_impossible(name, f"a value matching '{pattern.this}'", "EQ"), None, None))
 
-        if not (_is_boolean_column(col_name) and _is_relationship_table(table_name)):
+    for in_expr in tree.find_all(exp.In):
+        col = flag_column(in_expr.this)
+        if col is None:
             continue
+        name = normalize_name(col.name)
+        op = "NOT_IN" if isinstance(in_expr.parent, exp.Not) else "IN"
+        messages = [m for m in (_judge(name, v, op) for v in in_expr.expressions or []) if m]
+        if messages:
+            values = ", ".join(v.sql() for v in in_expr.expressions or [])
+            out.append((f"IN list ({values}) has invalid values: " + " ".join(dict.fromkeys(messages)), None, None))
 
-        if not _is_valid_boolean_value(value_side):
-            if isinstance(value_side, exp.Literal):
-                if value_side.is_string:
-                    return (
-                        f"Column '{col_name}' is boolean but compared with string "
-                        f"'{value_side.this}'. Use 0/1 or TRUE/FALSE.",
-                        value_side,
-                    )
-                else:
-                    return (
-                        f"Column '{col_name}' is boolean but compared with invalid "
-                        f"value '{value_side.this}'. Only 0, 1, TRUE, FALSE allowed.",
-                        value_side,
-                    )
-            else:
-                return (
-                    f"Column '{col_name}' is boolean but compared with invalid expression. Use 0/1 or TRUE/FALSE.",
+    for is_node in tree.find_all(exp.Is):
+        col = flag_column(is_node.this)
+        if col is not None and isinstance(is_node.expression, exp.Boolean):
+            name = normalize_name(col.name)
+            out.append(
+                (
+                    f"relationship.{name} is varchar(1) in the CDM, not boolean; `IS {is_node.expression.sql()}` "
+                    f"treats it as one. Write `{name} = '{'1' if is_node.expression.this else '0'}'`.",
+                    None,
                     None,
                 )
-
-    return None
-
-
-def _check_in_clause(
-    in_expr: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-    tables_in_query: Set[str],
-) -> Optional[str]:
-    left = in_expr.this
-
-    if not isinstance(left, exp.Column):
-        return None
-
-    col_name = _norm(left.name)
-    table_name = _resolve_table_name(left.table, aliases)
-
-    # Handle unqualified columns
-    if not table_name:
-        # Only flag if relationship is the sole table
-        if tables_in_query == {RELATIONSHIP_TABLE} and _is_boolean_column(col_name):
-            table_name = RELATIONSHIP_TABLE
-        else:
-            return None
-
-    if table_name in cte_names:
-        return None
-
-    if not (_is_boolean_column(col_name) and _is_relationship_table(table_name)):
-        return None
-
-    invalid_values = []
-
-    for value in in_expr.expressions:
-        if not _is_valid_boolean_value(value):
-            invalid_values.append(value.sql())
-
-    if invalid_values:
-        return (
-            f"Column '{col_name}' is boolean but IN/NOT IN contains invalid values: "
-            f"{', '.join(invalid_values)}. Use 0/1 or TRUE/FALSE."
-        )
-
-    return None
-
-
-def _find_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    cte_names: Set[str],
-) -> List[Tuple[str, Optional[exp.Expression]]]:
-    """Return list of (message, offending_value_node).
-
-    ``offending_value_node`` is the literal whose source span we'll target
-    with a REPLACE patch (or ``None`` when the bad side isn't a literal).
-    """
-    issues: List[Tuple[str, Optional[exp.Expression]]] = []
-
-    # Collect tables for unqualified column handling
-    tables_in_query = _collect_tables(tree, cte_names)
-
-    # Comparisons
-    for comp in tree.find_all(exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE):
-        result = _check_comparison(comp, aliases, cte_names, tables_in_query)
-        if result:
-            issues.append(result)
-
-    # IN clauses (NOT IN is exp.Not wrapping exp.In). We don't try to patch
-    # IN lists — multi-value rewrites are restructure-y; FREEFORM is honest.
-    for in_expr in tree.find_all(exp.In):
-        msg = _check_in_clause(in_expr, aliases, cte_names, tables_in_query)
-        if msg:
-            issues.append((msg, None))
-
-    # Deduplicate by message
-    seen = set()
-    out: List[Tuple[str, Optional[exp.Expression]]] = []
-    for msg, val in issues:
-        if msg in seen:
-            continue
-        seen.add(msg)
-        out.append((msg, val))
+            )
+    for col in tree.find_all(exp.Column):
+        if flag(col) and _used_as_condition(col):
+            name = normalize_name(col.name)
+            out.append(
+                (
+                    f"relationship.{name} is varchar(1) in the CDM, not boolean; using it directly as a condition "
+                    f"treats it as one. Write `{name} = '1'`.",
+                    None,
+                    None,
+                )
+            )
     return out
-
-
-# --- Rule --------------------------------------------------------------------
 
 
 @register
 class RelationshipBooleanComparisonRule(Rule):
-    """
-    OMOP_150: Validate boolean column comparisons in relationship table.
-    """
+    """Validate comparisons on relationship.is_hierarchical / defines_ancestry (varchar(1) '1'/'0')."""
 
     rule_id = "domain_specific.vocabulary_relationship_boolean_comparison"
-    name = "Relationship Boolean Comparison"
-
+    name = "Relationship Flag Comparison"
     description = (
-        "relationship.is_hierarchical and defines_ancestry must be compared "
-        "with valid boolean values (0,1,TRUE,FALSE), not strings."
+        "relationship.is_hierarchical and defines_ancestry are varchar(1) holding '1' or '0'. Other values never "
+        "occur, and integer or boolean operands, or using the column as a condition, treat the varchar column as a "
+        "number or boolean: ERROR on every dialect."
     )
-
     severity = Severity.ERROR
-
-    suggested_fix = "REPLACE: `is_hierarchical = 'yes'` (or 'true', 'Y', 'T') WITH `is_hierarchical = 1` (or = 0). Same for defines_ancestry. OMOP stores these as 0/1 strings, not English booleans."
+    suggested_fix = (
+        "REPLACE: the comparison value WITH the string '1' (true) or '0' (false), e.g. `is_hierarchical = '1'`."
+    )
+    long_description = (
+        "In OMOP CDM v5.4 relationship.is_hierarchical and relationship.defines_ancestry are varchar(1) columns "
+        "whose values are '1' and '0'. 'true', 'Y', 'yes' or 2 never occur: `=` against them matches no row and "
+        "`<>` filters nothing. An integer or boolean operand (`is_hierarchical = 1`, `= TRUE`, `IS TRUE`) or a bare "
+        "`WHERE is_hierarchical` treats the column as a number or a boolean, which the CDM does not define it as: "
+        "an ERROR on every dialect, whether or not an engine would cast its way past it. Compare with the strings "
+        "'1' / '0'."
+    )
     example_bad = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = 'yes';"
-    example_good = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = 1;"
+    example_good = "SELECT relationship_id FROM relationship\nWHERE is_hierarchical = '1';"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT relationship_id FROM relationship\nWHERE defines_ancestry = 1;",
+            severity=Severity.ERROR,
+            note="integer operand: the CDM defines the column as varchar(1) holding '0' / '1'",
+        ),
+        RuleExample(
+            sql="SELECT relationship_id FROM relationship\nWHERE is_hierarchical;",
+            severity=Severity.ERROR,
+            note="the varchar flag used directly as a boolean condition",
+        ),
+    )
+    references = (
+        cdm_table("relationship"),
+        CDM_FIELD_LEVEL,
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if not sql:
             return []
-
-        sql_lower = sql.lower()
-
-        if RELATIONSHIP_TABLE not in sql_lower:
+        lowered = sql.lower()
+        if RELATIONSHIP_TABLE not in lowered or not any(col in lowered for col in FLAG_COLUMNS):
             return []
-
-        if not any(col in sql_lower for col in BOOLEAN_COLUMNS):
-            return []
-
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
-            logger.warning(
-                "SQL parsing failed for OMOP_150",
-                extra={"sql": sql[:500], "dialect": dialect},
-            )
             return []
 
         violations: List[RuleViolation] = []
-
+        seen: Set[str] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            cte_names = _extract_cte_names(tree)
-
-            issues = _find_violations(tree, aliases, cte_names)
-
-            for msg, value_node in issues:
-                # Build a REPLACE patch only when the offending side is a
-                # string literal whose spelling maps unambiguously to 0/1
-                # ('yes'→1, 'no'→0, etc.). Anything else (numeric outliers
-                # like 2/-1, expressions, IN-clauses) drops to FREEFORM.
+            for message, value_node, replacement in _find_violations(tree):
+                if message in seen:
+                    continue
+                seen.add(message)
                 patch = None
-                if isinstance(value_node, exp.Literal) and value_node.is_string:
-                    mapped = _string_to_boolean_int(str(value_node.this))
-                    if mapped is not None:
-                        # Locate the entire quoted string literal in the SQL.
-                        # We try both quote styles since the user may have
-                        # written 'yes' or "yes".
-                        raw = str(value_node.this)
-                        for fragment in (f"'{raw}'", f'"{raw}"'):
-                            span = locate(sql, fragment)
-                            if span is not None:
-                                patch = patch_replace(span, str(mapped))
-                                break
-
-                violations.append(
-                    self.create_violation(
-                        message=msg,
-                        severity=self.severity,
-                        suggested_fix_patch=patch,
-                    )
-                )
-
+                if value_node is not None and replacement is not None:
+                    span = locate(sql, value_node.sql())
+                    if span is not None:
+                        patch = patch_replace(span, replacement)
+                violations.append(self.create_violation(message=message, suggested_fix_patch=patch))
         return violations
 
 

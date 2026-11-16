@@ -1,223 +1,167 @@
 """Note NLP nlp_date for Temporal Filtering Rule.
 
-OMOP semantic rule GAP_015:
-note_nlp.nlp_date is the date the NLP processing was performed, NOT the clinical
-date of the extracted concept. To get the clinical date, join to note.note_date
-via note_id. Filtering nlp_date as if it were the event date is incorrect.
+CDM v5.4 defines ``note_nlp.nlp_date`` / ``nlp_datetime`` as "the date (and time) of the note processing": when
+the NLP pipeline ran, not when the note was written. The clinical date lives on ``note.note_date`` /
+``note.note_datetime`` ("the date the note was recorded"), reached through ``note_nlp.note_id = note.note_id``.
+Filtering NLP findings to a time window with nlp_date selects them by processing batch, so re-running the
+pipeline changes the result.
 
-The Problem:
-    The note_nlp.nlp_date column stores when the NLP processing was performed,
-    NOT when the clinical event occurred. This is a critical semantic distinction:
+Fires on a time window over nlp_date / nlp_datetime in WHERE, JOIN ... ON or HAVING: a range comparison
+(``<``, ``<=``, ``>``, ``>=``, BETWEEN) on it, equality on it, or equality on a truncated value
+(``EXTRACT(YEAR FROM nlp_date) = 2023``), through casts, arithmetic, CTEs and derived tables. Not flagged:
+    * a SELECT that also filters ``note.note_date`` / ``note_datetime`` (the clinical window is applied; an extra
+      nlp_date filter picks a processing run on purpose);
+    * equality on the date in a SELECT that also restricts nlp_system (``nlp_system = 'x' AND nlp_date = DATE
+      '2024-03-01'`` picks one processing run), and aggregates over nlp_date (``HAVING MAX(nlp_date) > ...``);
+    * a comparison whose other side reads nlp_date / note_date or is a subquery: the latest run
+      (``nlp_date = (SELECT MAX(nlp_date) ...)``), a processing-lag audit (``nlp_date >= n.note_date``) or an
+      incremental-load watermark.
 
-    - nlp_date: Processing timestamp (e.g., when cTAKES ran on the note)
-    - note.note_date: Actual clinical date of the note/event
+Violation:
+    SELECT note_nlp_id FROM note_nlp
+    WHERE note_nlp_concept_id = 201826 AND nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
 
-    Using nlp_date for temporal filtering produces incorrect results because:
-    1. NLP processing often happens in batches, long after the clinical event
-    2. Re-running NLP changes nlp_date but not the clinical date
-    3. The same note processed twice would have different nlp_date values
-    4. Cohorts defined by nlp_date are non-reproducible across NLP runs
-
-Common mistakes:
-    1. WHERE nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
-    2. WHERE nlp_date > '2023-01-01'
-    3. Using nlp_date for cohort entry date ranges
-    4. Temporal filtering without joining to note.note_date
-
-Violation pattern:
-    SELECT *
-    FROM note_nlp
-    WHERE note_nlp_concept_id = 201826
-      AND nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
-    -- WRONG: Finds concepts extracted during 2023, not from notes written in 2023!
-
-Correct pattern:
-    SELECT nn.*
-    FROM note_nlp nn
-    JOIN note n ON nn.note_id = n.note_id
-    WHERE nn.note_nlp_concept_id = 201826
-      AND n.note_date BETWEEN '2023-01-01' AND '2023-12-31'
-    -- Correct: Finds concepts from notes written in 2023
+Correct:
+    SELECT nn.note_nlp_id FROM note_nlp nn JOIN note n ON nn.note_id = n.note_id
+    WHERE nn.note_nlp_concept_id = 201826 AND n.note_date BETWEEN '2023-01-01' AND '2023-12-31'
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.references import cdm_table
 from fastssv.core.helpers import (
-    extract_aliases,
     normalize_name,
     parse_sql,
-    resolve_table_col,
+    column_origins,
 )
 from fastssv.core.registry import register
 
 
-# --- Constants -------------------------------------------------------------
-
 NOTE_NLP = "note_nlp"
 NOTE = "note"
-NLP_DATE = "nlp_date"
-NOTE_DATE = "note_date"
+NLP_DATE_COLS = {"nlp_date", "nlp_datetime"}
+NOTE_DATE_COLS = {"note_date", "note_datetime"}
+_RANGES = (exp.GT, exp.GTE, exp.LT, exp.LTE)
+_COMPARISONS = (*_RANGES, exp.EQ, exp.Between)
+# A date reduced to a period (year, month, ...): equality on it is a time window.
+_TRUNCATIONS = (exp.Extract, exp.Year, exp.Month, exp.DateTrunc, exp.TimestampTrunc)
 
 
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _normalize_table(name: Optional[str]) -> Optional[str]:
-    return _norm(name.split(".")[-1]) if name else None
-
-
-def _is_note_nlp(table: Optional[str]) -> bool:
-    return _normalize_table(table) == NOTE_NLP
-
-
-def _is_note(table: Optional[str]) -> bool:
-    return _normalize_table(table) == NOTE
-
-
-def _is_nlp_date(col: Optional[str]) -> bool:
-    return _norm(col) == NLP_DATE
-
-
-def _is_note_date(col: Optional[str]) -> bool:
-    return _norm(col) == NOTE_DATE
-
-
-def _has_note_nlp(tree: exp.Expression) -> bool:
-    return any(_normalize_table(t.name) == NOTE_NLP for t in tree.find_all(exp.Table))
-
-
-def _is_nlp_date_ref(
-    col: exp.Column,
-    aliases: Dict[str, str],
-    has_note_nlp: bool,
-) -> Tuple[bool, Optional[str], Optional[str]]:
-    table, column = resolve_table_col(col, aliases)
-
-    if table and _is_note_nlp(table) and _is_nlp_date(column):
-        return True, table, column
-
-    # Only allow unqualified if clearly safe
-    if not table and has_note_nlp and _is_nlp_date(column):
-        return True, NOTE_NLP, column
-
-    return False, None, None
-
-
-def _contains_note_date(node: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Check if expression contains note.note_date."""
+def _reads(node: Optional[exp.Expression], table: str, columns: Set[str]) -> bool:
+    """Whether ``node`` contains, outside any subquery, a column whose lineage is ``table``.<one of columns>."""
+    if node is None:
+        return False
     for col in node.find_all(exp.Column):
-        table, column = resolve_table_col(col, aliases)
-
-        if table and _is_note(table) and _is_note_date(column):
+        if col.find_ancestor(exp.Select) is not node.find_ancestor(exp.Select) and not isinstance(node, exp.Column):
+            continue
+        origins = column_origins(col)
+        if origins and all(t == table and c in columns for t, c in origins):
             return True
-
     return False
 
 
-def _has_valid_note_date_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Detect proper filtering using note.note_date (WHERE or JOIN)."""
+def _reads_any_date(node: Optional[exp.Expression]) -> bool:
+    return node is not None and any(
+        normalize_name(c.name) in NLP_DATE_COLS | NOTE_DATE_COLS for c in node.find_all(exp.Column)
+    )
 
-    comparison_types = (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between, exp.EQ)
 
-    # WHERE
-    for where in tree.find_all(exp.Where):
-        for node in where.find_all(*comparison_types):
-            if _contains_note_date(node, aliases):
+def _filter_clauses(select: exp.Select) -> List[exp.Expression]:
+    clauses = [select.args.get("where"), select.args.get("having")]
+    clauses += [j.args.get("on") for j in select.args.get("joins") or []]
+    return [c for c in clauses if c is not None]
+
+
+def _own(node: exp.Expression, select: exp.Select) -> bool:
+    return node.find_ancestor(exp.Select) is select
+
+
+def _filters_note_date(select: exp.Select) -> bool:
+    for clause in _filter_clauses(select):
+        for cmp in clause.find_all(*_COMPARISONS):
+            if _own(cmp, select) and _reads(cmp, NOTE, NOTE_DATE_COLS):
                 return True
+    return False
 
-    # JOIN ON
-    for join in tree.find_all(exp.Join):
-        on = join.args.get("on")
-        if not on:
-            continue
 
-        for node in on.find_all(*comparison_types):
-            if _contains_note_date(node, aliases):
+def _picks_processing_run(select: exp.Select) -> bool:
+    """The SELECT restricts nlp_system: together with an nlp_date equality it selects one processing run."""
+    for clause in _filter_clauses(select):
+        for cmp in clause.find_all(exp.EQ, exp.In):
+            if _own(cmp, select) and _reads(cmp, NOTE_NLP, {"nlp_system"}):
                 return True
-
     return False
 
 
-def _is_in_where(node: exp.Expression) -> bool:
-    parent = node.parent
-    while parent:
-        if isinstance(parent, exp.Where):
-            return True
-        if isinstance(parent, (exp.Select, exp.Having, exp.Join)):
-            return False
-        parent = parent.parent
-    return False
+def _is_window_side(side: exp.Expression, cmp: exp.Expression, select: exp.Select) -> bool:
+    """``side`` reads nlp_date as a point in time: a range comparison on it, equality on a truncated date, or
+    equality on the date itself unless the SELECT also picks an NLP system (a processing run)."""
+    if side.find(exp.AggFunc) is not None or not _reads(side, NOTE_NLP, NLP_DATE_COLS):
+        return False
+    if isinstance(cmp, (exp.Between, *_RANGES)):
+        return True
+    if not isinstance(cmp, exp.EQ):
+        return False
+    return side.find(*_TRUNCATIONS) is not None or not _picks_processing_run(select)
 
 
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_nlp_date_usage(tree, aliases, has_note_nlp):
-    results = []
-
-    comparison_types = (exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ)
-
-    for node in tree.find_all(*comparison_types):
-        if not _is_in_where(node):
+def _find_nlp_date_filters(tree: exp.Expression) -> List[Tuple[str, str, Optional[str]]]:
+    """(column name, "comparison" | "between", operator class name or None) per time-window filter on nlp_date."""
+    found: List[Tuple[str, str, Optional[str]]] = []
+    for select in tree.find_all(exp.Select):
+        if _filters_note_date(select):
             continue
-
-        for col in node.find_all(exp.Column):
-            is_nlp, table, col_name = _is_nlp_date_ref(col, aliases, has_note_nlp)
-
-            if is_nlp:
-                op = type(node).__name__
-                results.append(("comparison", table, col_name, op))
-
-    return results
-
-
-def _detect_between(tree, aliases, has_note_nlp):
-    results = []
-
-    for node in tree.find_all(exp.Between):
-        if not _is_in_where(node):
-            continue
-
-        for col in node.this.find_all(exp.Column):
-            is_nlp, table, col_name = _is_nlp_date_ref(col, aliases, has_note_nlp)
-
-            if is_nlp:
-                results.append(("between", table, col_name, None))
-
-    return results
-
-
-# --- Rule ------------------------------------------------------------------
+        for clause in _filter_clauses(select):
+            for cmp in clause.find_all(*_COMPARISONS):
+                if not _own(cmp, select):
+                    continue
+                if isinstance(cmp, exp.Between):
+                    operand_pairs = [(cmp.this, [cmp.args.get("low"), cmp.args.get("high")])]
+                else:
+                    operand_pairs = [(cmp.this, [cmp.expression]), (cmp.expression, [cmp.this])]
+                for side, others in operand_pairs:
+                    if not _is_window_side(side, cmp, select):
+                        continue
+                    # Another processing or note date (latest run, processing lag) or a subquery (a watermark kept
+                    # elsewhere) is not a clinical time window.
+                    if any(o is not None and (_reads_any_date(o) or o.find(exp.Select) is not None) for o in others):
+                        continue
+                    name = next(
+                        normalize_name(c.name)
+                        for c in side.find_all(exp.Column)
+                        if normalize_name(c.name) in NLP_DATE_COLS
+                    )
+                    found.append(
+                        (name, "between" if isinstance(cmp, exp.Between) else "comparison", type(cmp).__name__)
+                    )
+    return found
 
 
 @register
 class NoteNlpNlpDateForTemporalFilteringRule(Rule):
-    """Prevent misuse of nlp_date for clinical filtering."""
+    """Flag time-window filters on note_nlp's processing date."""
 
     rule_id = "data_quality.note_nlp_nlp_date_for_temporal_filtering"
     name = "Note NLP nlp_date for Temporal Filtering"
 
     description = (
-        "note_nlp.nlp_date is the NLP processing time, not the clinical event date. "
-        "Use note.note_date for temporal filtering."
+        "note_nlp.nlp_date / nlp_datetime record when the NLP processing ran, not the clinical event date. "
+        "Filter on note.note_date for temporal windows."
     )
 
     severity = Severity.WARNING
 
-    suggested_fix = "REPLACE: `WHERE note_nlp.nlp_date <op> <date>` WITH `WHERE note.note_date <op> <date>` (after JOIN note_nlp ON note_id = note.note_id). nlp_date is processing time, not clinical event time."
+    suggested_fix = (
+        "REPLACE: `WHERE note_nlp.nlp_date <op> <date>` WITH `WHERE note.note_date <op> <date>` "
+        "(after JOIN note ON note_nlp.note_id = note.note_id). nlp_date is processing time, not clinical event time."
+    )
     long_description = (
-        "note_nlp.nlp_date records when the NLP pipeline *processed* the "
-        "source note, which can be months or years after the clinical "
-        "event itself. For temporal cohort logic you need the clinical "
-        "date, not the processing date — that lives on note.note_date. "
-        "Join note_nlp back to note and filter on note_date instead."
+        "note_nlp.nlp_date records when the NLP pipeline processed the source note, which can be months or "
+        "years after the clinical event itself. For temporal cohort logic you need the clinical date, which "
+        "lives on note.note_date. Join note_nlp back to note and filter on note_date instead."
     )
     example_bad = "SELECT note_nlp_id\nFROM note_nlp\nWHERE nlp_date >= DATE '2023-01-01';"
     example_good = (
@@ -226,9 +170,11 @@ class NoteNlpNlpDateForTemporalFilteringRule(Rule):
         "JOIN note n ON nnlp.note_id = n.note_id\n"
         "WHERE n.note_date >= DATE '2023-01-01';"
     )
+    references = (cdm_table("note_nlp"), cdm_table("note"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "note_nlp" not in sql.lower() or "nlp_date" not in sql.lower():
+        lowered = sql.lower()
+        if NOTE_NLP not in lowered or "nlp_date" not in lowered:
             return []
 
         trees, err = parse_sql(sql, dialect)
@@ -237,53 +183,26 @@ class NoteNlpNlpDateForTemporalFilteringRule(Rule):
 
         violations: List[RuleViolation] = []
         seen: Set[str] = set()
-
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            has_note_nlp = _has_note_nlp(tree)
-
-            # Skip if correct pattern exists
-            if _has_valid_note_date_filter(tree, aliases):
-                continue
-
-            findings = []
-            findings += _detect_nlp_date_usage(tree, aliases, has_note_nlp)
-            findings += _detect_between(tree, aliases, has_note_nlp)
-
-            for kind, table, col, op in findings:
-                key = f"{kind}|{table}|{col}|{op}"
+            for name, kind, op in _find_nlp_date_filters(tree):
+                key = f"{kind}|{name}|{op}"
                 if key in seen:
                     continue
                 seen.add(key)
-
-                if kind == "comparison":
-                    message = (
-                        f"{table}.{col} used in temporal comparison ({op}). "
-                        "nlp_date is processing time, not clinical event time."
-                    )
-                else:
-                    message = (
-                        f"{table}.{col} used in BETWEEN for temporal filtering. "
-                        "nlp_date is processing time, not clinical event time."
-                    )
-
+                how = "in BETWEEN" if kind == "between" else f"in a {op} comparison"
                 violations.append(
                     self.create_violation(
-                        message=message,
+                        message=(
+                            f"note_nlp.{name} used {how} to filter by date. {name} is when the NLP processing ran "
+                            "(CDM v5.4), not when the note was written; filter note.note_date instead."
+                        ),
                         severity=self.severity,
                         suggested_fix=self.suggested_fix,
-                        details={
-                            "type": kind,
-                            "table": table,
-                            "column": col,
-                            "operator": op,
-                        },
+                        details={"type": kind, "table": NOTE_NLP, "column": name, "operator": op},
                     )
                 )
-
         return violations
 
 

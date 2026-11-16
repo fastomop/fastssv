@@ -122,14 +122,14 @@ The full step-by-step walkthrough lives in [Plugin system](plugin_architecture.m
 
 ### Category Summary
 
-- `anti_patterns`: 20 rules
-- `concept_standardization`: 18 rules
-- `data_quality`: 22 rules
-- `domain_specific`: 48 rules
-- `joins`: 36 rules
-- `temporal`: 10 rules
+- `anti_patterns`: 11 rules
+- `concept_standardization`: 14 rules
+- `data_quality`: 13 rules
+- `domain_specific`: 19 rules
+- `joins`: 22 rules
+- `temporal`: 6 rules
 
-**Total: 154 rules**
+**Total: 85 rules** (34 ERROR, 51 WARNING)
 
 > The category `schema` also exists as a Python package but contains the
 > single fundamental-correctness rule `data_quality.schema_validation`;
@@ -137,33 +137,33 @@ The full step-by-step walkthrough lives in [Plugin system](plugin_architecture.m
 
 ### Representative Rules
 
-1. **join_path** (`joins.join_path_validation`)
-   - **Severity:** WARNING
-   - Validates table joins against the OMOP CDM v5.4 schema graph
+1. **concept_join** (`joins.concept_join_validation`)
+   - **Severity:** ERROR
+   - Requires a `*_concept_id` column to join to `concept.concept_id`, not to another concept column
 
 2. **standard_concept** (`concept_standardization.standard_concept_enforcement`)
    - **Severity:** WARNING
-   - Ensures STANDARD concept fields enforce `concept.standard_concept = 'S'`
+   - Warns when a `*_source_concept_id` is matched against `concept_ancestor` ids, which hold only standard and classification concepts; strict mode also warns when a standard field's concept row is not checked by `standard_concept = 'S'`
 
 3. **concept_ancestor_rollup_direction** (`concept_standardization.concept_ancestor_rollup_direction`)
-   - **Severity:** ERROR
+   - **Severity:** WARNING
    - Validates the ancestor/descendant direction of `concept_ancestor` rollups
 
 4. **observation_period_anchoring** (`temporal.observation_period_anchoring`)
    - **Severity:** WARNING
-   - Anchors temporal logic to `observation_period`
+   - Warns on absence tests and event-per-person rates over clinical tables in queries that never read `observation_period`
 
 5. **maps_to_direction** (`joins.maps_to_direction`)
    - **Severity:** WARNING
    - Validates `'Maps to'` directionality in `concept_relationship`
 
-6. **unmapped_concept** (`data_quality.unmapped_concept_handling`)
+6. **concept_literal_without_hierarchy** (`concept_standardization.concept_literal_without_hierarchy`)
    - **Severity:** WARNING
-   - Requires explicit handling of `concept_id = 0`
+   - Warns when a clinical `*_concept_id` is filtered on literal ids without `concept_ancestor` expansion, so descendant concepts may be missed
 
 7. **no_string_id** (`anti_patterns.no_string_identification`)
-   - **Severity:** ERROR
-   - Prevents portable logic from depending on source text columns
+   - **Severity:** WARNING
+   - Warns when a `*_source_value` column is filtered on a string although its table has a concept column for the same fact
 
 ## Extension Points
 

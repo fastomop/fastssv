@@ -17,6 +17,7 @@ The Problem:
 Violation pattern:
     SELECT DATEADD(day, quantity, drug_exposure_start_date) AS end_date
     FROM drug_exposure
+    -- or, in PostgreSQL / DuckDB: drug_exposure_start_date + CAST(quantity AS INTEGER)
     -- Assumes 30 tablets = 30 days, which is wrong
 
 Correct pattern:
@@ -34,9 +35,10 @@ from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
     parse_sql,
-    resolve_table_col,
+    resolve_column_source,
     has_table_reference,
 )
+from fastssv.core.references import CDM_DRUG_DOSE, cdm_table
 from fastssv.core.registry import register
 
 
@@ -66,7 +68,7 @@ def _norm(x: Optional[str]) -> Optional[str]:
 def _is_quantity(col: exp.Expression, aliases: Dict[str, str]) -> bool:
     """Check if expression refers to drug_exposure.quantity."""
     if isinstance(col, exp.Column):
-        table, name = resolve_table_col(col, aliases)
+        table, name = resolve_column_source(col, aliases)
         if _norm(name) != QUANTITY:
             return False
 
@@ -102,9 +104,9 @@ def _contains_quantity(node: exp.Expression, aliases: Dict[str, str]) -> bool:
 
 def _is_date_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
     """Heuristic: detect date/datetime columns."""
-    _, name = resolve_table_col(col, aliases)
+    _, name = resolve_column_source(col, aliases)
     name = _norm(name)
-    return name and (name.endswith("_date") or name.endswith("_datetime"))
+    return bool(name) and (name.endswith("_date") or name.endswith("_datetime"))
 
 
 def _contains_date_column(node: exp.Expression, aliases: Dict[str, str]) -> bool:
@@ -208,8 +210,9 @@ class DrugExposureQuantityMisuseRule(Rule):
     description = "Detects use of drug_exposure.quantity as duration in date logic."
     severity = Severity.WARNING
     suggested_fix = "REPLACE: `<start_date> + de.quantity` (or quantity-as-duration arithmetic) WITH `de.drug_exposure_start_date + de.days_supply`, OR use date_diff(de.drug_exposure_end_date, de.drug_exposure_start_date)."
-    example_bad = "SELECT person_id,\n       drug_exposure_start_date + quantity AS end_date\nFROM drug_exposure;"
+    example_bad = "SELECT person_id,\n       drug_exposure_start_date + CAST(quantity AS INTEGER) AS end_date\nFROM drug_exposure;"
     example_good = "SELECT person_id,\n       drug_exposure_start_date + days_supply AS end_date\nFROM drug_exposure;"
+    references = (cdm_table("drug_exposure"), CDM_DRUG_DOSE)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []

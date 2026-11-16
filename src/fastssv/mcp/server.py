@@ -59,6 +59,7 @@ def build_mcp_server(settings: Settings) -> FastMCP:
         sql: str,
         dialect: str = "auto",
         strict: bool = False,
+        include_warnings: bool = False,
     ) -> dict[str, Any]:
         """Run FastSSV's full rule registry against ``sql``.
 
@@ -68,6 +69,14 @@ def build_mcp_server(settings: Settings) -> FastMCP:
                 ``redshift``, ``bigquery``, ``snowflake``, ``databricks``,
                 or ``duckdb``.
             strict: Escalate best-practice warnings to errors.
+            include_warnings: Return warning-severity findings as well.
+                Defaults to ``False``: an LLM acting on the report should
+                see the validator's *assertions* (errors), not its advice —
+                in the feedback study, warnings caused revision churn and
+                correct→wrong edits without improving correctness, while
+                errors-only feedback matched or beat the full report.
+                ``warning_count`` is always reported so callers know
+                warnings exist.
 
         Returns:
             Structured result: aggregate ``is_valid`` / ``error_count`` /
@@ -79,6 +88,11 @@ def build_mcp_server(settings: Settings) -> FastMCP:
         except HTTPException as exc:
             # Surface size/timeout limits as a tool error per MCP semantics.
             raise ValueError(exc.detail) from exc
-        return response.model_dump()
+        payload = response.model_dump()
+        if not include_warnings:
+            payload["warnings"] = []
+            for stmt in payload.get("results", []):
+                stmt["warnings"] = []
+        return payload
 
     return mcp

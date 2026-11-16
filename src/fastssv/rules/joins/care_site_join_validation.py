@@ -1,20 +1,17 @@
 """Care Site Join Path Validation Rule.
 
-OMOP semantic rule OMOP_039:
-Joins from clinical tables to location must go through care_site, not directly.
-The proper join path is: clinical_table → care_site → location.
+In OMOP CDM v5.4 the ``care_site_id`` of PERSON, PROVIDER, VISIT_OCCURRENCE and VISIT_DETAIL is a foreign key to
+CARE_SITE.care_site_id; the facility's address is reached through CARE_SITE.location_id. Equating such a
+``care_site_id`` with LOCATION.location_id compares the keys of two different tables, so the join returns arbitrary
+locations or none.
 
-The Problem:
-    Clinical tables have care_site_id (foreign key to care_site.care_site_id).
-    Direct joins to location.location_id bypass the care_site intermediary and are
-    semantically incorrect (comparing care_site_id with location_id).
-
-    Exception: person.location_id is valid - it represents the person's home address.
+Operands are resolved by lineage (casts, CTEs, derived tables, set operations, IN-subqueries) in every SELECT. Every
+such predicate is reported, even when a correct ... -> care_site -> location chain appears elsewhere in the
+statement. ``person.location_id = location.location_id`` (the person's own address) is a different, valid link.
 
 Violation pattern:
     SELECT * FROM visit_occurrence vo
     JOIN location l ON vo.care_site_id = l.location_id
-    -- Wrong: care_site_id ≠ location_id (different identifiers!)
 
 Correct pattern:
     SELECT * FROM visit_occurrence vo
@@ -22,224 +19,70 @@ Correct pattern:
     JOIN location l ON cs.location_id = l.location_id
 """
 
-from typing import Dict, List, Optional, Set
+from typing import List, Set
 
-from sqlglot import exp
-
+from fastssv.core.deduplication import predicate_key
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import cdm_table
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
-
-CARE_SITE = "care_site"
-LOCATION = "location"
-PERSON = "person"
-
-CARE_SITE_ID = "care_site_id"
-LOCATION_ID = "location_id"
-
-CLINICAL_TABLES = {
-    "visit_occurrence",
-    "visit_detail",
-    "condition_occurrence",
-    "procedure_occurrence",
-    "drug_exposure",
-    "device_exposure",
-    "measurement",
-    "observation",
-    "specimen",
-}
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_clinical(table: Optional[str]) -> bool:
-    return _norm(table) in CLINICAL_TABLES
-
-
-def _is_person(table: Optional[str]) -> bool:
-    return _norm(table) == PERSON
-
-
-def _is_location(table: Optional[str]) -> bool:
-    return _norm(table) == LOCATION
-
-
-def _is_care_site(table: Optional[str]) -> bool:
-    return _norm(table) == CARE_SITE
-
-
-def _is_col(col: Optional[str], name: str) -> bool:
-    return _norm(col) == name
-
-
-# --- Join detection --------------------------------------------------------
-
-
-def _extract_conditions(join: exp.Join):
-    on = join.args.get("on")
-    if not on:
-        return []
-    return list(on.walk())
-
-
-def _resolve(col: exp.Column, aliases: Dict[str, str]):
-    t, c = resolve_table_col(col, aliases)
-    return _norm(t), _norm(c)
-
-
-# --- Correct path detection -----------------------------------------------
-
-
-def _has_valid_path(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """
-    Detect if ANY valid path exists:
-    clinical → care_site → location
-    """
-    found_clinical_to_cs = False
-    found_cs_to_location = False
-
-    for eq in tree.find_all(exp.EQ):
-        if not is_in_where_or_join_clause(eq):
-            continue
-
-        left, right = eq.this, eq.expression
-        if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-            continue
-
-        lt, lc = _resolve(left, aliases)
-        rt, rc = _resolve(right, aliases)
-
-        # clinical → care_site
-        if (_is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and _is_care_site(rt) and _is_col(rc, CARE_SITE_ID)) or (
-            _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and _is_care_site(lt) and _is_col(lc, CARE_SITE_ID)
-        ):
-            found_clinical_to_cs = True
-
-        # care_site → location
-        if (_is_care_site(lt) and _is_col(lc, LOCATION_ID) and _is_location(rt) and _is_col(rc, LOCATION_ID)) or (
-            _is_care_site(rt) and _is_col(rc, LOCATION_ID) and _is_location(lt) and _is_col(lc, LOCATION_ID)
-        ):
-            found_cs_to_location = True
-
-    return found_clinical_to_cs and found_cs_to_location
-
-
-# --- Invalid join detection ------------------------------------------------
-
-
-def _is_invalid_direct_join(node, aliases) -> Optional[str]:
-    """
-    Detect clinical.care_site_id ↔ location.location_id (invalid)
-    """
-    if not isinstance(node, (exp.EQ, exp.GT, exp.GTE, exp.LT, exp.LTE)):
-        return None
-
-    left = node.this
-    right = getattr(node, "expression", None)
-
-    if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-        return None
-
-    lt, lc = _resolve(left, aliases)
-    rt, rc = _resolve(right, aliases)
-
-    # allow person.location_id
-    if (_is_person(lt) and _is_col(lc, LOCATION_ID) and _is_location(rt)) or (
-        _is_person(rt) and _is_col(rc, LOCATION_ID) and _is_location(lt)
-    ):
-        return None
-
-    # invalid direct join
-    if (_is_clinical(lt) and _is_col(lc, CARE_SITE_ID) and _is_location(rt) and _is_col(rc, LOCATION_ID)) or (
-        _is_clinical(rt) and _is_col(rc, CARE_SITE_ID) and _is_location(lt) and _is_col(lc, LOCATION_ID)
-    ):
-        return node.sql()
-
-    return None
-
-
-# --- Core ------------------------------------------------------------------
-
-
-def _find_violations(tree: exp.Expression, aliases: Dict[str, str]) -> List[str]:
-    issues = []
-    seen: Set[str] = set()
-
-    valid_path_exists = _has_valid_path(tree, aliases)
-
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        violation = _is_invalid_direct_join(node, aliases)
-        if not violation:
-            continue
-
-        key = violation
-        if key in seen:
-            continue
-        seen.add(key)
-
-        # Only flag if NO valid path exists
-        if not valid_path_exists:
-            issues.append(
-                f"Invalid direct join to location detected: {violation}. "
-                f"Clinical tables must join via care_site "
-                f"(clinical → care_site → location)."
-            )
-
-    return issues
-
-
-# --- Rule ------------------------------------------------------------------
+from ._join_scope import hoist_joins, key_mismatches
+from .care_site_id_join_validation import care_site_to_location
 
 
 @register
 class CareSiteJoinValidationRule(Rule):
-    """Robust validation of care_site join path."""
+    """A care_site_id must not be joined to location.location_id."""
 
     rule_id = "joins.care_site_join_validation"
     name = "Care Site Join Path Validation"
-    description = "Ensures clinical tables join to location via care_site."
-    severity = Severity.WARNING
-    suggested_fix = "ADD: the full clinical → care_site → location chain: `JOIN care_site cs ON <clinical>.care_site_id = cs.care_site_id JOIN location l ON cs.location_id = l.location_id`. Don't skip care_site to join clinical directly to location."
+    description = (
+        "care_site_id (on person, provider, visit_occurrence or visit_detail) must not be joined directly to "
+        "location.location_id; the facility address is reached through care_site (... -> care_site -> location)."
+    )
+    severity = Severity.ERROR
+    suggested_fix = (
+        "REPLACE: the direct join WITH the chain `JOIN care_site cs ON <table>.care_site_id = cs.care_site_id "
+        "JOIN location l ON cs.location_id = l.location_id`."
+    )
+    example_bad = "SELECT * FROM visit_occurrence vo\nJOIN location l ON vo.care_site_id = l.location_id;"
+    example_good = (
+        "SELECT * FROM visit_occurrence vo\n"
+        "JOIN care_site cs ON vo.care_site_id = cs.care_site_id\n"
+        "JOIN location l ON cs.location_id = l.location_id;"
+    )
+    references = (cdm_table("visit_occurrence"), cdm_table("care_site"), cdm_table("location"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if "location" not in sql.lower():
+            return []
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
+        violations: List[RuleViolation] = []
+        seen: Set[str] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, LOCATION):
-                continue
-
-            aliases = extract_aliases(tree)
-
-            issues = _find_violations(tree, aliases)
-
-            for msg in issues:
-                violations.append(self.create_violation(message=msg))
-
+            tree = hoist_joins(tree)
+            for eq, a, b in key_mismatches(tree):
+                if not care_site_to_location(a, b):
+                    continue
+                bad = eq.sql()
+                if bad in seen:
+                    continue
+                seen.add(bad)
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"Invalid direct join to location: {bad}. care_site_id is a key of care_site, not of "
+                            f"location; join through care_site (care_site_id -> care_site.location_id -> location)."
+                        ),
+                        details={"predicate": predicate_key(eq.node)},
+                    )
+                )
         return violations
 
 

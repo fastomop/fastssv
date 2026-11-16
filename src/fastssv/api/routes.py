@@ -12,7 +12,9 @@ from fastssv.api._validation import run_validation
 from fastssv.api.config import Settings
 from fastssv.api.models import (
     HealthResponse,
+    RuleExampleInfo,
     RuleInfo,
+    RuleReference,
     RulesResponse,
     ValidationRequest,
     ValidationResponse,
@@ -41,6 +43,8 @@ async def validate(req: ValidationRequest, request: Request) -> ValidationRespon
         req.strict,
         settings,
         client=get_remote_address(request),
+        request_id=getattr(request.state, "request_id", None),
+        limiter=getattr(request.app.state, "validation_limiter", None),
     )
 
 
@@ -58,6 +62,13 @@ async def list_rules_endpoint() -> RulesResponse:
             description=r.description,
             severity=r.severity.value if hasattr(r.severity, "value") else str(r.severity),
             category=_category_from_rule_id(r.rule_id),
+            example_bad=r.example_bad,
+            example_good=r.example_good,
+            extra_examples=[
+                RuleExampleInfo(sql=e.sql, severity=e.severity.value, note=e.note, strict=e.strict)
+                for e in r.extra_examples
+            ],
+            references=[RuleReference(title=ref.title, url=ref.url) for ref in r.references],
         )
         for r in rules
     ]

@@ -104,8 +104,6 @@ ignore = [
 	"E741",  # ambiguous variable name 'l', 'I' — existing style
 	"E402",  # module-level import not at top — intentional in __init__.py
 	         # and category modules to avoid circular imports
-	"F841",  # unused local variable — some rules build WIP regex/match
-	         # variables that are not yet wired up; kept for future work
 ]
 
 [tool.ruff.lint.per-file-ignores]

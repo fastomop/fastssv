@@ -1,259 +1,96 @@
 """Fact Relationship Requires Relationship Concept Filter Rule.
 
-OMOP semantic rules OMOP_250, OMOP_507:
-Fact relationship queries should filter by relationship_concept_id to ensure semantic
-clarity and optimal query performance. Fact relationship records must specify the
-relationship_concept_id describing the relationship between two facts.
+OMOP semantic rules OMOP_250, OMOP_507.
 
-The Problem:
-    The fact_relationship table links facts across different domain tables using
-    relationship types defined by relationship_concept_id. Querying fact_relationship
-    without filtering by relationship_concept_id can lead to:
-    - Poor query performance (scanning all relationship types)
-    - Semantic ambiguity (unclear query intent)
-    - Logical errors (mixing incompatible relationship types)
+CDM v5.4 ``fact_relationship`` records every kind of link between two facts in the same five columns:
+person-to-person, care-site hierarchy, drug indication, measurement parent/child, and so on. Each link is stored
+twice, once per direction, and ``relationship_concept_id`` says which kind and which direction a row is. A query
+that reads ``fact_id_1`` / ``fact_id_2`` without restricting that column, and without returning it, mixes all
+relationship types and both directions. Whether that is wrong depends on the data and the question, so the finding
+is a WARNING: the CDM specification defines the column but does not require a filter on it.
 
-Common relationship types include:
-    - "Has temporal context" (concept_id 44818790)
-    - "Preceded by" (concept_id 44818783)
-    - "Followed by" (concept_id 44818784)
-    - "Causally related to" (concept_id 44818888)
+Flagged, per ``fact_relationship`` instance in a SELECT:
+    * ``relationship_concept_id`` is neither restricted nor shown.
 
-Violation patterns:
-    -- WRONG: No relationship_concept_id filter (OMOP_507)
-    SELECT * FROM fact_relationship
-    WHERE fact_id_1 = 100;
+It counts as restricted by any non-negated WHERE / ON / HAVING predicate on it (``=``, ``IN``, ``BETWEEN``, a join
+to a concept-set table), by a filter on a ``concept`` row joined to it, or by a restriction downstream on a
+projected copy. ``<>``, ``NOT IN`` and ``IS [NOT] NULL`` let every type through and do not count. It counts as
+shown when the SELECT projects or groups by it, or projects a column of the joined ``concept`` row. ``SELECT *``
+does not count. Pinning ``domain_concept_id_1`` / ``domain_concept_id_2`` does not count either: two domains can be
+linked by several relationship types.
 
-    -- WRONG: Filtering on other columns but not relationship_concept_id
-    SELECT *
-    FROM fact_relationship
-    WHERE domain_concept_id_1 = 19;
+Not flagged: a read that analyses nothing (fact_relationship as the only source, no WHERE / GROUP BY, and a
+``LIMIT`` peek or a whole-table ``COUNT(*)``), constant-false schema probes (``WHERE 0 = 1``), and DML / DDL
+targets. Any other aggregate (links per fact, a count of one fact's links, an EXISTS probe) mixes the types like a
+row-level read and is flagged.
 
-Correct patterns:
-    -- CORRECT: Filter by specific relationship type (OMOP_507)
-    SELECT * FROM fact_relationship
-    WHERE relationship_concept_id = 44818790  -- "Has temporal context"
-      AND fact_id_1 = 100;
-
-    -- CORRECT: Filter by multiple relationship types
-    SELECT *
-    FROM fact_relationship
-    WHERE relationship_concept_id IN (44818783, 44818784)
-      AND fact_id_1 = 100;
-
-    -- CORRECT: Using concept table for dynamic filtering
-    SELECT fr.*
+Violation:
+    SELECT fr.fact_id_2
     FROM fact_relationship fr
-    JOIN concept c ON fr.relationship_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Relationship'
-      AND c.standard_concept = 'S';
+    WHERE fr.domain_concept_id_1 = 21 AND fr.fact_id_1 = 100
+
+Correct:
+    ... AND fr.relationship_concept_id = 581436   -- Parent to Child Measurement
 """
 
-from typing import Dict, List, Optional, Set
-
-from sqlglot import exp
+from typing import List
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.references import cdm_table
+from fastssv.core.helpers import parse_sql
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from ._type_column import instances_using, unused_instances
 
 FACT_RELATIONSHIP = "fact_relationship"
-CONCEPT = "concept"
-
 RELATIONSHIP_CONCEPT_ID = "relationship_concept_id"
-CONCEPT_ID = "concept_id"
-
-NORM_FACT_RELATIONSHIP = normalize_name(FACT_RELATIONSHIP)
-NORM_RELATIONSHIP_CONCEPT_ID = normalize_name(RELATIONSHIP_CONCEPT_ID)
-NORM_CONCEPT = normalize_name(CONCEPT)
-NORM_CONCEPT_ID = normalize_name(CONCEPT_ID)
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_relationship_concept_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-) -> bool:
-    table, col_name = resolve_table_col(col, aliases)
-
-    if _norm(col_name) != NORM_RELATIONSHIP_CONCEPT_ID:
-        return False
-
-    if table:
-        return _norm(table) == NORM_FACT_RELATIONSHIP
-
-    # Unqualified → only valid if fact_relationship exists
-    return any(_norm(t) == NORM_FACT_RELATIONSHIP for t in aliases.values())
-
-
-def _has_direct_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Detect direct filters on relationship_concept_id."""
-
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        if isinstance(node, (exp.EQ, exp.NEQ)):
-            for side in [node.this, node.expression]:
-                if isinstance(side, exp.Column) and _is_relationship_concept_column(side, aliases):
-                    return True
-
-        if isinstance(node, exp.In):
-            if isinstance(node.this, exp.Column) and _is_relationship_concept_column(node.this, aliases):
-                return True
-
-        if isinstance(node, exp.Is):
-            if isinstance(node.this, exp.Column) and _is_relationship_concept_column(node.this, aliases):
-                return True
-
-    return False
-
-
-def _is_valid_concept_filter(
-    node: exp.Expression,
-    aliases: Dict[str, str],
-    concept_aliases: Set[str],
-) -> bool:
-    """Ensure concept filtering is meaningful (not self-comparison)."""
-
-    if not isinstance(node, (exp.EQ, exp.In)):
-        return False
-
-    columns = list(node.find_all(exp.Column))
-
-    for col in columns:
-        table, _ = resolve_table_col(col, aliases)
-
-        if table and _norm(table) in concept_aliases:
-            # Reject self comparisons like c.concept_id = c.concept_id
-            col_tables = {resolve_table_col(c, aliases)[0] for c in columns if isinstance(c, exp.Column)}
-
-            if len(col_tables) == 1:
-                continue
-
-            return True
-
-    return False
-
-
-def _has_concept_filtered_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Check for valid concept join + filter."""
-
-    has_join = False
-    concept_aliases: Set[str] = set()
-
-    for join in tree.find_all(exp.Join):
-        if not isinstance(join.this, exp.Table):
-            continue
-
-        if _norm(join.this.name) != NORM_CONCEPT:
-            continue
-
-        concept_alias = join.this.alias_or_name
-        if concept_alias:
-            concept_aliases.add(_norm(concept_alias))
-
-        on_clause = join.args.get("on")
-        if not on_clause:
-            continue
-
-        for eq in on_clause.find_all(exp.EQ):
-            cols = [c for c in (eq.this, eq.expression) if isinstance(c, exp.Column)]
-            if len(cols) != 2:
-                continue
-
-            _, left_col = resolve_table_col(cols[0], aliases)
-            _, right_col = resolve_table_col(cols[1], aliases)
-
-            if (_is_relationship_concept_column(cols[0], aliases) and _norm(right_col) == NORM_CONCEPT_ID) or (
-                _is_relationship_concept_column(cols[1], aliases) and _norm(left_col) == NORM_CONCEPT_ID
-            ):
-                has_join = True
-
-    if not has_join:
-        return False
-
-    # Require meaningful filter on concept table
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        if _is_valid_concept_filter(node, aliases, concept_aliases):
-            return True
-
-    return False
-
-
-def _has_subquery_filter(tree: exp.Expression) -> bool:
-    """Check subqueries but only if relevant to fact_relationship."""
-    for sub in tree.find_all(exp.Subquery):
-        inner = sub.this
-        if isinstance(inner, exp.Expression):
-            if not has_table_reference(inner, FACT_RELATIONSHIP):
-                continue
-
-            aliases = extract_aliases(inner)
-
-            if (
-                _has_direct_filter(inner, aliases)
-                or _has_concept_filtered_join(inner, aliases)
-                or _has_subquery_filter(inner)
-            ):
-                return True
-
-    return False
-
-
-def _has_relationship_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    return _has_direct_filter(tree, aliases) or _has_concept_filtered_join(tree, aliases) or _has_subquery_filter(tree)
-
-
-# --- Rule ------------------------------------------------------------------
 
 
 @register
 class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
+    """Flag fact_relationship reads that mix every relationship type."""
+
     rule_id = "data_quality.fact_relationship_requires_relationship_concept_filter"
     name = "Fact Relationship Requires Relationship Concept Filter"
 
     description = (
-        "Fact relationship queries should filter by relationship_concept_id to ensure "
-        "semantic clarity and optimal query performance."
+        "A fact_relationship read that neither restricts nor returns relationship_concept_id mixes every "
+        "relationship type, and both directions of each, in one result."
     )
 
-    severity = Severity.ERROR  # Upgraded for production
+    severity = Severity.WARNING
 
-    suggested_fix = "ADD: `WHERE relationship_concept_id = <id>` (or IN(...)) when querying fact_relationship. Without it the join fans out across every relationship type."
+    suggested_fix = (
+        "ADD: `relationship_concept_id = <id>` (or IN (...)) to select one relationship type, or add "
+        "relationship_concept_id to the SELECT list / GROUP BY if every type is wanted."
+    )
     long_description = (
-        "fact_relationship encodes every kind of linkage between OMOP "
-        "facts — visits to procedures, measurements to their ordering "
-        "visits, parent-child condition episodes, etc. — each identified "
-        "by relationship_concept_id. Querying fact_relationship without "
-        "that filter combines unrelated link types into one result set. "
-        "Always restrict to the specific relationship you need."
+        "fact_relationship stores every kind of link between two facts (person to person, care-site hierarchy, "
+        "drug indication, measurement parent and child) and stores each link once per direction; "
+        "relationship_concept_id says which kind and direction a row is. Reading fact_id_1 / fact_id_2 without "
+        "restricting or returning that column puts all of them in one result, so 'the facts related to this "
+        "measurement' returns its parent, its children and anything else linked to it. The CDM specification "
+        "does not require the filter, so this is a warning: restrict relationship_concept_id, or project or "
+        "group by it when the mix is intended. A LIMIT peek and a whole-table COUNT(*) are not flagged; a count of "
+        "the links of one fact is."
     )
-    example_bad = "SELECT fact_id_1, fact_id_2\nFROM fact_relationship;"
-    example_good = "SELECT fact_id_1, fact_id_2\nFROM fact_relationship\nWHERE relationship_concept_id = 44818859;"
+    example_bad = (
+        "SELECT fr.fact_id_2 AS child_measurement_id\n"
+        "FROM fact_relationship fr\n"
+        "WHERE fr.domain_concept_id_1 = 21\n"
+        "  AND fr.fact_id_1 = 100;"
+    )
+    example_good = (
+        "SELECT fr.fact_id_2 AS child_measurement_id\n"
+        "FROM fact_relationship fr\n"
+        "WHERE fr.domain_concept_id_1 = 21\n"
+        "  AND fr.fact_id_1 = 100\n"
+        "  AND fr.relationship_concept_id = 581436;"
+    )
+    references = (cdm_table("fact_relationship"),)
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        sql_lower = sql.lower()
-        if "fact_relationship" not in sql_lower:
+        if FACT_RELATIONSHIP not in sql.lower():
             return []
 
         trees, err = parse_sql(sql, dialect)
@@ -261,30 +98,21 @@ class FactRelationshipRequiresRelationshipConceptFilterRule(Rule):
             return []
 
         violations: List[RuleViolation] = []
-        seen: Set[str] = set()
-
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-
-            if not has_table_reference(tree, FACT_RELATIONSHIP):
-                continue
-
-            has_filter = _has_relationship_filter(tree, aliases)
-
-            if not has_filter:
-                key = "fact_relationship_no_filter"
-                if key not in seen:
-                    seen.add(key)
-                    violations.append(
-                        self.create_violation(
-                            message=("fact_relationship table used without filtering by relationship_concept_id."),
-                            suggested_fix=self.suggested_fix,
-                            details={"table": "fact_relationship"},
-                        )
+            typed = instances_using(tree, FACT_RELATIONSHIP, RELATIONSHIP_CONCEPT_ID)
+            for _, alias in unused_instances(tree, FACT_RELATIONSHIP, typed, {RELATIONSHIP_CONCEPT_ID}):
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"fact_relationship '{alias}' is read without restricting relationship_concept_id, so "
+                            "rows of every relationship type, in both directions, are mixed. Restrict "
+                            "relationship_concept_id, or select it if every type is wanted."
+                        ),
+                        details={"table": FACT_RELATIONSHIP, "alias": alias},
                     )
+                )
 
         return violations
 

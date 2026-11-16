@@ -3,8 +3,52 @@
 Prevents duplicate reporting of the same underlying issue by multiple rules.
 """
 
-from typing import List
-from fastssv.core.base import RuleViolation
+from typing import List, Set
+
+from sqlglot import exp
+
+from fastssv.core.base import RuleViolation, Severity
+
+
+def _normalized_sql(node: exp.Expression) -> str:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return " ".join(node.sql().lower().split())
+
+
+def predicate_key(node: exp.Expression) -> str:
+    """Normalised SQL of a predicate, so findings from different rules on the same equality compare equal:
+    operands of ``=`` in sorted order, lower-cased, whitespace collapsed."""
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if isinstance(node, exp.EQ):
+        left, right = sorted((_normalized_sql(node.this), _normalized_sql(node.expression)))
+        return f"{left} = {right}"
+    return _normalized_sql(node)
+
+
+def _drop_consequences(violations: List[RuleViolation]) -> List[RuleViolation]:
+    """Remove findings that only restate a defect another rule already reports."""
+    named_by: dict = {}
+    for v in violations:
+        predicate = (v.details or {}).get("predicate")
+        if predicate and v.severity == Severity.ERROR:
+            named_by.setdefault(predicate, set()).add(v.rule_id)
+
+    kept = []
+    for v in violations:
+        details = v.details or {}
+        # A WARNING that lists the equalities it judged (e.g. "these sources are not tied to one person") is a
+        # consequence when every one of them is a wrong predicate that an ERROR of another rule already names.
+        predicates: Set[str] = set(details.get("predicates") or ())
+        if (
+            v.severity == Severity.WARNING
+            and predicates
+            and all(named_by.get(p, set()) - {v.rule_id} for p in predicates)
+        ):
+            continue
+        kept.append(v)
+    return kept
 
 
 def _normalize_issue(violation: RuleViolation) -> str:
@@ -63,10 +107,13 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     2. Keep most specific rule (schema.comprehensive_validation > data_quality.schema_validation)
     3. Keep first occurrence if same severity/specificity
 
+    Before grouping, consequence findings are dropped (see ``_drop_consequences``).
+
     Returns deduplicated list of violations.
     """
     if not violations:
         return []
+    violations = _drop_consequences(violations)
 
     # Identity-keyed index map: lets us tiebreak/preserve original order
     # in O(1) without `list.index`, and avoids value-equality collisions
@@ -113,4 +160,4 @@ def deduplicate_violations(violations: List[RuleViolation]) -> List[RuleViolatio
     return sorted(deduplicated, key=lambda v: original_index[id(v)])
 
 
-__all__ = ["deduplicate_violations"]
+__all__ = ["deduplicate_violations", "predicate_key"]

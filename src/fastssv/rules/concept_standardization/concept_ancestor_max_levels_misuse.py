@@ -1,194 +1,118 @@
-"""Concept Ancestor Max Levels Misuse Validation Rule.
+"""Concept Ancestor Max Levels Misuse Rule.
 
-OMOP semantic rule VOCAB_008:
-concept_ancestor.max_levels_of_separation represents the longest path in the hierarchy,
-not a unique distance metric. Filtering max_levels_of_separation = 1 does NOT reliably
-return only direct children.
+concept_ancestor has one row per (ancestor, descendant) pair. ``min_levels_of_separation`` is the shortest path between
+them and ``max_levels_of_separation`` the longest (Book of OHDSI 5.4: "defining the shortest or longest possible
+connection"). A concept with several parents can be a direct child of an ancestor (min = 1) and also reach it through a
+longer path (max > 1).
 
-The Problem:
-    The concept_ancestor table tracks hierarchical relationships with two distance columns:
-    - min_levels_of_separation: The shortest path from ancestor to descendant
-    - max_levels_of_separation: The LONGEST path from ancestor to descendant
+Restricting ``max_levels_of_separation`` to exactly 1 therefore keeps only the children that have *no* longer path,
+and drops direct children that also descend through another branch. In Athena v5.0 27-AUG-25, ancestor 201820
+'Diabetes mellitus' has 24 descendants with min_levels_of_separation = 1 and 21 with max_levels_of_separation = 1.
+"Direct children" is normally written ``min_levels_of_separation = 1``.
 
-    Due to multiple inheritance (a concept can have multiple parents), there can be
-    multiple paths between an ancestor and descendant. The max_levels_of_separation
-    represents the longest of these paths.
-
-    Common misconception:
-    - Users think max_levels_of_separation = 1 returns "direct children"
-    - This is WRONG because a concept with multiple paths might have:
-      * min_levels_of_separation = 1 (direct child via one path)
-      * max_levels_of_separation = 3 (via a longer alternate path)
-
-    Using max_levels_of_separation = 1 will MISS concepts that have direct
-    relationships but also have longer alternate paths.
-
-Correct usage:
-    - Use min_levels_of_separation = 1 for direct parent-child relationships
-    - Use max_levels_of_separation <= N to limit maximum depth to explore
-    - Use max_levels_of_separation >= N to find distant relationships only
-
-Violation pattern:
-    SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND max_levels_of_separation = 1  -- WRONG: misses multi-path children
-
-Correct patterns:
-    -- Find direct children (immediate descendants)
-    SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND min_levels_of_separation = 1
-
-    -- Limit hierarchy depth to at most 2 levels
-    SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND max_levels_of_separation <= 2
+The rule is a WARNING: "children with no longer path" is a legitimate question, and the query runs. It recognises the
+restriction however it is written (``= 1``, ``IN (1)``, ``BETWEEN 1 AND 1``, ``> 0 AND < 2``, casts, quoted
+literals), in a filter or a CASE label, and stays silent when the same concept_ancestor row is also restricted on
+min_levels_of_separation (``min = 1 AND max = 1`` asks deliberately for single-path children). Other values of
+max_levels_of_separation are not reported: equality on a longest-path length is well defined.
 """
 
-from typing import Dict, List, Optional, Set
+import math
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-    is_in_where_or_join_clause,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
 from fastssv.core.patch import locate, replace as patch_replace
+from fastssv.core.references import BOOK_VOCABULARIES, cdm_table, section
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from ._cs_scope import ColumnFilter, InstanceKey, instance_filters
 
 CONCEPT_ANCESTOR = "concept_ancestor"
 MAX_LEVELS = "max_levels_of_separation"
 MIN_LEVELS = "min_levels_of_separation"
 
-# Flag suspicious usage up to this level
-SUSPICIOUS_MAX_LEVEL = 3
+
+def _num(text: str) -> Optional[float]:
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
 
 
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_max_levels_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
-    """Check if column is max_levels_of_separation."""
-    table, col_name = resolve_table_col(col, aliases)
-    # max_levels_of_separation is unique to concept_ancestor, so table check is optional
-    if _norm(table) and _norm(table) != CONCEPT_ANCESTOR:
-        return False
-    return _norm(col_name) == MAX_LEVELS
-
-
-def _is_min_levels_present(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Check if query uses min_levels_of_separation anywhere."""
-    for col in tree.find_all(exp.Column):
-        table, col_name = resolve_table_col(col, aliases)
-        # min_levels_of_separation is unique to concept_ancestor
-        if _norm(table) and _norm(table) != CONCEPT_ANCESTOR:
-            continue
-        if _norm(col_name) == MIN_LEVELS:
-            return True
-    return False
-
-
-def _extract_literal_int(node: exp.Expression) -> Optional[int]:
-    """Extract integer literal value from expression."""
-    if isinstance(node, exp.Literal) and node.is_int:
-        try:
-            return int(node.this)
-        except (ValueError, TypeError):
+def _integer_range(filters: List[ColumnFilter]) -> Optional[Tuple[float, float]]:
+    """The integer interval the predicates of one AND-chain allow, or None when one of them is not a bound."""
+    low, high = -math.inf, math.inf
+    allowed: Optional[Set[float]] = None
+    for flt in filters:
+        values = [_num(v) for v in flt.values]
+        if not flt.complete or any(v is None for v in values):
             return None
-    return None
+        if flt.op == "eq":
+            allowed = {values[0]} if allowed is None else allowed & {values[0]}
+        elif flt.op == "in":
+            allowed = set(values) if allowed is None else allowed & set(values)
+        elif flt.op == "between":
+            low, high = max(low, math.ceil(values[0])), min(high, math.floor(values[1]))
+        elif flt.op == "gt":
+            low = max(low, math.floor(values[0]) + 1)
+        elif flt.op == "gte":
+            low = max(low, math.ceil(values[0]))
+        elif flt.op == "lt":
+            high = min(high, math.ceil(values[0]) - 1)
+        elif flt.op == "lte":
+            high = min(high, math.floor(values[0]))
+        else:
+            return None
+    if allowed is not None:
+        allowed = {v for v in allowed if low <= v <= high}
+        if len(allowed) != 1:
+            return None
+        only = next(iter(allowed))
+        return only, only
+    return low, high
 
 
-# --- Detection -------------------------------------------------------------
-
-
-def _detect_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Dict[str, object]]:
-    """Detect misuse patterns of max_levels_of_separation."""
-    violations: List[Dict[str, object]] = []
-    seen: Set[str] = set()
-
-    has_min_levels = _is_min_levels_present(tree, aliases)
-
-    # --- Equality / Inequality (problematic patterns) ---
-    for node in list(tree.find_all(exp.EQ)) + list(tree.find_all(exp.NEQ)):
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        pairs = [(node.this, node.expression), (node.expression, node.this)]
-
-        for col_node, val_node in pairs:
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            if not _is_max_levels_column(col_node, aliases):
-                continue
-
-            value = _extract_literal_int(val_node)
-            if value is None or value > SUSPICIOUS_MAX_LEVEL:
-                continue
-
-            key = f"{type(node).__name__}_{value}_{node.sql()}"
-            if key in seen:
-                continue
-            seen.add(key)
-
-            violations.append(
-                {
-                    "operator": type(node).__name__,
-                    "value": value,
-                    "context": node.sql(),
-                    "has_min_levels": has_min_levels,
-                }
-            )
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+def _equality_patch(sql: str, flt: ColumnFilter) -> Optional[dict]:
+    """REPLACE the column in a plain ``max_levels_of_separation = 1`` with min_levels_of_separation."""
+    if flt.op != "eq" or not isinstance(flt.node, exp.EQ):
+        return None
+    span = locate(sql, flt.node.sql())
+    if span is None:
+        return None
+    swapped = flt.node.copy()
+    for col in swapped.find_all(exp.Column):
+        if col.name.lower() == MAX_LEVELS:
+            col.set("this", exp.to_identifier(MIN_LEVELS))
+    return patch_replace(span, swapped.sql())
 
 
 @register
 class ConceptAncestorMaxLevelsMisuseRule(Rule):
-    """Detect misuse of max_levels_of_separation for hierarchy traversal."""
+    """max_levels_of_separation restricted to exactly 1, which drops direct children that also have a longer path."""
 
     rule_id = "concept_standardization.concept_ancestor_max_levels_misuse"
     name = "Concept Ancestor Max Levels Misuse"
-
     description = (
-        "Detects incorrect usage of max_levels_of_separation for identifying "
-        "direct relationships. Due to multiple hierarchy paths, exact equality "
-        "on max_levels_of_separation is unreliable."
+        "max_levels_of_separation is restricted to exactly 1. It is the longest path, so direct children that are "
+        "also reachable through a longer path are dropped; min_levels_of_separation = 1 is the usual way to ask for "
+        "direct children (WARNING: the narrower set may be intended)."
     )
-
-    severity = Severity.ERROR
-
-    suggested_fix = "REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` for direct parent/child only, OR `max_levels_of_separation <= N` to limit hierarchy depth."
+    severity = Severity.WARNING
+    suggested_fix = (
+        "REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` for direct children, unless you "
+        "want only children with no longer path."
+    )
     long_description = (
-        "A concept pair can appear multiple times in concept_ancestor via "
-        "different hierarchy paths, each with its own "
-        "max_levels_of_separation. Exact equality on that column only "
-        "matches pairs whose longest path is exactly that value and misses "
-        "pairs where a shorter path also exists. Use "
-        "max_levels_of_separation <= N for depth limits, or "
-        "min_levels_of_separation = 1 when you specifically want direct "
-        "parent-child relationships."
+        "concept_ancestor has one row per ancestor/descendant pair, with the shortest path in "
+        "min_levels_of_separation and the longest in max_levels_of_separation. A concept with several parents can be "
+        "a direct child (min = 1) and also descend through a longer branch (max > 1). Restricting "
+        "max_levels_of_separation to 1 keeps only children with no longer path: for 'Diabetes mellitus' (201820) in "
+        "the Athena v5.0 27-AUG-25 release, 21 rows instead of the 24 with min_levels_of_separation = 1. The rule is a "
+        "WARNING because that narrower set can be intended; it is silent when min_levels_of_separation is restricted "
+        "on the same row, and does not report other max_levels_of_separation values."
     )
     example_bad = (
         "SELECT descendant_concept_id\n"
@@ -200,91 +124,68 @@ class ConceptAncestorMaxLevelsMisuseRule(Rule):
         "SELECT descendant_concept_id\n"
         "FROM concept_ancestor\n"
         "WHERE ancestor_concept_id = 201820\n"
-        "  AND max_levels_of_separation <= 1;"
+        "  AND min_levels_of_separation = 1;"
+    )
+    references = (
+        cdm_table("concept_ancestor"),
+        section(BOOK_VOCABULARIES, "conceptAncestor", "Concept ancestor"),
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT descendant_concept_id\n"
+                "FROM concept_ancestor\n"
+                "WHERE ancestor_concept_id = 201820\n"
+                "  AND max_levels_of_separation > 0\n"
+                "  AND max_levels_of_separation < 2;"
+            ),
+            severity=Severity.WARNING,
+            note="The same restriction written as a range",
+        ),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        if "concept_ancestor" not in sql.lower():
+        if MAX_LEVELS not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
         violations: List[RuleViolation] = []
-
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, CONCEPT_ANCESTOR):
+            max_filters = instance_filters(tree, CONCEPT_ANCESTOR, MAX_LEVELS)
+            if not max_filters:
                 continue
-
-            aliases = extract_aliases(tree)
-            detected = _detect_violations(tree, aliases)
-
-            for v in detected:
-                op = v["operator"]
-                value = v["value"]
-                context = v["context"]
-
-                # --- Message logic ---
-                patch = None
-                if op == "EQ":
-                    if value == 1:
-                        message = (
-                            "Using max_levels_of_separation = 1 does not reliably return "
-                            "direct children due to multiple hierarchy paths. "
-                            "Use min_levels_of_separation = 1 instead."
-                        )
-                        fix = "REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` to reliably select direct parent/child rows."
-                        # Mechanical REPLACE: swap `max_levels_of_separation`
-                        # for `min_levels_of_separation` in the offending
-                        # equality predicate.
-                        span = locate(sql, context)
-                        if span is not None:
-                            new_text = context.replace(
-                                "max_levels_of_separation",
-                                "min_levels_of_separation",
-                            )
-                            patch = patch_replace(span, new_text)
-                    else:
-                        message = (
-                            f"Using max_levels_of_separation = {value} may exclude valid descendants "
-                            f"due to multiple hierarchy paths."
-                        )
-                        fix = f"REPLACE: `max_levels_of_separation = {value}` WITH `max_levels_of_separation <= {value}` (range, not equality)."
-                        # Mechanical REPLACE: change `=` to `<=`.
-                        span = locate(sql, context)
-                        if span is not None:
-                            new_text = context.replace("=", "<=", 1)
-                            patch = patch_replace(span, new_text)
-
-                elif op == "NEQ":
-                    message = (
-                        f"Using max_levels_of_separation != {value} is unreliable due to multiple hierarchy paths."
-                    )
-                    fix = f"REPLACE: `max_levels_of_separation != {value}` WITH `min_levels_of_separation = 1` (direct only) or a range filter (`max_levels_of_separation <= <N>` / `>= <N>`)."
-                    # Multi-option fix (range or min_levels) — leave FREEFORM.
-
-                else:
+            min_restricted: Set[InstanceKey] = {
+                key for key, flts in instance_filters(tree, CONCEPT_ANCESTOR, MIN_LEVELS).items() if flts
+            }
+            reported: Set[int] = set()
+            for key, flts in max_filters.items():
+                if key in min_restricted:
                     continue
-
-                violations.append(
-                    self.create_violation(
-                        message=message,
-                        severity=self.severity,
-                        suggested_fix=fix,
-                        suggested_fix_patch=patch,
-                        details={
-                            "operator": op,
-                            "value": value,
-                            "context": v["context"],
-                            "has_min_levels_filter": v["has_min_levels"],
-                        },
+                chains: Dict[int, List[ColumnFilter]] = {}
+                for flt in flts:
+                    chains.setdefault(flt.conjunction, []).append(flt)
+                for chain in chains.values():
+                    if id(chain[0].node) in reported or _integer_range(chain) != (1, 1):
+                        continue
+                    reported.update(id(f.node) for f in chain)
+                    shown = " AND ".join(f.sql for f in chain)
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"`{shown}` keeps only descendants whose longest path to the ancestor is one step. "
+                                "Direct children that are also reachable through a longer path are dropped. Use "
+                                "min_levels_of_separation = 1 for all direct children, unless only single-path "
+                                "children are intended."
+                            ),
+                            severity=Severity.WARNING,
+                            suggested_fix_patch=_equality_patch(sql, chain[0]) if len(chain) == 1 else None,
+                            details={"predicate": shown},
+                        )
                     )
-                )
-
         return violations
 
 

@@ -32,7 +32,7 @@ uv run fastssv serve --prod --workers 4    # tune worker count
 
 Under the hood: dev mode invokes `uvicorn.run(...)` in-process; `--prod` execs
 `gunicorn -k uvicorn.workers.UvicornWorker ...`. Each worker loads the full
-rule registry once at startup (~154 rules, sub-second).
+rule registry once at startup (~85 rules, sub-second).
 
 The same process also exposes an MCP Streamable HTTP endpoint at `/mcp` when the optional `[mcp]` extra is installed (`uv add "fastssv[api,mcp]"`). See [MCP server](mcp.md) for tool surface, auth posture, and client setup.
 
@@ -64,11 +64,14 @@ prefix. Defaults are production-sane.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FASTSSV_API_MAX_SQL_BYTES` | `100000` | Maximum SQL body size. Requests exceeding this return `413`. |
-| `FASTSSV_API_PARSE_TIMEOUT_SECONDS` | `5.0` | Hard ceiling per validation call. Exceeded → `408`. |
-| `FASTSSV_API_RATE_LIMIT` | `60/minute` | `slowapi`-format limit applied per client IP. |
+| `FASTSSV_API_PARSE_TIMEOUT_SECONDS` | `5.0` | Hard ceiling per validation call. Exceeded → `408`. The CPU-bound parse itself cannot be cancelled and finishes on its worker thread — pair with the concurrency bound below. |
+| `FASTSSV_API_MAX_CONCURRENT_VALIDATIONS` | `8` | Per-worker bound on concurrent validation work. When saturated the API fails fast with `503` + `Retry-After` instead of queueing onto pinned threads. |
+| `FASTSSV_API_RATE_LIMIT` | `60/minute` | `slowapi`-format limit applied per client IP. `/v1/health` is exempt so health probes are never throttled. |
+| `FASTSSV_API_RATE_LIMIT_STORAGE_URI` | _(empty)_ | Rate-limit storage backend. Empty = in-memory, which is **per-process** (N workers → N× the limit, reset on restart). Point at a shared backend (e.g. `redis://host:6379`) for a real cross-worker limit. |
 | `FASTSSV_API_CORS_ORIGINS` | `[]` | Comma-separated list of allowed origins. Empty = CORS disabled. |
 | `FASTSSV_API_LOG_LEVEL` | `INFO` | Root logger level (`DEBUG`/`INFO`/`WARNING`/`ERROR`). |
 | `FASTSSV_API_BEHIND_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. The compose file defaults this to `true`; in-code default is `false` for direct execution. |
+| `FASTSSV_API_TRUSTED_PROXY_HOSTS` | `*` | Peers whose `X-Forwarded-*` headers are trusted when `BEHIND_PROXY=true` (comma-separated IPs/CIDRs). Narrow to your proxy's address unless the app is reachable only through the proxy — `*` lets a direct client spoof its IP via `X-Forwarded-For`. |
 | `FASTSSV_API_MCP_ENABLED` | `false` | Mount the MCP Streamable HTTP endpoint at `/mcp` (requires the `[mcp]` extra). Opt-in because the endpoint is unauthenticated at the app layer; gate it at your reverse proxy before enabling. See [MCP server](mcp.md). |
 | `FASTSSV_API_MCP_ALLOWED_ORIGINS` | `[]` | CSV/JSON list of `Origin` values permitted on `/mcp` from a browser. Empty = closed (any present-but-unlisted Origin → 403). |
 | `FASTSSV_API_MCP_AUTH_MODE` | `none` | Reserved for future OAuth 2.1 conformance. Today pinned to `"none"`. |
@@ -83,9 +86,13 @@ In addition to the JSON API, the service ships with a minimal HTMX-based web
 interface for ad-hoc validation:
 
 - `GET /` — paste SQL, pick a dialect, submit; violations render inline via
-  HTMX fragment swap. No JS framework, no build step.
+  HTMX fragment swap. No JS framework, no build step. Each finding carries an
+  "Examples & sources" link to its rule on the `/rules` page.
 - `GET /rules` — browsable list of every registered rule with a client-side
-  filter by id/name/description and category.
+  filter by id/name/description and category. Each entry shows an example that
+  trips the rule, the corrected version, any further variants (other severity,
+  strict mode) and a Sources list, and has the anchor `#rule-<rule_id>`
+  (e.g. `/rules#rule-joins.maps_to_direction`).
 - `GET /static/*` — vendored HTMX (`htmx.min.js`) and `style.css`.
 
 UI form submissions go through `POST /ui/validate`, which returns an HTML
@@ -116,7 +123,7 @@ Validate a single SQL query.
 |-------|------|----------|-------|
 | `sql` | string | yes | Non-empty. Subject to `MAX_SQL_BYTES`. |
 | `dialect` | enum | no | Default `"auto"`. One of: `"auto"`, `"postgres"`, `"tsql"`, `"oracle"`, `"redshift"`, `"bigquery"`, `"snowflake"`, `"databricks"`, `"duckdb"`. |
-| `strict` | boolean | no | Default `false`. When `true`, best-practice warnings escalate to errors. Same semantics as the CLI `--strict` flag. |
+| `strict` | boolean | no | Default `false`. When `true`, runs strict mode: escalates `anti_patterns.concept_code_requires_vocabulary_id` to ERROR and enables the strict-only checks (see [Strict mode](semantic_rules_guide.md#strict-mode)). Same semantics as the CLI `--strict` flag. |
 
 **Response (200):**
 ```json
@@ -172,24 +179,60 @@ return a one-element `results` list.
 
 ### `GET /v1/rules`
 
-List every registered rule. Useful for a frontend that wants to render rule
-metadata, filter by category, etc.
+List every registered rule, sorted by category and rule id. Useful for a frontend
+that wants to render rule metadata, filter by category, or show each rule's
+examples and sources.
 
-**Response (200):**
+**Response (200)** (one entry of `rules` shown):
 ```json
 {
-  "total": 154,
+  "total": 85,
   "rules": [
     {
-      "rule_id": "anti_patterns.ambiguous_column_reference",
-      "name": "Ambiguous Column Reference",
-      "description": "Detects unqualified column references ...",
+      "rule_id": "concept_standardization.concept_ancestor_max_levels_misuse",
+      "name": "Concept Ancestor Max Levels Misuse",
+      "description": "max_levels_of_separation is restricted to exactly 1. It is the longest path, so direct children that are also reachable through a longer path are dropped; min_levels_of_separation = 1 is the usual way to ask for direct children (WARNING: the narrower set may be intended).",
       "severity": "warning",
-      "category": "anti_patterns"
+      "category": "concept_standardization",
+      "example_bad": "SELECT descendant_concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820\n  AND max_levels_of_separation = 1;",
+      "example_good": "SELECT descendant_concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820\n  AND min_levels_of_separation = 1;",
+      "extra_examples": [
+        {
+          "sql": "SELECT descendant_concept_id\nFROM concept_ancestor\nWHERE ancestor_concept_id = 201820\n  AND max_levels_of_separation > 0\n  AND max_levels_of_separation < 2;",
+          "severity": "warning",
+          "note": "The same restriction written as a range",
+          "strict": false
+        }
+      ],
+      "references": [
+        {
+          "title": "OMOP CDM v5.4 specification: CONCEPT_ANCESTOR",
+          "url": "https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_ancestor"
+        },
+        {
+          "title": "The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept ancestor",
+          "url": "https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor"
+        }
+      ]
     }
   ]
 }
 ```
+
+| Field | Type | Notes |
+|---|---|---|
+| `rule_id` | string | Stable identifier, `<category>.<name>`. |
+| `name` | string | Display name. |
+| `description` | string | One-line summary of what the rule detects. |
+| `severity` | `"error"` \| `"warning"` | The rule's class severity. A rule can emit another severity for some variants; `extra_examples` shows them. |
+| `category` | string | First segment of `rule_id`. |
+| `example_bad` | string | SQL that triggers the rule. |
+| `example_good` | string | Corrected version of `example_bad`; it does not trigger the rule. |
+| `extra_examples` | array | Further triggering examples, one per additional severity or variant: `{sql, severity, note, strict}`. `strict: true` marks a finding that only appears in strict mode. Empty for most rules. |
+| `references` | array | Published sources the rule is derived from (CDM specification, Book of OHDSI, engine documentation): `{title, url}`. Never empty. |
+
+The same examples and sources are rendered on the `/rules` page and in the
+[Rules reference](rules_reference.md).
 
 ### `GET /v1/health`
 
@@ -199,8 +242,8 @@ Liveness probe. Always `200 OK` unless the process cannot service requests.
 ```json
 {
   "status": "ok",
-  "version": "0.2.0",
-  "rules_loaded": 154
+  "version": "0.3.0",
+  "rules_loaded": 85
 }
 ```
 

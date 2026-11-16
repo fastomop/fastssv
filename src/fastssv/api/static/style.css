@@ -1329,6 +1329,20 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: progress; }
    distinguish the buggy SQL from its corrected counterpart at a glance. */
 .rule-block-label-bad  { color: var(--err-fg); }
 .rule-block-label-good { color: var(--ok-fg); }
+.rule-block-label-warn { color: var(--warn-fg); }
+.rule-block-sources {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.rule-block-sources a { color: var(--accent); }
+.violation .rule-link {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
 .rule-block-section p {
   margin: 0;
   font-size: 0.88rem;

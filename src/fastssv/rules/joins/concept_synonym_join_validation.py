@@ -1,44 +1,54 @@
 """Concept Synonym Join Validation Rule.
 
 OMOP semantic rule JOIN_029:
-concept_synonym joins to concept via concept_synonym.concept_id = concept.concept_id.
-Joining on concept_synonym_name = concept_name or any other column is incorrect and
-produces unreliable results because synonyms are alternative names.
+concept_synonym rows belong to a concept through the foreign key
+concept_synonym.concept_id = concept.concept_id (CDM v5.4).
+concept_synonym.language_concept_id = concept.concept_id is also a valid foreign
+key (the synonym's language concept).
 
-The Problem:
-    The concept_synonym table provides alternative names for concepts:
-    - concept.concept_id = 123 → "Type 2 diabetes mellitus" (primary name)
-    - concept_synonym.concept_id = 123, concept_synonym_name = "Diabetes mellitus type 2"
-    - concept_synonym.concept_id = 123, concept_synonym_name = "T2DM"
+ERROR: a concept_synonym ↔ concept equality on a key column that is not one of
+those foreign keys (e.g. cs.language_concept_id = c.vocabulary_id,
+cs.concept_id = c.concept_code), when that concept alias is not also joined on
+concept_id in the same SELECT.
 
-    Joining on name strings is unreliable because:
-    1. Names are not unique identifiers
-    2. Synonyms may match concept names from different concepts
-    3. String matching is error-prone (case sensitivity, whitespace)
+WARNING: a text match between the two tables (concept_synonym_name against
+concept_name / concept_code, bare or wrapped in LOWER / UPPER / TRIM). It is a
+legitimate lexical lookup when deliberate (find the concepts whose synonym equals
+another concept's name), but it is not the key: names are not unique, so used in
+place of concept_id it links unrelated concepts. A text predicate on a pair that is
+already joined on concept_id is a filter and is not reported.
 
-Violation pattern:
+Violation patterns:
     SELECT * FROM concept_synonym cs
-    JOIN concept c ON cs.concept_synonym_name = c.concept_name
-    -- WRONG: Names are not unique identifiers!
+    JOIN concept c ON cs.language_concept_id = c.vocabulary_id   -- ERROR
 
-Correct pattern:
+    SELECT * FROM concept_synonym cs
+    JOIN concept c ON cs.concept_synonym_name = c.concept_name   -- WARNING
+
+Correct patterns:
     SELECT * FROM concept_synonym cs
     JOIN concept c ON cs.concept_id = c.concept_id
+
+    SELECT cs.concept_synonym_name, lang.concept_name FROM concept_synonym cs
+    JOIN concept lang ON lang.concept_id = cs.language_concept_id
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.references import CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.helpers import (
     extract_aliases,
     normalize_name,
     parse_sql,
-    resolve_table_col,
 )
 from fastssv.core.patch import build_join_replace_patch
 from fastssv.core.registry import register
+from fastssv.schemas.cdm_column_types import VARCHAR, get_column_type
+
+from ._join_scope import hoist_joins, scope_qualifier, select_equalities, shadowed_tables
 
 
 # --- Constants -------------------------------------------------------------
@@ -46,6 +56,7 @@ from fastssv.core.registry import register
 CONCEPT_SYNONYM = "concept_synonym"
 CONCEPT = "concept"
 CONCEPT_ID = "concept_id"
+LANGUAGE_CONCEPT_ID = "language_concept_id"
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -67,104 +78,51 @@ def _is_concept_id(c: Optional[str]) -> bool:
     return _norm(c) == CONCEPT_ID
 
 
-def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
-    """Extract column-to-column equality conditions."""
-    eqs: List[exp.EQ] = []
-
-    has_join_on = False
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if on_clause:
-            has_join_on = True
-            for eq in on_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    if not has_join_on:
-        where_clause = tree.find(exp.Where)
-        if where_clause:
-            for eq in where_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    return eqs
-
-
 # --- Detection -------------------------------------------------------------
 
 
-def _detect(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
-    """
-    Detect invalid or missing joins between concept_synonym and concept.
-    """
-    violations: List[Tuple[str, str, str, str]] = []
-    seen: Set[Tuple[str, str, str, str]] = set()
+def _is_text_match(cs_col: str, c_col: str) -> bool:
+    return get_column_type(CONCEPT_SYNONYM, cs_col) == VARCHAR and get_column_type(CONCEPT, c_col) == VARCHAR
 
-    # --- Discover tables ---------------------------------------------------
-    tables_present: Set[str] = set()
 
-    for table in tree.find_all(exp.Table):
-        t = _norm(table.name)
-        if t:
-            tables_present.add(t)
+def _detect(tree: exp.Expression) -> List[Tuple[str, str, str, str, bool]]:
+    """(left table, left column, right table, right column, is_text_match) for concept_synonym <-> concept equalities
+    whose concept source is not also linked by concept_id in the same SELECT (an id join already pins the pair, so
+    extra predicates on it are filters). Operands are resolved by lineage, through casts, LOWER / UPPER / TRIM and
+    IN-subqueries."""
+    violations: List[Tuple[str, str, str, str, bool]] = []
+    seen: Set[Tuple[str, str, str, str, bool]] = set()
+    shadowed = shadowed_tables(tree)
 
-    if CONCEPT_SYNONYM not in tables_present or CONCEPT not in tables_present:
-        return violations
-
-    found_valid_join = False
-    found_any_join = False
-
-    # --- Analyze joins -----------------------------------------------------
-    for eq in _extract_eq_conditions(tree):
-        lt, lc = resolve_table_col(eq.this, aliases)
-        rt, rc = resolve_table_col(eq.expression, aliases)
-
-        lt_norm = _norm(lt)
-        rt_norm = _norm(rt)
-        lc_norm = _norm(lc)
-        rc_norm = _norm(rc)
-
-        # Defensive checks
-        if not lc_norm or not rc_norm:
-            continue
-
-        if lt_norm and rt_norm and lt_norm == rt_norm:
-            continue
-
-        is_cs_to_c = _is_concept_synonym(lt_norm) and _is_concept(rt_norm)
-        is_c_to_cs = _is_concept(lt_norm) and _is_concept_synonym(rt_norm)
-
-        if not (is_cs_to_c or is_c_to_cs):
-            continue
-
-        found_any_join = True
-
-        # Valid join
-        if _is_concept_id(lc_norm) and _is_concept_id(rc_norm):
-            found_valid_join = True
-            continue
-
-        # Invalid join
-        key = (lt_norm or "unknown", lc_norm, rt_norm or "unknown", rc_norm)
-        if key not in seen:
-            violations.append(key)
-            seen.add(key)
-
-    # --- Missing or invalid join cases ------------------------------------
-
-    # Only add a generic violation if we haven't detected specific violations
-    if not found_valid_join and not violations:
-        if found_any_join:
-            # Joins exist but none are valid - add generic violation
-            key = (CONCEPT_SYNONYM, "INVALID", CONCEPT, "INVALID")
-            if key not in seen:
+    for select in tree.find_all(exp.Select):
+        linked: Set[Tuple[str, str]] = set()
+        invalid: List[Tuple[Tuple[str, str], Tuple[str, str, str, str, bool]]] = []
+        for eq in select_equalities(select, shadowed, text=True):
+            left, right = eq.left, eq.right
+            if left.origin is None or right.origin is None:
+                continue
+            lt, lc = left.origin
+            rt, rc = right.origin
+            is_cs_to_c = _is_concept_synonym(lt) and _is_concept(rt)
+            is_c_to_cs = _is_concept(lt) and _is_concept_synonym(rt)
+            if not (is_cs_to_c or is_c_to_cs):
+                continue
+            cs_side, c_side = (left, right) if is_cs_to_c else (right, left)
+            cs_col, c_col = cs_side.name, c_side.name
+            pair = (scope_qualifier(cs_side, select) or CONCEPT_SYNONYM, scope_qualifier(c_side, select) or CONCEPT)
+            if cs_col == LANGUAGE_CONCEPT_ID and _is_concept_id(c_col):
+                # Valid FK to the synonym's language concept; neither a synonym link nor an error.
+                continue
+            if _is_concept_id(cs_col) and _is_concept_id(c_col):
+                if eq.conjunct:
+                    linked.add(pair)
+                continue
+            key = (lt, lc, rt, rc, _is_text_match(cs_col, c_col))
+            invalid.append((pair, key))
+        for pair, key in invalid:
+            if pair not in linked and key not in seen:
                 violations.append(key)
-        # If no join at all, that's OK - tables can be present without joining
-
+                seen.add(key)
     return violations
 
 
@@ -181,21 +139,30 @@ class ConceptSynonymJoinValidationRule(Rule):
     name = "Concept Synonym Join Validation"
 
     description = (
-        "Ensures concept_synonym joins to concept via concept_id. "
-        "Joining on names or other columns is unreliable because names are not unique."
+        "Ensures concept_synonym joins to concept via concept_id (or language_concept_id = concept_id to look up "
+        "the synonym's language). Key-column mismatches are ERRORs; a text match on names is a WARNING because it is "
+        "a lexical lookup, not the key, and names are not unique."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: the join target WITH `concept_synonym.concept_id = concept.concept_id`. Do not join on concept_name or concept_synonym_name (names are not unique)."
-    example_bad = (
-        "SELECT cs.concept_synonym_name\n"
-        "FROM concept c\n"
-        "JOIN concept_synonym cs ON c.concept_name = cs.concept_synonym_name;"
-    )
+    suggested_fix = "REPLACE: the join target WITH `concept_synonym.concept_id = concept.concept_id`. A name match (concept_synonym_name = concept_name) is only a lexical lookup; names are not unique."
+    example_bad = "SELECT cs.concept_synonym_name\nFROM concept c\nJOIN concept_synonym cs ON c.vocabulary_id = cs.language_concept_id;"
     example_good = (
         "SELECT cs.concept_synonym_name\nFROM concept c\nJOIN concept_synonym cs ON c.concept_id = cs.concept_id;"
     )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT c.concept_id, c.concept_name\n"
+                "FROM concept_synonym cs\n"
+                "JOIN concept c ON cs.concept_synonym_name = c.concept_name;"
+            ),
+            severity=Severity.WARNING,
+            note="A text match on names in place of the concept_id key.",
+        ),
+    )
+    references = (cdm_table("concept_synonym"), section(CDM_CONVENTIONS, "concept-synonyms", "Concept Synonyms"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         violations: List[RuleViolation] = []
@@ -212,48 +179,49 @@ class ConceptSynonymJoinValidationRule(Rule):
             if not tree:
                 continue
 
+            tree = hoist_joins(tree)
+            # Only used to locate the predicate's text for the REPLACE patch.
             aliases = extract_aliases(tree)
-            detected = _detect(tree, aliases)
+            detected = _detect(tree)
 
-            for lt, lc, rt, rc in detected:
-                patch = None
-                if lc == "NONE":
-                    msg = (
-                        f"{CONCEPT_SYNONYM} and {CONCEPT} are used but not joined. "
-                        f"Missing join condition using concept_id."
+            for lt, lc, rt, rc, text_match in detected:
+                left = f"{lt}.{lc}" if lt != "unknown" else lc
+                right = f"{rt}.{rc}" if rt != "unknown" else rc
+                details = {
+                    "type": "concept_synonym_text_match" if text_match else "concept_synonym_invalid_join",
+                    "left_table": lt,
+                    "left_column": lc,
+                    "right_table": rt,
+                    "right_column": rc,
+                }
+                if text_match:
+                    # A deliberate lexical lookup and a mistaken key look identical, so this cannot be an ERROR.
+                    violations.append(
+                        self.create_violation(
+                            message=(
+                                f"Text match between concept_synonym and concept: {left} = {right}. This is a "
+                                f"lexical lookup, not the concept_synonym.concept_id = concept.concept_id key; "
+                                f"names are not unique, so it can link unrelated concepts."
+                            ),
+                            severity=Severity.WARNING,
+                            suggested_fix=(
+                                f"REPLACE: `{left} = {right}` WITH `{lt}.concept_id = {rt}.concept_id` if the "
+                                f"synonym's own concept is meant; keep the text match only for a deliberate "
+                                f"lexical lookup."
+                            ),
+                            details=details,
+                        )
                     )
-                elif lc == "INVALID":
-                    msg = f"Invalid join between {CONCEPT_SYNONYM} and {CONCEPT}. Must use concept_id."
-                else:
-                    left = f"{lt}.{lc}" if lt != "unknown" else lc
-                    right = f"{rt}.{rc}" if rt != "unknown" else rc
-
-                    msg = f"Invalid join: {left} → {right}. concept_synonym must join to concept via concept_id."
-                    fix_text = f"REPLACE: `{left} = {right}` WITH `{lt}.concept_id = {rt}.concept_id`."
-                    patch = build_join_replace_patch(
-                        sql,
-                        lt,
-                        lc,
-                        rt,
-                        rc,
-                        CONCEPT_ID,
-                        CONCEPT_ID,
-                        fix_text,
-                        aliases=aliases,
-                    )
-
+                    continue
+                msg = f"Invalid join: {left} → {right}. concept_synonym must join to concept via concept_id."
+                fix_text = f"REPLACE: `{left} = {right}` WITH `{lt}.concept_id = {rt}.concept_id`."
+                patch = build_join_replace_patch(sql, lt, lc, rt, rc, CONCEPT_ID, CONCEPT_ID, fix_text, aliases=aliases)
                 violations.append(
                     self.create_violation(
                         message=msg,
                         suggested_fix=self.suggested_fix,
                         suggested_fix_patch=patch,
-                        details={
-                            "type": "concept_synonym_invalid_join",
-                            "left_table": lt,
-                            "left_column": lc,
-                            "right_table": rt,
-                            "right_column": rc,
-                        },
+                        details=details,
                     )
                 )
 

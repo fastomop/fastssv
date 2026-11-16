@@ -1,240 +1,141 @@
 """Clinical Primary Key Cross-Join Validation Rule.
 
-OMOP semantic rule JOIN_028:
-Clinical event table primary keys (condition_occurrence_id, drug_exposure_id,
-procedure_occurrence_id, measurement_id, observation_id, etc.) are table-specific
-and must never be joined to each other. They are independent ID sequences.
+Each clinical event table has its own primary key ([Event]_ID, Book of OHDSI 4.2.6), and every foreign key in the
+CDM v5.4 specification references exactly one table's key. An equality between two columns whose values identify
+rows of different entities (``condition_occurrence_id = drug_exposure_id``, ``note_nlp_id = note_id``,
+``visit_detail_id = condition_occurrence_id``) matches rows only where unrelated ids happen to coincide.
 
-The Problem:
-    Each clinical event table has its own independent primary key sequence:
-    - condition_occurrence_id = 123 → A specific condition event
-    - drug_exposure_id = 123 → A specific drug exposure event
-    - procedure_occurrence_id = 123 → A specific procedure event
+Each operand is resolved by lineage (casts, CTEs, derived tables, set operations, IN-subqueries) to the CDM column it
+reads, and that column to the entity whose key it holds: itself for a primary key, the referenced key for a foreign
+key (keys generated from the CDM v5.4 field-level specification). The rule reports an equality when the two entities
+differ and one of them is a person-level event (the primary key of a table that carries person_id, other than
+person and visit_occurrence). Keys of person and visit_occurrence are checked by joins.person_id_join_validation and
+joins.visit_occurrence_id_join_validation.
 
-    These are completely unrelated - they just happen to have overlapping numeric
-    values. Joining them is always semantically meaningless.
+Not reported: an operand whose source cannot be resolved or is computed (``MIN(condition_occurrence_id)``), a key
+equated with a non-key column, and the polymorphic keys (``measurement_event_id``, ``observation_event_id``,
+``note_event_id``, ``cost_event_id``, ``fact_relationship.fact_id_1/2``, ``episode_event.event_id``), which hold the
+primary key of whichever table their companion column names. Whether that companion names the right table is
+``domain_specific.event_field_polymorphic_resolution``'s check.
 
 Violation pattern:
     SELECT * FROM condition_occurrence co
     JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id
-    -- WRONG: These are different event types with independent ID sequences!
 
 Correct pattern:
     SELECT * FROM condition_occurrence co
     JOIN drug_exposure de ON co.person_id = de.person_id
-      AND co.visit_occurrence_id = de.visit_occurrence_id
-    -- CORRECT: Join via shared foreign keys
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Set, Tuple
 
-from sqlglot import exp
-
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.deduplication import predicate_key
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import BOOK_CDM, cdm_table, section
 from fastssv.core.registry import register
 
+from ._join_scope import Side, fk_replace_patch, hoist_joins, key_mismatches
+from ._person_keys import PERSON_SCOPED_KEYS
 
-# --- Constants -------------------------------------------------------------
-
-CLINICAL_EVENT_PKS = {
-    "condition_occurrence_id",
-    "drug_exposure_id",
-    "procedure_occurrence_id",
-    "measurement_id",
-    "observation_id",
-    "device_exposure_id",
-    "specimen_id",
-    "note_id",
-    "visit_detail_id",
-}
+# Keys owned by other rules: person_id_join_validation and visit_occurrence_id_join_validation.
+_OTHER_RULES = {("person", "person_id"), ("visit_occurrence", "visit_occurrence_id")}
+EVENT_KEYS = PERSON_SCOPED_KEYS - _OTHER_RULES
+CONCEPT_KEY = ("concept", "concept_id")
 
 
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_clinical_pk(col: Optional[str]) -> bool:
-    return _norm(col) in CLINICAL_EVENT_PKS
-
-
-def _extract_eq_conditions(tree: exp.Expression) -> List[exp.EQ]:
-    """Extract column-to-column equality conditions."""
-    eqs: List[exp.EQ] = []
-
-    has_join_on = False
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if on_clause:
-            has_join_on = True
-            for eq in on_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    if not has_join_on:
-        where_clause = tree.find(exp.Where)
-        if where_clause:
-            for eq in where_clause.find_all(exp.EQ):
-                if isinstance(eq.this, exp.Column) and isinstance(eq.expression, exp.Column):
-                    eqs.append(eq)
-
-    return eqs
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _detect(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, str, str]]:
-    """
-    Detect:
-    1. PK ↔ PK mismatches (different clinical event PKs)
-    2. PK ↔ non-PK joins (invalid usage of PKs)
-
-    Returns:
-        List of (left_table, left_column, right_table, right_column)
-    """
-    violations: List[Tuple[str, str, str, str]] = []
-    seen: Set[Tuple[str, str, str, str]] = set()
-
-    for eq in _extract_eq_conditions(tree):
-        left, right = eq.this, eq.expression
-
-        lt, lc = resolve_table_col(left, aliases)
-        rt, rc = resolve_table_col(right, aliases)
-
-        lc_norm = _norm(lc)
-        rc_norm = _norm(rc)
-
-        # --- Defensive guards ---------------------------------------------
-
-        if not lc_norm or not rc_norm:
-            continue
-
-        # Ignore same-table comparisons
-        if lt and rt and _norm(lt) == _norm(rt):
-            continue
-
-        # Exclude cost_event_id joins (these are valid polymorphic joins)
-        if lc_norm == "cost_event_id" or rc_norm == "cost_event_id":
-            continue
-
-        left_is_pk = _is_clinical_pk(lc_norm)
-        right_is_pk = _is_clinical_pk(rc_norm)
-
-        # --- Case 1: PK ↔ PK mismatch -------------------------------------
-
-        if left_is_pk and right_is_pk and lc_norm != rc_norm:
-            key = (lt or "unknown", lc_norm, rt or "unknown", rc_norm)
-
-        # --- Case 2: PK ↔ non-PK (strong validation) -----------------------
-
-        elif left_is_pk != right_is_pk:
-            key = (lt or "unknown", lc_norm, rt or "unknown", rc_norm)
-
-        else:
-            continue
-
-        if key not in seen:
-            violations.append(key)
-            seen.add(key)
-
-    return violations
-
-
-# --- Rule ------------------------------------------------------------------
+def _reported(a: Side, b: Side) -> bool:
+    da, db = a.domain, b.domain
+    # An entity key equated with a concept id is reported by anti_patterns.join_key_validation.
+    if CONCEPT_KEY in (da, db):
+        return False
+    if da in _OTHER_RULES or db in _OTHER_RULES:
+        return False
+    return da in EVENT_KEYS or db in EVENT_KEYS
 
 
 @register
 class ClinicalPkCrossJoinValidationRule(Rule):
-    """
-    Validate that clinical event primary keys are not misused in joins.
-
-    Rules enforced:
-    - Clinical PKs cannot join to other clinical PKs (unless identical column)
-    - Clinical PKs cannot join to non-PK columns
-    """
+    """An event key must not be equated with another entity's key."""
 
     rule_id = "joins.clinical_pk_cross_join_validation"
     name = "Clinical Primary Key Join Validation"
 
     description = (
-        "Ensures clinical event primary keys are not incorrectly used in joins. "
-        "Each clinical event table has an independent primary key sequence with no "
-        "semantic relationship to other tables."
+        "An equality between keys of two different entities, one of them a clinical event "
+        "(condition_occurrence_id = drug_exposure_id, note_nlp_id = note_id), matches unrelated rows. Keys are "
+        "followed by lineage and taken from the CDM v5.4 specification; polymorphic keys are exempt."
     )
 
     severity = Severity.ERROR
 
-    suggested_fix = "REPLACE: joins between clinical event primary keys (e.g. `co.condition_occurrence_id = de.drug_exposure_id`) WITH the intended FK pair: usually person_id on both sides, or visit_occurrence_id on both sides."
+    suggested_fix = (
+        "REPLACE: the key equality WITH the foreign key that links the two tables (e.g. `nnlp.note_id = n.note_id`, "
+        "`co.visit_detail_id = vd.visit_detail_id`), or `person_id` on both sides to relate a person's events."
+    )
     example_bad = (
         "SELECT * FROM condition_occurrence co\n"
         "JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id;"
     )
     example_good = "SELECT * FROM condition_occurrence co\nJOIN drug_exposure de ON co.person_id = de.person_id;"
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT n.person_id, nnlp.lexical_variant\n"
+                "FROM note_nlp nnlp\n"
+                "JOIN note n ON nnlp.note_nlp_id = n.note_id;"
+            ),
+            severity=Severity.ERROR,
+            note="The NLP record's own key used where its note_id foreign key belongs.",
+        ),
+    )
+    references = (
+        section(BOOK_CDM, "general-naming-conventions-of-fields", "General naming conventions of fields"),
+        cdm_table("condition_occurrence"),
+        cdm_table("note_nlp"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
-        sql_lower = sql.lower()
-
-        if not any(pk in sql_lower for pk in CLINICAL_EVENT_PKS):
+        if "_id" not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
+        violations: List[RuleViolation] = []
+        seen: Set[Tuple[str, str]] = set()
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-            detected = _detect(tree, aliases)
-
-            for lt, lc, rt, rc in detected:
-                lt_disp = lt if lt and lt != "unknown" else ""
-                rt_disp = rt if rt and rt != "unknown" else ""
-
-                left_side = f"{lt_disp}.{lc}" if lt_disp else lc
-                right_side = f"{rt_disp}.{rc}" if rt_disp else rc
-
-                if _is_clinical_pk(lc) and _is_clinical_pk(rc):
-                    msg = (
-                        f"Invalid join: {left_side} → {right_side}. "
-                        f"Clinical event primary keys are independent and cannot be joined."
-                    )
-                else:
-                    msg = (
-                        f"Invalid join: {left_side} → {right_side}. "
-                        f"Clinical event primary keys must not be used to join unrelated columns."
-                    )
-
+            tree = hoist_joins(tree)
+            for eq, a, b in key_mismatches(tree):
+                if not _reported(a, b):
+                    continue
+                key = tuple(sorted((f"{a.table}.{a.name}", f"{b.table}.{b.name}")))
+                if key in seen:
+                    continue
+                seen.add(key)
+                fix = (
+                    f"REPLACE: `{eq.sql()}` WITH the foreign key that links {a.table} and {b.table}, or "
+                    f"`person_id` on both sides."
+                )
                 violations.append(
                     self.create_violation(
-                        message=msg,
-                        suggested_fix=self.suggested_fix,
+                        message=(
+                            f"Invalid join: {eq.sql()}. {a.table}.{a.name} holds {a.domain[0]} keys and "
+                            f"{b.table}.{b.name} holds {b.domain[0]} keys; keys of different entities never identify "
+                            f"the same row."
+                        ),
+                        suggested_fix=fix,
+                        suggested_fix_patch=fk_replace_patch(sql, a, b, fix),
                         details={
                             "type": "clinical_pk_misuse",
-                            "left_table": lt,
-                            "left_column": lc,
-                            "right_table": rt,
-                            "right_column": rc,
+                            "left": f"{a.table}.{a.name}",
+                            "right": f"{b.table}.{b.name}",
+                            "predicate": predicate_key(eq.node),
                         },
                     )
                 )
-
         return violations
 
 

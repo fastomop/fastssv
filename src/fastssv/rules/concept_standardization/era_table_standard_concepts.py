@@ -1,217 +1,112 @@
+"""Era Table Standard Concepts Rule.
+
+``drug_era.drug_concept_id`` and ``dose_era.drug_concept_id`` hold Ingredient concepts (CDM v5.4: "The drug_concept_id
+should conform to the concept class 'ingredient'"), which are Standard. ``condition_era.condition_concept_id`` holds
+the concepts of the condition_occurrence records the era is built from, which are Standard or 0 for an unmapped
+record. An era concept therefore joins to a ``concept`` row whose ``standard_concept`` is 'S', or, on condition_era
+only, to concept 0, whose ``standard_concept`` is NULL.
+
+When the era's concept column is matched to ``concept.concept_id`` and that concept row is *required* to be anything
+other than Standard, no era row survives:
+
+    SELECT de.person_id
+    FROM drug_era de
+    JOIN concept c ON de.drug_concept_id = c.concept_id
+    WHERE c.standard_concept = 'C';          -- ERROR: no rows
+
+``standard_concept IS NULL`` on condition_era keeps only the unmapped eras (concept 0) and is reported as a WARNING.
+
+A predicate counts only when every surviving row must satisfy it: it is joined by AND to WHERE, HAVING or an inner
+join's ON clause. A predicate under OR or NOT, in a CASE, in an aggregate FILTER or in the ON clause of an outer join
+removes no era row and is not reported; neither is a list that admits 'S' (``IN ('S', 'C')``).
+"""
+
 import re
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
 from fastssv.core.patch import locate, remove as patch_remove
+from fastssv.core.references import BOOK_VOCABULARIES, cdm_table, section
 from fastssv.core.registry import register
 
+from ._cs_scope import ColumnFilter, dead_scalar_column, instance_filters, links
 
-def _build_remove_predicate_patch(
-    sql: str,
-    predicate_sql: str,
-    parent: Optional[exp.Expression],
-    node: exp.Expression,
-) -> Optional[dict]:
-    """REMOVE a single predicate from a WHERE/ON conjunction, handling
-    leading/trailing AND so the result remains valid SQL.
-    """
-    span = locate(sql, predicate_sql)
-    if span is None:
-        return None
-
-    if not isinstance(parent, exp.And):
-        # Sole predicate; cannot mechanically delete the surrounding
-        # WHERE/ON. Leave the patch empty so the auto-default FREEFORM
-        # carries the prose suggestion.
-        return None
-
-    s, e = span
-    if parent.this is node:
-        # `<pred> AND <rest>` → drop predicate + trailing AND.
-        tail = sql[e:]
-        m = re.match(r"\s+AND\s+", tail, flags=re.IGNORECASE)
-        if m is None:
-            return None
-        return patch_remove((s, e + m.end()))
-    else:
-        # `<rest> AND <pred>` → drop leading AND + predicate.
-        head = sql[:s]
-        m = re.search(r"\s+AND\s+\Z", head, flags=re.IGNORECASE)
-        if m is None:
-            return None
-        return patch_remove((m.start(), e))
-
-
-ERA_TABLES = {
-    "condition_era",
-    "drug_era",
-    "dose_era",
-}
-
-ERA_TABLE_CONCEPT_COLUMNS = {
+# Era table -> its concept column (CDM v5.4 field-level specification).
+ERA_CONCEPT_COLUMNS: Dict[str, str] = {
     "condition_era": "condition_concept_id",
     "drug_era": "drug_concept_id",
     "dose_era": "drug_concept_id",
 }
 
-
-def _find_valid_era_concept_joins(tree: exp.Expression, aliases: Dict[str, str]) -> Set[str]:
-    """
-    Find concept table aliases that are VALIDLY joined to era tables
-    using the correct concept_id column.
-    """
-    valid_concept_aliases: Set[str] = set()
-
-    for join in tree.find_all(exp.Join):
-        on_clause = join.args.get("on")
-        if not on_clause:
-            continue
-
-        for eq in on_clause.find_all(exp.EQ):
-            left = eq.this
-            right = eq.expression
-
-            if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
-                continue
-
-            l_table, l_col = resolve_table_col(left, aliases)
-            r_table, r_col = resolve_table_col(right, aliases)
-
-            l_table = normalize_name(l_table) if l_table else ""
-            r_table = normalize_name(r_table) if r_table else ""
-            l_col = normalize_name(l_col) if l_col else ""
-            r_col = normalize_name(r_col) if r_col else ""
-
-            # Case 1: era -> concept
-            if l_table in ERA_TABLES and r_table == "concept":
-                expected = ERA_TABLE_CONCEPT_COLUMNS[l_table]
-                if l_col == expected and r_col == "concept_id":
-                    valid_concept_aliases.add(right.table)
-
-            # Case 2: concept -> era
-            elif r_table in ERA_TABLES and l_table == "concept":
-                expected = ERA_TABLE_CONCEPT_COLUMNS[r_table]
-                if r_col == expected and l_col == "concept_id":
-                    valid_concept_aliases.add(left.table)
-
-    return valid_concept_aliases
+# condition_era copies condition_occurrence.condition_concept_id, which is 0 for an unmapped record. Drug eras are
+# built per Ingredient, so they have no unmapped rows.
+_ALLOWS_UNMAPPED = {"condition_era"}
 
 
-def _extract_literal(node: exp.Expression) -> str:
-    """Extract normalized literal value."""
-    if isinstance(node, exp.Literal):
-        return normalize_name(str(node.this))
-    if isinstance(node, exp.Null):
-        return "null"
-    return ""
+def _build_remove_predicate_patch(sql: str, node: exp.Expression) -> Optional[dict]:
+    """REMOVE one predicate from a conjunction together with its AND; None when it is the only predicate."""
+    parent = node.parent
+    if not isinstance(parent, exp.And):
+        return None
+    span = locate(sql, node.sql())
+    if span is None:
+        return None
+    start, end = span
+    if parent.this is node:
+        match = re.match(r"\s+AND\s+", sql[end:], flags=re.IGNORECASE)
+        return patch_remove((start, end + match.end())) if match else None
+    match = re.search(r"\s+AND\s+\Z", sql[:start], flags=re.IGNORECASE)
+    return patch_remove((match.start(), end)) if match else None
 
 
-def _is_standard_concept_column(col: exp.Expression, aliases: Dict[str, str], valid_aliases: Set[str]) -> bool:
-    """Check if column is concept.standard_concept from a valid join."""
-    if not isinstance(col, exp.Column):
-        return False
-
-    _, column = resolve_table_col(col, aliases)
-
-    return normalize_name(column) == "standard_concept" and col.table in valid_aliases
+def _is_standard(value: str) -> bool:
+    return value.strip().upper() == "S"
 
 
-def _check_filters(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-    valid_aliases: Set[str],
-) -> List[dict]:
-    """Detect invalid filters for non-standard concepts."""
-    issues: List[dict] = []
-
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.NEQ, exp.Is, exp.In)):
-            continue
-
-        left = node.this
-        right = node.expression
-
-        # Check both sides (handle reversed conditions)
-        sides = [(left, right), (right, left)]
-
-        for col_node, val_node in sides:
-            if not _is_standard_concept_column(col_node, aliases, valid_aliases):
-                continue
-
-            value = _extract_literal(val_node)
-
-            msg: Optional[str] = None
-
-            # --- Invalid cases ---
-            if isinstance(node, exp.Is) and value == "null":
-                msg = (
-                    "Filtering for non-standard concepts (standard_concept IS NULL) "
-                    "on an era table. Era tables only contain standard concepts. "
-                    "This query will return 0 rows."
-                )
-
-            elif isinstance(node, exp.NEQ) and value == "s":
-                msg = (
-                    "Filtering for non-standard concepts (standard_concept != 'S') "
-                    "on an era table. This will return 0 rows."
-                )
-
-            elif isinstance(node, exp.EQ) and value not in ("s", ""):
-                msg = (
-                    f"Filtering for standard_concept = '{value.upper()}', which is not 'S'. "
-                    "Era tables only contain standard concepts. This will return 0 rows."
-                )
-
-            elif isinstance(node, exp.In):
-                # For IN clauses, values are in node.args['expressions']
-                in_values = node.args.get("expressions", [])
-                if in_values:
-                    values = {_extract_literal(v) for v in in_values}
-                    # Flag if any value is not 'S'
-                    if values and any(v != "s" for v in values):
-                        msg = (
-                            "Filtering standard_concept IN (...) with non-'S' values "
-                            "on an era table. This will return 0 rows."
-                        )
-
-            if msg:
-                issues.append(
-                    {
-                        "message": msg,
-                        "node": node,
-                    }
-                )
-
-    return issues
+def _verdict(flt: ColumnFilter, table: str) -> Optional[Tuple[Severity, str]]:
+    """What a required predicate on the era concept's standard_concept does to the era rows."""
+    values = [v for v in flt.values]
+    if flt.op == "eq" and flt.complete and not _is_standard(values[0]):
+        return Severity.ERROR, f"`{flt.sql}` requires a concept that is not Standard"
+    if flt.op == "in" and flt.complete and not any(_is_standard(v) for v in values):
+        return Severity.ERROR, f"`{flt.sql}` admits no Standard concept"
+    if flt.op == "neq" and flt.complete and _is_standard(values[0]):
+        return Severity.ERROR, f"`{flt.sql}` excludes every Standard concept"
+    if flt.op == "not_in" and flt.complete and any(_is_standard(v) for v in values):
+        return Severity.ERROR, f"`{flt.sql}` excludes every Standard concept"
+    if flt.op == "is_null":
+        if table in _ALLOWS_UNMAPPED:
+            return Severity.WARNING, f"`{flt.sql}` keeps only unmapped eras (concept 0)"
+        return Severity.ERROR, f"`{flt.sql}` requires a non-standard concept"
+    return None
 
 
 @register
 class EraTableStandardConceptsRule(Rule):
-    """Robust validation for era table standard concept misuse."""
+    """A required standard_concept filter on an era table's concept that no era row can satisfy."""
 
     rule_id = "concept_standardization.era_table_standard_concepts"
     name = "Era Tables Use Standard Concepts Only"
     description = (
-        "Era tables contain only standard concepts. Filtering for non-standard concepts will always return 0 rows."
+        "An era table's concept column is matched to concept and the concept row is required to be non-standard "
+        "(standard_concept = 'C', <> 'S', IS NULL, ...). Era concepts are Standard, so the query returns no rows "
+        "(ERROR); IS NULL on condition_era keeps only unmapped eras (WARNING)."
     )
     severity = Severity.ERROR
-    suggested_fix = "REMOVE: any `standard_concept != 'S'` (or `'C'`, `NULL`) filter on era tables. drug_era / condition_era / dose_era contain only standard concepts by construction."
+    suggested_fix = (
+        "REMOVE: the standard_concept predicate, OR REPLACE it WITH `standard_concept = 'S'`. drug_era / dose_era "
+        "hold Ingredient concepts and condition_era holds the Standard concepts of its condition_occurrence records."
+    )
     long_description = (
-        "OMOP era tables (condition_era, drug_era, dose_era) are derived "
-        "from their underlying occurrence tables by rolling up standard "
-        "concepts over contiguous time windows. By construction every row "
-        "references a standard concept, so filtering them with "
-        "standard_concept IN ('C', NULL) or <> 'S' always returns zero "
-        "rows. Either drop the filter entirely or filter for 'S' "
-        "explicitly to make the intent readable."
+        "drug_era and dose_era are built per Ingredient and condition_era per condition_concept_id of the underlying "
+        "condition_occurrence records, so every era concept is Standard (condition_era can also hold concept 0 for "
+        "unmapped records). Requiring the joined concept row to have standard_concept = 'C', <> 'S', NOT IN ('S') or "
+        "IS NULL therefore returns no era rows. Only predicates that every surviving row must satisfy are reported: "
+        "a predicate under OR or NOT, in a CASE expression, in the ON clause of an outer join, or a list that also "
+        "admits 'S' leaves the Standard rows in place."
     )
     example_bad = (
         "SELECT de.person_id\n"
@@ -225,43 +120,76 @@ class EraTableStandardConceptsRule(Rule):
         "JOIN concept c ON de.drug_concept_id = c.concept_id\n"
         "WHERE c.standard_concept = 'S';"
     )
+    references = (
+        cdm_table("drug_era"),
+        cdm_table("condition_era"),
+        section(BOOK_VOCABULARIES, "standardConcepts", "Standard concepts"),
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT ce.person_id\n"
+                "FROM condition_era ce\n"
+                "JOIN concept c ON ce.condition_concept_id = c.concept_id\n"
+                "WHERE c.standard_concept IS NULL;"
+            ),
+            severity=Severity.WARNING,
+            note="condition_era: IS NULL keeps only eras of unmapped records (concept 0)",
+        ),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        lowered = sql.lower()
+        if "standard_concept" not in lowered or "_era" not in lowered:
+            return []
         trees, error = parse_sql(sql, dialect)
         if error:
             return []
 
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = extract_aliases(tree)
-
-            valid_aliases = _find_valid_era_concept_joins(tree, aliases)
-
-            if not valid_aliases:
+            era_links = [
+                link
+                for link in links(tree, "concept", "concept_id")
+                if link.required and ERA_CONCEPT_COLUMNS.get(link.origin[0]) == link.origin[1]
+            ]
+            if not era_links:
                 continue
-
-            issues = _check_filters(tree, aliases, valid_aliases)
-
-            for issue in issues:
-                node = issue["node"]
-                patch = _build_remove_predicate_patch(
-                    sql,
-                    node.sql(),
-                    node.parent,
-                    node,
-                )
-                violations.append(
-                    self.create_violation(
-                        message=issue["message"],
-                        suggested_fix_patch=patch,
+            filters = instance_filters(tree, "concept", "standard_concept")
+            seen: Set[int] = set()
+            for link in era_links:
+                table, column = link.origin
+                for flt in filters.get(link.instance, []):
+                    if not flt.required or id(flt.node) in seen:
+                        continue
+                    verdict = _verdict(flt, table)
+                    if verdict is None:
+                        continue
+                    seen.add(id(flt.node))
+                    severity, what = verdict
+                    if severity == Severity.ERROR:
+                        dead = dead_scalar_column(flt.node) or dead_scalar_column(link.node)
+                        message = (
+                            f"{what}, but {table}.{column} only holds Standard concepts"
+                            f"{' (or 0 for unmapped records, whose standard_concept is NULL)' if table in _ALLOWS_UNMAPPED else ''}"
+                            + (f"; {dead}." if dead else ". The query returns 0 rows.")
+                        )
+                    else:
+                        message = (
+                            f"{what}: every mapped {table}.{column} is a Standard concept, so this filter drops all "
+                            "mapped eras. If unmapped eras are what you want, `condition_concept_id = 0` says so "
+                            "directly."
+                        )
+                    violations.append(
+                        self.create_violation(
+                            message=message,
+                            severity=severity,
+                            suggested_fix_patch=_build_remove_predicate_patch(sql, flt.node),
+                        )
                     )
-                )
-
         return violations
 
 
-__all__ = ["EraTableStandardConceptsRule"]
+__all__ = ["ERA_CONCEPT_COLUMNS", "EraTableStandardConceptsRule"]

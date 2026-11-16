@@ -93,7 +93,7 @@ class TestStrictMode:
         assert len(violations_strict) == 0
 
     def test_concept_domain_validation_normal_mode(self):
-        """In normal mode, missing domain_id violations should be WARNING."""
+        """Missing domain_id filters are not reported."""
         sql = """
         SELECT co.person_id, c.concept_name
         FROM condition_occurrence co
@@ -107,13 +107,10 @@ class TestStrictMode:
         rule = get_rule("concept_standardization.concept_domain_validation")()
         violations = rule.validate(sql)
 
-        # Should have violation for missing domain_id filter
-        assert len(violations) > 0
-        # In normal mode, should be WARNING
-        assert any(v.severity == Severity.WARNING and "domain_id" in v.message for v in violations)
+        assert violations == []
 
     def test_concept_domain_validation_strict_mode(self):
-        """In strict mode, missing domain_id violations should be ERROR."""
+        """Strict mode does not escalate concept_domain_validation (it has no warning to escalate)."""
         sql = """
         SELECT co.person_id, c.concept_name
         FROM condition_occurrence co
@@ -127,10 +124,7 @@ class TestStrictMode:
         rule = get_rule("concept_standardization.concept_domain_validation")()
         violations = rule.validate(sql)
 
-        # Should have violation for missing domain_id filter
-        assert len(violations) > 0
-        # In strict mode, should be ERROR
-        assert any(v.severity == Severity.ERROR and "domain_id" in v.message for v in violations)
+        assert violations == []
 
     def test_concept_domain_validation_wrong_domain_always_error(self):
         """Wrong domain_id should always be ERROR, even in normal mode."""
@@ -184,15 +178,15 @@ class TestStrictMode:
         assert len(violations_strict) == 0
 
     def test_derived_tables_silent_in_default_fire_in_strict(self):
-        """Derived-vocabulary-table usage (e.g. concept_ancestor without a
+        """Derived-vocabulary-table usage (concept_synonym without a
         JOIN back to concept for invalid_reason) is silent in default
         mode and fires as WARNING in strict mode — same gating as the
         primary case.
         """
         sql = """
-        SELECT descendant_concept_id
-        FROM concept_ancestor
-        WHERE ancestor_concept_id = 201826
+        SELECT concept_id
+        FROM concept_synonym
+        WHERE concept_synonym_name LIKE '%diabetes%'
         """
 
         rule = get_rule("concept_standardization.invalid_reason_enforcement")()

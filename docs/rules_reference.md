@@ -2,14 +2,14 @@
 
 This document provides comprehensive documentation for FastSSV's validation rules.
 
-**Current registry: 154 rules across 6 categories.**
+**Current registry: 85 rules across 6 categories** (34 ERROR, 51 WARNING).
 
-- **anti_patterns**: 20 rules
-- **concept_standardization**: 18 rules
-- **data_quality**: 22 rules
-- **domain_specific**: 48 rules
-- **joins**: 36 rules
-- **temporal**: 10 rules
+- **anti_patterns**: 11 rules
+- **concept_standardization**: 14 rules
+- **data_quality**: 13 rules
+- **domain_specific**: 19 rules
+- **joins**: 22 rules
+- **temporal**: 6 rules
 
 > **Note:** The prose descriptions below reflect the stable rule set. Rule
 > removals and rule renames are tracked in [CHANGELOG.md](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md).
@@ -35,6 +35,7 @@ For each rule you will find:
 - **Examples** — failing SQL, passing SQL, and edge cases
 - **Common scenarios** — real-world situations where this fires
 - **Suggested fix** — how to resolve the violation
+- **Sources** — the published specification, convention or engine documentation the rule is derived from
 
 ---
 
@@ -55,160 +56,91 @@ For each rule you will find:
 
 | Rule ID | Name | Severity | Category |
 |---------|------|----------|----------|
-| `concept_standardization.concept_ancestor_cross_domain` | [Concept Ancestor Cross-Domain Validation](#concept-standardization-concept-ancestor-cross-domain) | ERROR | concept_standardization |
-| `concept_standardization.concept_ancestor_max_levels_misuse` | [Concept Ancestor Max Levels Misuse](#concept-standardization-concept-ancestor-max-levels-misuse) | ERROR | concept_standardization |
-| `concept_standardization.concept_ancestor_rollup_direction` | [Concept Ancestor Rollup Direction](#concept-standardization-concept-ancestor-rollup-direction) | ERROR | concept_standardization |
+| `concept_standardization.concept_ancestor_max_levels_misuse` | [Concept Ancestor Max Levels Misuse](#concept-standardization-concept-ancestor-max-levels-misuse) | WARNING | concept_standardization |
+| `concept_standardization.concept_ancestor_rollup_direction` | [Concept Ancestor Rollup Direction](#concept-standardization-concept-ancestor-rollup-direction) | WARNING | concept_standardization |
 | `concept_standardization.concept_ancestor_self_include_redundancy` | [Concept Ancestor Self-Include Redundancy](#concept-standardization-concept-ancestor-self-include-redundancy) | WARNING | concept_standardization |
-| `concept_standardization.concept_class_id_ingredient_for_drug_grouping` | [Concept Class ID Ingredient for Drug Grouping](#concept-standardization-concept-class-id-ingredient-for-drug-grouping) | WARNING | concept_standardization |
-| `concept_standardization.concept_domain_validation` | [Concept Domain ID Matches Target Table](#concept-standardization-concept-domain-validation) | WARNING | concept_standardization |
-| `concept_standardization.concept_synonym_language_concept_id` | [Concept Synonym Language Concept ID](#concept-standardization-concept-synonym-language-concept-id) | WARNING | concept_standardization |
-| `concept_standardization.domain_vocabulary_validation` | [Domain Vocabulary Validation (VOCAB_022-025)](#concept-standardization-domain-vocabulary-validation) | WARNING | concept_standardization |
+| `concept_standardization.concept_domain_validation` | [Concept Domain ID Matches Target Column](#concept-standardization-concept-domain-validation) | ERROR | concept_standardization |
+| `concept_standardization.concept_literal_without_hierarchy` | [Concept literal without hierarchy expansion](#concept-standardization-concept-literal-without-hierarchy) | WARNING | concept_standardization |
+| `concept_standardization.domain_vocabulary_validation` | [Domain Vocabulary Validation](#concept-standardization-domain-vocabulary-validation) | ERROR | concept_standardization |
 | `concept_standardization.era_table_standard_concepts` | [Era Tables Use Standard Concepts Only](#concept-standardization-era-table-standard-concepts) | ERROR | concept_standardization |
-| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement (strict mode)](#concept-standardization-invalid-reason-enforcement) | WARNING (strict-mode-only) | concept_standardization |
-| `concept_standardization.maps_to_target_standard_validation` | [Maps To Target Standard Validation](#concept-standardization-maps-to-target-standard-validation) | WARNING | concept_standardization |
+| `concept_standardization.invalid_reason_enforcement` | [Invalid Reason Enforcement (strict mode)](#concept-standardization-invalid-reason-enforcement) | WARNING | concept_standardization |
 | `concept_standardization.multiple_maps_to_targets` | [Multiple Maps To Targets Not Handled](#concept-standardization-multiple-maps-to-targets) | WARNING | concept_standardization |
 | `concept_standardization.source_concept_id_standard_filter` | [Source Concept ID Should Not Filter Standard Concepts](#concept-standardization-source-concept-id-standard-filter) | WARNING | concept_standardization |
-| `concept_standardization.source_concept_id_warning` | [Source Concept ID Not For Analytical Filtering](#concept-standardization-source-concept-id-warning) | WARNING | concept_standardization |
 | `concept_standardization.source_to_concept_map_validation` | [Source to Concept Map Validation](#concept-standardization-source-to-concept-map-validation) | WARNING | concept_standardization |
 | `concept_standardization.standard_concept_enforcement` | [Standard Concept Enforcement](#concept-standardization-standard-concept-enforcement) | WARNING | concept_standardization |
 | `concept_standardization.standard_concept_value_validation` | [Standard Concept Value Validation](#concept-standardization-standard-concept-value-validation) | ERROR | concept_standardization |
-| `concept_standardization.unit_vocabulary_validation` | [Unit Vocabulary Validation](#concept-standardization-unit-vocabulary-validation) | WARNING | concept_standardization |
-| `joins.care_site_id_join_validation` | [Care Site ID Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
-| `joins.care_site_join_validation` | [Care Site Join Path Validation](#joins-care-site-join-validation) | WARNING | joins |
-| `joins.care_site_location_join_validation` | [Care Site to Location Join Validation](#joins-care-site-location-join-validation) | ERROR | joins |
-| `joins.clinical_person_id_linkage_validation` | [Clinical Tables Require Person ID Linkage](#joins-clinical-person-id-linkage-validation) | ERROR | joins |
+| `concept_standardization.unit_vocabulary_validation` | [Unit Vocabulary Validation](#concept-standardization-unit-vocabulary-validation) | ERROR | concept_standardization |
+| `joins.care_site_id_join_validation` | [Care Site and Location Key Join Validation](#joins-care-site-id-join-validation) | ERROR | joins |
+| `joins.care_site_join_validation` | [Care Site Join Path Validation](#joins-care-site-join-validation) | ERROR | joins |
+| `joins.clinical_person_id_linkage_validation` | [Clinical Tables Without a Person-Scoped Link](#joins-clinical-person-id-linkage-validation) | WARNING | joins |
 | `joins.clinical_pk_cross_join_validation` | [Clinical Primary Key Join Validation](#joins-clinical-pk-cross-join-validation) | ERROR | joins |
-| `joins.clinical_visit_detail_join_validation` | [Clinical to Visit Detail Join Validation](#joins-clinical-visit-detail-join-validation) | ERROR | joins |
-| `joins.cohort_clinical_join_validation` | [Cohort to Clinical Table Join Validation](#joins-cohort-clinical-join-validation) | ERROR | joins |
-| `joins.concept_alias_reuse_validation` | [Concept Alias Reuse Validation](#joins-concept-alias-reuse-validation) | ERROR | joins |
-| `joins.concept_ancestor_name_resolution` | [Concept Ancestor Name Resolution Validation](#joins-concept-ancestor-name-resolution) | ERROR | joins |
-| `joins.concept_concept_class_join_validation` | [Concept to Concept Class Join Validation](#joins-concept-concept-class-join-validation) | ERROR | joins |
-| `joins.concept_domain_join_validation` | [Concept to Domain Join Validation](#joins-concept-domain-join-validation) | ERROR | joins |
+| `joins.cohort_clinical_join_validation` | [Cohort to Clinical Table Join Validation](#joins-cohort-clinical-join-validation) | WARNING | joins |
 | `joins.concept_join_validation` | [Concept Join Validation](#joins-concept-join-validation) | ERROR | joins |
-| `joins.concept_relationship_concept_join_validation` | [Concept Relationship to Concept Join Validation](#joins-concept-relationship-concept-join-validation) | ERROR | joins |
+| `joins.concept_metadata_join_validation` | [Concept to Vocabulary, Domain and Concept Class Join Validation](#joins-concept-metadata-join-validation) | ERROR | joins |
 | `joins.concept_relationship_relationship_join_validation` | [Concept Relationship to Relationship Join Validation](#joins-concept-relationship-relationship-join-validation) | ERROR | joins |
 | `joins.concept_relationship_requires_relationship_id` | [Concept Relationship Requires Relationship ID Filter](#joins-concept-relationship-requires-relationship-id) | WARNING | joins |
 | `joins.concept_synonym_join_validation` | [Concept Synonym Join Validation](#joins-concept-synonym-join-validation) | ERROR | joins |
-| `joins.concept_vocabulary_join_validation` | [Concept to Vocabulary Join Validation](#joins-concept-vocabulary-join-validation) | ERROR | joins |
-| `joins.cost_table_domain_validation` | [Cost Table Domain Validation](#joins-cost-table-domain-validation) | WARNING | joins |
-| `joins.death_visit_occurrence_join_validation` | [Death to Visit Occurrence Join Validation](#joins-death-visit-occurrence-join-validation) | ERROR | joins |
 | `joins.drug_exposure_drug_strength_join_validation` | [Drug Exposure to Drug Strength Join Validation](#joins-drug-exposure-drug-strength-join-validation) | ERROR | joins |
-| `joins.era_forbidden_join_validation` | [Era Table Forbidden Join Validation](#joins-era-forbidden-join-validation) | ERROR | joins |
-| `joins.fact_relationship_join_validation` | [Fact Relationship Polymorphic Join Validation](#joins-fact-relationship-join-validation) | ERROR | joins |
-| `joins.join_path_validation` | [Join Path Validation](#joins-join-path-validation) | WARNING | joins |
-| `joins.left_join_then_where_on_right_table` | [Left Join Then Where On Right Table](#joins-left-join-then-where-on-right-table) | WARNING | joins |
+| `joins.era_forbidden_join_validation` | [Era to Visit Join Without Date Relation](#joins-era-forbidden-join-validation) | WARNING | joins |
+| `joins.fact_relationship_join_validation` | [Fact Relationship Polymorphic Join Validation](#joins-fact-relationship-join-validation) | WARNING | joins |
 | `joins.maps_to_direction` | [Maps To Direction](#joins-maps-to-direction) | WARNING | joins |
-| `joins.note_nlp_note_join_validation` | [Note NLP to Note Join Validation](#joins-note-nlp-note-join-validation) | ERROR | joins |
-| `joins.observation_period_join_validation`{ #joins-observation-period-join-validation } | [Observation Period Join Requires Date Overlap](#joins-observation-period-join-validation) | WARNING | joins |
-| `joins.payer_plan_period_join_validation` | [Payer Plan Period Join Validation](#joins-payer-plan-period-join-validation) | WARNING | joins |
+| `joins.observation_period_unlinked` | [Observation Period Not Linked on person_id](#joins-observation-period-unlinked) | WARNING | joins |
+| `joins.period_join_requires_date_overlap` | [Period Join Requires Date Overlap](#joins-period-join-requires-date-overlap) | WARNING | joins |
 | `joins.person_id_join_validation` | [Person ID Join Validation](#joins-person-id-join-validation) | ERROR | joins |
-| `joins.person_location_join_validation` | [Person to Location Join Validation](#joins-person-location-join-validation) | ERROR | joins |
 | `joins.preceding_visit_occurrence_validation` | [Preceding Visit Occurrence Validation](#joins-preceding-visit-occurrence-validation) | ERROR | joins |
 | `joins.provider_care_site_join_validation` | [Provider to Care Site Join Validation](#joins-provider-care-site-join-validation) | ERROR | joins |
 | `joins.provider_join_validation` | [Provider Join Validation](#joins-provider-join-validation) | ERROR | joins |
-| `joins.visit_detail_join_validation` | [Visit Detail Join Validation](#joins-visit-detail-join-validation) | WARNING | joins |
 | `joins.visit_occurrence_id_join_validation` | [Visit Occurrence ID Join Validation](#joins-visit-occurrence-id-join-validation) | ERROR | joins |
 | `joins.visit_occurrence_inner_join_validation` | [Visit Occurrence INNER JOIN Validation](#joins-visit-occurrence-inner-join-validation) | WARNING | joins |
-| `temporal.clinical_event_date_in_future_validation` | [Clinical Event Date Should Not Be In Future](#temporal-clinical-event-date-in-future-validation) | WARNING | temporal |
-| `temporal.datetime_between_date_literal` | [Datetime BETWEEN with Date Literal](#temporal-datetime-between-date-literal) | WARNING | temporal |
-| `temporal.death_date_before_birth_validation` | [Death Date Before Birth Validation](#temporal-death-date-before-birth-validation) | ERROR | temporal |
-| `temporal.death_date_in_future_validation` | [Death Date In Future Validation](#temporal-death-date-in-future-validation) | WARNING | temporal |
-| `temporal.end_before_start_validation` | [End Before Start Validation](#temporal-end-before-start-validation) | ERROR | temporal |
-| `temporal.future_information_leakage` | [Unbounded Follow-up Window (Future Information Leakage)](#temporal-future-information-leakage) | WARNING | temporal |
-| `temporal.nullable_end_date_null_handling` | [Nullable End Date NULL Handling](#temporal-nullable-end-date-null-handling) | WARNING | temporal |
+| `temporal.datetime_between_date_literal` | [Datetime Column With a Date-Only Inclusive Upper Bound](#temporal-datetime-between-date-literal) | WARNING | temporal |
+| `temporal.end_before_start_validation` | [End Before Start Validation](#temporal-end-before-start-validation) | WARNING | temporal |
+| `temporal.implausible_date_filter` | [Implausible Date Filter](#temporal-implausible-date-filter) | WARNING | temporal |
+| `temporal.nullable_date_column` | [Nullable Date Column Without NULL Handling](#temporal-nullable-date-column) | WARNING | temporal |
 | `temporal.observation_period_anchoring` | [Observation Period Anchoring](#temporal-observation-period-anchoring) | WARNING | temporal |
 | `temporal.observation_period_date_range_logic` | [Observation Period Date Range Logic](#temporal-observation-period-date-range-logic) | ERROR | temporal |
-| `temporal.required_date_column_validation` | [Required Date Column Validation](#temporal-required-date-column-validation) | WARNING | temporal |
-| `data_quality.canonical_string_value_validation`{ #data-quality-canonical-string-value-validation } | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
-| `data_quality.clinical_event_date_before_1900_validation` | [Clinical Event Date Should Not Be Before 1900](#data-quality-clinical-event-date-before-1900-validation) | WARNING | data_quality |
+| `data_quality.canonical_string_value_validation` | [Canonical Vocabulary String Value Validation](#data-quality-canonical-string-value-validation) | ERROR | data_quality |
 | `data_quality.column_type_validation` | [Column Type Validation (SCHEMA Layer)](#data-quality-column-type-validation) | ERROR | data_quality |
 | `data_quality.concept_id_string_comparison` | [Concept ID String Comparison](#data-quality-concept-id-string-comparison) | WARNING | data_quality |
-| `data_quality.concept_name_whitespace` | [Concept Name Whitespace](#data-quality-concept-name-whitespace) | WARNING | data_quality |
-| `data_quality.episode_requires_concept_filter` | [Episode Requires Concept Filter](#data-quality-episode-requires-concept-filter) | ERROR | data_quality |
-| `data_quality.fact_relationship_no_self_reference` | [Fact Relationship No Self-Reference](#data-quality-fact-relationship-no-self-reference) | WARNING | data_quality |
-| `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | ERROR | data_quality |
-| `data_quality.fact_relationship_valid_concepts` | [Fact Relationship Valid Concepts](#data-quality-fact-relationship-valid-concepts) | WARNING | data_quality |
-| `data_quality.free_text_column_misuse`{ #data-quality-free-text-column-misuse } | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | ERROR | data_quality |
-| `data_quality.incorrect_percentile_calculation`{ #data-quality-incorrect-percentile-calculation } | [Incorrect Percentile Calculation](#data-quality-incorrect-percentile-calculation) | ERROR | data_quality |
+| `data_quality.episode_requires_concept_filter` | [Episode Requires Concept Filter](#data-quality-episode-requires-concept-filter) | WARNING | data_quality |
+| `data_quality.fact_relationship_requires_relationship_concept_filter` | [Fact Relationship Requires Relationship Concept Filter](#data-quality-fact-relationship-requires-relationship-concept-filter) | WARNING | data_quality |
+| `data_quality.free_text_column_misuse` | [Free-Text Column Misuse](#data-quality-free-text-column-misuse) | WARNING | data_quality |
 | `data_quality.negative_concept_id_validation` | [Negative Concept ID Validation](#data-quality-negative-concept-id-validation) | ERROR | data_quality |
-| `data_quality.non_standard_date_literal_format`{ #data-quality-non-standard-date-literal-format } | [Non-Standard Date Literal Format](#data-quality-non-standard-date-literal-format) | WARNING | data_quality |
 | `data_quality.note_nlp_nlp_date_for_temporal_filtering` | [Note NLP nlp_date for Temporal Filtering](#data-quality-note-nlp-nlp-date-for-temporal-filtering) | WARNING | data_quality |
 | `data_quality.note_nlp_offset_is_character_position` | [Note NLP Offset is Character Position](#data-quality-note-nlp-offset-is-character-position) | WARNING | data_quality |
 | `data_quality.schema_validation` | [OMOP Schema Validation](#data-quality-schema-validation) | ERROR | data_quality |
-| `data_quality.source_value_field_usage`{ #data-quality-source-value-field-usage } | [Source Value Field Usage](#data-quality-source-value-field-usage) | WARNING | data_quality |
-| `data_quality.standard_concept_null_handling` | [Standard Concept NULL Handling](#data-quality-standard-concept-null-handling) | WARNING | data_quality |
-| `data_quality.union_concept_id_domain_indicator` | [Union Concept ID Domain Indicator](#data-quality-union-concept-id-domain-indicator) | WARNING | data_quality |
+| `data_quality.source_value_field_usage` | [Source Value Field Usage](#data-quality-source-value-field-usage) | WARNING | data_quality |
 | `data_quality.union_vs_union_all_clinical_events` | [UNION vs UNION ALL for Clinical Events](#data-quality-union-vs-union-all-clinical-events) | WARNING | data_quality |
-| `data_quality.unmapped_concept_handling` | [Unmapped Concept Handling](#data-quality-unmapped-concept-handling) | WARNING | data_quality |
 | `data_quality.vocabulary_table_protection` | [Vocabulary Table Protection](#data-quality-vocabulary-table-protection) | ERROR | data_quality |
-| `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | WARNING | anti_patterns |
-| `anti_patterns.attribute_definition_invalid_join` | [Attribute Definition Invalid Join](#anti-patterns-attribute-definition-invalid-join) | ERROR | anti_patterns |
-| `anti_patterns.comma_separated_cross_join` | [Comma-Separated Cross Join](#anti-patterns-comma-separated-cross-join) | ERROR | anti_patterns |
-| `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly` | [Concept Ancestor Mixed with Concept Relationship Redundantly](#anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly) | WARNING | anti_patterns |
+| `anti_patterns.ambiguous_column_reference` | [Ambiguous Column Reference](#anti-patterns-ambiguous-column-reference) | ERROR | anti_patterns |
 | `anti_patterns.concept_code_requires_vocabulary_id` | [Concept Code Requires Vocabulary ID](#anti-patterns-concept-code-requires-vocabulary-id) | WARNING | anti_patterns |
 | `anti_patterns.concept_name_lookup` | [Concept Name Lookup Anti-pattern](#anti-patterns-concept-name-lookup) | WARNING | anti_patterns |
 | `anti_patterns.concept_relationship_transitive_misuse` | [Concept Relationship Transitive Misuse](#anti-patterns-concept-relationship-transitive-misuse) | WARNING | anti_patterns |
+| `anti_patterns.cte_shadows_omop_table` | [CTE Shadows OMOP CDM Table](#anti-patterns-cte-shadows-omop-table) | WARNING | anti_patterns |
 | `anti_patterns.destructive_operations_on_clinical_tables` | [Destructive Operations on Clinical Tables](#anti-patterns-destructive-operations-on-clinical-tables) | ERROR | anti_patterns |
-| `anti_patterns.duplicate_column_alias`{ #anti-patterns-duplicate-column-alias } | [Duplicate Column Alias](#anti-patterns-duplicate-column-alias) | WARNING | anti_patterns |
-| `anti_patterns.having_without_group_by` | [Having Without Group By](#anti-patterns-having-without-group-by) | ERROR | anti_patterns |
 | `anti_patterns.join_key_validation` | [Join Key Validation](#anti-patterns-join-key-validation) | ERROR | anti_patterns |
-| `anti_patterns.limit_without_order_by`{ #anti-patterns-limit-without-order-by } | [LIMIT Without ORDER BY](#anti-patterns-limit-without-order-by) | WARNING | anti_patterns |
 | `anti_patterns.no_distinct_on_primary_key_column` | [No DISTINCT on Primary Key Column](#anti-patterns-no-distinct-on-primary-key-column) | WARNING | anti_patterns |
-| `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | ERROR | anti_patterns |
-| `anti_patterns.null_comparison_operator`{ #anti-patterns-null-comparison-operator } | [NULL Comparison Must Use IS NULL / IS NOT NULL](#anti-patterns-null-comparison-operator) | ERROR | anti_patterns |
-| `anti_patterns.singleton_metadata_clinical_join` | [Singleton Metadata Joined to Clinical Table](#anti-patterns-singleton-metadata-clinical-join) | ERROR | anti_patterns |
-| `anti_patterns.standard_concept_or_with_classification` | [Standard Concept OR with Classification](#anti-patterns-standard-concept-or-with-classification) | WARNING | anti_patterns |
-| `anti_patterns.top_as_synthetic_data`{ #anti-patterns-top-as-synthetic-data } | [TOP/LIMIT for Synthetic Data Generation](#anti-patterns-top-as-synthetic-data) | WARNING | anti_patterns |
-| `anti_patterns.type_concept_id_domain_filter` | [Type Concept ID Domain Filter](#anti-patterns-type-concept-id-domain-filter) | WARNING | anti_patterns |
+| `anti_patterns.no_string_identification` | [No String Identification](#anti-patterns-no-string-identification) | WARNING | anti_patterns |
+| `anti_patterns.singleton_metadata_clinical_join` | [Instance Metadata Paired With Clinical Rows](#anti-patterns-singleton-metadata-clinical-join) | WARNING | anti_patterns |
 | `anti_patterns.type_concept_id_misuse` | [Type Concept ID Not For Clinical Filtering](#anti-patterns-type-concept-id-misuse) | ERROR | anti_patterns |
-| `domain_specific.cdm_v53_to_v54_column_renames`{ #domain-specific-cdm-v53-to-v54-column-renames } | [CDM v5.3 to v5.4 Column Renames](#domain-specific-cdm-v53-to-v54-column-renames) | ERROR | domain_specific |
-| `domain_specific.cohort_definition_syntax_not_executable_sql` | [Cohort Definition Syntax Not Executable SQL](#domain-specific-cohort-definition-syntax-not-executable-sql) | ERROR | domain_specific |
-| `domain_specific.condition_occurrence_cardinality_validation` | [Condition Occurrence Cardinality Risk](#domain-specific-condition-occurrence-cardinality-validation) | WARNING | domain_specific |
-| `domain_specific.condition_visit_hierarchy_validation` | [Condition Occurrence Visit Hierarchy Validation](#domain-specific-condition-visit-hierarchy-validation) | ERROR | domain_specific |
-| `domain_specific.cost_currency_concept_id`{ #domain-specific-cost-currency-concept-id } | [Cost Currency Concept ID For Multi-Currency](#domain-specific-cost-currency-concept-id) | WARNING | domain_specific |
-| `domain_specific.cost_event_id_polymorphic_resolution`{ #domain-specific-cost-event-id-polymorphic-resolution } | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
-| `domain_specific.cost_paid_ingredient_cost_drug_specific`{ #domain-specific-cost-paid-ingredient-cost-drug-specific } | [Cost Drug-Specific Columns Require Domain Filter](#domain-specific-cost-paid-ingredient-cost-drug-specific) | WARNING | domain_specific |
-| `domain_specific.cost_payer_plan_period_id_join` | [Cost Payer Plan Period ID Join](#domain-specific-cost-payer-plan-period-id-join) | ERROR | domain_specific |
-| `domain_specific.death_cause_source_concept_validation` | [Death Cause Source Concept Not For Analytical Filtering](#domain-specific-death-cause-source-concept-validation) | ERROR | domain_specific |
-| `domain_specific.death_join_to_person_not_to_clinical_event` | [Death Join to Person Not to Clinical Event](#domain-specific-death-join-to-person-not-to-clinical-event) | ERROR | domain_specific |
-| `domain_specific.dose_era_cross_unit_comparison`{ #domain-specific-dose-era-cross-unit-comparison } | [Dose Era Cross-Unit Comparison](#domain-specific-dose-era-cross-unit-comparison) | WARNING | domain_specific |
-| `domain_specific.drug_days_supply_validation` | [Drug Days Supply Validation](#domain-specific-drug-days-supply-validation) | WARNING | domain_specific |
+| `domain_specific.cost_currency_concept_id` | [Cost Currency Concept ID For Multi-Currency](#domain-specific-cost-currency-concept-id) | WARNING | domain_specific |
+| `domain_specific.cost_event_id_polymorphic_resolution` | [Cost Event ID Polymorphic Resolution](#domain-specific-cost-event-id-polymorphic-resolution) | ERROR | domain_specific |
 | `domain_specific.drug_era_concept_class_validation` | [Drug Era Concept Class Validation](#domain-specific-drug-era-concept-class-validation) | ERROR | domain_specific |
-| `domain_specific.drug_exposure_cardinality_validation` | [Drug Exposure Cardinality Awareness](#domain-specific-drug-exposure-cardinality-validation) | WARNING | domain_specific |
+| `domain_specific.drug_exposure_implausible_value_filter` | [Drug Exposure Implausible Value Filter](#domain-specific-drug-exposure-implausible-value-filter) | WARNING | domain_specific |
 | `domain_specific.drug_exposure_quantity_misuse` | [Drug Exposure Quantity Misuse](#domain-specific-drug-exposure-quantity-misuse) | WARNING | domain_specific |
-| `domain_specific.drug_exposure_sig_parsing` | [Drug Exposure Sig Parsing](#domain-specific-drug-exposure-sig-parsing) | WARNING | domain_specific |
-| `domain_specific.drug_quantity_validation` | [Drug Quantity Validation](#domain-specific-drug-quantity-validation) | WARNING | domain_specific |
 | `domain_specific.drug_strength_numerator_denominator_for_concentration` | [Drug Strength Completeness (Amount vs Concentration)](#domain-specific-drug-strength-numerator-denominator-for-concentration) | WARNING | domain_specific |
-| `domain_specific.drug_strength_validity_filter` | [Drug Strength Validity Filter](#domain-specific-drug-strength-validity-filter) | WARNING | domain_specific |
-| `domain_specific.episode_event_no_person_id` | [Episode Event No Person ID](#domain-specific-episode-event-no-person-id) | ERROR | domain_specific |
-| `domain_specific.episode_parent_id_self_join` | [Episode Parent ID Self Join](#domain-specific-episode-parent-id-self-join) | ERROR | domain_specific |
-| `domain_specific.event_cardinality_validation`{ #domain-specific-event-cardinality-validation } | [Event Cardinality Risk](#domain-specific-event-cardinality-validation) | WARNING | domain_specific |
-| `domain_specific.event_date_column_correctness`{ #domain-specific-event-date-column-correctness } | [Event Date Column Correctness](#domain-specific-event-date-column-correctness) | ERROR | domain_specific |
-| `domain_specific.event_field_polymorphic_resolution`{ #domain-specific-event-field-polymorphic-resolution } | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
-| `domain_specific.location_history_entity_id_requires_domain_id` | [Location History Entity ID Requires Domain ID](#domain-specific-location-history-entity-id-requires-domain-id) | ERROR | domain_specific |
-| `domain_specific.measurement_cross_unit_comparison` | [Measurement Cross-Unit Comparison](#domain-specific-measurement-cross-unit-comparison) | WARNING | domain_specific |
-| `domain_specific.measurement_duplicate_detection` | [Measurement Duplicate Detection](#domain-specific-measurement-duplicate-detection) | WARNING | domain_specific |
+| `domain_specific.event_field_polymorphic_resolution` | [Event-Field Polymorphic Resolution](#domain-specific-event-field-polymorphic-resolution) | ERROR | domain_specific |
+| `domain_specific.event_rows_counted_as_persons` | [Event Rows Counted as Persons](#domain-specific-event-rows-counted-as-persons) | WARNING | domain_specific |
 | `domain_specific.measurement_operator_concept_validation` | [Measurement Operator Concept Validation](#domain-specific-measurement-operator-concept-validation) | ERROR | domain_specific |
-| `domain_specific.measurement_range_low_high_validation` | [Measurement Range Low/High Validation](#domain-specific-measurement-range-low-high-validation) | ERROR | domain_specific |
-| `domain_specific.measurement_unit_validation` | [Measurement Unit Validation](#domain-specific-measurement-unit-validation) | WARNING | domain_specific |
-| `domain_specific.measurement_value_as_number_and_concept_validation` | [Measurement Value Representation Consistency](#domain-specific-measurement-value-as-number-and-concept-validation) | ERROR | domain_specific |
+| `domain_specific.measurement_range_low_high_validation` | [Measurement Range Low/High Validation](#domain-specific-measurement-range-low-high-validation) | WARNING | domain_specific |
 | `domain_specific.note_nlp_snippet_misuse` | [Note NLP Snippet Misuse](#domain-specific-note-nlp-snippet-misuse) | WARNING | domain_specific |
-| `domain_specific.observation_value_as_columns_mutually_contextual` | [Observation Value As Columns Mutually Contextual](#domain-specific-observation-value-as-columns-mutually-contextual) | WARNING | domain_specific |
-| `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | ERROR | domain_specific |
-| `domain_specific.observation_value_as_string_numeric_comparison` | [Observation Value As String Numeric Comparison](#domain-specific-observation-value-as-string-numeric-comparison) | ERROR | domain_specific |
+| `domain_specific.numeric_value_without_unit_constraint` | [Numeric Value Without Unit Constraint](#domain-specific-numeric-value-without-unit-constraint) | WARNING | domain_specific |
+| `domain_specific.observation_value_as_concept_confusion` | [Observation Value As Concept Confusion](#domain-specific-observation-value-as-concept-confusion) | WARNING | domain_specific |
 | `domain_specific.person_birth_field_validation` | [Person Birth Field Validation](#domain-specific-person-birth-field-validation) | ERROR | domain_specific |
-| `domain_specific.procedure_occurrence_quantity_semantics` | [Procedure Occurrence Quantity Semantics](#domain-specific-procedure-occurrence-quantity-semantics) | WARNING | domain_specific |
-| `domain_specific.specimen_source_id_not_specimen_id` | [Specimen Source ID Not Specimen ID](#domain-specific-specimen-source-id-not-specimen-id) | ERROR | domain_specific |
-| `domain_specific.visit_detail_admitted_discharged_domain` | [Visit Detail Admitted/Discharged Domain Validation](#domain-specific-visit-detail-admitted-discharged-domain) | WARNING | domain_specific |
+| `domain_specific.value_as_columns_conjunction` | [Value-As Columns Combined With AND](#domain-specific-value-as-columns-conjunction) | WARNING | domain_specific |
 | `domain_specific.visit_detail_dates_within_parent_visit` | [Visit Detail Dates Within Parent Visit](#domain-specific-visit-detail-dates-within-parent-visit) | WARNING | domain_specific |
-| `domain_specific.visit_detail_has_no_preceding_visit_occurrence_id` | [Visit Detail Has No Preceding Visit Occurrence ID](#domain-specific-visit-detail-has-no-preceding-visit-occurrence-id) | ERROR | domain_specific |
-| `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Reference](#domain-specific-visit-detail-visit-occurrence-reference) | ERROR | domain_specific |
-| `domain_specific.visit_event_temporal_validation` | [Visit Event Temporal Validation](#domain-specific-visit-event-temporal-validation) | WARNING | domain_specific |
-| `domain_specific.visit_length_of_stay_arithmetic`{ #domain-specific-visit-length-of-stay-arithmetic } | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
-| `domain_specific.visit_occurrence_type_domain`{ #domain-specific-visit-occurrence-type-domain } | [Visit Occurrence Type Concept Domain Validation](#domain-specific-visit-occurrence-type-domain) | ERROR | domain_specific |
-| `domain_specific.visit_outpatient_same_day_validation` | [Visit Outpatient Same-Day Validation](#domain-specific-visit-outpatient-same-day-validation) | WARNING | domain_specific |
-| `domain_specific.vocabulary_relationship_boolean_comparison` | [Relationship Boolean Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
-| `domain_specific.year_of_birth_age_arithmetic`{ #domain-specific-year-of-birth-age-arithmetic } | [Person Year-of-Birth Age Arithmetic](#domain-specific-year-of-birth-age-arithmetic) | WARNING | domain_specific |
+| `domain_specific.visit_detail_visit_occurrence_reference` | [Visit Detail Visit Occurrence Linkage](#domain-specific-visit-detail-visit-occurrence-reference) | WARNING | domain_specific |
+| `domain_specific.visit_length_of_stay_arithmetic` | [Visit Length-of-Stay Arithmetic](#domain-specific-visit-length-of-stay-arithmetic) | WARNING | domain_specific |
+| `domain_specific.vocabulary_relationship_boolean_comparison` | [Relationship Flag Comparison](#domain-specific-vocabulary-relationship-boolean-comparison) | ERROR | domain_specific |
 
 
 ---
@@ -227,1063 +159,761 @@ These rules validate whether SQL queries correctly use OMOP standard concepts, v
 
 ---
 
-### 1. Concept Ancestor Cross-Domain Validation { #concept-standardization-concept-ancestor-cross-domain }
-
-**Rule ID:** `concept_standardization.concept_ancestor_cross_domain`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_ancestor table represents hierarchical relationships within domains:
-    - A Condition ancestor has only Condition descendants
-    - A Drug ancestor has only Drug descendants
-    - A Procedure ancestor has only Procedure descendants
-
-    Cross-domain relationships exist in concept_relationship (e.g., 'Has indication'),
-    NOT in concept_ancestor.
-
-    Filtering descendant concepts by a different domain_id than the ancestor's
-    domain will always return zero results.
-
-Common mistake scenarios:
-    1. Trying to find drugs to treat a condition via concept_ancestor
-       (should use concept_relationship with 'Has indication')
-
-    2. Mixing domains when expanding hierarchies
-       (e.g., drug ancestor with procedure descendants)
-
-    3. Misunderstanding OMOP's domain architecture
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept ancestor cross-domain validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    JOIN concept c ON ca.descendant_concept_id = c.concept_id
-    WHERE ca.ancestor_concept_id = 201820  -- Condition: Diabetes
-      AND c.domain_id = 'Drug'             -- ERROR: No Drug descendants!
-```
-
-**Correct patterns:**
-
-```sql
-SELECT cr.concept_id_2 AS drug_concept_id
-    FROM concept_relationship cr
-    WHERE cr.concept_id_1 = 201820
-      AND cr.relationship_id = 'Has indication'
-```
-
-#### Suggested fix
-
-Match descendant domain_id to the ancestor's domain, or use concept_relationship for cross-domain relationships.
-
----
-
-### 2. Concept Ancestor Max Levels Misuse { #concept-standardization-concept-ancestor-max-levels-misuse }
+### 1. Concept Ancestor Max Levels Misuse { #concept-standardization-concept-ancestor-max-levels-misuse }
 
 **Rule ID:** `concept_standardization.concept_ancestor_max_levels_misuse`
 **Severity:** WARNING
 
 #### Intent
 
-The concept_ancestor table tracks hierarchical relationships with two distance columns:
-    - min_levels_of_separation: The shortest path from ancestor to descendant
-    - max_levels_of_separation: The LONGEST path from ancestor to descendant
-
-    Due to multiple inheritance (a concept can have multiple parents), there can be
-    multiple paths between an ancestor and descendant. The max_levels_of_separation
-    represents the longest of these paths.
-
-    Common misconception:
-    - Users think max_levels_of_separation = 1 returns "direct children"
-    - This is WRONG because a concept with multiple paths might have:
-      * min_levels_of_separation = 1 (direct child via one path)
-      * max_levels_of_separation = 3 (via a longer alternate path)
-
-    Using max_levels_of_separation = 1 will MISS concepts that have direct
-    relationships but also have longer alternate paths.
-
-Correct usage:
-    - Use min_levels_of_separation = 1 for direct parent-child relationships
-    - Use max_levels_of_separation <= N to limit maximum depth to explore
-    - Use max_levels_of_separation >= N to find distant relationships only
+concept_ancestor has one row per ancestor/descendant pair, with the shortest path in min_levels_of_separation and the longest in max_levels_of_separation. A concept with several parents can be a direct child (min = 1) and also descend through a longer branch (max > 1). Restricting max_levels_of_separation to 1 keeps only children with no longer path: for 'Diabetes mellitus' (201820) in the Athena v5.0 27-AUG-25 release, 21 rows instead of the 24 with min_levels_of_separation = 1. The rule is a WARNING because that narrower set can be intended; it is silent when min_levels_of_separation is restricted on the same row, and does not report other max_levels_of_separation values.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept ancestor max levels misuse patterns.
+Follows max_levels_of_separation to its concept_ancestor row by lineage (through CTEs, derived tables, casts) and combines the predicates of one AND-chain into an integer range. It reports the chain when that range is exactly 1, in a filter or a CASE label, unless the same row is also restricted on min_levels_of_separation.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
 SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND max_levels_of_separation = 1  -- WRONG: misses multi-path children
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820
+  AND max_levels_of_separation = 1;
 ```
 
-**Correct patterns:**
+**The same restriction written as a range (WARNING):**
 
 ```sql
 SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND min_levels_of_separation = 1
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820
+  AND max_levels_of_separation > 0
+  AND max_levels_of_separation < 2;
 ```
 
+**Correct pattern:**
+
 ```sql
 SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND max_levels_of_separation <= 2
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820
+  AND min_levels_of_separation = 1;
 ```
 
 #### Suggested fix
 
-Use min_levels_of_separation = 1 for direct relationships, or max_levels_of_separation <= N to limit hierarchy depth.
+REPLACE: `max_levels_of_separation = 1` WITH `min_levels_of_separation = 1` for direct children, unless you want only children with no longer path.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT_ANCESTOR](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_ancestor)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept ancestor](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor)
 
 ---
 
-### 3. Concept Ancestor Rollup Direction { #concept-standardization-concept-ancestor-rollup-direction }
+### 2. Concept Ancestor Rollup Direction { #concept-standardization-concept-ancestor-rollup-direction }
 
 **Rule ID:** `concept_standardization.concept_ancestor_rollup_direction`
-**Severity:** ERROR
+**Severity:** WARNING
 
 #### Intent
 
-concept_ancestor represents hierarchical relationships:
-    - descendant_concept_id: The more specific child concept (e.g., "Type 2 Diabetes")
-    - ancestor_concept_id: The more general parent concept (e.g., "Diabetes Mellitus")
-
-    Patient records contain specific diagnoses (descendants), not parent concepts.
-    To roll up to parent concepts, you must:
-    1. Join clinical table's concept_id to descendant_concept_id
-    2. Filter on ancestor_concept_id
-
-    Swapping this reverses the hierarchy, causing:
-    - Missed child concepts
-    - Incorrect aggregations
-    - Potentially zero results
+concept_ancestor is directional: ancestor_concept_id is the broader concept and descendant_concept_id every concept below it (including itself). Joining a record's concept to descendant_concept_id and fixing ancestor_concept_id returns records coded at the concept or any of its descendants, the usual hierarchy query. With the columns swapped the query returns records coded at the concept or at any broader concept above it. The CDM allows both directions, so this is a WARNING; it is reported only when the descendant side is fixed to literal concepts, directly or through the concept row joined to it.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept ancestor rollup direction patterns.
+Finds every equality or IN-subquery that matches a record concept column (a concept foreign key of a CDM data table other than *_source_concept_id and *_type_concept_id) against concept_ancestor.ancestor_concept_id, and reports it when the same concept_ancestor row has a required literal restriction on descendant_concept_id, directly or through the concept row joined to it. Links are followed by lineage.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
-SELECT ca.descendant_concept_id, COUNT(*)
-    FROM condition_occurrence co
-    JOIN concept_ancestor ca
-      ON co.condition_concept_id = ca.ancestor_concept_id  -- WRONG!
-    WHERE ca.descendant_concept_id = 201820
-    GROUP BY ca.descendant_concept_id
+SELECT co.condition_occurrence_id
+FROM condition_occurrence co
+JOIN concept_ancestor ca
+  ON co.condition_concept_id = ca.ancestor_concept_id
+WHERE ca.descendant_concept_id = 201820;
 ```
 
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT ca.ancestor_concept_id, COUNT(*)
-    FROM condition_occurrence co
-    JOIN concept_ancestor ca
-      ON co.condition_concept_id = ca.descendant_concept_id  -- Correct
-    WHERE ca.ancestor_concept_id = 201820
-    GROUP BY ca.ancestor_concept_id
+SELECT co.condition_occurrence_id
+FROM condition_occurrence co
+JOIN concept_ancestor ca
+  ON co.condition_concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 201820;
 ```
 
 #### Suggested fix
 
-Join clinical concept_id to concept_ancestor.descendant_concept_id and filter on concept_ancestor.ancestor_concept_id.
+REPLACE: the join and filter WITH `<record>.<x>_concept_id = ca.descendant_concept_id AND ca.ancestor_concept_id = <concept>` to get the concept and its descendants.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT_ANCESTOR](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_ancestor)
+- [The Book of OHDSI, ch. 9: SQL and R, Using the vocabulary when querying](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#using-the-vocabulary-when-querying)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept ancestor](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor)
 
 ---
 
-### 4. Concept Ancestor Self-Include Redundancy { #concept-standardization-concept-ancestor-self-include-redundancy }
+### 3. Concept Ancestor Self-Include Redundancy { #concept-standardization-concept-ancestor-self-include-redundancy }
 
 **Rule ID:** `concept_standardization.concept_ancestor_self_include_redundancy`
 **Severity:** WARNING
 
 #### Intent
 
-The concept_ancestor table includes self-referencing rows where:
-    - ancestor_concept_id = descendant_concept_id
-    - min_levels_of_separation = 0
-    - max_levels_of_separation = 0
-
-    This means every concept is its own ancestor at distance 0.
-
-    When building concept sets, the anchor concept is AUTOMATICALLY included
-    in concept_ancestor results. Queries that explicitly add the anchor concept
-    AND query concept_ancestor will duplicate the anchor.
+concept_ancestor records every Standard and Classification concept as its own descendant (both levels of separation 0), so a descendant expansion of such a concept already contains the anchor. Adding the anchor again through UNION ALL keeps both copies; a codeset built that way multiplies rows when it is joined to clinical events. A plain UNION, an OR predicate, or an IN list cannot duplicate the anchor and are not flagged. Nor is a UNION ALL whose branches emit tuples that differ in a constant column, or whose every consumer deduplicates (DISTINCT, GROUP BY on the concept, COUNT(DISTINCT ...)) or reads the rows as a set (IN, EXISTS): no duplicate reaches the result.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept ancestor self-include redundancy patterns.
+Looks at each UNION ALL whose one branch emits an anchor concept explicitly (a concept row, a literal-only SELECT or VALUES) and whose other branch expands the same id through concept_ancestor without excluding the self row. It stays silent when the branches differ in a constant column, or when every consumer deduplicates (DISTINCT, DISTINCT aggregates, MIN/MAX) or reads the rows as a set (IN, EXISTS).
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
-with explicit anchor (duplicates 201820)
-    SELECT concept_id FROM concept WHERE concept_id = 201820
-    UNION
-    SELECT descendant_concept_id FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
+SELECT descendant_concept_id AS concept_id
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820
+UNION ALL
+SELECT concept_id
+FROM concept
+WHERE concept_id = 201820;
 ```
 
-```sql
-with explicit anchor and concept_ancestor
-    SELECT DISTINCT c.concept_id
-    FROM concept c
-    LEFT JOIN concept_ancestor ca
-      ON c.concept_id = ca.descendant_concept_id
-      AND ca.ancestor_concept_id = 201820
-    WHERE c.concept_id = 201820 OR ca.ancestor_concept_id IS NOT NULL
-```
-
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-```
-
-```sql
-SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-      AND min_levels_of_separation > 0
-```
-
-#### Common scenarios
-
-- UNION with explicit anchor: Include concept_id = X and also query
-- OR condition mixing direct concept_id and concept_ancestor
-- IN clause with explicit IDs and concept_ancestor subquery
-
-#### Suggested fix
-
-Use concept_ancestor alone, or filter with min_levels_of_separation > 0.
-
----
-
-### 5. Concept Class ID Ingredient for Drug Grouping { #concept-standardization-concept-class-id-ingredient-for-drug-grouping }
-
-**Rule ID:** `concept_standardization.concept_class_id_ingredient_for_drug_grouping`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP drug concepts exist in a specificity hierarchy:
-
-    Ingredient (most general - active substance)
-        ↓
-    Clinical Drug Form (dose form + ingredient)
-        ↓
-    Clinical Drug (formulation without brand)
-        ↓
-    Branded Drug (brand name + formulation)
-        ↓
-    Marketed Product (most specific - commercial package)
-
-    When analysts want to group by active ingredient (e.g., "all Metformin prescriptions"),
-    but filter by concept_class_id = 'Clinical Drug' or 'Branded Drug', they're grouping
-    at the wrong level of granularity.
-
-    Issues with wrong concept_class_id:
-    1. Clinical Drug: Groups by formulation (500mg tablet vs 850mg tablet counted separately)
-    2. Branded Drug: Groups by brand (Glucophage vs Fortamet vs generic counted separately)
-    3. Missing data: Fails to capture all forms of the active ingredient
-
-    This leads to:
-    - Undercounting drug exposure (split across formulations/brands)
-    - Incorrect prevalence estimates
-    - Misleading comparative effectiveness analyses
-    - Fragmented ingredient-level statistics
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept class id ingredient for drug grouping patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT c.concept_name AS ingredient, COUNT(*) AS patient_count
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Clinical Drug'
-    GROUP BY c.concept_name
-```
-
-```sql
-SELECT c.concept_name AS active_substance,
-           COUNT(DISTINCT de.person_id) AS patients
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Branded Drug'
-    GROUP BY c.concept_name
-```
-
-**Correct patterns:**
-
-```sql
-SELECT c.concept_name AS ingredient, COUNT(*) AS patient_count
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Ingredient'
-    GROUP BY c.concept_name
-```
-
-```sql
-SELECT ing.concept_name AS ingredient,
-           COUNT(DISTINCT de.person_id) AS patients
-    FROM drug_exposure de
-    JOIN concept_ancestor ca
-      ON de.drug_concept_id = ca.descendant_concept_id
-    JOIN concept ing
-      ON ca.ancestor_concept_id = ing.concept_id
-    WHERE ing.concept_class_id = 'Ingredient'
-    GROUP BY ing.concept_name
+SELECT descendant_concept_id AS concept_id
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820;
 ```
 
 #### Suggested fix
 
-Use concept_class_id = 'Ingredient' or use concept_ancestor to roll up drug products to ingredients.
+REPLACE: `UNION ALL` WITH `UNION`, OR REMOVE the explicit anchor branch, OR ADD `AND descendant_concept_id <> ancestor_concept_id` to the concept_ancestor branch.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Concept ancestor](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-ancestor)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept ancestor](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor)
+- [PostgreSQL documentation: Combining Queries (UNION, INTERSECT, EXCEPT)](https://www.postgresql.org/docs/current/queries-union.html)
 
 ---
 
-### 6. Concept Domain ID Matches Target Table { #concept-standardization-concept-domain-validation }
+### 4. Concept Domain ID Matches Target Column { #concept-standardization-concept-domain-validation }
 
 **Rule ID:** `concept_standardization.concept_domain_validation`
-**Severity:** WARNING
+**Severity:** ERROR
 
 #### Intent
 
-Merged rule combining domain_segregation and concept_domain_validation.
+Each CDM v5.4 *_concept_id field with an fkDomain holds concepts of that domain only: condition_occurrence.condition_concept_id is 'Condition', drug_exposure.drug_concept_id is 'Drug', every *_type_concept_id is 'Type Concept', measurement.unit_concept_id is 'Unit'. Requiring the joined concept row to have another domain_id means no concept row can match (an inner join returns zero rows). A domain_id filter that also lists other domains is reported as a warning because the extra values can never match. A missing domain_id filter is not reported: the join is on the concept primary key, so the filter would change nothing.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept domain id matches target table patterns.
+Ties each match of a CDM concept column to concept.concept_id and each domain_id predicate to one concept table instance by lineage, then compares the admitted domain_id values with the column's fkDomain from the CDM v5.4 field-level specification ('Metadata', the domain of concept 0, is always admitted). Four fields have no fkDomain in the CSV but the specification text of the field names their domain, and they are checked with it: `cdm_source.cdm_version_concept_id` (Metadata: the concepts of vocabulary 'CDM', class 'CDM'), `drug_strength.drug_concept_id` (Drug: "the Branded Drug or Clinical Drug Product"), `location.country_concept_id` (Geography: "Values should conform to the Geography domain") and `measurement.operator_concept_id` (Meas Value Operator: "these concepts belong to the 'Meas Value Operator' domain").
 
 #### Examples
 
-#### Suggested fix
-
-Add or correct concept.domain_id filter to match expected domain.
-
----
-
-
-### 8. Concept Synonym Language Concept ID { #concept-standardization-concept-synonym-language-concept-id }
-
-**Rule ID:** `concept_standardization.concept_synonym_language_concept_id`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_synonym table stores synonym names in multiple languages:
-    - English (language_concept_id = 4180186)
-    - Spanish, German, French, etc. (other language_concept_id values)
-
-    When searching for synonyms by name (LIKE '%heart attack%'), you may
-    inadvertently retrieve synonyms in multiple languages if you don't
-    filter by language_concept_id.
-
-Common mistake:
-    Developers search concept_synonym_name without considering language,
-    leading to unexpected multilingual results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept synonym language concept id patterns.
-
-#### Examples
-
-**Violation patterns:**
+**Violation pattern (ERROR):**
 
 ```sql
-SELECT concept_id FROM concept_synonym
-    WHERE concept_synonym_name LIKE '%heart attack%'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.domain_id = 'Drug';
 ```
 
+**The domain filter lists the column's domain plus others that can never match (WARNING):**
+
 ```sql
-SELECT * FROM concept_synonym
-    WHERE concept_synonym_name ILIKE '%diabetes%'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.domain_id IN ('Condition', 'Observation');
 ```
 
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT concept_id FROM concept_synonym
-    WHERE concept_synonym_name LIKE '%heart attack%'
-    AND language_concept_id = 4180186  -- English
-```
-
-```sql
-SELECT * FROM concept_synonym
-    WHERE concept_synonym_name LIKE '%myocardial infarction%'
-    AND language_concept_id IN (4180186, 4175777)  -- English and Spanish
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.domain_id = 'Condition';
 ```
 
 #### Suggested fix
 
-Add: AND language_concept_id = 4180186 (English), unless multilingual results are intended.
+REPLACE: the concept alias's domain_id filter WITH the column's domain (e.g. 'Condition' for condition_occurrence.condition_concept_id, 'Type Concept' for any *_type_concept_id), OR remove it: the join on concept_id already fixes the domain.
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Domains](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptDomains)
+- [OMOP CDM v5.4 specification: CDM_SOURCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#cdm_source)
+- [OMOP CDM v5.4 specification: DRUG_STRENGTH](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_strength)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
 
 ---
 
-### 9. Domain Vocabulary Validation (VOCAB_022-025) { #concept-standardization-domain-vocabulary-validation }
+### 5. Domain Vocabulary Validation { #concept-standardization-domain-vocabulary-validation }
 
 **Rule ID:** `concept_standardization.domain_vocabulary_validation`
-**Severity:** WARNING
+**Severity:** ERROR
 
 #### Intent
 
-Each OMOP clinical domain has specific standard vocabularies:
-
-    - Conditions: SNOMED (not ICD10CM, ICD9CM, ICD10, ICD9)
-    - Drugs: RxNorm, RxNorm Extension (not NDC, ATC, GCN_SEQNO, SPL)
-    - Procedures: SNOMED, CPT4, HCPCS (not ICD10PCS, ICD9Proc, OPCS4)
-    - Measurements: LOINC, SNOMED (not CPT4 when standard_concept = 'S')
-
-    Standard *_concept_id columns (condition_concept_id, drug_concept_id, etc.)
-    ALWAYS reference standard concepts. If you filter by source vocabulary_id
-    values, you'll get zero results because standard concept IDs don't belong
-    to those vocabularies.
+Concept columns with an fkDomain hold Standard concepts of that domain, and Standard concepts come from a few vocabularies per domain (Book of OHDSI Table 5.2: SNOMED and ICDO3 for conditions; RxNorm, RxNorm Extension and CVX for drugs). The vocabularies are taken from the Athena release v5.0 27-AUG-25. Requiring the joined concept row to come only from a vocabulary with no Standard concept in that domain (ICD10CM, ICD9CM, NDC, SPL, ATC, MedDRA, Read, ...) returns zero rows, also when the query lists or groups by vocabulary_id. Filter the *_source_concept_id column instead, or map the source codes to standard concepts with concept_relationship 'Maps to'. A value that differs from an allowed vocabulary_id only in case ('snomed') is not that vocabulary, since vocabulary IDs are case-sensitive: an ERROR on every dialect. Unknown vocabulary names (site-local vocabularies) and lists that also admit a vocabulary that occurs are not reported.
 
 #### How it works
 
-This rule analyzes the SQL query to identify domain vocabulary validation (vocab_022-025) patterns.
+Ties each match of a concept column with an fkDomain (the same field-to-domain table as `concept_standardization.concept_domain_validation`, including the four fields whose domain only the specification text gives) to one concept instance by lineage and reads that instance's required vocabulary_id restriction (=, IN, LIKE expanded against the release's vocabularies). It reports when every admitted vocabulary is known to the release and has no Standard concept in the column's domain; a value is compared with the vocabulary IDs case-sensitively, as they are defined, unless the SQL folds case itself (ILIKE, LOWER, UPPER). The verdict is the same on every dialect. Unit columns belong to unit_vocabulary_validation. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (ERROR):**
 
 ```sql
-SELECT *
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
-    WHERE c.vocabulary_id = 'ICD10CM'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'ICD10CM';
 ```
+
+**Case-only mismatch: the vocabulary ID is 'SNOMED', on every dialect (ERROR):**
 
 ```sql
-SELECT *
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.vocabulary_id = 'NDC'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'snomed';
 ```
 
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT *
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
-    WHERE c.vocabulary_id = 'SNOMED'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_source_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'ICD10CM';
 ```
-
-```sql
-SELECT *
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.vocabulary_id IN ('RxNorm', 'RxNorm Extension')
-```
-
-#### Common scenarios
-
-- Joining condition_concept_id to concept and filtering vocabulary_id = 'ICD10CM'
-- Joining drug_concept_id to concept and filtering vocabulary_id = 'NDC'
-- Joining procedure_concept_id to concept and filtering vocabulary_id = 'ICD10PCS'
 
 #### Suggested fix
 
-Use the correct standard vocabulary for the domain, or use *_source_concept_id for source vocabulary filtering.
+REPLACE: `c.vocabulary_id = '<source_vocab>'` WITH a vocabulary of the column's Standard concepts (Condition: 'SNOMED'; Drug: 'RxNorm' / 'RxNorm Extension'), OR filter the *_source_concept_id column, OR map the source codes through concept_relationship 'Maps to' first.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#standardConcepts)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
+- [OMOP CDM: Data Model Conventions, Source values, source concept ids and standard concept ids](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-values-source-concept-ids-and-standard-concept-ids)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: CDM_SOURCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#cdm_source)
+- [OMOP CDM v5.4 specification: DRUG_STRENGTH](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_strength)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
 
 ---
 
-### 10. Era Tables Use Standard Concepts Only { #concept-standardization-era-table-standard-concepts }
+### 6. Era Tables Use Standard Concepts Only { #concept-standardization-era-table-standard-concepts }
 
 **Rule ID:** `concept_standardization.era_table_standard_concepts`
 **Severity:** ERROR
 
 #### Intent
 
-Era tables contain only standard concepts. Filtering for non-standard concepts will always return 0 rows.
+drug_era and dose_era are built per Ingredient and condition_era per condition_concept_id of the underlying condition_occurrence records, so every era concept is Standard (condition_era can also hold concept 0 for unmapped records). Requiring the joined concept row to have standard_concept = 'C', <> 'S', NOT IN ('S') or IS NULL therefore returns no era rows. Only predicates that every surviving row must satisfy are reported: a predicate under OR or NOT, in a CASE expression, in the ON clause of an outer join, or a list that also admits 'S' leaves the Standard rows in place.
 
 #### How it works
 
-This rule analyzes the SQL query to identify era tables use standard concepts only patterns.
+Ties each match of an era table's concept column to concept.concept_id with the concept row's standard_concept predicates by lineage, and reports required predicates (AND-joined to WHERE, HAVING or an inner join's ON) that no Standard concept satisfies. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
 
 #### Examples
 
+**Violation pattern (ERROR):**
+
+```sql
+SELECT de.person_id
+FROM drug_era de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.standard_concept = 'C';
+```
+
+**condition_era: IS NULL keeps only eras of unmapped records (concept 0) (WARNING):**
+
+```sql
+SELECT ce.person_id
+FROM condition_era ce
+JOIN concept c ON ce.condition_concept_id = c.concept_id
+WHERE c.standard_concept IS NULL;
+```
+
+**Correct pattern:**
+
+```sql
+SELECT de.person_id
+FROM drug_era de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.standard_concept = 'S';
+```
+
 #### Suggested fix
 
-Remove filters for non-standard concepts. Era tables only contain standard concepts (standard_concept = 'S').
+REMOVE: the standard_concept predicate, OR REPLACE it WITH `standard_concept = 'S'`. drug_era / dose_era hold Ingredient concepts and condition_era holds the Standard concepts of its condition_occurrence records.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: DRUG_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_era)
+- [OMOP CDM v5.4 specification: CONDITION_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_era)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#standardConcepts)
 
 ---
 
-
-### 12. Invalid Reason Enforcement { #concept-standardization-invalid-reason-enforcement }
+### 7. Invalid Reason Enforcement (strict mode) { #concept-standardization-invalid-reason-enforcement }
 
 **Rule ID:** `concept_standardization.invalid_reason_enforcement`
-**Severity:** WARNING (strict-mode-only — silent in default mode)
+**Severity:** WARNING (strict mode only)
 
 #### Intent
 
-Vocabulary tables (`concept`, `concept_relationship`) carry an `invalid_reason` column that marks retired/superseded entries (`'D'` = deprecated, `'U'` = upgraded, `NULL` = currently valid). Derived vocabulary tables (`concept_ancestor`, `concept_synonym`, `drug_strength`, `source_to_concept_map`) reference concept IDs but lack their own `invalid_reason` column. Queries that omit `invalid_reason` filtering can silently include retired concepts in cohort definitions or analytic outputs.
+Vocabulary rows carry a life cycle: invalid_reason is 'D' (deleted), 'U' (upgraded) or NULL while valid, with valid_start_date / valid_end_date. A concept set built from concept by vocabulary, domain, code or name includes retired concepts unless the query filters on validity; drug_strength and source_to_concept_map have their own validity columns, and concept_synonym has none, so it needs a joined concept to filter on.
 
-This rule is **gated behind strict mode**: silent in default mode, fires as WARNING under `--strict` (CLI) or `strict=True` (API). Real-world OMOP queries on the concept table almost always omit this filter, so firing in default mode would dilute every other rule.
+**Gated behind strict mode.** No source makes the filter mandatory, and many queries are correct without it: Standard and Classification concepts are always valid, Athena ships only valid concept_relationship rows, retired source codes keep their 'Maps to' mappings (filtering them out of a source-code lookup loses historical records), and a concept joined to a clinical record decodes a concept that was valid when recorded. None of those is reported. Enable with ``--strict`` (CLI) or ``strict=True`` (API).
 
 #### How it works
 
-The rule fires when:
-
-- A vocabulary table with `invalid_reason` (`concept`, `concept_relationship`) appears in scope, is being used as a *source* (filtered by `vocabulary_id` / `domain_id` / `relationship_id` / `standard_concept` / `concept_name` / `concept_code` / `concept_class_id`), and no `invalid_reason` predicate is asserted; OR
-- A derived vocabulary table is used as a source for cohort selection. Source-usage detection (for `concept_ancestor` specifically) recognizes any of:
-  - **Primary FROM:** `FROM concept_ancestor WHERE …`.
-  - **Direct JOIN:** `JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id` (or `ca.ancestor_concept_id`).
-  - **Chained JOIN through `concept`:** `JOIN concept c ON … JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id` (or `ca.ancestor_concept_id`).
-  - **Multi-ancestor IN-list:** `WHERE ca.ancestor_concept_id IN (a, b, c, …)` of literals.
-
-  All four are detected by a single signal: a literal predicate (`=` or `IN (…)` of literals) on `concept_ancestor.{ancestor,descendant}_concept_id` in WHERE / JOIN-ON. That signal is form-agnostic and reliably distinguishes cohort-source usage from lookup-decoration. Lookup-shape JOINs (e.g. `FROM concept c JOIN concept_ancestor ca ON ca.ancestor_concept_id = c.concept_id WHERE c.concept_id = 192671` — concept_ancestor's hierarchy columns are equated against another column rather than a literal) correctly stay silent.
-
-The rule is suppressed when any of the following is asserted in the query:
-- `invalid_reason IS NULL` / `IS NOT NULL` / `= '...'` / `IN (...)` / `NOT IN (...)`.
-- A date-validity check using both `valid_start_date` and `valid_end_date`.
-- `standard_concept = 'S'` (or `IN ('S', …)`) — standard concepts are nearly always valid, so the additional `invalid_reason` check would be belt-and-suspenders noise.
-- Lookup-join shape: vocabulary table is joined to another vocabulary table and pinned by specific `concept_id` literals.
+Runs only in strict mode. Per table instance it finds concept rows selected by attribute without a validity predicate on the same row (exempting Standard-filtered rows, source-code rows that feed a 'Maps to' relationship and rows that decode a clinical record in their own SELECT), unfiltered reads of drug_strength / source_to_concept_map, and concept_synonym used as a source without a validity filter on a joined concept. Constant-false probes are skipped.
 
 #### Examples
 
-**Violation patterns** (strict mode):
+**Violation pattern (WARNING):**
 
 ```sql
--- Primary FROM on derived vocabulary table
-SELECT descendant_concept_id FROM concept_ancestor WHERE ancestor_concept_id = 201826;
+SELECT concept_id, concept_name
+FROM concept
+WHERE vocabulary_id = 'SNOMED';
 ```
 
+**source_to_concept_map (or drug_strength) read without a validity filter on its own rows (WARNING):**
+
 ```sql
--- Direct-JOIN cohort idiom: clinical fact table JOIN concept_ancestor on concept_id linkage
-SELECT de.person_id
-FROM drug_exposure de
-JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 43027253;
+SELECT target_concept_id
+FROM source_to_concept_map
+WHERE source_vocabulary_id = 'HOSP_LAB'
+  AND source_code = 'GLU';
 ```
 
+**concept_synonym used as a concept source without joining concept to filter invalid_reason (WARNING):**
+
 ```sql
--- Chained-JOIN cohort idiom (clinical → concept → concept_ancestor)
-SELECT co.person_id, c.concept_name
-FROM condition_occurrence co
-JOIN concept c ON co.condition_concept_id = c.concept_id
-JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 320128;
+SELECT concept_id, concept_synonym_name
+FROM concept_synonym
+WHERE concept_synonym_name ILIKE '%myocardial infarction%';
 ```
 
-```sql
--- IN-subquery cohort idiom (semantically equivalent to the JOIN forms)
-SELECT de.person_id
-FROM drug_exposure de
-WHERE de.drug_concept_id IN (
-    SELECT descendant_concept_id FROM concept_ancestor WHERE ancestor_concept_id = 43027253
-);
-```
-
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
--- JOIN concept and filter invalid_reason
-SELECT de.person_id
-FROM drug_exposure de
-JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-JOIN concept c ON c.concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 43027253
-  AND c.invalid_reason IS NULL;
-```
-
-```sql
--- standard_concept = 'S' is sufficient — standard concepts are nearly always valid
-SELECT concept_id FROM concept WHERE vocabulary_id = 'SNOMED' AND standard_concept = 'S';
+SELECT concept_id, concept_name
+FROM concept
+WHERE vocabulary_id = 'SNOMED'
+  AND invalid_reason IS NULL;
 ```
 
 #### Suggested fix
 
-`ADD: JOIN concept c ON c.concept_id = <table>.<concept_id_col>` and `WHERE c.invalid_reason IS NULL` to exclude deprecated concepts. For queries on `concept` / `concept_relationship` directly, just add `AND invalid_reason IS NULL` to the WHERE clause.
+ADD: `AND <alias>.invalid_reason IS NULL` on that table, OR `AND CURRENT_DATE BETWEEN valid_start_date AND valid_end_date`. Strict-mode-only.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Life-cycle](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptLifeCycle)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM: Data Model Conventions, Source to concept map](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-to-concept-map)
+- [OMOP CDM: Data Model Conventions, Concept ancestor](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-ancestor)
 
 ---
 
-### 13. Maps To Target Standard Validation { #concept-standardization-maps-to-target-standard-validation }
-
-**Rule ID:** `concept_standardization.maps_to_target_standard_validation`
-**Severity:** ERROR
-
-#### Intent
-
-'Maps to' relationships map source concepts to standard concepts, but:
-    1. Mapping chains can exist (A → B → C) where intermediate concepts are not final
-    2. Some concept_id_2 targets may have standard_concept = NULL (deprecated)
-    3. Data quality issues may result in non-standard targets
-
-    Without validating that concept_id_2 is actually standard (standard_concept = 'S'),
-    queries may return:
-    - Deprecated concepts
-    - Intermediate non-standard concepts
-    - Invalid mappings
-
-#### How it works
-
-This rule analyzes the SQL query to identify maps to target standard validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT cr.concept_id_2
-    FROM concept_relationship cr
-    WHERE cr.concept_id_1 = 44836914
-      AND cr.relationship_id = 'Maps to'
-      AND cr.invalid_reason IS NULL
-```
-
-**Correct patterns:**
-
-```sql
-SELECT cr.concept_id_2
-    FROM concept_relationship cr
-    JOIN concept c2 ON cr.concept_id_2 = c2.concept_id
-    WHERE cr.relationship_id = 'Maps to'
-      AND cr.invalid_reason IS NULL
-      AND c2.standard_concept = 'S'
-```
-
-#### Suggested fix
-
-Join concept_relationship.concept_id_2 to concept.concept_id and add filter: concept.standard_concept = 'S'
-
----
-
-### 14. Multiple Maps To Targets Not Handled { #concept-standardization-multiple-maps-to-targets }
+### 8. Multiple Maps To Targets Not Handled { #concept-standardization-multiple-maps-to-targets }
 
 **Rule ID:** `concept_standardization.multiple_maps_to_targets`
 **Severity:** WARNING
 
 #### Intent
 
-The concept_relationship table with relationship_id = 'Maps to' is a
-    one-to-many relationship:
-    - A source concept can map to multiple standard concepts
-    - Assuming only one mapping exists leads to:
-      * Duplicate rows (when joining without DISTINCT)
-      * Arbitrary/incomplete results (when using scalar subqueries)
-      * Missing mappings (when using LIMIT 1)
+Not every source concept maps 1:1 to a standard concept: one ICD-10 code can split into multiple SNOMED concepts, and one NDC can fan out to several RxNorm ingredients. A scalar subquery that returns concept_id_2 raises 'more than one row returned' on most engines as soon as such a code is encountered; LIMIT 1 keeps an arbitrary target and silently discards the others. Joins and IN-subqueries retain every target and are the correct shape; duplicate intermediate rows they create are harmless under COUNT(DISTINCT …) or set-valued consumers and are not flagged. Neither is a scalar subquery that aggregates without GROUP BY (e.g. MIN(concept_id_2)): it returns one row and picks the target deterministically.
 
 #### How it works
 
-This rule analyzes the SQL query to identify multiple maps to targets not handled patterns.
+Reads which concept_relationship instances are restricted to 'Maps to' / 'Mapped from' (any spelling, through CTEs) and follows each SELECT's output by lineage. A scalar subquery that outputs a mapping target, or a SELECT that outputs one under LIMIT 1 / TOP 1 / FETCH FIRST 1 ROW or DISTINCT ON without ORDER BY, is reported once.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
-SELECT (
-      SELECT concept_id_2
-      FROM concept_relationship
-      WHERE concept_id_1 = c.concept_id
-        AND relationship_id = 'Maps to'
-    ) AS standard_id
-    FROM concept c
+SELECT c.concept_id,
+       (SELECT cr.concept_id_2 FROM concept_relationship cr
+        WHERE cr.concept_id_1 = c.concept_id
+          AND cr.relationship_id = 'Maps to') AS standard_id
+FROM concept c;
 ```
+
+**LIMIT 1 keeps one arbitrary target (ICD9CM 070.43 maps to two SNOMED concepts) (WARNING):**
 
 ```sql
-without DISTINCT (duplicates rows)
-    SELECT de.*, cr.concept_id_2
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
+SELECT cr.concept_id_2 AS standard_concept_id
+FROM concept c
+JOIN concept_relationship cr ON cr.concept_id_1 = c.concept_id
+WHERE c.vocabulary_id = 'ICD9CM'
+  AND c.concept_code = '070.43'
+  AND cr.relationship_id = 'Maps to'
+LIMIT 1;
 ```
 
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT DISTINCT de.drug_exposure_id, cr.concept_id_2
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
+SELECT c.concept_id, cr.concept_id_2 AS standard_id
+FROM concept c
+JOIN concept_relationship cr ON cr.concept_id_1 = c.concept_id
+WHERE cr.relationship_id = 'Maps to';
 ```
-
-```sql
-SELECT de.drug_exposure_id,
-           ARRAY_AGG(cr.concept_id_2) AS mapped_concepts
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
-    GROUP BY de.drug_exposure_id
-```
-
-#### Common scenarios
-
-- Scalar subquery assuming single result
-- JOIN without DISTINCT or GROUP BY
-- Using LIMIT 1 to force single result
 
 #### Suggested fix
 
-Use DISTINCT, GROUP BY with aggregation (e.g., ARRAY_AGG), or explicitly handle multiple mappings.
+REPLACE: the scalar subquery or `LIMIT 1` WITH a `JOIN concept_relationship cr ON … AND cr.relationship_id = 'Maps to'` (or `IN (SELECT concept_id_2 …)`) so every target is kept.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Mapping relationships](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptMapping)
+- [PostgreSQL documentation: Value Expressions, Scalar Subqueries](https://www.postgresql.org/docs/current/sql-expressions.html#SQL-SYNTAX-SCALAR-SUBQUERIES)
+- [PostgreSQL documentation: SELECT, LIMIT clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-LIMIT)
 
 ---
 
-### 15. Source Concept ID Not For Analytical Filtering { #concept-standardization-source-concept-id-warning }
-
-**Rule ID:** `concept_standardization.source_concept_id_warning`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP semantic rule OMOP_022: The *_source_concept_id columns store the original source vocabulary concept. For standard analytical queries and cohort identification, use the primary *_concept_id (standard concept) rather than *_source_concept_id.
-
-#### How it works
-
-Valid uses of source_concept_id:
-  - Data quality checks
-  - ETL validation / mapping verification
-  - Source code exploration
-  - Provenance tracking
-
-Invalid use (cohort identification):
-  - SELECT person_id FROM condition_occurrence WHERE condition_source_concept_id = 123
-
-Correct approach:
-  - SELECT person_id FROM condition_occurrence WHERE condition_concept_id = 456
-
-#### Examples
-
-#### Suggested fix
-
-Replace *_source_concept_id with corresponding standard *_concept_id column. If this is for ETL validation or source exploration, this warning can be ignored.
-
----
-
-### 16. Source Concept ID Should Not Filter Standard Concepts { #concept-standardization-source-concept-id-standard-filter }
+### 9. Source Concept ID Should Not Filter Standard Concepts { #concept-standardization-source-concept-id-standard-filter }
 
 **Rule ID:** `concept_standardization.source_concept_id_standard_filter`
 **Severity:** WARNING
 
 #### Intent
 
-In OMOP CDM, clinical domain tables have two types of concept ID columns:
-
-    1. Standard concept IDs (e.g., condition_concept_id):
-       - Reference standard concepts for analytics
-       - Should have standard_concept = 'S'
-
-    2. Source concept IDs (e.g., condition_source_concept_id):
-       - Reference the original source vocabulary codes (ICD-10, CPT, etc.)
-       - Are intentionally NON-standard (standard_concept IS NULL or 'C')
-       - Preserve the original coding system used in the source data
-
-    Filtering standard_concept = 'S' when joining on *_source_concept_id is
-    semantically wrong and will typically return zero results.
+Every OMOP clinical table has two concept columns: *_concept_id (the standard vocabulary mapping, e.g. SNOMED for conditions) and *_source_concept_id (the code from the originating system, e.g. ICD10CM). The source field 'may not necessarily be standard' (CDM v5.4 field-level specification): it is non-standard when the source system codes in a source vocabulary, and Standard when it codes in a standard one (SNOMED, LOINC, RxNorm, CVX). Requiring the joined concept to be Standard therefore keeps only the records whose source code happens to be standard and drops the rest. Either join against *_concept_id (for standard-code analytics) or drop the standard filter (to inspect source codes).
 
 #### How it works
 
-This rule analyzes the SQL query to identify source concept id should not filter standard concepts patterns.
+Ties each match of a *_source_concept_id column (all 22 of the CDM v5.4 field-level specification) to concept.concept_id with that concept row's standard_concept predicates by lineage, and reports a required predicate that admits only Standard (or Classification) concepts.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
-    WHERE c.standard_concept = 'S'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_source_concept_id = c.concept_id
+WHERE c.standard_concept = 'S';
 ```
+
+**Correct pattern:**
 
 ```sql
-SELECT c.concept_name
-    FROM drug_exposure de
-    JOIN concept c
-      ON de.drug_source_concept_id = c.concept_id
-      AND c.standard_concept = 'S'
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id
+WHERE c.standard_concept = 'S';
 ```
-
-**Correct patterns:**
-
-```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_source_concept_id = c.concept_id
-```
-
-```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c
-      ON co.condition_concept_id = c.concept_id
-    WHERE c.standard_concept = 'S'
-```
-
-#### Common scenarios
-
-- Joining source_concept_id to concept with standard_concept = 'S' filter
-- Misunderstanding the dual concept ID design
-- Applying standard concept filters to source concept joins
 
 #### Suggested fix
 
-Remove standard_concept = 'S' filter when joining source concept IDs, or use the standard *_concept_id column instead.
+REMOVE: the standard_concept filter on the concept joined to *_source_concept_id, OR join the paired *_concept_id (without `_source`) if Standard concepts are what you want.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Source values, source concept ids and standard concept ids](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-values-source-concept-ids-and-standard-concept-ids)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Non-standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#non-standard-concepts)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
 
 ---
 
-### 17. Source to Concept Map Validation { #concept-standardization-source-to-concept-map-validation }
+### 10. Source to Concept Map Validation { #concept-standardization-source-to-concept-map-validation }
 
 **Rule ID:** `concept_standardization.source_to_concept_map_validation`
 **Severity:** WARNING
 
 #### Intent
 
-source_to_concept_map contains mappings from many source vocabularies.
-    The same source_code can exist in multiple vocabularies with different meanings.
-
-    Example: Code "250" exists in:
-    - ICD-9-CM: Diabetes mellitus
-    - ICD-10-CM: Different condition
-    - Local hospital codes: Something else entirely
-
-    Without source_vocabulary_id filter, you get ALL mappings for "250",
-    leading to incorrect concept assignments.
+source_to_concept_map is the per-site translation table from local source codes to OMOP standard concepts. Source codes are not unique across vocabularies: a site that loads local lab and pharmacy code lists can hold 'GLU' in both. Filtering on source_code alone can pick up matches from unrelated vocabularies, returning incorrect target_concept_ids. Always pair source_code with source_vocabulary_id so the match is unambiguous.
 
 #### How it works
 
-This rule analyzes the SQL query to identify source to concept map validation patterns.
+Per source_to_concept_map instance (found by lineage through CTEs and derived tables) it checks whether source_code is restricted (literal, list, pattern, column join, USING, IN-subquery) while source_vocabulary_id is not restricted by any non-negated predicate.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
 SELECT target_concept_id
-    FROM source_to_concept_map
-    WHERE source_code = '250.00'
+FROM source_to_concept_map
+WHERE source_code = 'GLU';
 ```
 
-```sql
-from ALL vocabularies!
-```
-
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
 SELECT target_concept_id
-    FROM source_to_concept_map
-    WHERE source_code = '250.00'
-      AND source_vocabulary_id = 'ICD9CM'
+FROM source_to_concept_map
+WHERE source_code = 'GLU'
+  AND source_vocabulary_id = 'HOSP_LAB';
 ```
 
 #### Suggested fix
 
-Add source_vocabulary_id filter alongside source_code.
+ADD: `AND source_vocabulary_id = '<vocab>'` alongside any source_code filter. source_code is unique only within a source_vocabulary_id.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Source to concept map](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-to-concept-map)
+- [OMOP CDM v5.4 specification: SOURCE_TO_CONCEPT_MAP](https://ohdsi.github.io/CommonDataModel/cdm54.html#source_to_concept_map)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept codes](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#concept-codes)
 
 ---
 
-### 18. Standard Concept Enforcement { #concept-standardization-standard-concept-enforcement }
+### 11. Standard Concept Enforcement { #concept-standardization-standard-concept-enforcement }
 
 **Rule ID:** `concept_standardization.standard_concept_enforcement`
-**Severity:** WARNING (escalates to ERROR in strict mode)
+**Severity:** WARNING (strict mode adds a second WARNING check)
 
 #### Intent
 
-When a query reads from a STANDARD OMOP concept field (e.g. `condition_concept_id`, `drug_concept_id`), it must establish that the concept IDs in scope are actually standard concepts. Standard fields *can* hold non-standard values when ETL assumptions break, so cohort definitions without standard-concept enforcement risk silently mixing in classification-only concepts (`'C'`), invalid entries, or legacy mappings.
+concept_ancestor is built over standard and classification concepts only; non-standard source concepts (ICD10CM, NDC, Read, local codes) do not take part in the hierarchy. Matching *_source_concept_id against ancestor_concept_id or descendant_concept_id therefore keeps just the records whose source code is itself standard (for example SNOMED-coded sources) and silently loses every record coded in a source vocabulary. Expand the hierarchy over the standard *_concept_id instead. Filtering on source concepts by themselves (literal ids, a codeset) is legitimate and not flagged. In strict mode the rule also distrusts the ETL and warns when <event>_concept_id is used without a standardness check. The CDM requires the ETL to store Standard concepts there, so such a query is correct on a conformant CDM; the strict-mode finding is a WARNING.
 
 #### How it works
 
-The rule fires when a query references a known-standard concept field and *none* of the following enforcement signals are present:
-
-1. **Explicit standard-concept filter.** A predicate of the form `concept.standard_concept = 'S'` (or `IN ('S')`) is asserted in `WHERE` or `JOIN ON`.
-2. **`Maps to` resolution.** The query joins `concept_relationship` with `relationship_id = 'Maps to'`, indicating the user is resolving source concepts to standard concepts at query time.
-3. **Specific concept-id literal filter.** The query restricts the standard field to specific concept IDs via `= <id>` or `IN (<id>, …)` — the user has chosen specific concepts, presumably with knowledge of their standardness.
-4. **Hierarchy-based filter via `concept_ancestor`.** The query restricts the standard field via a direct reference to `concept_ancestor`'s hierarchy. Three equivalent forms are recognized:
-   - **Subquery form:** `<col> IN (SELECT descendant_concept_id FROM concept_ancestor [WHERE …])` (or `ancestor_concept_id`).
-   - **Direct JOIN:** `JOIN concept_ancestor ca ON <clinical>.<concept_id_col> = ca.descendant_concept_id` (or `ca.ancestor_concept_id`). The more common idiom in OHDSI cohort SQL — avoids a correlated subquery and produces better optimizer plans.
-   - **Chained JOIN via `concept`:** `JOIN concept c ON <clinical>.<concept_id_col> = c.concept_id JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id` (or `ca.ancestor_concept_id`). Users adopt this shape when they also want to project columns from `concept` (e.g. `concept_name`) in the SELECT list. The intermediate `concept` JOIN is a relay; the standard-concept guarantee is transitive through the chain.
-
-   By OMOP CDM definition, `concept_ancestor` is a hierarchy over Standard Concepts only — both `ancestor_concept_id` and `descendant_concept_id` are guaranteed-standard. Feeding rows from `concept_ancestor` into a `*_concept_id` slot (via any of the three forms above) transitively guarantees the standard-concept property, so an additional `standard_concept = 'S'` filter would be redundant.
-
-The `concept_ancestor` suppression is **scope-limited to direct references**. CTE-indirected patterns (`WITH cte AS (SELECT descendant_concept_id FROM concept_ancestor …) SELECT … WHERE col IN (SELECT concept_id FROM cte)`) still fire, because the rule does not currently inline CTEs to verify the indirected guarantee.
+Default mode: reports a *_source_concept_id compared with concept_ancestor ids, directly, through an IN-subquery or CTE, or through a concept row joined to both. Strict mode adds a WARNING when a standard concept field is read and neither its own concept row is filtered to Standard, nor a 'Maps to' mapping or concept_ancestor expansion constrains it.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
--- No enforcement of any kind
-SELECT condition_concept_id FROM condition_occurrence;
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept_ancestor ca ON ca.descendant_concept_id = co.condition_source_concept_id
+WHERE ca.ancestor_concept_id = 201826;
 ```
 
+**Strict mode: standard concept field used without a standardness check (WARNING (strict mode)):**
+
 ```sql
--- Joins concept but does not filter standard_concept
+-- strict mode only
 SELECT co.person_id
 FROM condition_occurrence co
 JOIN concept c ON co.condition_concept_id = c.concept_id
-WHERE c.vocabulary_id = 'SNOMED';
+WHERE c.concept_name ILIKE '%diabetes%';
 ```
 
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
--- Explicit standard_concept = 'S' filter
 SELECT co.person_id
 FROM condition_occurrence co
-JOIN concept c ON co.condition_concept_id = c.concept_id
-WHERE c.vocabulary_id = 'SNOMED'
-  AND c.standard_concept = 'S';
-```
-
-```sql
--- Hierarchy-based filter via concept_ancestor — subquery form
-SELECT de.person_id
-FROM drug_exposure de
-WHERE de.drug_concept_id IN (
-    SELECT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 35416207
-);
-```
-
-```sql
--- Hierarchy-based filter via concept_ancestor — direct JOIN form
-SELECT de.person_id
-FROM drug_exposure de
-JOIN concept_ancestor ca
-  ON de.drug_concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 35416207;
-```
-
-```sql
--- Hierarchy-based filter via concept_ancestor — chained JOIN through concept
--- (when also projecting concept's columns in SELECT)
-SELECT co.person_id, c.concept_name
-FROM condition_occurrence co
-JOIN concept c ON co.condition_concept_id = c.concept_id
-JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
-WHERE ca.ancestor_concept_id = 320128;
-```
-
-```sql
--- Specific concept ID literals
-SELECT * FROM condition_occurrence
-WHERE condition_concept_id IN (201826, 201820);
+JOIN concept_ancestor ca ON ca.descendant_concept_id = co.condition_concept_id
+WHERE ca.ancestor_concept_id = 201826;
 ```
 
 #### Suggested fix
 
-`ADD: \`JOIN concept c ON c.concept_id = <table>.<concept_id_col>\` AND \`WHERE c.standard_concept = 'S'\`` to filter to standard concepts. (Skip if the query already restricts via `concept_ancestor` or specific concept IDs — the rule should not fire in those cases.)
+REPLACE: the `*_source_concept_id` in the concept_ancestor comparison WITH the paired standard `*_concept_id` (e.g. condition_concept_id), which is what the hierarchy is built over.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Concept ancestor](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-ancestor)
+- [OMOP CDM v5.4 specification: CONCEPT_ANCESTOR](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_ancestor)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#standardConcepts)
 
 ---
 
-### 19. Standard Concept Value Validation { #concept-standardization-standard-concept-value-validation }
+### 12. Standard Concept Value Validation { #concept-standardization-standard-concept-value-validation }
 
 **Rule ID:** `concept_standardization.standard_concept_value_validation`
 **Severity:** ERROR
 
 #### Intent
 
-OMOP semantic rule OMOP_037: The standard_concept column only accepts 'S' (Standard), 'C' (Classification), or NULL (non-standard). Filtering with other values like 'Y', 'N', 1, 0 is incorrect.
+The CDM v5.4 specification allows exactly 'S' (Standard), 'C' (Classification) and NULL in concept.standard_concept. A required filter on any other string ('N', 'Y', an empty string) matches no concept row, so the query returns nothing (ERROR). A lowercase 's' / 'c' is not a CDM value either, an ERROR on every dialect whatever collation an engine would compare it under. A list that also contains a valid value (IN ('S', 'Y')) still returns rows and is a WARNING about the dead value; so is a comparison under OR, in a CASE label or in an outer join's ON clause. A negated impossible value (<> 'N', NOT IN ('')) excludes nothing and equals IS NOT NULL (WARNING). `standard_concept = '' OR standard_concept IS NULL` is accepted. A number or boolean compared with this varchar column (`= 1`, `IN ('S', 1)`, `= TRUE`) is a type defect and is reported by [`data_quality.column_type_validation`](#data-quality-column-type-validation), not here.
 
 #### How it works
 
-This rule analyzes the SQL query to identify standard concept value validation patterns.
+Follows standard_concept to the concept table by lineage and classifies every comparison of it with string literals: required and impossible is an ERROR (case-only mismatches included, on every dialect), dead values in a list, non-restricting positions and negated impossible values are WARNINGs. When the impossible predicate sits in a scalar subquery in the select list, the outer query still returns its rows: the message then says that the subquery's column is NULL on every row (0 for a COUNT), not that the query returns no rows. It stays an ERROR, because that column is certainly dead.
 
 #### Examples
 
+**Violation pattern (ERROR):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept = 'Y';
+```
+
+**A valid value next to an impossible one: rows still come back, 'Y' is dead (WARNING):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept IN ('S', 'Y');
+```
+
+**Negated impossible value: excludes nothing, same as IS NOT NULL (WARNING):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept <> 'N';
+```
+
+**Empty string: non-standard concepts carry NULL, so nothing matches (ERROR):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept = '';
+```
+
+**Lowercase: the CDM values are the uppercase 'S' and 'C', on every dialect (ERROR):**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept = 's';
+```
+
+**Correct pattern:**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE standard_concept = 'S';
+```
+
 #### Suggested fix
 
-Use 'S' for standard, 'C' for classification, or NULL for non-standard concepts.
+REPLACE: `standard_concept = '<other>'` WITH one of: `= 'S'` (standard), `= 'C'` (classification), `IS NULL` (non-standard). Those are the only values the CDM allows.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Non-standard concepts](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#non-standard-concepts)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 20. Unit Vocabulary Validation { #concept-standardization-unit-vocabulary-validation }
+### 13. Unit Vocabulary Validation { #concept-standardization-unit-vocabulary-validation }
 
 **Rule ID:** `concept_standardization.unit_vocabulary_validation`
+**Severity:** ERROR
+
+#### Intent
+
+Unit columns (measurement / observation / device_exposure / dose_era unit_concept_id, and drug_strength's unit columns) hold Standard Unit-domain concepts. In the Athena release v5.0 27-AUG-25 every valid Standard Unit concept is in UCUM; the Unit concepts of SNOMED, Nebraska Lexicon, CDISC and CIEL are non-standard. Restricting the joined concept row to another known vocabulary therefore finds no unit concepts and returns no rows, also when the query lists or groups by vocabulary_id. Lowercase 'ucum' is not the UCUM vocabulary either, since vocabulary IDs are case-sensitive: an ERROR on every dialect. A list that also admits 'UCUM' or 'None' (concept 0, an unmapped unit) is not reported.
+
+#### How it works
+
+Ties each match of a unit column (fkDomain 'Unit', plus drug_strength's unit columns) to one concept instance by lineage and reads its required vocabulary_id restriction; it reports when every admitted vocabulary is known to the release and holds no Standard unit concept. Values are compared with the vocabulary IDs case-sensitively, as they are defined, unless the SQL folds case itself; the verdict is the same on every dialect.
+
+#### Examples
+
+**Violation pattern (ERROR):**
+
+```sql
+SELECT m.person_id
+FROM measurement m
+JOIN concept c ON m.unit_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'LOINC';
+```
+
+**Case-only mismatch: the vocabulary ID is 'UCUM', on every dialect (ERROR):**
+
+```sql
+SELECT m.person_id
+FROM measurement m
+JOIN concept c ON m.unit_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'ucum';
+```
+
+**Correct pattern:**
+
+```sql
+SELECT m.person_id
+FROM measurement m
+JOIN concept c ON m.unit_concept_id = c.concept_id
+WHERE c.vocabulary_id = 'UCUM';
+```
+
+#### Suggested fix
+
+REPLACE: the vocabulary_id filter WITH `vocabulary_id = 'UCUM'`, OR remove it.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
+- [OHDSI Forums: Measurement entity - which vocabulary to consider](https://forums.ohdsi.org/t/measurement-entity-which-vocabulary-to-consider/5813)
+
+---
+
+### 14. Concept literal without hierarchy expansion { #concept-standardization-concept-literal-without-hierarchy }
+
+**Rule ID:** `concept_standardization.concept_literal_without_hierarchy`
 **Severity:** WARNING
 
 #### Intent
 
-In OMOP CDM, all standard unit concepts use the UCUM (Unified Code for Units
-    of Measure) vocabulary. Unit concept columns (*_unit_concept_id) reference
-    standard concepts from the UCUM vocabulary.
-
-    When queries join unit_concept_id to the concept table and filter by
-    vocabulary_id != 'UCUM', they may:
-    - Return non-standard units
-    - Return zero results
-    - Miss the intended unit concepts
-
-    Affected columns:
-    - measurement.unit_concept_id
-    - observation.unit_concept_id
-    - drug_strength.amount_unit_concept_id
-    - drug_strength.numerator_unit_concept_id
-    - drug_strength.denominator_unit_concept_id
-    - specimen.unit_concept_id
-    - dose_era.unit_concept_id
+Filtering a record's own concept column (condition_concept_id, drug_concept_id, visit_concept_id, ...) on literal concept ids matches only records coded at exactly those concepts. Standard vocabularies are hierarchical, so records coded at descendants (subtypes, the clinical and branded drugs of an ingredient) are missed; the Book of OHDSI expands the concept through concept_ancestor instead. It is a WARNING because a leaf concept has no descendants and an exact-concept query can be intended. Concept 0 (unmapped), local ids above 2,000,000,000, drug_era (already rolled up to ingredients), columns the same SELECT expands through concept_ancestor, unread CTEs, exclusions, CASE labels and aggregates are not reported.
 
 #### How it works
 
-This rule analyzes the SQL query to identify unit vocabulary validation patterns.
+Finds literal restrictions (=, IN, = ANY(ARRAY), BETWEEN n AND n, literal subqueries, VALUES, or concept.concept_id after a join) on a record's own concept column, identified by lineage, and reports them unless the same SELECT also compares that column with concept_ancestor ids, or the literal is 0 / a local id, drug_era, a dead CTE, an exclusion, a CASE label or an aggregate.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (WARNING):**
 
 ```sql
-SELECT *
-    FROM measurement m
-    JOIN concept c ON m.unit_concept_id = c.concept_id
-    WHERE c.vocabulary_id = 'SNOMED'
+-- acetaminophen ingredient: its clinical and branded drugs are descendants
+SELECT COUNT(DISTINCT person_id) FROM drug_exposure
+WHERE drug_concept_id = 1125315;
 ```
 
-```sql
-SELECT *
-    FROM observation o
-    JOIN concept c
-      ON o.unit_concept_id = c.concept_id
-      AND c.vocabulary_id = 'LOINC'
-```
-
-**Correct patterns:**
+**Correct pattern:**
 
 ```sql
-SELECT *
-    FROM measurement m
-    JOIN concept c ON m.unit_concept_id = c.concept_id
-    WHERE c.vocabulary_id = 'UCUM'
-```
-
-```sql
-SELECT *
-    FROM measurement m
-    JOIN concept c ON m.unit_concept_id = c.concept_id
-    WHERE c.domain_id = 'Unit'
+SELECT COUNT(DISTINCT de.person_id) FROM drug_exposure de
+JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
+WHERE ca.ancestor_concept_id = 1125315;
 ```
 
 #### Suggested fix
 
-Use vocabulary_id = 'UCUM' for unit concept lookups, or remove the vocabulary_id filter entirely.
+REPLACE: `e.<x>_concept_id = <id>` WITH a hierarchy expansion: `JOIN concept_ancestor ca ON e.<x>_concept_id = ca.descendant_concept_id WHERE ca.ancestor_concept_id = <id>` (or a codeset built the same way), unless exactly that one concept is intended.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 9: SQL and R, Using the vocabulary when querying](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#using-the-vocabulary-when-querying)
+- [The Book of OHDSI, ch. 10: Defining Cohorts, Concept sets](https://ohdsi.github.io/TheBookOfOhdsi/Cohorts.html#conceptSets)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept ancestor](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor)
 
 ---
 
@@ -1293,138 +923,145 @@ These rules validate that table joins follow the OMOP CDM schema foreign key rel
 
 ---
 
-### 1. Care Site ID Join Validation { #joins-care-site-id-join-validation }
+### 1. Care Site and Location Key Join Validation { #joins-care-site-id-join-validation }
 
 **Rule ID:** `joins.care_site_id_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Clinical tables have care_site_id (foreign key to care_site.care_site_id).
-    Joining on other columns (e.g., care_site_id to location_id) is semantically
-    incorrect and produces wrong results.
+In CDM v5.4 `care_site_id` on PERSON, PROVIDER, VISIT_OCCURRENCE and VISIT_DETAIL is a foreign key to CARE_SITE, and `location_id` on PERSON and CARE_SITE is a foreign key to LOCATION. Equating a care-site or location key with the key of another entity (`person.location_id = care_site.care_site_id`, `care_site.care_site_id = location.location_id`) matches rows only where unrelated ids coincide, on any CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify care site id join validation patterns.
+Every equality and `IN` subquery in every SELECT is examined. Each operand is resolved by lineage (casts, CTEs, derived tables, set operations) to the CDM column it reads, and that column to the entity whose key it holds (primary key: itself; foreign key: the referenced key), using the CDM v5.4 field-level specification. The rule reports an equality whose two operands hold keys of different entities when one of them is a care-site or location key.
+
+Equalities between two columns that reference the same entity are accepted: `person.location_id = care_site.location_id` finds patients living at a care site's address. Comparisons with non-key columns (`care_site_source_value = location_source_value`) are not judged.
+
+Other rules own the remaining pairs: `<table>.care_site_id = location.location_id` is `joins.care_site_join_validation`; keys of person-level events, of person and of visit_occurrence are `joins.clinical_pk_cross_join_validation`, `joins.person_id_join_validation` and `joins.visit_occurrence_id_join_validation`; provider columns are `joins.provider_care_site_join_validation`.
+
+When one operand's table has exactly one foreign key to the other operand's entity, the finding carries a REPLACE patch to that foreign key (`p.location_id = cs.care_site_id` becomes `p.care_site_id = cs.care_site_id`).
+
+A predicate in which one operand is a concept id (`v.care_site_id = c.concept_id`) is left to `anti_patterns.join_key_validation`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM visit_occurrence vo
-    JOIN care_site cs ON vo.care_site_id = cs.location_id
+SELECT * FROM person p JOIN care_site cs ON p.location_id = cs.care_site_id;
+```
+
+```sql
+SELECT * FROM care_site cs JOIN location l ON cs.care_site_id = l.location_id;
+```
+
+```sql
+WITH pp AS (SELECT * FROM person)
+SELECT * FROM pp, care_site cs
+WHERE pp.location_id = cs.care_site_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM visit_occurrence vo
-    JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+SELECT * FROM person p JOIN care_site cs ON p.care_site_id = cs.care_site_id;
+```
+
+```sql
+SELECT * FROM care_site cs JOIN location l ON cs.location_id = l.location_id;
+```
+
+```sql
+SELECT p.person_id, cs.care_site_name
+FROM person p
+JOIN care_site cs ON p.location_id = cs.location_id;
 ```
 
 #### Suggested fix
 
-Join using care_site_id on both sides: table.care_site_id = care_site.care_site_id
+Replace the key equality with the foreign key pair: `<table>.care_site_id = care_site.care_site_id` or `<table>.location_id = location.location_id`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CARE_SITE](https://ohdsi.github.io/CommonDataModel/cdm54.html#care_site)
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
 
 ---
 
 ### 2. Care Site Join Path Validation { #joins-care-site-join-validation }
 
 **Rule ID:** `joins.care_site_join_validation`
-**Severity:** WARNING
-
-#### Intent
-
-Clinical tables have care_site_id (foreign key to care_site.care_site_id).
-    Direct joins to location.location_id bypass the care_site intermediary and are
-    semantically incorrect (comparing care_site_id with location_id).
-
-    Exception: person.location_id is valid - it represents the person's home address.
-
-#### How it works
-
-This rule analyzes the SQL query to identify care site join path validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM visit_occurrence vo
-    JOIN location l ON vo.care_site_id = l.location_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM visit_occurrence vo
-    JOIN care_site cs ON vo.care_site_id = cs.care_site_id
-    JOIN location l ON cs.location_id = l.location_id
-```
-
-#### Suggested fix
-
-Use: clinical → care_site → location join path.
-
----
-
-### 3. Care Site to Location Join Validation { #joins-care-site-location-join-validation }
-
-**Rule ID:** `joins.care_site_location_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-care_site has location_id (foreign key to location.location_id) to identify
-    the geographic location of the care site. Joining on other columns (e.g.,
-    care_site_id to location_id) is semantically incorrect and produces wrong results.
+In OMOP CDM v5.4 the `care_site_id` of PERSON, PROVIDER, VISIT_OCCURRENCE and VISIT_DETAIL is a foreign key to CARE_SITE; the facility's address is reached through CARE_SITE.`location_id`. Equating such a `care_site_id` with LOCATION.`location_id` compares the keys of two different tables, so the join returns arbitrary locations or none.
 
 #### How it works
 
-This rule analyzes the SQL query to identify care site to location join validation patterns.
+Every equality and `IN` subquery in every SELECT is examined, with both operands resolved by lineage (casts, CTEs, derived tables, set operations, unqualified columns). An equality between the `care_site_id` of person, provider, visit_occurrence or visit_detail and `location.location_id` is reported, even when a correct `… → care_site → location` chain appears elsewhere in the statement. `person.location_id = location.location_id` (the person's own address) is a different, valid link.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM care_site cs
-    JOIN location l ON cs.care_site_id = l.location_id
+SELECT * FROM visit_occurrence vo
+JOIN location l ON vo.care_site_id = l.location_id;
+```
+
+```sql
+SELECT * FROM visit_occurrence vo
+WHERE vo.care_site_id IN (SELECT location_id FROM location WHERE state = 'NY');
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM care_site cs
-    JOIN location l ON cs.location_id = l.location_id
+SELECT * FROM visit_occurrence vo
+JOIN care_site cs ON vo.care_site_id = cs.care_site_id
+JOIN location l ON cs.location_id = l.location_id;
+```
+
+```sql
+SELECT * FROM person p
+JOIN location l ON p.location_id = l.location_id;
 ```
 
 #### Suggested fix
 
-Join care_site to location using location_id: care_site.location_id = location.location_id
+Replace the direct join with the chain `JOIN care_site cs ON <table>.care_site_id = cs.care_site_id JOIN location l ON cs.location_id = l.location_id`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
+- [OMOP CDM v5.4 specification: CARE_SITE](https://ohdsi.github.io/CommonDataModel/cdm54.html#care_site)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
 
 ---
 
-### 4. Clinical Primary Key Join Validation { #joins-clinical-pk-cross-join-validation }
+### 3. Clinical Primary Key Join Validation { #joins-clinical-pk-cross-join-validation }
 
 **Rule ID:** `joins.clinical_pk_cross_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Each clinical event table has its own independent primary key sequence:
-    - condition_occurrence_id = 123 → A specific condition event
-    - drug_exposure_id = 123 → A specific drug exposure event
-    - procedure_occurrence_id = 123 → A specific procedure event
-
-    These are completely unrelated - they just happen to have overlapping numeric
-    values. Joining them is always semantically meaningless.
+Each clinical event table has its own primary key (`condition_occurrence_id`, `drug_exposure_id`, `note_id`, ...), and every foreign key in the CDM v5.4 specification references exactly one table's key. An equality between two columns that identify rows of different entities matches rows only where unrelated ids happen to coincide, on any CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify clinical primary key join validation patterns.
+Every equality and `IN` subquery in every SELECT (`ON`, `WHERE`, `HAVING`) is examined. Each operand is resolved by lineage (casts, CTEs, derived tables, set operations, the first projection of a subquery) to the CDM column it reads, and that column to the entity whose key it holds: itself for a primary key, the referenced key for a foreign key. Keys come from the CDM v5.4 field-level specification, plus `note_nlp.note_id` and `episode.episode_parent_id`, whose references the specification states in its user guidance.
+
+The rule reports an equality when the two entities differ and one of them is a person-level event (the primary key of a table that carries `person_id`). Pairs that involve a `person` or `visit_occurrence` key are reported by `joins.person_id_join_validation` and `joins.visit_occurrence_id_join_validation`.
+
+Not reported: an operand whose source cannot be resolved or is computed (`MIN(condition_occurrence_id) AS first_id`), a key compared with a non-key column, two foreign keys to the same table (`co.visit_detail_id = vd.parent_visit_detail_id`), and the polymorphic keys (`measurement_event_id`, `observation_event_id`, `note_event_id`, `cost_event_id`, `fact_relationship.fact_id_1/2`, `episode_event.event_id`), which hold the key of whichever table their companion column names.
+
+When one operand's table has exactly one foreign key to the other operand's entity, the finding carries a REPLACE patch to that foreign key (`nnlp.note_nlp_id = n.note_id` becomes `nnlp.note_id = n.note_id`).
+
+A predicate in which one operand is a concept id (`co.condition_occurrence_id = c.concept_id`) is left to `anti_patterns.join_key_validation`.
 
 #### Examples
 
@@ -1432,1423 +1069,1561 @@ This rule analyzes the SQL query to identify clinical primary key join validatio
 
 ```sql
 SELECT * FROM condition_occurrence co
-    JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id
+JOIN drug_exposure de ON co.condition_occurrence_id = de.drug_exposure_id;
 ```
 
 ```sql
-with independent ID sequences!
+SELECT n.person_id, nnlp.lexical_variant
+FROM note_nlp nnlp
+JOIN note n ON nnlp.note_nlp_id = n.note_id;
 ```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM condition_occurrence co
-    JOIN drug_exposure de ON co.person_id = de.person_id
-      AND co.visit_occurrence_id = de.visit_occurrence_id
-```
-
-#### Suggested fix
-
-Do not join clinical event primary keys. Use shared foreign keys such as person_id or visit_occurrence_id instead.
-
----
-
-### 5. Clinical Tables Require Person ID Linkage { #joins-clinical-person-id-linkage-validation }
-
-**Rule ID:** `joins.clinical_person_id_linkage_validation`
-**Severity:** ERROR
-
-#### Intent
-
-Joining clinical tables without person_id linkage can match data from different
-    patients, leading to completely invalid results. For example:
-
-    - Patient A has condition_start_date = '2020-01-15'
-    - Patient B has drug_exposure_start_date = '2020-01-15'
-
-    Joining on dates alone would incorrectly associate Patient A's condition with
-    Patient B's drug exposure.
-
-Clinical tables that require person_id linkage:
-    - condition_occurrence
-    - drug_exposure
-    - procedure_occurrence
-    - measurement
-    - observation
-    - visit_occurrence
-    - visit_detail
-    - death
-    - person
-
-#### How it works
-
-This rule analyzes the SQL query to identify clinical tables require person id linkage patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT co.condition_concept_id, de.drug_concept_id
-    FROM condition_occurrence co
-    JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date
-```
-
-**Correct patterns:**
-
-```sql
-SELECT co.condition_concept_id, de.drug_concept_id
-    FROM condition_occurrence co
-    JOIN drug_exposure de ON co.person_id = de.person_id
-```
-
-```sql
-SELECT co.condition_concept_id, de.drug_concept_id
-    FROM condition_occurrence co
-    JOIN person p ON co.person_id = p.person_id
-    JOIN drug_exposure de ON p.person_id = de.person_id
-```
-
-#### Suggested fix
-
-Add joins on person_id between clinical tables.
-
----
-
-### 6. Clinical to Visit Detail Join Validation { #joins-clinical-visit-detail-join-validation }
-
-**Rule ID:** `joins.clinical_visit_detail_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-Clinical tables have both visit_occurrence_id and visit_detail_id columns.
-    These represent different ID spaces:
-    - visit_occurrence_id: Links to parent visit (visit_occurrence table)
-    - visit_detail_id: Links to detailed sub-visit (visit_detail table)
-
-    Both are integers, so joining visit_occurrence_id to visit_detail_id produces
-    NO TYPE ERROR, but randomly matches unrelated records where IDs happen to be
-    equal. This silently corrupts analytical results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify clinical to visit detail join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM measurement m
-    JOIN visit_detail vd ON m.visit_occurrence_id = vd.visit_detail_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM measurement m
-    JOIN visit_detail vd ON m.visit_detail_id = vd.visit_detail_id
-```
-
-#### Suggested fix
-
-None
-
----
-
-### 7. Cohort to Clinical Table Join Validation { #joins-cohort-clinical-join-validation }
-
-**Rule ID:** `joins.cohort_clinical_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The cohort table is a RESULTS table with unique naming:
-    - Uses subject_id (not person_id) to identify patients
-    - This is the ONLY table in OMOP CDM that uses subject_id
-    - All clinical tables use person_id for patient identity
-
-    The ONLY valid join is:
-    cohort.subject_id = clinical_table.person_id
-
-#### How it works
-
-This rule analyzes the SQL query to identify cohort to clinical table join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
 
 ```sql
 SELECT *
-    FROM cohort c
-    JOIN condition_occurrence co ON c.subject_id = co.condition_occurrence_id
+FROM (SELECT condition_occurrence_id AS id FROM condition_occurrence) c
+JOIN (SELECT drug_exposure_id AS id FROM drug_exposure) d ON c.id = d.id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT
-      c.subject_id,
-      co.condition_occurrence_id,
-      co.condition_concept_id
-    FROM cohort c
-    JOIN condition_occurrence co ON c.subject_id = co.person_id
-    WHERE c.cohort_definition_id = 123
-      AND co.condition_start_date >= c.cohort_start_date
-      AND co.condition_start_date <= c.cohort_end_date
+SELECT * FROM condition_occurrence co
+JOIN drug_exposure de ON co.person_id = de.person_id;
 ```
 
-#### Common scenarios
+```sql
+SELECT n.person_id, nnlp.lexical_variant
+FROM note_nlp nnlp
+JOIN note n ON nnlp.note_id = n.note_id;
+```
 
-- Joining subject_id to primary keys (condition_occurrence_id, etc.)
-- Structurally invalid (patient ID ≠ event ID)
-- Using person_id from cohort table
+```sql
+SELECT co.*
+FROM condition_occurrence co
+JOIN (SELECT person_id, MIN(condition_occurrence_id) AS first_id
+      FROM condition_occurrence GROUP BY person_id) f
+  ON co.condition_occurrence_id = f.first_id;
+```
+
+```sql
+SELECT * FROM measurement m
+JOIN condition_occurrence co ON m.measurement_event_id = co.condition_occurrence_id;
+```
 
 #### Suggested fix
 
-Use: cohort.subject_id = clinical.person_id or cohort.subject_id = person.person_id and person.person_id = clinical.person_id
+Replace the key equality with the foreign key that links the two tables (for example `nnlp.note_id = n.note_id` or `co.visit_detail_id = vd.visit_detail_id`), or join on `person_id` to relate a person's events.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 4: The Common Data Model, General naming conventions of fields](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-naming-conventions-of-fields)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [OMOP CDM v5.4 specification: NOTE_NLP](https://ohdsi.github.io/CommonDataModel/cdm54.html#note_nlp)
 
 ---
 
-### 8. Concept Alias Reuse Validation { #joins-concept-alias-reuse-validation }
+### 4. Clinical Tables Without a Person-Scoped Link { #joins-clinical-person-id-linkage-validation }
 
-**Rule ID:** `joins.concept_alias_reuse_validation`
-**Severity:** ERROR
+**Rule ID:** `joins.clinical_person_id_linkage_validation`
+**Severity:** WARNING
 
 #### Intent
 
-OMOP clinical tables have both standard concept_id columns (e.g., condition_concept_id)
-    and source concept_id columns (e.g., condition_source_concept_id). When you need to
-    join to concept for BOTH, you must use separate aliases. Reusing the same alias causes:
-
-    1. Ambiguous references: Which c.concept_id does the ON clause refer to?
-    2. Last-join-wins: Second JOIN overwrites/conflicts with first JOIN
-    3. Wrong data returned: You get source when you wanted standard (or vice versa)
-    4. Silent errors: SQL doesn't error, but results are semantically incorrect
+In the OMOP CDM every clinical event row belongs to one person: CDM v5.4 gives 18 tables a `person_id` foreign key to PERSON. When one SELECT reads two of them and no predicate ties them to the same person, each row of one is paired with rows of other patients (a condition on 2020-01-15 of patient A with a drug on the same day of patient B). That is almost always a mistake. It is the intended result for some analyses, such as matching controls to cases on age and sex or counting prescriptions per provider, so the finding is a WARNING.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept alias reuse validation patterns.
+Every SELECT in the statement is checked: the main query, CTE bodies, derived tables and each branch of a set operation. Its person-level sources are the CDM tables that carry `person_id` (generated from the CDM v5.4 field-level specification) and any CTE or derived table that passes on a key of one of them.
+
+Predicates that must hold (AND-connected equalities in `ON` / `WHERE`, and `USING`) put columns into classes of equal values. Classes run through casts, through any other table, CTE or derived table (`co.person_id = c.subject_id AND de.person_id = c.subject_id`) and through the same literal (`co.person_id = 42 AND p.person_id = 42`). Two sources are linked when one class holds, for each of them, a key of the same person-level entity:
+
+- `person_id` on both sides;
+- a visit key (`visit_occurrence_id`, `preceding_visit_occurrence_id`) or visit-detail key (`visit_detail_id`, `parent_visit_detail_id`, `preceding_visit_detail_id`): each references one visit, and a visit belongs to one person;
+- an event primary key, matched with itself or with a polymorphic event key (`measurement_event_id`, `observation_event_id`, `note_event_id`, `episode_event.event_id`), which the specification defines as the primary key of the linked record.
+
+`COALESCE(a.person_id, b.person_id) = c.person_id` puts every argument in the class, and a CTE or derived table whose own `WHERE` pins a passed-on key to a literal carries that literal. An `OR` links a source when every alternative ties it to a member of one already linked group (`ON m.person_id = a.person_id OR m.person_id = b.person_id`). Two sources attached to the same `FACT_RELATIONSHIP` or `EPISODE_EVENT` row are also linked (for example a mother and a child, or a condition and a measurement). Any other equality under `OR`, and every equality under `NOT`, links nothing; an anti-join links only through its key equality. Sources left in separate groups are reported once per SELECT. A `LATERAL` / `APPLY` source is not checked; its link is the correlation inside it. T-SQL temporary tables (`#name`) are not CDM tables.
+
+When the first join that brings in an unlinked source has an `ON` clause and both sides expose `person_id`, the finding carries an ADD patch for `AND <a>.person_id = <b>.person_id`.
+
+When every equality between the two sources is a wrong key pair or a type mismatch that an ERROR of another rule already names (`co.person_id = p.person_source_value`, `co.visit_occurrence_id = vd.visit_detail_id`), the validator drops this WARNING as a consequence of that ERROR. It stays when the sources are not equated at all, are equated only on non-key columns such as two dates, or are equated on a wrong pair that no ERROR rule reports (`co.person_id = de.quantity`).
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
-    JOIN concept c ON co.condition_source_concept_id = c.concept_id
+SELECT co.condition_concept_id, de.drug_concept_id
+FROM condition_occurrence co
+JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date;
+```
+
+```sql
+SELECT d.person_id, co.condition_start_date
+FROM death d
+JOIN condition_occurrence co ON d.cause_concept_id = co.condition_concept_id;
+```
+
+```sql
+WITH x AS (
+  SELECT co.condition_concept_id, de.drug_concept_id
+  FROM condition_occurrence co
+  JOIN drug_exposure de ON co.condition_start_date = de.drug_exposure_start_date
+)
+SELECT * FROM x;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT c1.concept_name AS standard_name, c2.concept_name AS source_name
-    FROM condition_occurrence co
-    JOIN concept c1 ON co.condition_concept_id = c1.concept_id
-    JOIN concept c2 ON co.condition_source_concept_id = c2.concept_id
+SELECT co.condition_concept_id, de.drug_concept_id
+FROM condition_occurrence co
+JOIN drug_exposure de ON co.person_id = de.person_id
+  AND co.condition_start_date = de.drug_exposure_start_date;
 ```
+
+```sql
+SELECT d.person_id
+FROM death d
+JOIN person p ON d.person_id = p.person_id
+JOIN condition_occurrence co ON p.person_id = co.person_id AND co.condition_concept_id = d.cause_concept_id;
+```
+
+```sql
+SELECT vd.visit_detail_id, nxt.visit_start_date
+FROM visit_detail vd
+JOIN visit_occurrence nxt ON nxt.preceding_visit_occurrence_id = vd.visit_occurrence_id;
+```
+
+```sql
+SELECT co.condition_concept_id, m.measurement_concept_id
+FROM condition_occurrence co
+JOIN fact_relationship fr ON fr.domain_concept_id_1 = 19 AND fr.fact_id_1 = co.condition_occurrence_id
+JOIN measurement m ON fr.domain_concept_id_2 = 21 AND fr.fact_id_2 = m.measurement_id;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: A comma join with only a date condition.**
+
+```sql
+SELECT d.person_id, vo.visit_occurrence_id
+FROM death d, visit_occurrence vo
+WHERE d.death_date BETWEEN vo.visit_start_date AND vo.visit_end_date;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-None
+Add `<a>.person_id = <b>.person_id` (or a shared visit key such as `visit_occurrence_id`) to the join between the two sources, unless pairing rows of different patients is intended.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 4: The Common Data Model, General conventions of the model](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#model-Conv)
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
+- [OMOP CDM v5.4 specification: FACT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#fact_relationship)
 
 ---
 
-### 9. Concept Ancestor Name Resolution Validation { #joins-concept-ancestor-name-resolution }
+### 5. Cohort to Clinical Table Join Validation { #joins-cohort-clinical-join-validation }
 
-**Rule ID:** `joins.concept_ancestor_name_resolution`
-**Severity:** ERROR
+**Rule ID:** `joins.cohort_clinical_join_validation`
+**Severity:** WARNING
 
 #### Intent
 
-concept_ancestor has two concept_id columns:
-    - ancestor_concept_id: The parent/higher-level concept
-    - descendant_concept_id: The child/lower-level concept
-
-    When joining to the concept table to retrieve concept_name, the join column
-    determines WHICH concept's name you get.
+COHORT rows name their members in `subject_id`. The CDM v5.4 specification lets a cohort's subjects be persons, providers or visits, and COHORT_DEFINITION.`subject_concept_id` records which. Person cohorts are the common case; the Book of OHDSI joins them to clinical tables with `subject_id = person_id`. A clinical table read together with a cohort but not tied to `subject_id` pairs every cohort subject with rows of other patients, which is almost always a mistake but cannot be told from intent, so the rule warns.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept ancestor name resolution validation patterns.
+Every SELECT that reads a cohort source together with person-level sources is checked. A cohort source is the COHORT table or a CTE / derived table that passes `cohort.subject_id` on under any name; a person-level source is a CDM table with `person_id` (generated from the CDM v5.4 field-level specification) or a CTE / derived table passing one of their keys on. T-SQL temporary tables (`#cohort`) are not the CDM table.
+
+Predicates that must hold (AND-connected equalities in `ON` / `WHERE`, and `USING`) put columns into classes of equal values, through casts, unqualified columns, other tables and the same literal. The rule reports:
+
+- a person-level source not tied to `cohort.subject_id`, directly (`subject_id` in one class with its `person_id`) or through other person-level sources linked to the same person (`cohort -> drug_exposure -> condition_occurrence`, or through `observation_period`); the message lists any cohort column it is equated with instead (`cohort.cohort_definition_id = person.person_id`);
+- `cohort.subject_id` equated with another entity's key (a visit, provider or event id) while the SELECT does not restrict `cohort_definition.subject_concept_id`: right only for a cohort whose subjects are of that kind.
+
+Semi-joins (`person_id IN (SELECT subject_id FROM cohort)`) and correlated `EXISTS` are separate scopes and need no join.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT c.concept_name AS descendant_name
-    FROM concept_ancestor ca
-    JOIN concept c ON ca.ancestor_concept_id = c.concept_id
+SELECT c.subject_id, co.condition_concept_id
+FROM cohort c
+JOIN condition_occurrence co ON co.condition_start_date >= c.cohort_start_date;
+```
+
+```sql
+SELECT c.subject_id, co.condition_concept_id
+FROM cohort c, condition_occurrence co
+WHERE c.cohort_definition_id = 1;
+```
+
+```sql
+SELECT * FROM cohort c
+JOIN condition_occurrence co ON c.subject_id = co.visit_occurrence_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT c.concept_name AS descendant_name
-    FROM concept_ancestor ca
-    JOIN concept c ON ca.descendant_concept_id = c.concept_id
-    WHERE ca.ancestor_concept_id = 201826
+SELECT c.subject_id, co.condition_concept_id
+FROM cohort c
+JOIN condition_occurrence co ON c.subject_id = co.person_id
+  AND co.condition_start_date >= c.cohort_start_date;
 ```
 
-#### Common scenarios
+```sql
+SELECT subject_id, cohort_start_date
+FROM cohort
+INNER JOIN condition_occurrence ON subject_id = person_id AND condition_start_date <= cohort_start_date;
+```
 
-- Aliasing as "descendant_name" but joining on ancestor_concept_id
-- Returns the parent concept's name, not the descendant's
-- Aliasing as "ancestor_name" but joining on descendant_concept_id
+```sql
+SELECT *
+FROM cohort c
+JOIN drug_exposure de ON de.person_id = c.subject_id
+JOIN condition_occurrence co ON co.person_id = de.person_id;
+```
+
+```sql
+SELECT *
+FROM cohort c
+JOIN cohort_definition cd ON cd.cohort_definition_id = c.cohort_definition_id AND cd.subject_concept_id = 8
+JOIN visit_occurrence vo ON vo.visit_occurrence_id = c.subject_id;
+```
 
 #### Suggested fix
 
-Use descendant_concept_id for descendant values and ancestor_concept_id for ancestor values.
+Add `cohort.subject_id = <clinical>.person_id` to the join, or link the table to another one already tied to `subject_id`. If the cohort's subjects are visits or providers, restrict `cohort_definition.subject_concept_id` accordingly.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: COHORT](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort)
+- [OMOP CDM v5.4 specification: COHORT_DEFINITION](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort_definition)
+- [The Book of OHDSI, ch. 10: Defining Cohorts, Require prior hypertension](https://ohdsi.github.io/TheBookOfOhdsi/Cohorts.html#require-prior-hypertension)
 
 ---
 
-### 10. Concept Join Validation { #joins-concept-join-validation }
+### 6. Concept Join Validation { #joins-concept-join-validation }
 
 **Rule ID:** `joins.concept_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-The concept table has a primary key (concept_id) and several descriptive columns
-    (concept_name, concept_code, vocabulary_id, domain_id, etc.). Joining on
-    descriptive columns instead of the primary key causes:
-
-    1. Non-unique matches: concept_name is not unique, causing cartesian joins
-    2. String matching issues: Case sensitivity, trailing spaces, encoding
-    3. Performance: String joins are much slower than integer joins
-    4. Semantic incorrectness: Foreign keys should reference primary keys
+Every `*_concept_id` column of the CDM v5.4 is a foreign key to `concept.concept_id`. Comparing one with any other CONCEPT column (`concept_name`, `concept_code`, `vocabulary_id`, ...) compares a concept id with an unrelated attribute: PostgreSQL rejects the type mismatch, DuckDB fails on the first value that does not convert, and with a cast to text the join runs and matches nothing.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept join validation patterns.
+Every equality and `IN` subquery in every SELECT (the main query, CTE bodies, derived tables, each branch of a set operation) is examined. Operands are resolved by lineage through casts, CTEs, derived tables and set operations, so an alias that names a different source in each scope, or a concept-id column renamed in a CTE, is judged by the base column it reads. A column whose CDM foreign key is `concept.concept_id` (from the field-level specification) compared with another CONCEPT column is reported, with a REPLACE patch to `concept.concept_id`.
+
+Columns of VOCABULARY, DOMAIN, CONCEPT_CLASS and RELATIONSHIP are checked by `joins.concept_metadata_join_validation` and `joins.concept_relationship_relationship_join_validation`; columns of CONCEPT_SYNONYM by `joins.concept_synonym_join_validation`. Joins on `concept.concept_code` without a `vocabulary_id` constraint are checked by `anti_patterns.concept_code_requires_vocabulary_id`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN concept c ON de.drug_source_value = c.concept_name
+SELECT co.person_id FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_name;
+```
+
+```sql
+SELECT co.person_id FROM condition_occurrence co
+JOIN concept c ON CAST(co.condition_concept_id AS VARCHAR) = c.concept_name;
+```
+
+```sql
+SELECT co.person_id FROM condition_occurrence co
+WHERE co.condition_concept_id IN (SELECT concept_code FROM concept WHERE vocabulary_id = 'SNOMED');
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-```
-
-#### Suggested fix
-
-None
-
----
-
-
-### 12. Concept Relationship Requires Relationship ID Filter { #joins-concept-relationship-requires-relationship-id }
-
-**Rule ID:** `joins.concept_relationship_requires_relationship_id`
-**Severity:** ERROR
-
-#### Intent
-
-Each use of concept_relationship must filter on relationship_id to avoid cross-product joins across multiple relationship types.
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept relationship requires relationship id filter patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Add a filter on relationship_id for each concept_relationship alias. Example: cr.relationship_id = 'Maps to'
-
----
-
-### 13. Concept Relationship to Concept Join Validation { #joins-concept-relationship-concept-join-validation }
-
-**Rule ID:** `joins.concept_relationship_concept_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-concept_relationship has two concept_id columns:
-    - concept_id_1: The source/origin concept (what you're mapping FROM)
-    - concept_id_2: The target/destination concept (what you're mapping TO)
-
-    When joining to the concept table twice to retrieve names for both concepts,
-    developers often swap the join columns, causing:
-    - The "source" alias to actually show the target concept's name
-    - The "target" alias to actually show the source concept's name
-    - Completely reversed mapping semantics
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept relationship to concept join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT
-      c_source.concept_name AS source_name,
-      c_target.concept_name AS target_name
-    FROM concept_relationship cr
-    JOIN concept c_source ON cr.concept_id_2 = c_source.concept_id
-    JOIN concept c_target ON cr.concept_id_1 = c_target.concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT
-      c_source.concept_name AS source_name,
-      c_target.concept_name AS target_name
-    FROM concept_relationship cr
-    JOIN concept c_source ON cr.concept_id_1 = c_source.concept_id
-    JOIN concept c_target ON cr.concept_id_2 = c_target.concept_id
-```
-
-#### Common scenarios
-
-- Aliasing as "c_source" but joining on concept_id_2
-- Returns the target concept's name, not the source
-- Aliasing as "c_target" but joining on concept_id_1
-
-#### Suggested fix
-
-Use concept_id_1 for source concepts and concept_id_2 for target concepts.
-
----
-
-### 14. Concept Relationship to Relationship Join Validation { #joins-concept-relationship-relationship-join-validation }
-
-**Rule ID:** `joins.concept_relationship_relationship_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The relationship table is a reference table in OMOP that describes relationship types
-    (e.g., 'Maps to', 'Subsumes', 'Is a', 'Has form'). The concept_relationship table
-    references relationship via the relationship_id column (VARCHAR FK to
-    relationship.relationship_id).
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept relationship to relationship join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept_relationship cr
-    JOIN relationship r ON cr.concept_id_1 = r.relationship_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept_relationship cr
-    JOIN relationship r ON cr.relationship_id = r.relationship_id
-```
-
-#### Common scenarios
-
-- Joining concept_id_1 or concept_id_2 (INTEGER) to relationship_concept_id (INTEGER)
-- Type matches but semantics are wrong
-- concept_id_1/2 are the concepts being related, not the relationship type
-
-#### Suggested fix
-
-Use: concept_relationship.relationship_id = relationship.relationship_id
-
----
-
-### 15. Concept Synonym Join Validation { #joins-concept-synonym-join-validation }
-
-**Rule ID:** `joins.concept_synonym_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The concept_synonym table provides alternative names for concepts:
-    - concept.concept_id = 123 → "Type 2 diabetes mellitus" (primary name)
-    - concept_synonym.concept_id = 123, concept_synonym_name = "Diabetes mellitus type 2"
-    - concept_synonym.concept_id = 123, concept_synonym_name = "T2DM"
-
-    Joining on name strings is unreliable because:
-    1. Names are not unique identifiers
-    2. Synonyms may match concept names from different concepts
-    3. String matching is error-prone (case sensitivity, whitespace)
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept synonym join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept_synonym cs
-    JOIN concept c ON cs.concept_synonym_name = c.concept_name
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept_synonym cs
-    JOIN concept c ON cs.concept_id = c.concept_id
-```
-
-#### Suggested fix
-
-Join concept_synonym to concept using concept_id: concept_synonym.concept_id = concept.concept_id
-
----
-
-### 16. Concept to Concept Class Join Validation { #joins-concept-concept-class-join-validation }
-
-**Rule ID:** `joins.concept_concept_class_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The concept_class table is a reference table in OMOP that describes concept classes
-    (e.g., 'Clinical Drug', 'Ingredient', 'Procedure', 'Clinical Finding'). The concept
-    table references concept_class via the concept_class_id column (VARCHAR FK to
-    concept_class.concept_class_id).
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept to concept class join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN concept_class cc ON c.concept_id = cc.concept_class_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN concept_class cc ON c.concept_class_id = cc.concept_class_id
-```
-
-#### Common scenarios
-
-- Joining concept_id (INTEGER) to concept_class_concept_id (INTEGER)
-- Type matches but semantics are wrong
-- Joining concept_class_id to concept_class_name
-
-#### Suggested fix
-
-None
-
----
-
-### 17. Concept to Domain Join Validation { #joins-concept-domain-join-validation }
-
-**Rule ID:** `joins.concept_domain_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The domain table is a reference table in OMOP that describes domains
-    (e.g., 'Condition', 'Drug', 'Procedure', 'Measurement'). The concept table
-    references domain via the domain_id column (VARCHAR FK to domain.domain_id).
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept to domain join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN domain d ON c.concept_id = d.domain_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN domain d ON c.domain_id = d.domain_id
-```
-
-#### Common scenarios
-
-- Joining concept_id (INTEGER) to domain_concept_id (INTEGER)
-- Type matches but semantics are wrong
-- Joining domain_id to domain_name
-
-#### Suggested fix
-
-None
-
----
-
-### 18. Concept to Vocabulary Join Validation { #joins-concept-vocabulary-join-validation }
-
-**Rule ID:** `joins.concept_vocabulary_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The vocabulary table is a reference table in OMOP that describes vocabularies
-    (e.g., 'SNOMED', 'ICD10CM', 'RxNorm'). The concept table references vocabulary
-    via the vocabulary_id column (VARCHAR FK to vocabulary.vocabulary_id).
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept to vocabulary join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN vocabulary v ON c.concept_id = v.vocabulary_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM concept c
-    JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id
-```
-
-#### Common scenarios
-
-- Joining concept_id (INTEGER) to vocabulary_concept_id (INTEGER)
-- Type matches but semantics are wrong
-- Joining vocabulary_id to vocabulary_name
-
-#### Suggested fix
-
-None
-
----
-
-### 19. Cost Table Domain Validation { #joins-cost-table-domain-validation }
-
-**Rule ID:** `joins.cost_table_domain_validation`
-**Severity:** ERROR
-
-#### Intent
-
-Without the domain filter, a join can produce incorrect results because
-    cost_event_id is a polymorphic foreign key that can reference different tables.
-
-    Example: drug_exposure_id = 123 and procedure_occurrence_id = 123 are DIFFERENT
-    events, but without cost_domain_id filter, both would match cost_event_id = 123.
-
-#### How it works
-
-This rule analyzes the SQL query to identify cost table domain validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM cost c
-    JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM cost c
-    JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
-    WHERE c.cost_domain_id = 'Drug'
-```
-
-#### Suggested fix
-
-Add cost.cost_domain_id = '<domain>' matching the joined clinical table.
-
----
-
-### 20. Death to Visit Occurrence Join Validation { #joins-death-visit-occurrence-join-validation }
-
-**Rule ID:** `joins.death_visit_occurrence_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The death table has a unique structure with person_id as both primary key
-    and the ONLY foreign key to other clinical tables. It has NO visit_occurrence_id,
-    provider_id, or care_site_id columns.
-
-    The ONLY valid join is:
-    death.person_id = visit_occurrence.person_id
-
-#### How it works
-
-This rule analyzes the SQL query to identify death to visit occurrence join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-    FROM death d
-    JOIN visit_occurrence vo ON d.death_date = vo.visit_end_date
-```
-
-**Correct patterns:**
-
-```sql
-SELECT
-      d.person_id,
-      vo.visit_occurrence_id,
-      d.death_date,
-      vo.visit_end_date
-    FROM death d
-    JOIN visit_occurrence vo ON d.person_id = vo.person_id
-    WHERE d.death_date = vo.visit_end_date  -- Temporal filter in WHERE
-```
-
-#### Common scenarios
-
-- Temporal joins using dates (death_date = visit_end_date)
-- Structurally invalid even if temporally meaningful
-- Temporal correlations should use WHERE clause, not JOIN ON
-
-#### Suggested fix
-
-Use: death.person_id = visit_occurrence.person_id
-
----
-
-### 21. Drug Exposure to Drug Strength Join Validation { #joins-drug-exposure-drug-strength-join-validation }
-
-**Rule ID:** `joins.drug_exposure_drug_strength_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The drug_strength table is a vocabulary table that contains strength information
-    for drug formulations. It has NO clinical event columns like drug_exposure_id,
-    person_id, or visit_occurrence_id.
-
-    The ONLY valid join is:
-    drug_exposure.drug_concept_id = drug_strength.drug_concept_id
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug exposure to drug strength join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-    FROM drug_exposure de
-    JOIN drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT
-      de.drug_exposure_id,
-      ds.amount_value,
-      ds.amount_unit_concept_id
-    FROM drug_exposure de
-    JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
-    WHERE ds.invalid_reason IS NULL
-```
-
-#### Common scenarios
-
-- Joining drug_exposure_id to drug_concept_id
-- drug_strength has no drug_exposure_id column
-- Joining person_id to drug_concept_id
-
-#### Suggested fix
-
-Use: drug_exposure.drug_concept_id = drug_strength.drug_concept_id
-
----
-
-### 22. Era Table Forbidden Join Validation { #joins-era-forbidden-join-validation }
-
-**Rule ID:** `joins.era_forbidden_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-Era tables are DERIVED/AGGREGATED tables built from event tables:
-    - condition_era is derived from condition_occurrence
-    - drug_era is derived from drug_exposure
-    - dose_era is derived from drug_exposure
-
-    They represent continuous time periods, not discrete clinical events.
-    Era tables have NO foreign keys to visit, provider, or care_site.
-
-    They ONLY have:
-    - person_id (FK to person)
-    - *_concept_id (FK to concept)
-
-    Any join to visit/provider/care_site is semantically impossible.
-
-#### How it works
-
-This rule analyzes the SQL query to identify era table forbidden join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-    FROM drug_era de
-    JOIN visit_occurrence vo ON de.person_id = vo.person_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT *
-    FROM drug_exposure de  -- NOT drug_era
-    JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
-```
-
-```sql
-SELECT *
-    FROM drug_era de
-    JOIN person p ON de.person_id = p.person_id
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-```
-
-#### Suggested fix
-
-Do not join era tables with visit/provider/care_site. Use event tables (condition_occurrence, drug_exposure) for visit-level analysis.
-
----
-
-### 23. Fact Relationship Polymorphic Join Validation { #joins-fact-relationship-join-validation }
-
-**Rule ID:** `joins.fact_relationship_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-fact_relationship links ANY two facts across the entire OMOP CDM.
-    Without domain filtering, ID values collide across tables:
-    - measurement_id = 123 (in measurement table)
-    - condition_occurrence_id = 123 (in condition_occurrence table)
-    - procedure_occurrence_id = 123 (in procedure_occurrence table)
-
-    These are COMPLETELY DIFFERENT clinical events!
-
-#### How it works
-
-This rule analyzes the SQL query to identify fact relationship polymorphic join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM fact_relationship fr
-    JOIN measurement m ON fr.fact_id_1 = m.measurement_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM fact_relationship fr
-    JOIN measurement m ON fr.fact_id_1 = m.measurement_id
-    WHERE fr.domain_concept_id_1 = 21  -- 21 = Measurement domain
-```
-
-#### Suggested fix
-
-Add domain filter matching the clinical table, e.g.: WHERE domain_concept_id_1 = <correct_domain_id>
-
----
-
-### 24. Join Path Validation { #joins-join-path-validation }
-
-**Rule ID:** `joins.join_path_validation`
-**Severity:** WARNING
-
-#### Intent
-
-When a query JOINs `concept` (or `concept_relationship`) to a clinical fact table, the join's ON-clause must connect them via `concept_id` (not `domain_id`, `vocabulary_id`, or any other column). A wrong-key join produces an implicit cross-join or silently empty results with no database error.
-
-#### How it works
-
-The rule fires when:
-
-1. The query references a clinical fact table's standard concept field (`condition_concept_id`, `drug_concept_id`, etc.), AND
-2. The query references `concept` or `concept_relationship`, AND
-3. None of the recognized linkage patterns are present:
-   - Direct JOIN: `clinical.<x>_concept_id = concept.concept_id`.
-   - Implicit (comma) join with the same equality in WHERE.
-   - Indirect bridge through a CTE that selects a `concept_id` column from a vocabulary source.
-   - JOIN with unqualified `concept_id` in the ON clause (when concept is the join target).
-
-**Suppression for subquery-only usage.** When `concept` (or `concept_relationship`) appears *only* inside a `Subquery` node — never in the outer query's FROM/JOIN list — the rule suppresses. Examples of suppressed shapes:
-
-```sql
--- Scalar lookup
-WHERE p.gender_concept_id = (SELECT concept_id FROM concept WHERE concept_name = 'Female' AND domain_id = 'Gender')
-
--- IN-subquery filter
-WHERE de.drug_concept_id IN (SELECT concept_id FROM concept WHERE vocabulary_id = 'RxNorm' AND standard_concept = 'S')
-
--- EXISTS subquery
-WHERE EXISTS (SELECT 1 FROM concept c WHERE c.concept_id = p.gender_concept_id)
-```
-
-In these shapes there's no JOIN to validate; the relevant data-quality concerns (deprecated concepts, trailing whitespace in `concept_name`, ambiguous multi-row lookups) are covered by other rules: `invalid_reason_enforcement`, `concept_name_whitespace`, and `standard_concept_enforcement`. Suppressing here avoids issuing a join-shaped warning on a non-join query.
-
-#### Examples
-
-**Violation pattern** (wrong join key):
-
-```sql
-SELECT co.person_id
-FROM condition_occurrence co
-JOIN concept c ON co.condition_concept_id = c.domain_id;  -- wrong: should be c.concept_id
-```
-
-**Correct pattern:**
-
-```sql
-SELECT co.person_id
-FROM condition_occurrence co
+SELECT co.person_id FROM condition_occurrence co
 JOIN concept c ON co.condition_concept_id = c.concept_id;
 ```
 
+```sql
+WITH k AS (SELECT concept_id, concept_name FROM concept WHERE domain_id = 'Condition')
+SELECT co.person_id FROM condition_occurrence co
+JOIN k ON k.concept_id = co.condition_concept_id;
+```
+
 #### Suggested fix
 
-`JOIN concept ON <clinical_table>.<x>_concept_id = concept.concept_id` — connect the clinical fact's concept_id slot to `concept.concept_id` directly.
+Replace any `*_concept_id` join target other than `concept.concept_id` with `concept.concept_id`.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [The Book of OHDSI, ch. 9: SQL and R, Using the vocabulary when querying](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#using-the-vocabulary-when-querying)
 
 ---
 
-### 25. Left Join Then Where On Right Table { #joins-left-join-then-where-on-right-table }
+### 7. Concept Relationship Requires Relationship ID Filter { #joins-concept-relationship-requires-relationship-id }
 
-**Rule ID:** `joins.left_join_then_where_on_right_table`
+**Rule ID:** `joins.concept_relationship_requires_relationship_id`
 **Severity:** WARNING
 
 #### Intent
 
-LEFT JOIN semantics:
-    - Returns ALL rows from the left table
-    - Matched rows from right table have values
-    - Unmatched rows from right table have NULL values
+CONCEPT_RELATIONSHIP stores every link between two concepts in the same two columns: 'Maps to', 'Is a', 'Subsumes', attribute links such as 'Has finding site', drug links such as 'RxNorm has ing', and their reverses. Only `relationship_id` says which. A lookup that reads `concept_id_2` for a concept without restricting `relationship_id` returns all of them.
 
-    When a WHERE clause filters on a right table column with non-NULL conditions:
-    - Rows where right table column is NULL are filtered out
-    - This defeats the purpose of LEFT JOIN
-    - Effectively converts LEFT JOIN to INNER JOIN
-    - Developer likely intended INNER JOIN or should move filter to JOIN ON
-
-    This is a common SQL anti-pattern that produces unexpected results.
+Whether that changes the result depends on the concept looked up, which the SQL does not show. A non-standard source code often has a single standard target, while a standard concept also links to its parents, children and attribute concepts: in Athena v5.0 27-AUG-25, Type 2 diabetes mellitus (201826) has 133 standard condition concepts among its links and one 'Maps to' target. The finding is therefore a WARNING.
 
 #### How it works
 
-This rule analyzes the SQL query to identify left join then where on right table patterns.
+A lookup is an instance of `concept_relationship` whose `concept_id_1` / `concept_id_2` values are compared anywhere in the statement, followed through CTEs, derived tables and `IN` subqueries. An instance is reported unless:
+
+- `relationship_id` is restricted for that instance, in its own SELECT or downstream on its projected column, by any non-negated predicate other than `<>`, `IS [NOT] NULL` or a `LIKE` pattern that matches every value (`'%'`). Wrapped forms (`LOWER(cr.relationship_id) = 'maps to'`) and `JOIN relationship USING (relationship_id)` count;
+- the instance's `relationship_id` reaches the statement's output: projected by name, by `*` or `cr.*`, or grouped on in the output SELECT, so every row shows its relationship type;
+- the lookup is the body of `NOT EXISTS`, which asks whether a concept has any relationship at all.
+
+`EXISTS`, `IN` and join forms of the same lookup get the same verdict. When the unrestricted ids reach a predicate on a clinical `*_concept_id` column, the message says the selected rows can include concepts that are not the intended mapping. When the instance is joined with an `ON` clause, the finding carries an ADD patch for `AND cr.relationship_id = '<relationship>'`. The rule is a WARNING in strict mode too.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT co.* FROM condition_occurrence co
-    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vo.visit_concept_id = 9201
+WITH related AS (
+  SELECT cr.concept_id_2 AS concept_id
+  FROM concept_relationship cr
+  WHERE cr.concept_id_1 = 201826
+)
+SELECT COUNT(DISTINCT co.person_id)
+FROM condition_occurrence co
+JOIN related r ON co.condition_concept_id = r.concept_id;
 ```
 
 ```sql
-SELECT p.* FROM person p
-    LEFT JOIN location l ON p.location_id = l.location_id
-    WHERE l.state = 'CA' AND l.city = 'Los Angeles'
+SELECT c.concept_id, c.concept_name
+FROM concept_relationship cr
+JOIN concept c ON cr.concept_id_2 = c.concept_id
+WHERE cr.concept_id_1 = 201826;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT co.* FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vo.visit_concept_id = 9201
+WITH related AS (
+  SELECT cr.concept_id_2 AS concept_id
+  FROM concept_relationship cr
+  WHERE cr.concept_id_1 = 201826
+    AND cr.relationship_id = 'Maps to'
+)
+SELECT COUNT(DISTINCT co.person_id)
+FROM condition_occurrence co
+JOIN related r ON co.condition_concept_id = r.concept_id;
 ```
 
 ```sql
-SELECT co.* FROM condition_occurrence co
-    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vo.visit_occurrence_id IS NULL
+SELECT cr.relationship_id, c.concept_name
+FROM concept_relationship cr
+JOIN concept c ON c.concept_id = cr.concept_id_2
+WHERE cr.concept_id_1 = 201826;
 ```
 
-#### Common scenarios
-
-- Using LEFT JOIN when INNER JOIN is needed
-- Filtering right table columns in WHERE instead of JOIN ON
-- Not understanding LEFT JOIN NULL behavior
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE NOT EXISTS (SELECT 1 FROM concept_relationship cr WHERE cr.concept_id_1 = c.concept_id);
+```
 
 #### Suggested fix
 
-Use INNER JOIN or move filter into JOIN ON clause.
+Add `AND cr.relationship_id = '<relationship>'` to the lookup, typically `'Maps to'` for source-to-standard mapping; use `concept_ancestor` for hierarchy. If every relationship type is wanted, project `relationship_id`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_relationship)
+- [OMOP CDM: Data Model Conventions, Concept Relationships](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-relationships)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Relationships](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#relationships)
 
 ---
 
-### 26. Maps To Direction { #joins-maps-to-direction }
+### 8. Concept Relationship to Relationship Join Validation { #joins-concept-relationship-relationship-join-validation }
+
+**Rule ID:** `joins.concept_relationship_relationship_join_validation`
+**Severity:** ERROR (relationship_id compared with a column that never holds an id); WARNING (compared with relationship_name, other column pairs)
+
+#### Intent
+
+CONCEPT_RELATIONSHIP references RELATIONSHIP through `concept_relationship.relationship_id` (CDM v5.4 foreign key). `relationship.reverse_relationship_id` also holds relationship ids: every concept relationship exists with its mirror image, whose `relationship_id` is the `reverse_relationship_id` of the original, so joining on it reaches the reverse relationship's row on purpose. Comparing `relationship_id` with `relationship_name` runs and returns correct rows wherever the name equals the id, which in Athena v5.0 27-AUG-25 holds for 72 of 722 relationships, and drops the others: a WARNING. Comparing it with a column that never holds a relationship id (`is_hierarchical`, `defines_ancestry`) never pairs the right rows: an ERROR.
+
+#### How it works
+
+Every equality and `IN` subquery in every SELECT is examined, with operands resolved by lineage through casts, `LOWER` / `UPPER` / `TRIM`, CTEs, derived tables and set operations. Between concept_relationship and relationship:
+
+- `relationship_id = relationship_id` and `relationship_id = reverse_relationship_id` are links;
+- `relationship_id` compared with `relationship_name` is a **WARNING** whose message gives how many relationships are named by their id, with a REPLACE patch to `relationship.relationship_id`;
+- `relationship_id` compared with another non-key column of RELATIONSHIP (`is_hierarchical`, `defines_ancestry`) is an **ERROR**, with the same patch;
+- any other pair (`cr.concept_id_1 = r.relationship_concept_id`) is a **WARNING**, unless the same two sources are already linked in that SELECT.
+
+The classification is the one used by `joins.concept_metadata_join_validation`.
+
+#### Examples
+
+**Violation patterns:**
+
+*a column that never holds a relationship id (ERROR)*
+
+```sql
+SELECT * FROM concept_relationship cr
+JOIN relationship r ON cr.relationship_id = r.is_hierarchical;
+```
+
+*the name column: right only for relationships named by their id (WARNING)*
+
+```sql
+SELECT * FROM concept_relationship cr
+JOIN relationship r ON cr.relationship_id = r.relationship_name;
+```
+
+```sql
+SELECT * FROM concept_relationship cr
+WHERE cr.relationship_id IN (SELECT relationship_name FROM relationship);
+```
+
+*another column pair (WARNING)*
+
+```sql
+SELECT * FROM concept_relationship cr
+JOIN relationship r ON cr.concept_id_1 = r.relationship_concept_id;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT * FROM concept_relationship cr
+JOIN relationship r ON cr.relationship_id = r.relationship_id;
+```
+
+```sql
+SELECT cr.concept_id_1, cr.concept_id_2, rev.relationship_id AS reverse_id
+FROM concept_relationship cr
+JOIN relationship rev ON rev.reverse_relationship_id = cr.relationship_id;
+```
+
+#### Suggested fix
+
+Replace the join target with `concept_relationship.relationship_id = relationship.relationship_id` (or `relationship.reverse_relationship_id` for the reverse type). Do not join on `relationship_name` or `relationship_concept_id`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_relationship)
+- [OMOP CDM v5.4 specification: RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#relationship)
+- [OMOP CDM: Data Model Conventions, Concept Relationships](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-relationships)
+
+---
+
+### 9. Concept Synonym Join Validation { #joins-concept-synonym-join-validation }
+
+**Rule ID:** `joins.concept_synonym_join_validation`
+**Severity:** ERROR (WARNING for a text match between synonym and concept names)
+
+#### Intent
+
+`concept_synonym` rows belong to a concept through the foreign key `concept_synonym.concept_id = concept.concept_id` (CDM v5.4). `concept_synonym.language_concept_id = concept.concept_id` is also a valid foreign key: it looks up the synonym's language concept.
+
+#### How it works
+
+Every equality and `IN` subquery in every SELECT is examined, with operands resolved by lineage through casts, `LOWER` / `UPPER` / `TRIM`, CTEs, derived tables and set operations.
+
+- **ERROR:** a `concept_synonym` ↔ `concept` equality on a key column that is not one of those foreign keys (e.g. `cs.language_concept_id = c.vocabulary_id`, `cs.concept_id = c.concept_code`), when that concept source is not also joined on `concept_id` in the same SELECT.
+- **WARNING:** a text match between the two tables (`concept_synonym_name` against `concept_name` / `concept_code`, bare or wrapped). It is a legitimate lexical lookup when deliberate (finding the concepts whose synonym equals another concept's name), but it is not the key: in Athena v5.0 27-AUG-25, 183,901 synonym names belong to more than one concept, so used in place of `concept_id` it links unrelated concepts.
+
+A text predicate on a pair already joined on `concept_id` (e.g. `AND cs.concept_synonym_name = c.concept_name`) is a filter and is not reported. `joins.concept_join_validation` leaves concept_synonym columns to this rule.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT cs.concept_synonym_name
+FROM concept c
+JOIN concept_synonym cs ON c.vocabulary_id = cs.language_concept_id;
+```
+
+```sql
+SELECT cs.concept_synonym_name
+FROM concept_synonym cs
+WHERE cs.concept_id IN (SELECT concept_code FROM concept WHERE vocabulary_id = 'SNOMED');
+```
+
+```sql
+SELECT c.concept_id, c.concept_name
+FROM concept_synonym cs
+JOIN concept c ON cs.concept_synonym_name = c.concept_name;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT cs.concept_synonym_name
+FROM concept c
+JOIN concept_synonym cs ON c.concept_id = cs.concept_id;
+```
+
+```sql
+SELECT cs.concept_synonym_name, lang.concept_name AS language
+FROM concept_synonym cs
+JOIN concept lang ON lang.concept_id = cs.language_concept_id;
+```
+
+#### Suggested fix
+
+Replace the join target with `concept_synonym.concept_id = concept.concept_id`. A name match (`concept_synonym_name = concept_name`) is only a lexical lookup; names are not unique.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT_SYNONYM](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_synonym)
+- [OMOP CDM: Data Model Conventions, Concept Synonyms](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-synonyms)
+
+---
+
+### 10. Concept to Vocabulary, Domain and Concept Class Join Validation { #joins-concept-metadata-join-validation }
+
+**Rule ID:** `joins.concept_metadata_join_validation`
+**Severity:** ERROR (key compared with a column that never holds an id); WARNING (key compared with the name column, other column pairs)
+
+#### Intent
+
+CONCEPT references the three metadata tables through foreign keys (CDM v5.4): `concept.vocabulary_id` → VOCABULARY, `concept.domain_id` → DOMAIN, `concept.concept_class_id` → CONCEPT_CLASS. Each metadata table also points back at the concept that represents its row (`vocabulary_concept_id`, `domain_concept_id`, `concept_class_concept_id` → CONCEPT), and other tables reference them too (`source_to_concept_map.target_vocabulary_id`, `cost.cost_domain_id`). A foreign key compared with the referenced table's name column runs and returns correct rows wherever the name equals the id, and drops the others: in Athena v5.0 27-AUG-25 the name equals the id for 2 of 113 vocabularies, 30 of 50 domains (every main clinical domain: Condition, Drug, Procedure, Measurement, Observation, Device, Visit, Specimen, Note) and 208 of 433 concept classes. Whether that loses rows the query needs depends on the data asked for, so it is a WARNING. A foreign key compared with a column that never holds an id (`vocabulary_version`, `vocabulary_reference`) never pairs the right rows and is an ERROR.
+
+This rule merges the earlier vocabulary, concept_class and domain join rules and carries the vocabulary rule's renamed id (old ids in the [CHANGELOG](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md) renames table).
+
+#### How it works
+
+Every equality and `IN` subquery in every SELECT is examined. Operands are resolved by lineage through casts, `LOWER` / `UPPER` / `TRIM`, CTEs, derived tables and set operations. For a pair of columns from a metadata table and a table related to it by a foreign key:
+
+- a foreign key and the key it references (or two columns holding the same table's key) is a link and is accepted;
+- a foreign key compared with the name column of the table it references (`vocabulary_name`, `domain_name`, `concept_class_name`) is a **WARNING** whose message gives how many rows of that table are named by their id, with a REPLACE patch to the key;
+- a foreign key compared with another non-key column of that table (`vocabulary_version`, `vocabulary_reference`), which never holds an id, is an **ERROR**, with a REPLACE patch to the key;
+- any other pair (`concept.vocabulary_id = concept_class.concept_class_id`) is a **WARNING**, unless the same two sources are already linked by a foreign key in that SELECT. Such a pair can match by design: vocabularies without concept classes use the vocabulary_id as the class.
+
+#### Examples
+
+**Violation patterns:**
+
+*a column that never holds an id (ERROR)*
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_version;
+```
+
+*the name column: right only where the name equals the id (WARNING)*
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_name;
+```
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN concept_class cc ON LOWER(c.concept_class_id) = LOWER(cc.concept_class_name);
+```
+
+```sql
+SELECT c.concept_id FROM concept c
+WHERE c.domain_id IN (SELECT domain_name FROM domain);
+```
+
+*another column pair (WARNING)*
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN vocabulary v ON c.domain_id = v.vocabulary_id;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN vocabulary v ON c.vocabulary_id = v.vocabulary_id;
+```
+
+```sql
+SELECT v.vocabulary_id, mc.concept_name
+FROM vocabulary v
+JOIN concept mc ON mc.concept_id = v.vocabulary_concept_id;
+```
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN domain d ON c.domain_id = d.domain_id
+WHERE d.domain_name LIKE '%Drug%';
+```
+
+<!-- extra-examples:start -->
+**Warning variant: The concept_class key compared with the class name: right only where the name equals the id.**
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN concept_class cc ON c.concept_class_id = cc.concept_class_name;
+```
+
+**Warning variant: The domain key compared with the domain name: right for every main clinical domain, not for all.**
+
+```sql
+SELECT c.concept_id FROM concept c
+JOIN domain d ON c.domain_id = d.domain_name;
+```
+
+<!-- extra-examples:end -->
+
+#### Suggested fix
+
+Replace the ON clause with the foreign-key pair: `concept.vocabulary_id = vocabulary.vocabulary_id`, `concept.domain_id = domain.domain_id` or `concept.concept_class_id = concept_class.concept_class_id`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM v5.4 specification: VOCABULARY](https://ohdsi.github.io/CommonDataModel/cdm54.html#vocabulary)
+- [OMOP CDM v5.4 specification: DOMAIN](https://ohdsi.github.io/CommonDataModel/cdm54.html#domain)
+- [OMOP CDM v5.4 specification: CONCEPT_CLASS](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_class)
+- [OMOP CDM: Data Model Conventions, Vocabularies](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#vocabularies)
+
+---
+
+### 11. Drug Exposure to Drug Strength Join Validation { #joins-drug-exposure-drug-strength-join-validation }
+
+**Rule ID:** `joins.drug_exposure_drug_strength_join_validation`
+**Severity:** ERROR (WARNING for data-dependent keys)
+
+#### Intent
+
+DRUG_STRENGTH holds one row per active ingredient of each active Standard Drug Concept, keyed by `drug_concept_id`.
+DRUG_EXPOSURE records the standard drug in `drug_concept_id`. The two tables relate on `drug_concept_id`, directly or
+through a table or CTE that carries it (CONCEPT, CONCEPT_ANCESTOR, a CTE projecting `drug_strength.drug_concept_id`).
+
+#### How it works
+
+The rule looks at one SELECT at a time and follows operands through casts, CTEs, derived tables and
+`IN (SELECT …)`. Every FROM/JOIN source of the SELECT is a node of the relation, whatever it is: a CTE or derived
+table built with JOIN, GROUP BY or DISTINCT relays `drug_concept_id` as well as a base table does. Unqualified columns,
+renamed ones included (`JOIN s ON ds_drug = de.drug_concept_id`), are resolved to the source that supplies them, and
+the sources of a correlated subquery count too (`EXISTS (SELECT 1 FROM concept c WHERE c.concept_id =
+de.drug_concept_id AND c.concept_id = ds.drug_concept_id)`).
+
+- **ERROR**: both tables are read in one FROM list and nothing relates their rows (every exposure pairs with every
+  strength row), or the only relation equates columns that hold different kinds of value (`drug_exposure_id =
+  drug_concept_id`, `route_concept_id = drug_concept_id`).
+- **WARNING**: the only relation is `drug_source_concept_id` = a drug_strength concept, or `drug_concept_id =
+  ingredient_concept_id`. A source concept is a standard drug only when the source was coded in RxNorm, and an
+  exposure recorded at ingredient level matches every product that contains the ingredient, so the outcome depends on
+  the data.
+
+Once a SELECT relates the tables on `drug_concept_id`, further predicates between them are filters and are not
+reported.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT de.drug_exposure_id, ds.amount_value
+FROM drug_exposure de
+JOIN drug_strength ds ON de.drug_exposure_id = ds.drug_concept_id;
+```
+
+```sql
+SELECT de.drug_exposure_id, ds.amount_value
+FROM drug_exposure de, drug_strength ds
+WHERE ds.ingredient_concept_id = 1125315;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT de.drug_exposure_id, de.quantity * ds.amount_value AS ingredient_dose
+FROM drug_exposure de
+JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id;
+```
+
+```sql
+WITH s AS (
+  SELECT drug_concept_id, amount_value FROM drug_strength WHERE ingredient_concept_id = 1125315
+)
+SELECT de.person_id, SUM(de.quantity * s.amount_value)
+FROM drug_exposure de
+JOIN s ON s.drug_concept_id = de.drug_concept_id
+GROUP BY de.person_id;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: drug_source_concept_id matches drug_strength only where the source was coded in a standard drug vocabulary.**
+
+```sql
+SELECT de.drug_exposure_id, de.quantity * ds.amount_value AS ingredient_dose
+FROM drug_exposure de
+JOIN drug_strength ds ON de.drug_source_concept_id = ds.drug_concept_id;
+```
+
+<!-- extra-examples:end -->
+
+#### Suggested fix
+
+Relate the tables with `drug_exposure.drug_concept_id = drug_strength.drug_concept_id`. A REPLACE patch is attached
+when the wrong predicate is written as a plain equality.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: DRUG_STRENGTH](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_strength)
+- [OMOP CDM: Data Model Conventions, Drug strength](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#drug-strength)
+- [OMOP CDM: Drug Dose Calculation](https://ohdsi.github.io/CommonDataModel/drug_dose.html)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+
+---
+
+### 12. Era to Visit Join Without Date Relation { #joins-era-forbidden-join-validation }
+
+**Rule ID:** `joins.era_forbidden_join_validation`
+**Severity:** WARNING
+
+#### Intent
+
+`condition_era`, `drug_era` and `dose_era` carry no visit key: their only foreign keys are `person_id` and concept ids.
+A person usually has several eras and several visits, so joining an era table to `visit_occurrence` or
+`visit_detail` on `person_id` alone pairs every era of a person with every visit of that person. Rows repeat and
+`COUNT(*)`, `SUM` and similar aggregates over the join are inflated.
+
+#### How it works
+
+The rule looks at one SELECT at a time and reports an era table and a visit table whose `person_id` values that
+SELECT equates (directly, through `person` or another column, or with `USING (person_id)`) when nothing else relates
+the two. Tables wrapped in a CTE or derived table that passes their rows through are judged as the tables. It stays
+silent when:
+
+- another comparison relates the era and the visit (a date condition, `OVERLAPS`, or another key), or an expression
+  combines an era date with a visit date (`LEAST(...) - GREATEST(...)`, a date difference);
+- one side is pinned to a single row by its primary key;
+- row duplication cannot change the result: `SELECT DISTINCT`, a `GROUP BY` without aggregates, only
+  `COUNT(DISTINCT …)` / `MIN` / `MAX`, or the query of an `IN` / `EXISTS`;
+- the SELECT feeds a later step and passes on columns of both tables, and every query of the statement that reads it
+  relates an era value to a visit value or de-duplicates. An INSERT or CREATE TABLE AS leaves the statement and is
+  not followed.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT de.person_id, COUNT(*) AS visits_on_metformin
+FROM drug_era de
+JOIN visit_occurrence vo ON de.person_id = vo.person_id
+WHERE de.drug_concept_id = 1503297
+GROUP BY de.person_id;
+```
+
+```sql
+WITH j AS (
+  SELECT de.drug_era_id, vo.visit_occurrence_id
+  FROM drug_era de JOIN visit_occurrence vo ON vo.person_id = de.person_id
+)
+SELECT COUNT(*) FROM j;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT de.person_id, COUNT(*) AS visits_on_metformin
+FROM drug_era de
+JOIN visit_occurrence vo
+  ON de.person_id = vo.person_id
+  AND vo.visit_start_date BETWEEN de.drug_era_start_date AND de.drug_era_end_date
+WHERE de.drug_concept_id = 1503297
+GROUP BY de.person_id;
+```
+
+```sql
+SELECT COUNT(*)
+FROM drug_era de
+JOIN visit_occurrence vo ON vo.person_id = de.person_id
+WHERE (vo.visit_start_date, vo.visit_end_date) OVERLAPS (de.drug_era_start_date, de.drug_era_end_date);
+```
+
+<!-- extra-examples:start -->
+**Warning variant: The person_id link runs through person; the era and the visit detail are still unrelated in time.**
+
+```sql
+SELECT ce.condition_concept_id, SUM(vd.visit_detail_end_date - vd.visit_detail_start_date) AS days
+FROM condition_era ce
+JOIN person p ON ce.person_id = p.person_id
+JOIN visit_detail vd ON vd.person_id = p.person_id
+GROUP BY ce.condition_concept_id;
+```
+
+<!-- extra-examples:end -->
+
+#### Suggested fix
+
+Add a condition relating the visit to the era, e.g. `AND <visit>.visit_start_date BETWEEN <era>.<era>_start_date AND
+<era>.<era>_end_date`, in addition to person_id. If only co-occurrence within a person is wanted, use `EXISTS`,
+`SELECT DISTINCT` or `COUNT(DISTINCT …)`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: DRUG_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_era)
+- [OMOP CDM v5.4 specification: CONDITION_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_era)
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
+- [PostgreSQL documentation: Joined Tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
+
+---
+
+### 13. Fact Relationship Polymorphic Join Validation { #joins-fact-relationship-join-validation }
+
+**Rule ID:** `joins.fact_relationship_join_validation`
+**Severity:** WARNING
+
+#### Intent
+
+FACT_RELATIONSHIP relates facts stored in any table of the CDM. `fact_id_1` and `fact_id_2` have no foreign key;
+`domain_concept_id_1` and `domain_concept_id_2` say which table each id belongs to. A join of `fact_id_N` to one
+table's primary key needs a restriction on `domain_concept_id_N` of the same row. Without it, rows about other
+tables' facts are matched wherever the ids coincide. Whether such rows exist depends on the data, so the finding is
+a warning.
+
+#### How it works
+
+The rule looks for a predicate that equates `fact_id_1` or `fact_id_2` with the primary key of a CDM table
+(`=` or `IN (SELECT …)`, through casts, CTEs and derived tables). It then looks for a restriction on the matching
+`domain_concept_id_N` of the same fact_relationship rows: in the ON clause that holds the join, in a WHERE clause, in
+the ON clause of an inner join, or inside the CTE or derived table the rows come from. A filter in the ON clause of
+a LEFT JOIN covers only that join, so one polymorphic key can be resolved against several tables, each in its own
+LEFT JOIN.
+
+The CDM does not say which concept stands for which table. Two conventions exist in the vocabulary, and both are
+accepted: the Domain concept (`21` = Measurement) and the CDM table concept (`1147330` = measurement). A value the
+rule cannot read (a parameter, a subquery, a join to DOMAIN or CONCEPT) is accepted. A second warning is given when
+the restriction admits a literal concept that the vocabulary assigns to a different table or domain (`= 19`, or
+`IN (21, 27)` for a measurement join).
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT m.measurement_id, fr.fact_id_2
+FROM fact_relationship fr
+JOIN measurement m ON fr.fact_id_1 = m.measurement_id;
+```
+
+```sql
+SELECT p.person_id
+FROM fact_relationship fr
+JOIN person p ON fr.fact_id_1 = p.person_id;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT m.measurement_id, fr.fact_id_2
+FROM fact_relationship fr
+JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+WHERE fr.domain_concept_id_1 = 21;
+```
+
+```sql
+SELECT fr.fact_id_1, COALESCE(m.person_id, o.person_id) AS person_id
+FROM fact_relationship fr
+LEFT JOIN measurement m ON fr.domain_concept_id_1 = 21 AND fr.fact_id_1 = m.measurement_id
+LEFT JOIN observation o ON fr.domain_concept_id_1 = 27 AND fr.fact_id_1 = o.observation_id;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: The domain filter names another domain (19 is the Domain concept 'Condition', not 'Measurement').**
+
+```sql
+SELECT m.measurement_id, fr.fact_id_2
+FROM fact_relationship fr
+JOIN measurement m ON fr.fact_id_1 = m.measurement_id
+WHERE fr.domain_concept_id_1 = 19;
+```
+
+<!-- extra-examples:end -->
+
+#### Suggested fix
+
+Add a filter on the matching domain column of the same fact_relationship row, e.g.
+`AND fr.domain_concept_id_1 = <concept your CDM uses for the joined table>`. The CDM does not fix the value: ETLs
+use either the Domain concept (21 = Measurement) or the CDM table concept (1147330 = measurement); check which one
+your fact_relationship holds.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: FACT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#fact_relationship)
+- [OMOP CDM v5.4 specification: DOMAIN](https://ohdsi.github.io/CommonDataModel/cdm54.html#domain)
+- [OMOP CDM: Data Model Conventions, Domains](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#domains)
+
+---
+
+### 14. Maps To Direction { #joins-maps-to-direction }
 
 **Rule ID:** `joins.maps_to_direction`
 **Severity:** WARNING
 
 #### Intent
 
-OMOP semantic rule: Verify that 'Maps to' relationship is used in the correct direction: - concept_id_1 should be the source concept - concept_id_2 should be the standard concept
+A `'Maps to'` row reads `concept_id_1` (any concept, usually a non-standard source concept) → `concept_id_2` (the standard concept it maps to); `'Mapped from'` is the same link reversed. Matching a `*_source_concept_id` against the standard side of the link (`concept_id_2` of `'Maps to'`, `concept_id_1` of `'Mapped from'`) runs the mapping backwards. Non-standard source concepts never appear on that side, so those rows silently drop out.
 
 #### How it works
 
-This rule analyzes the SQL query to identify maps to direction patterns.
+The rule fires when a `*_source_concept_id` is equated with the standard-side column of a `concept_relationship` instance restricted to `'Maps to'` or `'Mapped from'`. Column lineage is followed through CTEs and derived tables, and the relationship restriction is read from the `concept_relationship` instance the column actually comes from.
 
-#### Examples
+Not flagged:
 
-#### Suggested fix
-
-Use concept_id_1 for source, concept_id_2 for standard concept
-
----
-
-### 27. Note NLP to Note Join Validation { #joins-note-nlp-note-join-validation }
-
-**Rule ID:** `joins.note_nlp_note_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-The note_nlp table contains NLP-extracted entities from clinical notes.
-    It's a vocabulary-like extension table that has NO direct patient context
-    columns (no person_id, visit_occurrence_id, provider_id).
-
-    The ONLY valid join is:
-    note_nlp.note_id = note.note_id
-
-#### How it works
-
-This rule analyzes the SQL query to identify note nlp to note join validation patterns.
+- a standard `*_concept_id` joined to `concept_id_1` of `'Maps to'`: standard concepts map to themselves, so this is a harmless self-map;
+- CTE columns that merely share a source-field name but do not come from a `*_source_concept_id`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT *
-    FROM note_nlp nn
-    JOIN note n ON nn.note_nlp_id = n.note_id
+SELECT cr.concept_id_1
+FROM condition_occurrence co
+JOIN concept_relationship cr ON co.condition_source_concept_id = cr.concept_id_2
+WHERE cr.relationship_id = 'Maps to';
+```
+
+```sql
+SELECT cr.concept_id_2
+FROM condition_occurrence co
+JOIN concept_relationship cr ON co.condition_source_concept_id = cr.concept_id_1
+WHERE cr.relationship_id = 'Mapped from';
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT
-      nn.note_nlp_id,
-      nn.lexical_variant,
-      n.note_text,
-      n.person_id
-    FROM note_nlp nn
-    JOIN note n ON nn.note_id = n.note_id
-    WHERE nn.note_nlp_concept_id = 4329847
+SELECT cr.concept_id_2
+FROM condition_occurrence co
+JOIN concept_relationship cr ON co.condition_source_concept_id = cr.concept_id_1
+WHERE cr.relationship_id = 'Maps to';
 ```
 
-#### Common scenarios
-
-- Joining note_nlp_id (PK) to note_id (FK)
-- Semantically backwards (like joining person_id to drug_concept_id)
-- Trying to join note_nlp directly to person/visit
+```sql
+-- Standard concept self-map: not flagged
+SELECT cr.concept_id_2
+FROM condition_occurrence co
+JOIN concept_relationship cr ON co.condition_concept_id = cr.concept_id_1
+WHERE cr.relationship_id = 'Maps to';
+```
 
 #### Suggested fix
 
-Use: note_nlp.note_id = note.note_id
+Match the source concept id to `cr.concept_id_1` for `'Maps to'` (or `cr.concept_id_2` for `'Mapped from'`) and read the standard concept from the other column.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Mapping relationships](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptMapping)
+- [OMOP CDM: Data Model Conventions, Concept relationships](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-relationships)
+- [OMOP CDM v5.4 specification: CONCEPT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_relationship)
 
 ---
 
-### 28. Payer Plan Period Join Validation { #joins-payer-plan-period-join-validation }
+### 15. Observation Period Not Linked on person_id { #joins-observation-period-unlinked }
 
-**Rule ID:** `joins.payer_plan_period_join_validation`
+**Rule ID:** `joins.observation_period_unlinked`
 **Severity:** WARNING
 
 #### Intent
 
-A patient can have multiple insurance coverage periods over time:
-    - person_id = 12345, coverage from 2020-01-01 to 2020-12-31
-    - person_id = 12345, coverage from 2021-01-01 to 2022-06-30
-    - person_id = 12345, coverage from 2022-07-01 to 2024-12-31
-
-    If you join only on person_id, a drug exposure on 2021-06-15 will match
-    ALL THREE insurance periods, not just the active one!
+`observation_period.person_id` identifies the person the period belongs to. When a SELECT reads observation_period
+together with `person` or a person-level table in the same FROM list, only a predicate that equates
+`observation_period.person_id` with a value of the other row ties each period to its own person. Without it the join
+is a cross product: a date-containment test checks one patient's event against every patient's observation windows,
+and rows multiply.
 
 #### How it works
 
-This rule analyzes the SQL query to identify payer plan period join validation patterns.
+For each SELECT that reads observation_period and a person-level table (tables wrapped in a CTE or derived table that
+passes their rows through count as the tables), the rule looks in JOIN ON and WHERE for a link: an equality between
+`observation_period.person_id` and a column of another source under any name (`c.subject_id = op.person_id`), through
+casts, `op.person_id IN (co.person_id)`, `USING (person_id)` or `NATURAL JOIN` between observation_period and another
+source of the same FROM item, or both sides fixed to the same patient by one literal. A SELECT where
+observation_period is the only source (a UNION branch, a correlated `EXISTS`) is not checked.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN payer_plan_period pp ON de.person_id = pp.person_id
+SELECT co.person_id
+FROM condition_occurrence co, observation_period op
+WHERE co.condition_start_date BETWEEN op.observation_period_start_date
+  AND op.observation_period_end_date;
+```
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co JOIN person p USING (person_id), observation_period op
+WHERE co.condition_start_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN payer_plan_period pp
-      ON de.person_id = pp.person_id
-      AND de.drug_exposure_start_date BETWEEN
-          pp.payer_plan_period_start_date AND pp.payer_plan_period_end_date
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date BETWEEN op.observation_period_start_date
+  AND op.observation_period_end_date;
 ```
+
+```sql
+SELECT person_id FROM person NATURAL JOIN observation_period;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: An explicit JOIN ... ON that tests only dates still matches other patients' observation periods.**
+
+```sql
+SELECT de.person_id
+FROM drug_exposure de
+JOIN observation_period op
+  ON de.drug_exposure_start_date >= op.observation_period_start_date
+  AND de.drug_exposure_start_date <= op.observation_period_end_date;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Add temporal overlap: clinical_date BETWEEN payer_plan_period_start_date AND payer_plan_period_end_date
+Add `op.person_id = <clinical>.person_id` to the JOIN ON (or WHERE) that brings in observation_period.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: OBSERVATION_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation_period)
+- [The Book of OHDSI, ch. 9: SQL and R, Exposure cohort](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#exposure-cohort)
+- [PostgreSQL documentation: Joined Tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
 
 ---
 
-### 29. Person ID Join Validation { #joins-person-id-join-validation }
+### 16. Period Join Requires Date Overlap { #joins-period-join-requires-date-overlap }
+
+**Rule ID:** `joins.period_join_requires_date_overlap`
+**Severity:** WARNING
+
+#### Intent
+
+A person can have several `observation_period` rows (which never overlap) and several `payer_plan_period` rows (which
+can overlap, e.g. medical and drug coverage). Joining an event table to a period table on `person_id` alone pairs
+every event with every period of that person: rows repeat and counts, sums and period attributes are wrong. The join
+needs a date-containment condition as well.
+
+#### How it works
+
+For each SELECT, the rule finds an event table and a period table whose `person_id` values are equated,
+directly, through another table, or with `USING (person_id)`. Tables wrapped in a CTE or derived table that passes
+their rows through count as the tables; a wrapper around the period table counts only when it applies no filter.
+
+The join is accepted when the same SELECT bounds the period on both sides around one date: `>=` start and `<=` end,
+`BETWEEN start AND end`, offset bounds (`start + INTERVAL '365 days'`), or a non-negative date difference
+(`x - start >= 365`, `DATEDIFF(day, start, x) >= 0`). For observation_period, a bound equal to one value (a date or a
+per-person `MIN(...)` subquery) also selects one period. For payer_plan_period it does not, because plans can
+overlap, and containment keeps the plans in force at the event, which can be more than one.
+
+A SELECT whose result cannot change under duplication (`IN`/`EXISTS` subquery, `SELECT DISTINCT`, only
+`COUNT(DISTINCT …)`/`MIN`/`MAX` with no period column in the output) is not reported, unless a predicate compares a
+period column with another table without bounding it (a one-sided washout). `person` joined to a period table is
+not reported: that join yields one row per period, and counting periods is a legitimate question.
+
+A pair of comparisons that tests one event column against both bounds of the same period alias with the bounds swapped (`BETWEEN op.observation_period_end_date AND op.observation_period_start_date`, or the `>=` / `<=` spellings) is a containment attempt; it is left to `temporal.observation_period_date_range_logic`.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT COUNT(*) FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id;
+```
+
+```sql
+SELECT ppp.payer_concept_id, SUM(de.quantity)
+FROM drug_exposure de
+JOIN payer_plan_period ppp ON de.person_id = ppp.person_id
+GROUP BY ppp.payer_concept_id;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT COUNT(*) FROM condition_occurrence co
+JOIN observation_period op
+  ON co.person_id = op.person_id
+  AND co.condition_start_date BETWEEN op.observation_period_start_date
+                                  AND op.observation_period_end_date;
+```
+
+```sql
+SELECT COUNT(*) FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date - op.observation_period_start_date >= 365
+  AND co.condition_start_date <= op.observation_period_end_date;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: A one-sided washout bound is met by any earlier period, not only the one containing the event; DISTINCT does not repair that.**
+
+```sql
+SELECT DISTINCT co.person_id
+FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE op.observation_period_start_date <= co.condition_start_date - INTERVAL '365 days';
+```
+
+<!-- extra-examples:end -->
+
+#### Suggested fix
+
+Add `AND <event>.<event_date> BETWEEN p.<period>_start_date AND p.<period>_end_date` (or both `>=` start and `<=` end)
+to the period join, in addition to `person_id`. For payer_plan_period this keeps the plans in force at the event; a
+person can hold more than one at a time.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 9: SQL and R, Exposure cohort](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#exposure-cohort)
+- [OMOP CDM v5.4 specification: OBSERVATION_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation_period)
+- [OMOP CDM v5.4 specification: PAYER_PLAN_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#payer_plan_period)
+
+---
+
+### 17. Person ID Join Validation { #joins-person-id-join-validation }
 
 **Rule ID:** `joins.person_id_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Even if numeric values overlap (person_id=123, visit_occurrence_id=123 both exist),
-    they represent completely different entities:
-    - person_id = 123 → Patient identifier
-    - visit_occurrence_id = 123 → Visit identifier
-
-    These are unrelated despite having the same number.
+`person_id` identifies an individual, and every person-level table references PERSON through its own `person_id`. A
+predicate that equates a person key with the key of another entity (`visit_occurrence_id`, `location_id`,
+`provider_id`, `care_site_id`, …) compares unrelated id sequences and matches unrelated rows on every CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify person id join validation patterns.
+Each operand of an equality or `IN (SELECT …)` in ON, WHERE or HAVING is followed through casts, CTEs and derived
+tables to the CDM column it reads, and that column is mapped to the entity it identifies (CDM v5.4 field-level
+specification: primary and foreign keys). A column is judged on what it carries, not on its name:
+`(SELECT gender_concept_id AS person_id FROM person) a` supplies a concept id under the name `person_id`.
+
+Not judged: `cohort.subject_id`, which holds a person id for a person cohort and can hold a provider, visit or care
+site id; the polymorphic keys (`fact_id_1`, `*_event_id`, …); columns the CDM does not define; and two columns of the
+same row (a data check, not a join). A person key equated with a concept id is reported by
+`anti_patterns.join_key_validation`. This rule also covers a person joined to LOCATION on the wrong key (a merged rule; old id in the [CHANGELOG](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md) renames table).
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.person_id = vo.visit_occurrence_id
+SELECT p.person_id, vo.visit_start_date
+FROM person p
+JOIN visit_occurrence vo ON p.person_id = vo.visit_occurrence_id;
+```
+
+```sql
+SELECT p.person_id
+FROM person p
+WHERE p.person_id IN (SELECT vo.visit_occurrence_id FROM visit_occurrence vo);
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.person_id = vo.person_id
+SELECT p.person_id, vo.visit_start_date
+FROM person p
+JOIN visit_occurrence vo ON p.person_id = vo.person_id;
 ```
+
+```sql
+SELECT c.subject_id
+FROM cohort c
+JOIN person p ON p.person_id = c.subject_id;
+```
+
+<!-- extra-examples:start -->
+**Error variant: A person's address joined on person_id instead of person.location_id.**
+
+```sql
+SELECT p.person_id, l.zip
+FROM person p
+JOIN location l ON p.person_id = l.location_id;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Join person_id only with person_id. If linking tables, use the correct foreign key (e.g., visit_occurrence_id).
+Replace the equality with one between two columns that identify the same entity, usually
+`<table>.person_id = <other>.person_id` (`person.location_id = location.location_id` for an address). When a column is
+read straight from a table, the finding carries a REPLACE patch.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
+- [OMOP CDM v5.4 specification: COHORT](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort)
 
 ---
 
-### 30. Person to Location Join Validation { #joins-person-location-join-validation }
-
-**Rule ID:** `joins.person_location_join_validation`
-**Severity:** ERROR
-
-#### Intent
-
-person has location_id (foreign key to location.location_id) to identify
-    the patient's home address. Joining on other columns (e.g., person_id to
-    location_id) is semantically incorrect and produces wrong results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify person to location join validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM person p
-    JOIN location l ON p.person_id = l.location_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM person p
-    JOIN location l ON p.location_id = l.location_id
-```
-
-#### Suggested fix
-
-Join person to location using location_id: person.location_id = location.location_id
-
----
-
-### 31. Preceding Visit Occurrence Validation { #joins-preceding-visit-occurrence-validation }
+### 18. Preceding Visit Occurrence Validation { #joins-preceding-visit-occurrence-validation }
 
 **Rule ID:** `joins.preceding_visit_occurrence_validation`
 **Severity:** ERROR
 
 #### Intent
 
-preceding_visit_occurrence_id is a self-referential foreign key that links
-    to the previous visit for a patient. It MUST join to visit_occurrence.visit_occurrence_id.
-
-    Patient visit chain example:
-    - Visit ID 1: ER visit (preceding_visit_occurrence_id = NULL)
-    - Visit ID 2: Inpatient (preceding_visit_occurrence_id = 1)
-    - Visit ID 3: Follow-up (preceding_visit_occurrence_id = 2)
+`visit_occurrence.preceding_visit_occurrence_id` is a foreign key to `visit_occurrence.visit_occurrence_id`: it finds
+the visit that occurred for the person before the given visit. It holds a visit id, so equating it with the key of
+another entity (`person_id`, `visit_detail_id`, `condition_occurrence_id`, …) matches unrelated rows on every CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify preceding visit occurrence validation patterns.
+Each operand of an equality or `IN (SELECT …)` in ON, WHERE or HAVING is followed through casts, CTEs and derived
+tables to the CDM column it reads. A predicate between `preceding_visit_occurrence_id` and a column that identifies
+another entity is reported. Any column that holds a visit id is a valid partner, including
+`visit_detail.visit_occurrence_id` and another `preceding_visit_occurrence_id`. The foreign key alone identifies the
+prior visit: no person or date condition is required in addition.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM visit_occurrence vo
-    JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id
+SELECT vo.visit_occurrence_id FROM visit_occurrence vo
+JOIN visit_occurrence prev ON vo.preceding_visit_occurrence_id = prev.person_id;
 ```
 
 ```sql
-SELECT * FROM visit_occurrence v1
-    JOIN visit_occurrence v2 ON v1.preceding_visit_occurrence_id = v2.person_id
+SELECT vo.visit_occurrence_id
+FROM visit_occurrence vo
+WHERE vo.preceding_visit_occurrence_id IN (SELECT person_id FROM person);
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT v1.*, v2.visit_start_date AS prior_visit_date
-    FROM visit_occurrence v1
-    JOIN visit_occurrence v2
-      ON v1.preceding_visit_occurrence_id = v2.visit_occurrence_id
+SELECT vo.visit_occurrence_id, prev.visit_end_date
+FROM visit_occurrence vo
+JOIN visit_occurrence prev ON vo.preceding_visit_occurrence_id = prev.visit_occurrence_id;
 ```
 
-#### Common scenarios
+```sql
+SELECT vd.visit_detail_id
+FROM visit_occurrence vo
+JOIN visit_detail vd ON vd.visit_occurrence_id = vo.preceding_visit_occurrence_id;
+```
 
-- Joining to a different table (visit_detail, person, etc.)
-- Joining to the wrong column in visit_occurrence
+<!-- extra-examples:start -->
+**Error variant: A visit detail id is not a visit id; the prior visit is visit_occurrence.visit_occurrence_id.**
+
+```sql
+SELECT vo.visit_occurrence_id
+FROM visit_occurrence vo
+JOIN visit_detail vd ON vo.preceding_visit_occurrence_id = vd.visit_detail_id;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Join visit_occurrence to itself using preceding_visit_occurrence_id = visit_occurrence_id with separate aliases.
+Replace the equality with `vo.preceding_visit_occurrence_id = prev.visit_occurrence_id`. When the wrong column is read
+straight from a table, the finding carries a REPLACE patch.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 32. Provider Join Validation { #joins-provider-join-validation }
+### 19. Provider Join Validation { #joins-provider-join-validation }
 
 **Rule ID:** `joins.provider_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Clinical tables have provider_id (foreign key to provider.provider_id).
-    Joining on other columns (e.g., person_id to provider_id) is semantically
-    incorrect and produces wrong results.
+PROVIDER is keyed by `provider_id`, and every table that records a provider references it through its own
+`provider_id` foreign key. A predicate that equates a provider key with the key of another entity, such as
+`care_site_id` or `condition_occurrence_id`, compares unrelated id sequences and matches unrelated rows on every CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify provider join validation patterns.
+Each operand of an equality or `IN (SELECT …)` in ON, WHERE or HAVING is followed through casts, CTEs and derived
+tables to the CDM column it reads, and that column is mapped to the entity it identifies (its own table for a
+primary key, the referenced table for a foreign key, per the CDM v5.4 field-level specification). The rule reports a
+predicate whose two sides identify different entities when one of them is a provider. Two columns that reference the
+same entity are a valid join even when neither is `provider_id`: `vo.care_site_id = pr.care_site_id` pairs a visit
+with the providers of its care site. Polymorphic keys and columns the CDM does not define are not judged.
+
+Each wrong predicate is reported by one rule: pairs with a person key by `joins.person_id_join_validation`, with a
+visit key by `joins.visit_occurrence_id_join_validation`, and provider-to-care_site pairs by
+`joins.provider_care_site_join_validation`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN provider p ON co.person_id = p.provider_id
+SELECT vo.visit_occurrence_id, p.specialty_concept_id
+FROM visit_occurrence vo
+JOIN provider p ON vo.care_site_id = p.provider_id;
+```
+
+```sql
+SELECT co.condition_occurrence_id
+FROM condition_occurrence co, provider p
+WHERE co.condition_occurrence_id = p.provider_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN provider p ON co.provider_id = p.provider_id
+SELECT vo.visit_occurrence_id, p.specialty_concept_id
+FROM visit_occurrence vo
+JOIN provider p ON vo.provider_id = p.provider_id;
+```
+
+```sql
+SELECT vo.visit_occurrence_id, pr.provider_id
+FROM visit_occurrence vo
+JOIN provider pr ON vo.care_site_id = pr.care_site_id;
 ```
 
 #### Suggested fix
 
-Join clinical tables to provider using provider_id: clinical_table.provider_id = provider.provider_id
+Replace the equality with one between two columns that identify the same entity, usually
+`<table>.provider_id = provider.provider_id`. When the wrong column is read straight from a table, the finding
+carries a REPLACE patch that swaps it for that table's column holding the other side's key.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [OMOP CDM v5.4 specification: PROVIDER](https://ohdsi.github.io/CommonDataModel/cdm54.html#provider)
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
 
 ---
 
-### 33. Provider to Care Site Join Validation { #joins-provider-care-site-join-validation }
+### 20. Provider to Care Site Join Validation { #joins-provider-care-site-join-validation }
 
 **Rule ID:** `joins.provider_care_site_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-provider has care_site_id (foreign key to care_site.care_site_id) to identify
-    the provider's practice location. Joining on other columns (e.g., provider_id
-    to care_site_id) is semantically incorrect and produces wrong results.
+`provider.care_site_id` is the foreign key to CARE_SITE: the site the provider primarily practises in. A predicate
+between PROVIDER and CARE_SITE that equates keys of two different entities, such as `p.provider_id =
+cs.care_site_id`, compares unrelated id sequences and matches unrelated rows on every CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify provider to care site join validation patterns.
+Each operand of an equality or `IN (SELECT …)` in ON, WHERE or HAVING is followed through casts, CTEs and derived
+tables to the CDM column it reads, and mapped to the entity it identifies (CDM v5.4 field-level specification). A
+predicate between a provider column and a care_site column whose sides identify different entities is reported.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM provider p
-    JOIN care_site cs ON p.provider_id = cs.care_site_id
+SELECT p.provider_id, cs.care_site_name
+FROM provider p
+JOIN care_site cs ON p.provider_id = cs.care_site_id;
+```
+
+```sql
+SELECT p.provider_id, cs.care_site_name
+FROM provider p, care_site cs
+WHERE p.provider_id = cs.care_site_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM provider p
-    JOIN care_site cs ON p.care_site_id = cs.care_site_id
+SELECT p.provider_id, cs.care_site_name
+FROM provider p
+JOIN care_site cs ON p.care_site_id = cs.care_site_id;
+```
+
+```sql
+SELECT p.provider_id
+FROM provider p
+WHERE p.care_site_id IN (SELECT care_site_id FROM care_site WHERE place_of_service_concept_id = 8756);
 ```
 
 #### Suggested fix
 
-Join provider to care_site using care_site_id: provider.care_site_id = care_site.care_site_id
+Replace the equality with `provider.care_site_id = care_site.care_site_id`. When the wrong column is read straight
+from a table, the finding carries a REPLACE patch.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: PROVIDER](https://ohdsi.github.io/CommonDataModel/cdm54.html#provider)
+- [OMOP CDM v5.4 specification: CARE_SITE](https://ohdsi.github.io/CommonDataModel/cdm54.html#care_site)
 
 ---
 
-### 34. Visit Detail Join Validation { #joins-visit-detail-join-validation }
-
-**Rule ID:** `joins.visit_detail_join_validation`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP semantic rule OMOP_034: visit_detail records are nested within visit_occurrence. Queries using visit_detail should join to visit_occurrence via visit_detail.visit_occurrence_id = visit_occurrence.visit_occurrence_id, not via person_id alone.
-
-#### How it works
-
-This rule analyzes the SQL query to identify visit detail join validation patterns.
-
-#### Examples
-
-**Correct patterns:**
-
-```sql
-FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-```
-
-```sql
-FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.person_id = vo.person_id
-```
-
-#### Suggested fix
-
-Join using: vd.visit_occurrence_id = vo.visit_occurrence_id
-
----
-
-### 35. Visit Occurrence ID Join Validation { #joins-visit-occurrence-id-join-validation }
+### 21. Visit Occurrence ID Join Validation { #joins-visit-occurrence-id-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_id_join_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Even if numeric values overlap (visit_occurrence_id=123, person_id=123 both exist),
-    they represent completely different entities:
-    - visit_occurrence_id = 123 → A specific visit/encounter
-    - person_id = 123 → A patient identifier
-
-    These are unrelated despite having the same number.
+`visit_occurrence_id` identifies a visit. The event tables, VISIT_DETAIL and NOTE reference it through their own
+`visit_occurrence_id`, and `visit_occurrence.preceding_visit_occurrence_id` references it too. A predicate that
+equates a visit key with the key of another entity (`visit_detail_id`, `condition_occurrence_id`, `care_site_id`,
+…) compares unrelated id sequences and matches unrelated rows on every CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify visit occurrence id join validation patterns.
+Each operand of an equality or `IN (SELECT …)` in ON, WHERE or HAVING is followed through casts, CTEs and derived
+tables to the CDM column it reads, and that column is mapped to the entity it identifies (CDM v5.4 field-level
+specification: primary and foreign keys). The rule reports a predicate whose sides identify different entities when
+one of them is a visit. Keys without a declared target are not judged: the polymorphic event keys
+(`cost_event_id`, `fact_id_1`, `episode_event.event_id`, `*_event_id`) and `cohort.subject_id`, which can hold a
+visit id for a visit cohort. Pairs with a person key are reported by `joins.person_id_join_validation`, and pairs with
+`preceding_visit_occurrence_id` by `joins.preceding_visit_occurrence_validation`.
+
+This rule also covers the mix-up of a visit id and a visit detail id (a merged rule; old id in the [CHANGELOG](https://github.com/fastomop/fastSSV/blob/main/CHANGELOG.md) renames table).
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.person_id
+SELECT co.condition_concept_id, vd.visit_detail_concept_id
+FROM condition_occurrence co
+JOIN visit_detail vd ON co.visit_occurrence_id = vd.visit_detail_id;
+```
+
+```sql
+SELECT vo.visit_concept_id, co.condition_concept_id
+FROM visit_occurrence vo
+JOIN condition_occurrence co ON vo.visit_occurrence_id = co.condition_occurrence_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM drug_exposure de
-    JOIN visit_occurrence vo ON de.visit_occurrence_id = vo.visit_occurrence_id
+SELECT co.condition_concept_id, vd.visit_detail_concept_id
+FROM condition_occurrence co
+JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id;
+```
+
+```sql
+SELECT c.cohort_start_date, vo.visit_concept_id
+FROM cohort c
+JOIN visit_occurrence vo ON c.subject_id = vo.visit_occurrence_id
+WHERE c.cohort_definition_id = 7;
 ```
 
 #### Suggested fix
 
-Join visit_occurrence_id only with visit_occurrence_id. If linking across domains, use the correct foreign key (e.g., person_id).
+Replace the equality with one between two columns that identify the same entity:
+`<table>.visit_occurrence_id = <other>.visit_occurrence_id`, or `<table>.visit_detail_id =
+visit_detail.visit_detail_id` for a visit detail. When the wrong column is read straight from a table, the finding
+carries a REPLACE patch (a visit / visit detail mix-up keeps the visit detail key).
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
+- [OMOP CDM v5.4 specification: VISIT_DETAIL](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_detail)
+- [OMOP CDM v5.4 specification: COHORT](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort)
 
 ---
 
-### 36. Visit Occurrence INNER JOIN Validation { #joins-visit-occurrence-inner-join-validation }
+### 22. Visit Occurrence INNER JOIN Validation { #joins-visit-occurrence-inner-join-validation }
 
 **Rule ID:** `joins.visit_occurrence_inner_join_validation`
 **Severity:** WARNING
 
 #### Intent
 
-INNER JOIN filters out rows where visit_occurrence_id IS NULL.
-    This silently excludes:
-    - Outpatient prescriptions
-    - External lab results
-    - Historical diagnoses
-    - Telemedicine events
-    - Claims data without encounter mapping
+`visit_occurrence_id` is optional on the CDM v5.4 event tables (condition_occurrence, drug_exposure,
+procedure_occurrence, measurement, observation, device_exposure, note). An inner join from an event table to
+`visit_occurrence` on `visit_occurrence_id` therefore drops every event without a visit. Whether that is intended
+depends on the question, so the finding is a warning.
 
 #### How it works
 
-This rule analyzes the SQL query to identify visit occurrence inner join validation patterns.
+For each SELECT, the rule finds an event table linked to `visit_occurrence` on `visit_occurrence_id` by an inner
+join: `JOIN … ON`, `JOIN … USING (visit_occurrence_id)`, or a comma join linked in WHERE, through casts and through
+CTEs or derived tables that pass the tables' rows through. `visit_detail` is not covered: its `visit_occurrence_id`
+is required.
+
+It stays silent when the SELECT shows that only visit-linked events are wanted:
+
+- a predicate in ON, WHERE or HAVING that can only be true for a matched visit row (`vo.visit_concept_id = 9201`,
+  visit dates, `vo.visit_occurrence_id IS NOT NULL`). Such a predicate is never true for NULL-extended rows, so a
+  LEFT JOIN would return the same rows;
+- `<event>.visit_occurrence_id IS NOT NULL`;
+- a GROUP BY on a visit column.
+
+`vo.<col> IS NULL` does not count: it is true for NULL-extended rows.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT co.*
-    FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+SELECT co.person_id FROM condition_occurrence co
+JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id;
+```
+
+```sql
+SELECT co.person_id FROM condition_occurrence co
+JOIN visit_occurrence vo USING (visit_occurrence_id);
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT co.*
-    FROM condition_occurrence co
-    LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+SELECT co.person_id FROM condition_occurrence co
+LEFT JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id;
 ```
+
+```sql
+SELECT co.person_id FROM condition_occurrence co
+JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vo.visit_concept_id = 9201;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: A comma join linked in WHERE is an inner join too, and drops exposures without a visit.**
+
+```sql
+SELECT de.drug_concept_id, COUNT(*)
+FROM drug_exposure de, visit_occurrence vo
+WHERE de.visit_occurrence_id = vo.visit_occurrence_id
+GROUP BY de.drug_concept_id;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Use LEFT JOIN to preserve all events, or explicitly filter visit_occurrence_id to indicate intentional restriction.
+Replace `JOIN visit_occurrence` with `LEFT JOIN visit_occurrence` if events without a recorded visit should be kept;
+keep the inner join only when the query is meant to cover visit-linked events, and say so with a visit filter or
+`<event>.visit_occurrence_id IS NOT NULL`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
@@ -2858,464 +2633,439 @@ These rules validate temporal logic, date handling, and observation period ancho
 
 ---
 
-### 1. Clinical Event Date Should Not Be In Future { #temporal-clinical-event-date-in-future-validation }
-
-**Rule ID:** `temporal.clinical_event_date_in_future_validation`
-**Severity:** WARNING
-
-#### Intent
-
-Detects filtering logic that implies clinical event dates occur in the future. Future event dates may indicate data quality issues or incorrect query logic.
-
-#### How it works
-
-This rule analyzes the SQL query to identify clinical event date should not be in future patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Use date filters consistent with past or present events. Avoid filtering for future clinical dates unless explicitly intended.
-
----
-
-### 2. Datetime BETWEEN with Date Literal { #temporal-datetime-between-date-literal }
+### 1. Datetime Column With a Date-Only Inclusive Upper Bound { #temporal-datetime-between-date-literal }
 
 **Rule ID:** `temporal.datetime_between_date_literal`
 **Severity:** WARNING
 
 #### Intent
 
-BETWEEN with datetime columns and date literals excludes non-midnight times
-    on the end date:
-
-    WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
-    -- '2023-01-31' is interpreted as '2023-01-31 00:00:00'
-    -- Excludes: '2023-01-31 08:30:00', '2023-01-31 23:59:59', etc.
-    -- SILENT DATA LOSS!
-
-    This is a common mistake that's hard to catch because:
-    - Query executes without error
-    - Returns results (just incomplete)
-    - Easy to miss in testing
-
-OMOP Context:
-    OMOP CDM has parallel DATE and DATETIME columns:
-
-    Datetime columns (affected):
-    - condition_start_datetime, condition_end_datetime
-    - drug_exposure_start_datetime, drug_exposure_end_datetime
-    - measurement_datetime
-    - observation_datetime
-    - visit_start_datetime, visit_end_datetime
-    - procedure_datetime
-    - device_exposure_start_datetime, device_exposure_end_datetime
-
-    Date columns (safe with BETWEEN):
-    - condition_start_date, drug_exposure_start_date, etc.
+BETWEEN includes both ends, and PostgreSQL compares a date with a timestamp as midnight of that day. measurement_datetime BETWEEN '2023-01-01' AND '2023-12-31' (or <= '2023-12-31') therefore keeps 2023-12-31 00:00:00 but drops every later time on 2023-12-31. The same holds for any inclusive upper bound written as a date: <=, a literal on the left with >=, TO_DATE, MAKE_DATE, CAST(... AS DATE). The bounded value is typed by lineage (a CDM *_datetime column through CTEs and renames), so a value already cast to DATE, truncated to the day or formatted as text is not reported. The finding is a WARNING: the CDM conventions set unknown times to 00:00:00, so a source without times loses nothing. Use a half-open interval (>= start AND < the day after the end) or compare CAST(column AS DATE).
 
 #### How it works
 
-This rule analyzes the SQL query to identify datetime between with date literal patterns.
+The rule looks at every inclusive upper bound: the high end of `BETWEEN` (not `BETWEEN SYMMETRIC`), `x <= bound`
+and `bound >= x`, in any clause. It reports the bound when
+
+* `x` is a TIMESTAMP by lineage: a CDM `*_datetime` column (typed by the CDM v5.4 field-level CSV), followed through
+  CTEs, derived tables and renames, possibly under MIN / MAX or a cast to TIMESTAMP; and
+* the bound is a date literal without a time of day: `'2023-12-31'`, `'20231231'`, `DATE '...'`,
+  `CAST('...' AS DATE)`, `TIMESTAMP '2023-12-31'`, `TO_DATE(...)`, `MAKE_DATE(...)`.
+
+A value already reduced to a day (`CAST(x AS DATE)`, `x::date`, `DATE(x)`, `CONVERT(date, x)`, `DATE_TRUNC('day', x)`)
+or to text (`TO_CHAR`) is not a timestamp and is not reported; neither are strict `<` bounds or bounds that carry a
+time.
 
 #### Examples
 
-#### Suggested fix
-
-Use >= start AND < next_day, or include time in end literal, or use *_date column instead.
-
----
-
-### 3. Death Date Before Birth Validation { #temporal-death-date-before-birth-validation }
-
-**Rule ID:** `temporal.death_date_before_birth_validation`
-**Severity:** ERROR
-
-#### Intent
-
-A person cannot die before they are born. Queries filtering for death_date
-    before birth_datetime (or death year before year_of_birth) represent:
-    - Data quality issues (incorrect dates)
-    - Logic errors in the query
-    - Incorrect join conditions
-
-#### How it works
-
-This rule analyzes the SQL query to identify death date before birth validation patterns.
-
-#### Examples
-
-**Violation patterns:**
+**Violation pattern:**
 
 ```sql
-SELECT * FROM death d
-    JOIN person p ON d.person_id = p.person_id
-    WHERE d.death_date < p.birth_datetime
+SELECT *
+FROM measurement
+WHERE measurement_datetime BETWEEN DATE '2023-01-01' AND DATE '2023-12-31';
 ```
+
+**Correct pattern:**
 
 ```sql
-SELECT * FROM death d
-    JOIN person p ON d.person_id = p.person_id
-    WHERE YEAR(d.death_date) < p.year_of_birth
+SELECT *
+FROM measurement
+WHERE measurement_datetime >= TIMESTAMP '2023-01-01 00:00:00'
+  AND measurement_datetime <  TIMESTAMP '2024-01-01 00:00:00';
 ```
 
-**Correct patterns:**
-
-```sql
-SELECT * FROM death d
-    JOIN person p ON d.person_id = p.person_id
-    WHERE d.death_date >= p.birth_datetime
-```
+<!-- extra-examples:start -->
+**Warning variant: The same range written with >= and <=**
 
 ```sql
-SELECT * FROM death d
-    JOIN person p ON d.person_id = p.person_id
+SELECT *
+FROM measurement
+WHERE measurement_datetime >= '2023-01-01'
+  AND measurement_datetime <= '2023-12-31';
 ```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Ensure death_date >= birth_datetime
+REPLACE: `<datetime_col> BETWEEN '<start>' AND '<end>'` WITH `<datetime_col> >= '<start>' AND <datetime_col> < '<end_plus_one_day>'` (half-open), OR compare the day: `CAST(<datetime_col> AS DATE) BETWEEN '<start>' AND '<end>'`.
+
+#### Sources
+
+- [PostgreSQL documentation: Comparison Functions and Operators, comparison predicates (BETWEEN)](https://www.postgresql.org/docs/current/functions-comparison.html#FUNCTIONS-COMPARISON-PRED-TABLE)
+- [PostgreSQL documentation: Date/Time Functions and Operators](https://www.postgresql.org/docs/current/functions-datetime.html)
+- [OMOP CDM: Data Model Conventions, Time span of available data](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#time-span-of-available-data)
 
 ---
 
-### 4. Death Date In Future Validation { #temporal-death-date-in-future-validation }
-
-**Rule ID:** `temporal.death_date_in_future_validation`
-**Severity:** WARNING
-
-#### Intent
-
-Death dates in the future are impossible and represent:
-    - Data quality issues (incorrect death dates)
-    - Data entry errors (wrong year, wrong century)
-    - Logic errors in the query (wrong comparison operator)
-
-#### How it works
-
-This rule analyzes the SQL query to identify death date in future validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM death WHERE death_date > CURRENT_DATE
-```
-
-```sql
-SELECT * FROM death WHERE death_date > '2030-01-01'
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM death WHERE death_date <= CURRENT_DATE
-```
-
-```sql
-SELECT * FROM death WHERE death_date BETWEEN '2020-01-01' AND '2023-12-31'
-```
-
-#### Suggested fix
-
-Ensure death_date <= CURRENT_DATE
-
----
-
-### 5. End Before Start Validation { #temporal-end-before-start-validation }
+### 2. End Before Start Validation { #temporal-end-before-start-validation }
 
 **Rule ID:** `temporal.end_before_start_validation`
-**Severity:** ERROR
+**Severity:** WARNING / ERROR
 
 #### Intent
 
-Many OMOP tables have start_date and end_date columns representing
-    temporal events. A query with static date filters that forces the end
-    date to be before the start date is logically impossible and indicates
-    a WHERE clause error.
-
-Covered Tables and Column Pairs:
-    condition_occurrence:
-        - condition_start_date, condition_end_date (CLIN_011, OMOP_551)
-
-    drug_exposure:
-        - drug_exposure_start_date, drug_exposure_end_date (OMOP_551)
-
-    visit_occurrence:
-        - visit_start_date, visit_end_date (OMOP_052, OMOP_551)
-
-    visit_detail:
-        - visit_detail_start_date, visit_detail_end_date (CLIN_045)
-
-    cohort:
-        - cohort_start_date, cohort_end_date (OMOP_529)
-
-    episode:
-        - episode_start_date, episode_end_date (OMOP_244)
-
-Example Violations:
-    -- ERROR: Start must be after June, but end must be before January
-    WHERE condition_start_date > '2023-06-01'
-      AND condition_end_date < '2023-01-01'
-
-    -- ERROR: Start >= June 1, but end < June 1
-    WHERE drug_exposure_start_date >= '2023-06-01'
-      AND drug_exposure_end_date < '2023-06-01'
-
-    -- ERROR: Start = June 15, but end = May 1
-    WHERE visit_start_date = '2023-06-15'
-      AND visit_end_date = '2023-05-01'
-
-Valid Patterns (no violation):
-    -- OK: Overlapping range is possible
-    WHERE condition_start_date > '2023-01-01'
-      AND condition_end_date < '2023-12-31'
-
-    -- OK: Could start and end on same day
-    WHERE visit_start_date >= '2023-06-01'
-      AND visit_end_date >= '2023-06-01'
-
-    -- OK: Dynamic comparison (not static date literals)
-    WHERE condition_end_date < condition_start_date + INTERVAL '30 days'
+The OHDSI Data Quality Dashboard pairs each start date with its end date (plausibleStartBeforeEnd) and counts the records whose start is after their end. A filter such as drug_exposure_start_date >= '2023-06-01' AND drug_exposure_end_date < '2023-06-01' admits only those records: the usual cause is a window test with one operator the wrong way round. The finding is a WARNING because the CDM specification does not rule such records out and the dashboard tolerates a share of them, so the result depends on the data. Bounds on a single column that cannot both hold (start >= '2023-06-01' AND start < '2023-01-01', or BETWEEN with the larger value first) are false for every row and are an ERROR. Bounds are read from the AND-ed predicates of one SELECT, per row source, with the literal on either side. Comparing the two columns of a row with each other is the plausibility check itself and is not reported; neither are comparisons between two rows, such as a readmission that starts after the previous visit ended.
 
 #### How it works
 
-OMOP semantic rules CLIN_011, CLIN_045, OMOP_052, OMOP_244, OMOP_529, OMOP_551:
-Detects logically impossible date constraints where static filters force
-end_date < start_date for the same record
+The start/end pairs are generated from the Data Quality Dashboard field-level file (every field with
+`plausibleStartBeforeEnd = Yes`), so they include procedure_occurrence, the era tables, observation_period,
+payer_plan_period and the `*_datetime` pairs. For each SELECT, the rule collects the constant bounds that the AND-ed
+WHERE and JOIN ON predicates place on each of those columns, per row source: `>`, `>=`, `<`, `<=`, `=` with the literal
+on either side, and `BETWEEN`. Columns are followed through CTEs, derived tables and renames to the CDM column; a cast
+of a DATE column to DATE or TIMESTAMP keeps its bound, any other wrapper drops it. Literals may be `'2023-06-01'`,
+`'20230601'`, `DATE '...'`, `CAST('...' AS DATE)`, `TIMESTAMP '...'`, `TO_DATE(...)` or `MAKE_DATE(...)`. An untyped
+string literal compared with a DATE column is read as a date, as PostgreSQL and DuckDB coerce it: `visit_start_date >=
+'2023-06-01 10:00' AND visit_start_date <= '2023-06-01'` keeps the visits of 2023-06-01 and is not reported. A
+`TIMESTAMP '...'` literal, a cast of the column to TIMESTAMP, and a `*_datetime` column keep the time of day.
+
+* **ERROR**: the bounds on one column leave no value (`start >= '2023-06-01' AND start < '2023-01-01'`,
+  `BETWEEN '2023-12-31' AND '2023-01-01'`). The predicate is false for every row.
+* **WARNING**: the lower bound on a start column lies after the upper bound on its end column of the same row source,
+  so only records whose end precedes their start qualify. The Data Quality Dashboard counts those as implausible and
+  tolerates a share of them, so the result depends on the data.
+
+Not reported: a comparison of the two columns of one row (`visit_end_date < visit_start_date`), which is the
+plausibility check itself in any projection; comparisons between two rows (readmission, treatment gaps, cohort
+re-entry); bounds on different row sources, in different SELECTs or UNION branches; anything under OR or NOT;
+`BETWEEN SYMMETRIC`; non-constant bounds.
 
 #### Examples
 
+**Violation pattern:**
+
+```sql
+SELECT drug_exposure_id
+FROM drug_exposure
+WHERE drug_exposure_start_date >= DATE '2023-06-01'
+  AND drug_exposure_end_date < DATE '2023-06-01';
+```
+
+**Correct pattern:**
+
+```sql
+SELECT drug_exposure_id
+FROM drug_exposure
+WHERE drug_exposure_start_date <= DATE '2023-06-30'
+  AND drug_exposure_end_date >= DATE '2023-06-01';
+```
+
+<!-- extra-examples:start -->
+**Error variant: Bounds on one column that no date satisfies: the query returns no rows on any data**
+
+```sql
+SELECT visit_occurrence_id
+FROM visit_occurrence
+WHERE visit_start_date >= DATE '2023-06-01'
+  AND visit_start_date < DATE '2023-01-01';
+```
+
+<!-- extra-examples:end -->
+
 #### Suggested fix
 
-Ensure start_date <= end_date in filters
+REPLACE: the two bounds WITH an overlap test, `<start_col> <= '<window_end>' AND <end_col> >= '<window_start>'`. To list records whose end precedes their start as a data-quality check, compare the two columns directly: `<end_col> < <start_col>`.
+
+#### Sources
+
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 6. Unbounded Follow-up Window (Future Information Leakage) { #temporal-future-information-leakage }
+### 3. Implausible Date Filter { #temporal-implausible-date-filter }
 
-**Rule ID:** `temporal.future_information_leakage`
+**Rule ID:** `temporal.implausible_date_filter`
 **Severity:** WARNING
 
 #### Intent
 
-When a query compares date columns across two different clinical event tables (e.g. `co.condition_start_date > de.drug_exposure_start_date`), the *later* event must be bounded by `observation_period_end_date`. Without that bound, the comparison reaches beyond the patient's observed follow-up window — producing immortal-time bias and similar follow-up-window errors in cohort analyses.
-
-The rule is named "future information leakage" for historical reasons; the underlying problem is a missing right-censoring/follow-up-window bound, not ML-style look-ahead leakage.
+The OHDSI Data Quality Dashboard bounds every CDM event date between its plausibleValueLow (1950-01-01; 1850-01-01 for birth_datetime) and the day after the check runs, and the CDM conventions say no record can follow the last observation period. A filter whose admitted range lies entirely after the current date, or entirely before the column's floor, therefore selects nothing, or only records the dashboard reports as errors. The columns and floors are generated from the dashboard's field-level file, so era, observation_period, payer_plan_period and cohort dates are covered too. The usual cause is a reversed comparison operator. Date-shifted research CDMs (for example MIMIC-IV, whose dates fall in 2100-2200) legitimately hold 'future' dates, so the rule is a warning and does not flag far-future calendar literals. End dates are exempt from the future check because they are often derived and can legitimately extend past the extract. Predicates under OR or NOT are treated as data-quality audits and are not flagged.
 
 #### How it works
 
-The rule looks for inequality comparisons (`<`, `<=`, `>`, `>=`) in `WHERE` / `JOIN ON` clauses where:
+The columns and their floors are generated from the Data Quality Dashboard field-level file: every date column with
+`plausibleValueHigh = DATEADD(dd,1,GETDATE())`, with its `plausibleValueLow` (1950-01-01 for clinical events, eras,
+periods and cohort dates; 1850-01-01 for `person.birth_datetime`). Columns are followed through CTEs and renames, and
+MIN / MAX and DATE_TRUNC are looked through. A predicate in WHERE, JOIN ON or HAVING is reported when everything it
+admits is
 
-1. Both sides are columns from clinical fact tables (different tables on each side).
-2. Both columns are date or datetime columns.
-3. No upper-bound predicate against `observation_period_end_date` exists anywhere in the same query (BETWEEN ... AND `observation_period_end_date` also satisfies the bound).
+* **on or after the current date**, for start and point-in-time dates: `> CURRENT_DATE`, `>= CURRENT_DATE` (today or
+  later), `>= CURRENT_DATE + INTERVAL '30 days'`, `BETWEEN CURRENT_DATE AND ...`, `<date> - CURRENT_DATE > 0`,
+  `DATEDIFF(day, GETDATE(), <date>) > 0`, `EXTRACT(YEAR FROM <date>) > EXTRACT(YEAR FROM CURRENT_DATE)`, with
+  `NOW()`, `GETDATE()`, `LOCALTIMESTAMP`, `(SELECT CURRENT_DATE)` and similar. End dates (columns the dashboard
+  requires to follow another date of the same row) are exempt; or
+* **before the column's floor**: `< '1950-01-01'`, `<= DATE '1949-12-31'`, `EXTRACT(YEAR FROM ...) < 1950`,
+  `BETWEEN` / `IN` / `=` with only earlier values.
 
-**Suppression contract.** If `observation_period` is *not joined at all*, this rule stays silent and defers to `temporal.observation_period_anchoring`. The anchoring rule already fires for the same root cause and ships a coherent fix that introduces the JOIN. Firing both would double-count and would emit a patch referencing an `op.` alias the query never defines.
-
-When `observation_period` IS joined but no upper bound is asserted, this rule fires with a self-contained patch: it resolves the actual alias the query uses for `observation_period` (e.g. `op`, or the bare table name when no alias is given) and substitutes it directly into the `ADD` patch — no `<op>` placeholder.
+Look-back windows (`>= CURRENT_DATE - INTERVAL '30 days'`) and far-future calendar literals are not reported, and
+predicates under OR or NOT are treated as data-quality audits.
 
 #### Examples
 
-**Violation pattern** (`observation_period` joined, no upper bound):
+**Violation pattern:**
 
 ```sql
-SELECT co.person_id
-FROM condition_occurrence co
-JOIN drug_exposure de ON co.person_id = de.person_id
-JOIN observation_period op ON co.person_id = op.person_id
-WHERE co.condition_start_date > de.drug_exposure_start_date
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_start_date > CURRENT_DATE;
 ```
 
-**Correct pattern** (later event bounded by follow-up window):
+**Correct pattern:**
 
 ```sql
-SELECT co.person_id
-FROM condition_occurrence co
-JOIN drug_exposure de ON co.person_id = de.person_id
-JOIN observation_period op ON co.person_id = op.person_id
-WHERE co.condition_start_date > de.drug_exposure_start_date
-  AND co.condition_start_date <= op.observation_period_end_date
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_start_date >= CURRENT_DATE - INTERVAL '30 days';
 ```
 
-**Suppressed pattern** (`observation_period` not joined — handled by `observation_period_anchoring` instead, no duplicate violation here):
+<!-- extra-examples:start -->
+**Warning variant: Cutoff before the 1950 floor: admits only dates the Data Quality Dashboard treats as implausible**
 
 ```sql
-SELECT co.person_id
-FROM condition_occurrence co
-JOIN drug_exposure de ON co.person_id = de.person_id
-WHERE co.condition_start_date > de.drug_exposure_start_date
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_start_date < DATE '1950-01-01';
 ```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-`ADD: AND <later_qual>.<later_col> <= <op_alias>.observation_period_end_date` — bounds the later event by the patient's observed follow-up window. The rule resolves `<op_alias>` from the query's actual JOIN list, so the emitted patch is directly applyable.
+REPLACE: `<event_date> > CURRENT_DATE` WITH `<event_date> <= CURRENT_DATE` (or a look-back such as `>= CURRENT_DATE - INTERVAL '30 days'`) if the direction is reversed; REPLACE a cutoff before the plausible floor WITH `<event_date> >= '1950-01-01'` if the direction is reversed.
+
+#### Sources
+
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM: Data Model Conventions, Time span of available data](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#time-span-of-available-data)
+- [MIMIC-IV v3.1 on PhysioNet: deidentified dates](https://physionet.org/content/mimiciv/3.1/)
 
 ---
 
-### 7. Nullable End Date NULL Handling { #temporal-nullable-end-date-null-handling }
+### 4. Nullable Date Column Without NULL Handling { #temporal-nullable-date-column }
 
-**Rule ID:** `temporal.nullable_end_date_null_handling`
+**Rule ID:** `temporal.nullable_date_column`
 **Severity:** WARNING
 
 #### Intent
 
-End date columns are frequently NULL because:
-    - Ongoing/chronic conditions without resolution
-    - Drug exposures with unknown end dates
-    - Single-point-in-time procedures
-    - Incomplete/ongoing visits
-
-    NULL in date arithmetic returns NULL, silently excluding rows from aggregations.
-
-Example impact:
-    SELECT AVG(DATEDIFF(day, start_date, end_date))
-    FROM condition_occurrence
-    -- Returns NULL for rows with NULL end_date
-    -- Aggregation excludes these rows → biased results
+In CDM v5.4 each clinical table has a required date (Required = Yes) and optional companions: the *_datetime columns (including person.birth_datetime and note_nlp.nlp_datetime), measurement_time, drug_exposure.verbatim_end_date, and the end dates of condition_occurrence, procedure_occurrence, device_exposure and episode. drug_exposure_end_date, visit_end_date and visit_detail_end_date are required and are not flagged. Comparing or subtracting an optional column yields NULL for rows where it is missing, so those rows disappear from the filter, join or aggregate without any error. Use the required column, COALESCE to a sensible fallback, or state the exclusion with IS NOT NULL. Calendar-part extraction (EXTRACT(YEAR FROM birth_datetime)) passes NULL through and counts as a use. The end-before-start plausibility check on one row is not flagged.
 
 #### How it works
 
-This rule analyzes the SQL query to identify nullable end date null handling patterns.
+The optional columns and their required stand-ins are generated from the CDM v5.4 field-level CSV (Required =
+No date and datetime columns, plus measurement_time). A column is identified by lineage, through CTEs, derived tables
+and renames; a value computed from it (COALESCE, CASE) is no longer the optional column. A use is reported when the
+column is
+
+* an operand of a comparison, the tested value or a bound of `BETWEEN`, or the tested value of `IN`, in WHERE /
+  JOIN ON / HAVING; or
+* an operand of `+` / `-` or of a date-difference / date-add function, anywhere (calendar-part extraction such as
+  `EXTRACT(YEAR FROM ...)` is looked through);
+
+and it is not wrapped in COALESCE / NULLIF / IFNULL / ISNULL / NVL / CASE, and the SELECT that uses it does not test
+it with `IS [NOT] NULL` in its WHERE / JOIN ON / HAVING (or the aggregate's FILTER clause). A test in another CTE or in
+the projection list does not count. The same-row plausibility check `end < start` for a Data Quality Dashboard
+start/end pair is not reported: under three-valued logic a NULL end is not before its start.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern:**
 
 ```sql
-SELECT DATEDIFF(day, procedure_date, procedure_end_date) AS duration
-    FROM procedure_occurrence
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_end_date >= DATE '2023-01-01';
 ```
 
-**Correct patterns:**
-
-```sql
-with fallback
-    SELECT DATEDIFF(day, drug_exposure_start_date,
-                    COALESCE(drug_exposure_end_date, CURRENT_DATE))
-    FROM drug_exposure
-```
+**Correct pattern:**
 
 ```sql
-SELECT DATEDIFF(day, visit_start_date, visit_end_date)
-    FROM visit_occurrence
-    WHERE visit_end_date IS NOT NULL
+SELECT person_id
+FROM condition_occurrence
+WHERE COALESCE(condition_end_date, condition_start_date) >= DATE '2023-01-01';
 ```
+
+<!-- extra-examples:start -->
+**Warning variant: Date arithmetic on optional birth_datetime: age is NULL wherever it is missing (year_of_birth is required)**
+
+```sql
+SELECT co.person_id,
+       EXTRACT(YEAR FROM co.condition_start_date) - EXTRACT(YEAR FROM p.birth_datetime) AS age
+FROM condition_occurrence co
+JOIN person p ON co.person_id = p.person_id;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Use COALESCE(end_date, fallback) or filter IS NOT NULL
+REPLACE: the optional column WITH its required counterpart (e.g. condition_start_date for condition_start_datetime), OR WRAP it as `COALESCE(<optional_col>, <fallback>)`, OR ADD an explicit `<optional_col> IS NOT NULL` so the exclusion is deliberate.
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [PostgreSQL documentation: Comparison Functions and Operators](https://www.postgresql.org/docs/current/functions-comparison.html)
 
 ---
 
-### 8. Observation Period Anchoring { #temporal-observation-period-anchoring }
+### 5. Observation Period Anchoring { #temporal-observation-period-anchoring }
 
 **Rule ID:** `temporal.observation_period_anchoring`
-**Severity:** ERROR
+**Severity:** WARNING
 
 #### Intent
 
-OMOP semantic rule: Queries with temporal constraints (washout, follow-up, event windows) MUST join to observation_period on person_id.
+The CDM v5.4 OBSERVATION_PERIOD user guide says that events may exist outside every observation period, that the absence of an event outside these spans cannot be read as evidence that it did not happen, and that incidence or prevalence rates should only be calculated over active observation periods. The rule reports exactly those two uses when observation_period is not a source of the SELECT that makes them, of an enclosing SELECT, or of a CTE or derived table they read: an absence test on a clinical event table (NOT EXISTS / NOT IN over an event subquery, LEFT JOIN to an event source filtered on IS NULL, EXCEPT with an event query), and a count of events divided by a count of persons. The same guide allows outside events to be used for inclusion criteria, so selecting or counting recorded events, with or without a calendar window, is not reported. The finding is a WARNING: whether the omission changes the answer depends on how the site derived its observation periods and on the study question.
 
 #### How it works
 
-This rule analyzes the SQL query to identify observation period anchoring patterns.
+Two shapes are reported, each only when observation_period is not a FROM / JOIN source of the SELECT that
+makes the test, of a SELECT enclosing it, or of a CTE or derived table those read (an observation_period read only in
+a scalar subquery does not count):
+
+* **Absence test, per person, on a clinical event table** (any table with a person_id and dates other than PERSON and
+  the two period tables, generated from the CDM v5.4 field-level CSV): `NOT EXISTS (...)` whose subquery equates the
+  event table's person_id with another column; `x NOT IN (SELECT person_id FROM <event table> ...)`; `LEFT JOIN
+  <event source> e ON e.person_id = ...` (or `USING (person_id)`) with `e.<column> IS NULL` as an AND-ed conjunct of
+  the WHERE clause; `EXCEPT SELECT person_id FROM <event table>`. Columns are followed through CTEs, derived tables
+  and renames. A test not tied to the event's person_id (a foreign-key check on visit_occurrence_id, an uncorrelated
+  NOT EXISTS) is not about a person's events and is not reported.
+* **Rate**: a division whose numerator is computed from a COUNT or SUM over a clinical event table and whose
+  denominator is computed from a count over PERSON (or observation_period), followed through CTE projections.
+
+Plain selections and counts of recorded events, with or without a calendar window, are not reported.
 
 #### Examples
 
+**Violation pattern:**
+
+```sql
+SELECT p.person_id
+FROM person p
+WHERE NOT EXISTS (
+  SELECT 1 FROM drug_exposure de
+  WHERE de.person_id = p.person_id
+    AND de.drug_exposure_start_date >= DATE '2020-01-01'
+    AND de.drug_exposure_start_date < DATE '2021-01-01');
+```
+
+**Correct pattern:**
+
+```sql
+SELECT p.person_id
+FROM person p
+JOIN observation_period op ON op.person_id = p.person_id
+ AND op.observation_period_start_date <= DATE '2020-01-01'
+ AND op.observation_period_end_date >= DATE '2020-12-31'
+WHERE NOT EXISTS (
+  SELECT 1 FROM drug_exposure de
+  WHERE de.person_id = p.person_id
+    AND de.drug_exposure_start_date >= DATE '2020-01-01'
+    AND de.drug_exposure_start_date < DATE '2021-01-01');
+```
+
+<!-- extra-examples:start -->
+**Warning variant: Prevalence computed over all persons instead of persons under observation**
+
+```sql
+SELECT COUNT(DISTINCT co.person_id) * 1.0 / (SELECT COUNT(*) FROM person) AS prevalence
+FROM condition_occurrence co
+WHERE co.condition_concept_id = 201826
+  AND co.condition_start_date >= DATE '2020-01-01'
+  AND co.condition_start_date < DATE '2021-01-01';
+```
+
+<!-- extra-examples:end -->
+
 #### Suggested fix
 
-JOIN observation_period op ON clinical_table.person_id = op.person_id AND clinical_table.date BETWEEN op.observation_period_start_date AND op.observation_period_end_date
+ADD: a join to observation_period that restricts the population (for an absence test) or the events and the denominator (for a rate) to time under observation.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: OBSERVATION_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation_period)
+- [The Book of OHDSI, ch. 4: The Common Data Model, OBSERVATION_PERIOD table](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#observationPeriod)
 
 ---
 
-### 9. Observation Period Date Range Logic { #temporal-observation-period-date-range-logic }
+### 6. Observation Period Date Range Logic { #temporal-observation-period-date-range-logic }
 
 **Rule ID:** `temporal.observation_period_date_range_logic`
 **Severity:** ERROR
 
 #### Intent
 
-OMOP semantic rule OMOP_033: When using observation_period to validate patient enrollment, the clinical event date must fall BETWEEN observation_period_start_date AND observation_period_end_date.
+A date lies inside an observation period when observation_period_start_date <= date AND date <= observation_period_end_date. Swapping the BETWEEN bounds, flipping both comparison operators, or joining the two 'outside the period' tests with AND instead of OR yields the reverse: the date must be on or before the period start and on or after the period end. Because a period never starts after it ends, that holds for no row when either operator is strict, and only for one-day periods otherwise. The rule reports only this certain contradiction, on AND-ed predicates of one SELECT that compare the same column with both bounds of the same observation_period row; constant day offsets are taken into account. One-sided tests such as a washout, tests under OR or NOT, and interval tests that compare the bounds with two different columns are not flagged.
 
 #### How it works
 
-This rule analyzes the SQL query to identify observation period date range logic patterns.
+The rule reads the AND-ed predicates of each SELECT's WHERE and JOIN ON clauses and turns each into comparisons of the
+form `value OP bound + offset`: `BETWEEN` gives two, a day difference compared with a constant (`x - start < 0`,
+`DATEDIFF(day, start, x) < 0`) gives the comparison it states, and constant day offsets (`+ 365`, `INTERVAL '30
+days'`, `DATEADD(day, ...)`) are kept. A bound is identified by lineage: the observation_period row it is read from,
+through CTEs, derived tables and renames; an aggregated bound is not judged. The rule reports a value that is held on
+or before `observation_period_start_date` and on or after `observation_period_end_date` of the same row: never
+satisfiable when either operator is strict, satisfiable only for one-day periods otherwise (two equalities, which pin
+a one-day period on purpose, are not reported). Predicates under OR or NOT, one-sided tests such as a washout,
+interval tests against two different columns, and month or year offsets are not reported.
 
 #### Examples
 
-#### Suggested fix
+**Violation pattern:**
 
-Use: event_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date.
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date
+      BETWEEN op.observation_period_end_date AND op.observation_period_start_date;
+```
 
----
+**Correct pattern:**
 
-### 10. Required Date Column Validation { #temporal-required-date-column-validation }
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN observation_period op ON co.person_id = op.person_id
+WHERE co.condition_start_date
+      BETWEEN op.observation_period_start_date AND op.observation_period_end_date;
+```
 
-**Rule ID:** `temporal.required_date_column_validation`
-**Severity:** WARNING
+<!-- extra-examples:start -->
+**Error variant: Both comparison operators flipped: holds only when the period is a single day**
 
-#### Intent
+```sql
+SELECT de.person_id
+FROM drug_exposure de
+JOIN observation_period op ON op.person_id = de.person_id
+ AND op.observation_period_start_date >= de.drug_exposure_start_date
+ AND op.observation_period_end_date <= de.drug_exposure_start_date;
+```
 
-Many clinical tables have multiple temporal columns with different nullability:
-    - A required date column (NOT NULL, always populated)
-    - Optional datetime columns (may be NULL)
-    - Optional end date columns (may be NULL for ongoing events)
+**Error variant: 'Outside the period' tests joined with AND instead of OR: can never hold**
 
-    Using nullable columns for temporal filtering can silently exclude records
-    where those columns are NULL, leading to incomplete result sets.
+```sql
+SELECT m.measurement_id
+FROM measurement m
+JOIN observation_period op ON op.person_id = m.person_id
+WHERE m.measurement_date < op.observation_period_start_date
+  AND m.measurement_date > op.observation_period_end_date;
+```
 
-Covered Tables and Columns:
-    condition_occurrence:
-        - condition_start_date: Required (NOT NULL)
-        - condition_start_datetime: Optional (nullable)
-        - condition_end_date: Optional (nullable, often NULL for ongoing conditions)
-
-    drug_exposure:
-        - drug_exposure_start_date: Required (NOT NULL)
-        - drug_exposure_start_datetime: Optional (nullable)
-        - drug_exposure_end_date: Optional (nullable)
-
-    measurement:
-        - measurement_date: Required (NOT NULL)
-        - measurement_datetime: Optional (nullable)
-        - measurement_time: Optional (nullable)
-
-    observation:
-        - observation_date: Required (NOT NULL)
-        - observation_datetime: Optional (nullable)
-
-Example impact:
-    -- BAD: Uses nullable column
-    SELECT COUNT(*) FROM drug_exposure
-    WHERE drug_exposure_end_date BETWEEN '2023-01-01' AND '2023-12-31'
-    -- May exclude records where end_date is NULL
-
-    -- GOOD: Uses required column
-    SELECT COUNT(*) FROM drug_exposure
-    WHERE drug_exposure_start_date BETWEEN '2023-01-01' AND '2023-12-31'
-    -- Includes all records (start_date is always populated)
-
-Correct patterns (no violation):
-    -- Use required date column
-    WHERE condition_start_date BETWEEN '2023-01-01' AND '2023-12-31'
-
-    -- Or use COALESCE if datetime precision is needed
-    WHERE COALESCE(condition_start_datetime, condition_start_date) > '2023-01-01'
-
-    -- Or explicitly handle NULLs
-    WHERE condition_start_datetime > '2023-01-01'
-      AND condition_start_datetime IS NOT NULL
-
-#### How it works
-
-This rule analyzes the SQL query to identify required date column validation patterns.
-
-#### Examples
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Use required date columns, COALESCE, or explicit IS NOT NULL checks
+REPLACE: the reversed bounds WITH `<event_date> BETWEEN op.observation_period_start_date AND op.observation_period_end_date` (the same as `op.observation_period_start_date <= <event_date> AND <event_date> <= op.observation_period_end_date`). To find events outside the period, join the two tests with OR: `<event_date> < op.observation_period_start_date OR <event_date> > op.observation_period_end_date`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: OBSERVATION_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation_period)
+- [The Book of OHDSI, ch. 10: Defining Cohorts, Require 365 days of prior observation](https://ohdsi.github.io/TheBookOfOhdsi/Cohorts.html#require-365-days-of-prior-observation)
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
@@ -3325,708 +3075,664 @@ These rules validate data quality, schema compliance, and proper handling of edg
 
 ---
 
-### 1. Clinical Event Date Should Not Be Before 1900 { #data-quality-clinical-event-date-before-1900-validation }
-
-**Rule ID:** `data_quality.clinical_event_date_before_1900_validation`
-**Severity:** WARNING
-
-#### Intent
-
-Clinical event dates before 1900 are implausible and represent:
-    - Data quality issues (incorrect event dates)
-    - Data entry errors (wrong year, wrong century)
-    - Logic errors in the query (accidentally filtering for ancient dates)
-
-Clinical event tables covered:
-    - condition_occurrence (condition_start_date, condition_end_date, etc.)
-    - drug_exposure (drug_exposure_start_date, drug_exposure_end_date, etc.)
-    - procedure_occurrence (procedure_date, procedure_datetime)
-    - measurement (measurement_date, measurement_datetime)
-    - observation (observation_date, observation_datetime)
-    - visit_occurrence (visit_start_date, visit_end_date, etc.)
-    - visit_detail (visit_detail_start_date, visit_detail_end_date, etc.)
-    - device_exposure (device_exposure_start_date, device_exposure_end_date, etc.)
-    - specimen (specimen_date, specimen_datetime)
-    - note (note_date, note_datetime)
-    - episode (episode_start_date, episode_end_date, etc.)
-
-#### How it works
-
-This rule analyzes the SQL query to identify clinical event date should not be before 1900 patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM condition_occurrence WHERE condition_start_date < '1900-01-01'
-    SELECT * FROM drug_exposure WHERE drug_exposure_start_date <= '1899-12-31'
-    SELECT * FROM procedure_occurrence WHERE YEAR(procedure_date) < 1900
-    SELECT * FROM measurement WHERE measurement_date BETWEEN '1850-01-01' AND '1899-12-31'
-    SELECT * FROM observation WHERE observation_date IN ('1880-01-01', '1890-01-01')
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM condition_occurrence WHERE condition_start_date >= '1900-01-01'
-    SELECT * FROM drug_exposure WHERE drug_exposure_start_date BETWEEN '1950-01-01' AND '2023-12-31'
-    SELECT * FROM procedure_occurrence WHERE YEAR(procedure_date) >= 1900
-```
-
-#### Suggested fix
-
-Use realistic date ranges (>= 1900-01-01) unless intentionally analyzing historical placeholders.
-
----
-
-### 2. Column Type Validation { #data-quality-column-type-validation }
+### 1. Column Type Validation (SCHEMA Layer) { #data-quality-column-type-validation }
 
 **Rule ID:** `data_quality.column_type_validation`
-**Severity:** ERROR
+**Severity:** ERROR on every dialect (WARNING for `value_as_string` ordered against a quoted number)
 
 #### Intent
 
-OMOP semantic rules OMOP_004, OMOP_005, OMOP_024, OMOP_025, OMOP_026: Validates that column data types are compatible in JOIN conditions and WHERE clauses.
+The OMOP CDM v5.4 field-level specification declares every column's type: `*_id` and `*_concept_id` columns are integers, `*_source_value` columns and vocabulary identifiers such as `domain_id` are varchar, `*_date` columns are dates. A comparison whose operand is not a value of the column's type deviates from the CDM: `domain_id = 19`, `condition_start_date >= 2020`, `year_of_birth = 'unknown'`, `person_id = person_source_value`. The verdict follows the CDM's types and is the same on every dialect; whether a given engine would cast its way past the mismatch is not the question. A quoted literal that is a value of the column's type is accepted (`year_of_birth = '1980'`, `condition_start_date >= '2020-01-01'`). `value_as_string` compared with `<` or `>` against a quoted number agrees in type but orders text, so `'9' > '100'`.
 
 #### How it works
 
-This rule analyzes the SQL query to identify column type validation patterns.
+The rule checks `=`, `<>`, `<`, `<=`, `>`, `>=`, `IN (...)`, `IN (SELECT <one column> ...)` and `BETWEEN` wherever they appear (WHERE, JOIN ... ON, HAVING, CASE, the select list). Columns are resolved through their lineage, through CTEs and derived tables. It flags:
+
+- a varchar column against a numeric literal (`domain_id = 19`, `value_as_string > 100`);
+- a date column against a numeric literal or a quoted word that is not a date (`death_date = 'unknown'`);
+- a numeric column against a quoted literal that is not a number (`year_of_birth = 'unknown'`). For an integer column an integer literal is optional surrounding whitespace, an optional sign and decimal digits, so `'1980'` and `' -3 '` are accepted and `'1e3'`, `'1.5'`, `'0x1F'` and `'8_507'` are not; `data_quality.concept_id_string_comparison` uses the same definition;
+- two columns of different type families (`person_id = person_source_value`, `measurement_event_id = specimen_source_id`);
+- WARNING: `value_as_string` (a result value stored as text) ordered against a quoted number (`value_as_string > '100'`). Other varchar columns, such as code ranges on `concept_code`, are ordered as text on purpose and are not flagged.
+
+Severity: ERROR for the first four, on every dialect; WARNING for the `value_as_string` ordering. Not flagged: quoted literals on `*_concept_id` columns (data_quality.concept_id_string_comparison), `note_nlp.offset` (data_quality.note_nlp_offset_is_character_position), template parameters (`'@start_date'`), explicit casts, computed columns and T-SQL `#temp` tables.
+
+`relationship.is_hierarchical` and `relationship.defines_ancestry` are left to `domain_specific.vocabulary_relationship_boolean_comparison`, which knows their value set. This rule owns a number or boolean compared with a varchar code column such as `concept.standard_concept` or `cost.cost_domain_id`, and `note_nlp.term_modifiers` compared with a concept id.
 
 #### Examples
 
+**Violation patterns:**
+
+```sql
+SELECT co.condition_concept_id
+FROM condition_occurrence co
+JOIN person p ON co.person_id = p.person_source_value;
+```
+
+```sql
+SELECT concept_id, concept_name
+FROM concept
+WHERE domain_id = 19;
+```
+
+```sql
+SELECT person_id
+FROM person
+WHERE year_of_birth = 'unknown';
+```
+
+```sql
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_start_date >= 2020;
+```
+
+```sql
+SELECT person_id
+FROM observation
+WHERE value_as_string > '100';
+```
+
+**Correct patterns:**
+
+```sql
+SELECT co.condition_concept_id
+FROM condition_occurrence co
+JOIN person p ON co.person_id = p.person_id;
+```
+
+```sql
+SELECT person_id
+FROM person
+WHERE year_of_birth = '1980';
+```
+
+```sql
+SELECT person_id
+FROM observation
+WHERE value_as_number > 100;
+```
+
 #### Suggested fix
 
-Ensure column types are compatible. Use proper literals or CAST explicitly if needed.
+Replace the literal with one of the column's type (quoted text for varchar, a number for numeric columns, `DATE 'YYYY-MM-DD'` for dates), or the column with the one of the matching type (`person_id`, not `person_source_value`; `value_as_number`, not `value_as_string`; `specimen_id`, not `specimen_source_id`). Cast explicitly, and guard against non-numeric rows, when a cross-type comparison is intended.
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
+- [OMOP CDM v5.4 specification: SPECIMEN](https://ohdsi.github.io/CommonDataModel/cdm54.html#specimen)
 
 ---
 
-### 4. Concept ID String Comparison { #data-quality-concept-id-string-comparison }
+### 2. Concept ID String Comparison { #data-quality-concept-id-string-comparison }
 
 **Rule ID:** `data_quality.concept_id_string_comparison`
-**Severity:** WARNING
+**Severity:** WARNING for a quoted integer; ERROR on every dialect for a value that is not an integer
 
 #### Intent
 
-All columns ending in `_concept_id` store integer values representing OMOP concepts.
-    Comparing these columns with quoted string literals forces the database to perform
-    implicit type conversion, which:
-
-    - Degrades query performance (string-to-integer conversion for every row)
-    - May fail on some database engines with strict type checking
-    - Indicates sloppy coding practices
-    - Can produce unexpected results depending on database collation/casting rules
+Every column that holds a concept_id is an INTEGER in CDM v5.4. A quoted literal that is not an integer (`'FEMALE'`, `''`, `'1.5'`) is not a value of that type and not a concept id, on every dialect. A quoted integer (`gender_concept_id = '8532'`) names a concept id as text and depends on the engine coercing it: BigQuery does not coerce string literals to numbers ("String literals don't coerce to numeric types").
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept id string comparison patterns.
+The checked columns are `CONCEPT.concept_id` and every CDM v5.4 column with a foreign key to `CONCEPT` (generated from the field-level CSV, so `concept_id_1` and `domain_concept_id_1` are included), when the column's lineage is that CDM column. A value recast to text in a CTE and columns of non-CDM tables are not judged, nor are unrendered SqlRender parameters (`'@gender_concept_ids'`). Comparisons are `=`, `<>`, `<`, `<=`, `>`, `>=`, `IN`, `NOT IN` and `BETWEEN`, in any clause.
+
+- A quoted integer: WARNING (portability). An integer literal is optional surrounding whitespace, an optional sign and decimal digits, the definition shared with `data_quality.column_type_validation`; `'1e3'`, `'1.5'`, `'0x1F'` and `'8_507'` are not integers.
+- A literal that is not an integer: ERROR on every dialect.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern (ERROR):**
 
 ```sql
-SELECT * FROM condition_occurrence WHERE condition_concept_id = '201826'
+SELECT person_id
+FROM person
+WHERE gender_concept_id = 'FEMALE';
+```
+
+**Warning patterns:**
+
+```sql
+SELECT person_id
+FROM person
+WHERE gender_concept_id = '8532';
 ```
 
 ```sql
-SELECT * FROM measurement WHERE measurement_concept_id IN ('3004249', '3012888')
+SELECT person_id
+FROM person
+WHERE gender_concept_id IN ('8532', '8507');
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+SELECT person_id
+FROM person
+WHERE gender_concept_id = 8532;
 ```
 
 ```sql
-SELECT * FROM measurement WHERE measurement_concept_id IN (3004249, 3012888)
+SELECT person_id
+FROM person
+WHERE gender_concept_id IN (8532, 8507);
+```
+
+```sql
+SELECT person_id
+FROM person
+WHERE CAST(gender_concept_id AS VARCHAR) = '8532';
 ```
 
 #### Suggested fix
 
-Replace string literals with integer literals: concept_id = 201826 instead of concept_id = '201826'
+Write the value as an integer literal (`gender_concept_id = 8532`); the finding carries a REPLACE patch for a single quoted integer. To select a concept by name, join `concept` and filter its name or code.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [BigQuery documentation: Conversion rules, Literal coercion](https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules#literal_coercion)
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 5. Concept Name Whitespace { #data-quality-concept-name-whitespace }
-
-**Rule ID:** `data_quality.concept_name_whitespace`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP vocabulary data sometimes contains concept names with trailing whitespace:
-    - 'Type 2 diabetes mellitus ' (note the trailing space)
-    - 'Metformin  ' (multiple trailing spaces)
-
-    When queries use exact equality (=) without trimming, they may fail to match:
-    - concept_name = 'Metformin' won't match 'Metformin  ' (with trailing spaces)
-    - This causes silent failures - no error, just missing results
-
-    This is particularly problematic because:
-    - Users don't expect whitespace in concept names
-    - The mismatch is invisible in most query tools
-    - Data quality varies across vocabulary versions
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept name whitespace patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-without TRIM
-    SELECT concept_id
-    FROM concept
-    WHERE concept_name = 'Type 2 diabetes mellitus'
-      AND standard_concept = 'S'
-```
-
-```sql
-with trailing whitespace
-```
-
-**Correct patterns:**
-
-```sql
-SELECT concept_id
-    FROM concept
-    WHERE TRIM(concept_name) = 'Type 2 diabetes mellitus'
-      AND standard_concept = 'S'
-```
-
-```sql
-SELECT concept_id
-    FROM concept
-    WHERE RTRIM(concept_name) = 'Type 2 diabetes mellitus'
-      AND standard_concept = 'S'
-```
-
-#### Suggested fix
-
-Use TRIM(concept_name) = 'value' or RTRIM(concept_name) = 'value', or use LIKE for safer matching.
-
----
-
-### 9. Episode Requires Concept Filter { #data-quality-episode-requires-concept-filter }
+### 3. Episode Requires Concept Filter { #data-quality-episode-requires-concept-filter }
 
 **Rule ID:** `data_quality.episode_requires_concept_filter`
 **Severity:** WARNING
 
 #### Intent
 
-The episode table in OMOP CDM represents aggregated clinical events spanning
-    multiple dates (e.g., treatment regimens, disease episodes, hospitalizations).
-    The episode_concept_id column defines the TYPE of episode being tracked.
-
-    Querying the episode or episode_event tables without filtering by
-    episode_concept_id can lead to:
-    - Poor query performance (scanning all episode types)
-    - Semantic ambiguity (unclear query intent)
-    - Logical errors (mixing incompatible episode types)
-
-Common episode types include:
-    - Disease Episode (concept_id 32533)
-    - Treatment Episode
-    - Hospitalization Episode
-    - Drug Era Episode
+CDM v5.4 `episode` holds every kind of episode in one table: disease episodes, treatment regimens, disease extent and so on, told apart by `episode_concept_id`. A query that reads episode rows without restricting that column, and without returning it, mixes all episode types in one result, so "episodes per person" adds disease phases to treatment lines. The CDM specification defines the column but does not require a filter on it, and whether the mix is wrong depends on the data and the question, so the finding is a WARNING.
 
 #### How it works
 
-This rule analyzes the SQL query to identify episode requires concept filter patterns.
+For each `episode` instance in a SELECT, the rule fires when `episode_concept_id` is neither restricted nor shown.
+
+- **Restricted:** any non-negated `WHERE` / `ON` / `HAVING` predicate on the column (`=`, `IN`, `BETWEEN`, a join to a concept-set table), a filter on a `concept` row joined to it, or a restriction downstream on a projected copy (followed through CTEs and derived tables). `<>`, `NOT IN` and `IS NULL` / `IS NOT NULL` let every type through and do not count.
+- **Shown:** the SELECT projects or groups by the column, or projects a column of the joined `concept` row. `SELECT *` does not count.
+
+For each `episode_event` instance, the rule fires when `episode_id` is not used at all: the linked events then cannot be tied to an episode type. When `episode_event` is joined to an unrestricted `episode`, only the `episode` is reported.
+
+Not flagged: a lookup of known rows by primary key (`episode_id = 42`, `episode_id IN (...)`), a read that analyses nothing (`episode` is the only source, there is no `WHERE`, `GROUP BY` or `HAVING`, and the SELECT is a `LIMIT` peek or a whole-table `COUNT(*)`), constant-false schema probes (`WHERE 0 = 1`), and DML / DDL targets. Any other aggregate mixes the types like a row-level read and is reported: `SELECT person_id, COUNT(*) FROM episode GROUP BY person_id` is the "episodes per person" case above. Strict mode does not escalate this rule.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT p.person_id, e.episode_start_date
-    FROM episode e
-    JOIN person p ON e.person_id = p.person_id;
+SELECT e.person_id, e.episode_start_date
+FROM episode e
+WHERE e.episode_start_date >= DATE '2020-01-01';
 ```
 
 ```sql
-SELECT *
-    FROM episode e
-    WHERE e.episode_start_date > '2020-01-01';
+SELECT e.person_id, COUNT(*) AS n_episodes
+FROM episode e
+GROUP BY e.person_id;
+```
+
+```sql
+-- procedures linked to episodes of every type
+SELECT po.person_id, po.procedure_concept_id
+FROM episode_event ee
+JOIN procedure_occurrence po ON ee.event_id = po.procedure_occurrence_id
+WHERE ee.episode_event_field_concept_id = 1147082;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT p.person_id, e.episode_start_date
-    FROM episode e
-    JOIN person p ON e.person_id = p.person_id
-    WHERE e.episode_concept_id = 32533;  -- Disease Episode
+SELECT e.person_id, e.episode_start_date
+FROM episode e
+WHERE e.episode_concept_id = 32533
+  AND e.episode_start_date >= DATE '2020-01-01';
 ```
 
 ```sql
-SELECT *
-    FROM episode e
-    WHERE e.episode_concept_id IN (32533, 32534, 32535)
-      AND e.episode_start_date > '2020-01-01';
+-- every type is wanted, and the type is returned with each row
+SELECT e.person_id, e.episode_concept_id, e.episode_start_date
+FROM episode e
+WHERE e.episode_start_date >= DATE '2020-01-01';
+```
+
+```sql
+SELECT po.person_id, po.procedure_concept_id
+FROM episode_event ee
+JOIN episode e ON e.episode_id = ee.episode_id
+JOIN procedure_occurrence po ON ee.event_id = po.procedure_occurrence_id
+WHERE ee.episode_event_field_concept_id = 1147082
+  AND e.episode_concept_id = 32531;  -- Treatment Regimen
+```
+
+```sql
+SELECT e.episode_start_date
+FROM episode e
+WHERE e.episode_id = 42;
 ```
 
 #### Suggested fix
 
-Add a filter on episode_concept_id (e.g., WHERE episode_concept_id = <id>) or join to concept with appropriate filtering.
+Add `episode_concept_id = <id>` (or `IN (…)`) to select one episode type, or add `episode_concept_id` to the SELECT list or GROUP BY if every type is wanted.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: EPISODE](https://ohdsi.github.io/CommonDataModel/cdm54.html#episode)
+- [OMOP CDM v5.4 specification: EPISODE_EVENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#episode_event)
 
 ---
 
-### 10. Fact Relationship No Self-Reference { #data-quality-fact-relationship-no-self-reference }
-
-**Rule ID:** `data_quality.fact_relationship_no_self_reference`
-**Severity:** WARNING
-
-#### Intent
-
-The fact_relationship table links two clinical events together via a relationship.
-    In most cases, linking an event to itself doesn't make semantic sense:
-
-    - A measurement "preceded by" itself
-    - A condition "followed by" itself
-    - A procedure "causally related to" itself
-
-    While there might be extremely rare valid cases, queries that explicitly
-    filter for or create self-referential relationships typically indicate:
-    - Data quality issues
-    - Logic errors in ETL processes
-    - Incorrect query logic
-
-#### How it works
-
-This rule analyzes the SQL query to identify fact relationship no self-reference patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM fact_relationship
-    WHERE fact_id_1 = fact_id_2;
-```
-
-```sql
-SELECT *
-    FROM fact_relationship fr
-    JOIN measurement m1 ON fr.fact_id_1 = m1.measurement_id
-    JOIN measurement m2 ON fr.fact_id_2 = m2.measurement_id
-    WHERE m1.measurement_id = m2.measurement_id;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM fact_relationship
-    WHERE fact_id_1 = 100
-      AND fact_id_2 = 200;
-```
-
-```sql
-SELECT *
-    FROM fact_relationship fr
-    JOIN measurement m1 ON fr.fact_id_1 = m1.measurement_id
-    JOIN measurement m2 ON fr.fact_id_2 = m2.measurement_id
-    WHERE m1.measurement_id != m2.measurement_id;
-```
-
-#### Suggested fix
-
-Remove self-referential filters (fact_id_1 = fact_id_2). If intentional, verify this is a valid use case.
-
----
-
-### 11. Fact Relationship Requires Relationship Concept Filter { #data-quality-fact-relationship-requires-relationship-concept-filter }
+### 4. Fact Relationship Requires Relationship Concept Filter { #data-quality-fact-relationship-requires-relationship-concept-filter }
 
 **Rule ID:** `data_quality.fact_relationship_requires_relationship_concept_filter`
-**Severity:** ERROR
-
-#### Intent
-
-The fact_relationship table links facts across different domain tables using
-    relationship types defined by relationship_concept_id. Querying fact_relationship
-    without filtering by relationship_concept_id can lead to:
-    - Poor query performance (scanning all relationship types)
-    - Semantic ambiguity (unclear query intent)
-    - Logical errors (mixing incompatible relationship types)
-
-Common relationship types include:
-    - "Has temporal context" (concept_id 44818790)
-    - "Preceded by" (concept_id 44818783)
-    - "Followed by" (concept_id 44818784)
-    - "Causally related to" (concept_id 44818888)
-
-#### How it works
-
-This rule analyzes the SQL query to identify fact relationship requires relationship concept filter patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM fact_relationship
-    WHERE fact_id_1 = 100;
-```
-
-```sql
-SELECT *
-    FROM fact_relationship
-    WHERE domain_concept_id_1 = 19;
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM fact_relationship
-    WHERE relationship_concept_id = 44818790  -- "Has temporal context"
-      AND fact_id_1 = 100;
-```
-
-```sql
-SELECT *
-    FROM fact_relationship
-    WHERE relationship_concept_id IN (44818783, 44818784)
-      AND fact_id_1 = 100;
-```
-
-#### Suggested fix
-
-Add a filter on relationship_concept_id (e.g., WHERE relationship_concept_id = <id>) or join to concept with proper filtering.
-
----
-
-### 12. Fact Relationship Valid Concepts { #data-quality-fact-relationship-valid-concepts }
-
-**Rule ID:** `data_quality.fact_relationship_valid_concepts`
 **Severity:** WARNING
 
 #### Intent
 
-The fact_relationship table contains three concept_id columns that reference
-    the concept table:
-    - domain_concept_id_1: Domain of the first fact
-    - domain_concept_id_2: Domain of the second fact
-    - relationship_concept_id: Type of relationship between facts
-
-    When joining to the concept table to validate or filter these concept IDs,
-    queries must check invalid_reason to ensure only valid (current) concepts
-    are used. Invalid concepts may represent deprecated relationships or domains.
+CDM v5.4 `fact_relationship` records every kind of link between two facts in the same five columns: person to person, care-site hierarchy, drug indication, measurement parent and child, and so on. Each link is stored twice, once per direction, and `relationship_concept_id` says which kind and which direction a row is. A query that reads `fact_id_1` / `fact_id_2` without restricting that column, and without returning it, mixes all of them: "the facts related to this measurement" returns its parent, its children and anything else linked to it. The CDM specification defines the column but does not require a filter on it, so the finding is a WARNING.
 
 #### How it works
 
-This rule analyzes the SQL query to identify fact relationship valid concepts patterns.
+For each `fact_relationship` instance in a SELECT, the rule fires when `relationship_concept_id` is neither restricted nor shown.
+
+- **Restricted:** any non-negated `WHERE` / `ON` / `HAVING` predicate on the column (`=`, `IN`, `BETWEEN`, a join to a concept-set table), a filter on a `concept` row joined to it, or a restriction downstream on a projected copy (followed through CTEs and derived tables). `<>`, `NOT IN` and `IS NULL` / `IS NOT NULL` let every type through and do not count.
+- **Shown:** the SELECT projects or groups by the column, or projects a column of the joined `concept` row. `SELECT *` does not count.
+
+Pinning `domain_concept_id_1` / `domain_concept_id_2` does not count: two domains can be linked by several relationship types.
+
+Not flagged: a read that analyses nothing (`fact_relationship` is the only source, there is no `WHERE`, `GROUP BY` or `HAVING`, and the SELECT is a `LIMIT` peek or a whole-table `COUNT(*)`), constant-false schema probes (`WHERE FALSE`, `WHERE (0 = 1)`), and DML / DDL targets. `COUNT(*) ... GROUP BY relationship_concept_id` is silent because it shows the type. Any other aggregate (links per fact, the number of links of one fact, an `EXISTS` probe) mixes the relationship types like a row-level read and is reported. Strict mode does not escalate this rule.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT fr.*
-    FROM fact_relationship fr
-    JOIN concept c ON fr.relationship_concept_id = c.concept_id;
+SELECT fr.fact_id_2 AS child_measurement_id
+FROM fact_relationship fr
+WHERE fr.domain_concept_id_1 = 21
+  AND fr.fact_id_1 = 100;
 ```
 
 ```sql
-without invalid_reason
-    SELECT fr.*
-    FROM fact_relationship fr
-    JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
-    WHERE d1.domain_id = 'Condition';
+SELECT *
+FROM fact_relationship
+WHERE fact_id_1 = 100;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT fr.*
-    FROM fact_relationship fr
-    JOIN concept c ON fr.relationship_concept_id = c.concept_id
-    WHERE c.invalid_reason IS NULL;
+SELECT fr.fact_id_2 AS child_measurement_id
+FROM fact_relationship fr
+WHERE fr.domain_concept_id_1 = 21
+  AND fr.fact_id_1 = 100
+  AND fr.relationship_concept_id = 581436;
 ```
 
 ```sql
-with invalid_reason
-    SELECT fr.*
-    FROM fact_relationship fr
-    JOIN concept d1 ON fr.domain_concept_id_1 = d1.concept_id
-    JOIN concept d2 ON fr.domain_concept_id_2 = d2.concept_id
-    JOIN concept r ON fr.relationship_concept_id = r.concept_id
-    WHERE d1.invalid_reason IS NULL
-      AND d2.invalid_reason IS NULL
-      AND r.invalid_reason IS NULL;
+-- every type is wanted, and the type is returned with each row
+SELECT fr.fact_id_2, fr.relationship_concept_id
+FROM fact_relationship fr
+WHERE fr.fact_id_1 = 100;
+```
+
+```sql
+SELECT fr.fact_id_1, fr.fact_id_2
+FROM fact_relationship fr
+JOIN concept c ON fr.relationship_concept_id = c.concept_id
+WHERE c.concept_name = 'Systolic to diastolic blood pressure measurement';
 ```
 
 #### Suggested fix
 
-Add '<alias>.invalid_reason IS NULL' for each concept join to ensure only valid concepts are used.
+Add `relationship_concept_id = <id>` (or `IN (…)`) to select one relationship type, or add `relationship_concept_id` to the SELECT list or GROUP BY if every type is wanted.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: FACT_RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#fact_relationship)
 
 ---
 
-### 14. Negative Concept ID Validation { #data-quality-negative-concept-id-validation }
+### 5. Negative Concept ID Validation { #data-quality-negative-concept-id-validation }
 
 **Rule ID:** `data_quality.negative_concept_id_validation`
-**Severity:** ERROR
+**Severity:** ERROR (dead branches and dead IN members: WARNING)
 
 #### Intent
 
-OMOP concept_id values range from 0 (unmapped) to positive integers.
-    Negative values are not allowed and will never return results.
+The Standardized Vocabularies assign concept_ids from 0 upwards: values "will be reserved from 0 to 2,000,000,000", and ids above that range are for local use. No CDM column that holds a concept_id contains a negative value, so a filter that only a negative id satisfies matches no row.
 
 #### How it works
 
-This rule analyzes the SQL query to identify negative concept id validation patterns.
+The checked columns are `CONCEPT.concept_id` and every CDM v5.4 column with a foreign key to `CONCEPT` (generated from the field-level CSV, including `ancestor_concept_id`, `relationship_concept_id`, `concept_id_1`). A column is checked when its lineage, through CTEs, derived tables and casts, is one of them; a sentinel computed in the query (`COALESCE(unit_concept_id, -1)`) and columns of non-CDM tables are not. Flagged predicates are `= -n`, `IN` lists of negative values only, `< 0`, `<= -n`, and `BETWEEN` with a negative upper bound, with literals possibly parenthesised or cast.
+
+- ERROR when the predicate restricts the rows the statement returns: an AND-conjunct of WHERE, HAVING or an inner join's ON, and, inside a subquery, only when that subquery's IN / EXISTS / comparison restricts the enclosing query in turn.
+- WARNING when it does not: in an outer join's ON clause it attaches no row of the joined side and the other side's rows are kept; inside NOT EXISTS / NOT IN the empty subquery removes no outer row; under OR, in a CASE or in the select list it is a dead branch. A negative value inside an IN list that also holds valid ids is a WARNING too.
+- Not flagged: predicates every row satisfies (`> -1`, `<> -1`, `NOT IN (-1)`) and a predicate directly under NOT.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence WHERE condition_concept_id = -1
+SELECT *
+FROM condition_occurrence
+WHERE condition_concept_id = -1;
+```
+
+```sql
+SELECT *
+FROM concept_ancestor
+WHERE ancestor_concept_id < 0;
+```
+
+**Warning patterns:**
+
+```sql
+SELECT *
+FROM condition_occurrence
+WHERE condition_concept_id IN (201820, -1);
+```
+
+```sql
+SELECT co.person_id, c.concept_name
+FROM condition_occurrence co
+LEFT JOIN concept c ON c.concept_id = co.condition_concept_id AND c.concept_id = -1;
+```
+
+```sql
+SELECT p.person_id
+FROM person p
+WHERE NOT EXISTS (SELECT 1 FROM condition_occurrence co WHERE co.person_id = p.person_id AND co.condition_concept_id = -1);
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence WHERE condition_concept_id = 201826
+SELECT *
+FROM condition_occurrence
+WHERE condition_concept_id = 201820;
 ```
 
-#### Common scenarios
+```sql
+SELECT *
+FROM condition_occurrence
+WHERE condition_concept_id = 0;
+```
 
-- Using -1 as a sentinel/null value
-- Typos or sign errors
-- Copy-paste from non-OMOP systems
+```sql
+SELECT *
+FROM measurement
+WHERE COALESCE(unit_concept_id, -1) = -1;
+```
 
 #### Suggested fix
 
-Use valid non-negative concept_id values. Use 0 for unmapped.
+Replace the negative literal with the intended concept_id (0 for records without a matching concept). If -1 stands for a missing value, test `IS NULL` or `= 0`.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Concepts](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concepts)
 
 ---
 
-### 15. Note NLP Offset is Character Position { #data-quality-note-nlp-offset-is-character-position }
+### 6. Note NLP Offset is Character Position { #data-quality-note-nlp-offset-is-character-position }
 
 **Rule ID:** `data_quality.note_nlp_offset_is_character_position`
 **Severity:** WARNING
 
 #### Intent
 
-The note_nlp.offset column stores character positions as VARCHAR, not INTEGER.
-    Developers often mistakenly treat it as a numeric column because:
-    1. Positions are conceptually numeric
-    2. Most OMOP CDM position/ID fields are integers
-    3. The name "offset" suggests a numeric value
-
-    This leads to:
-    - String vs numeric comparison semantics (e.g., '9' > '100' is true)
-    - Using it in JOINs (semantically incorrect - it's a position, not a key)
-    - Arithmetic operations without proper casting
+CDM v5.4 stores `note_nlp.offset` ("Character offset of the extracted term in the input note") as `varchar(50)`. Its content is a number, but every ordering operation on the raw column is a string ordering: `'9' > '100'` is true, `ORDER BY offset` puts 100 before 9, and `MAX(offset)` returns `'99'` over `'100'`. These queries run without error and silently return wrong rows.
 
 #### How it works
 
-This rule analyzes the SQL query to identify note nlp offset is character position patterns.
+Flagged on an uncast `note_nlp.offset`:
+
+- `<`, `<=`, `>`, `>=` against a string literal or against another uncast offset (for example "term A appears before term B in the same note");
+- `BETWEEN` with string-literal bounds;
+- `ORDER BY offset`, including a window `ORDER BY`;
+- `MIN(offset)` / `MAX(offset)`, and `GREATEST` / `LEAST` over offsets.
+
+The column is recognised by its lineage: qualified or not, through CTEs, derived tables and renames (`"offset" AS pos`). A CTE or derived table that casts it (`CAST("offset" AS INTEGER) AS "offset"`) yields an integer and is not flagged.
+
+Not flagged:
+
+- equality and `IN`, because string equality of positions is exact;
+- comparison with a numeric literal, or arithmetic: PostgreSQL and DuckDB reject `varchar > integer`, so the query fails rather than returning wrong rows (data_quality.column_type_validation reports it);
+- any use inside `CAST`, `TRY_CAST`, `CONVERT` or `::int`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT *
-    FROM note_nlp
-    WHERE offset > 100
+SELECT note_nlp_id
+FROM note_nlp
+WHERE "offset" > '100';
+```
+
+```sql
+-- term A before term B in the same note, compared as text
+SELECT a.note_id
+FROM note_nlp a
+JOIN note_nlp b ON a.note_id = b.note_id
+WHERE a."offset" < b."offset";
+```
+
+```sql
+SELECT note_id, lexical_variant
+FROM note_nlp
+ORDER BY "offset";
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT *
-    FROM note_nlp
-    WHERE CAST(offset AS INT) > 100
+SELECT note_nlp_id
+FROM note_nlp
+WHERE CAST("offset" AS INTEGER) > 100;
 ```
 
-#### Common scenarios
-
-- Direct numeric comparisons: WHERE offset > 100
-- Using in JOIN conditions: JOIN ... ON nn.offset = ...
-- BETWEEN without CAST: WHERE offset BETWEEN 50 AND 200
+```sql
+SELECT a.note_id
+FROM note_nlp a
+JOIN note_nlp b ON a.note_id = b.note_id
+WHERE CAST(a."offset" AS INTEGER) < CAST(b."offset" AS INTEGER);
+```
 
 #### Suggested fix
 
-Use CAST(offset AS INT) or CONVERT(INT, offset) for numeric usage. Avoid using offset in JOIN conditions.
+Wrap `note_nlp.offset` in `CAST(offset AS INTEGER)` wherever it is ordered, ranged or aggregated.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: NOTE_NLP](https://ohdsi.github.io/CommonDataModel/cdm54.html#note_nlp)
+- [The Book of OHDSI, ch. 9: SQL and R, Implicit casts](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#implicit-casts)
 
 ---
 
-### 17. Note NLP nlp_date for Temporal Filtering { #data-quality-note-nlp-nlp-date-for-temporal-filtering }
+### 7. Note NLP nlp_date for Temporal Filtering { #data-quality-note-nlp-nlp-date-for-temporal-filtering }
 
 **Rule ID:** `data_quality.note_nlp_nlp_date_for_temporal_filtering`
 **Severity:** WARNING
 
 #### Intent
 
-The note_nlp.nlp_date column stores when the NLP processing was performed,
-    NOT when the clinical event occurred. This is a critical semantic distinction:
-
-    - nlp_date: Processing timestamp (e.g., when cTAKES ran on the note)
-    - note.note_date: Actual clinical date of the note/event
-
-    Using nlp_date for temporal filtering produces incorrect results because:
-    1. NLP processing often happens in batches, long after the clinical event
-    2. Re-running NLP changes nlp_date but not the clinical date
-    3. The same note processed twice would have different nlp_date values
-    4. Cohorts defined by nlp_date are non-reproducible across NLP runs
+CDM v5.4 defines `note_nlp.nlp_date` / `nlp_datetime` as "the date (and time) of the note processing": when the NLP pipeline ran, not when the note was written. The clinical date lives on `note.note_date` / `note.note_datetime` ("the date the note was recorded"), reached through `note_nlp.note_id = note.note_id`. Filtering NLP findings to a time window with `nlp_date` selects them by processing batch, so re-running the pipeline changes the result.
 
 #### How it works
 
-This rule analyzes the SQL query to identify note nlp nlp_date for temporal filtering patterns.
+The rule fires on a time window over `nlp_date` / `nlp_datetime` in `WHERE`, `JOIN ... ON` or `HAVING`: a range comparison (`<`, `<=`, `>`, `>=`, `BETWEEN`) on it, equality on it, or equality on a truncated value (`EXTRACT(YEAR FROM nlp_date) = 2023`, `YEAR(nlp_date) = 2023`). The column is followed through casts, arithmetic, CTEs and derived tables. It does not fire when:
+
+- the same SELECT also filters `note.note_date` / `note_datetime` (the clinical window is applied; an extra `nlp_date` filter picks a processing run on purpose);
+- the comparison is equality on the date in a SELECT that also restricts `nlp_system`, which picks one processing run (`nlp_system = 'cTAKES 4.0' AND nlp_date = DATE '2024-03-01'`), or an aggregate over the date (`HAVING MAX(nlp_date) > ...`);
+- the other side reads `nlp_date` / `note_date` or is a subquery: the latest run (`nlp_date = (SELECT MAX(nlp_date) FROM note_nlp)`), a processing-lag audit (`nlp_date >= n.note_date`), or an incremental-load watermark.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT *
-    FROM note_nlp
-    WHERE note_nlp_concept_id = 201826
-      AND nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
+SELECT note_nlp_id
+FROM note_nlp
+WHERE nlp_date >= DATE '2023-01-01';
 ```
 
 ```sql
-from notes written in 2023!
+SELECT note_nlp_id
+FROM note_nlp
+WHERE EXTRACT(YEAR FROM nlp_date) = 2023;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT nn.*
-    FROM note_nlp nn
-    JOIN note n ON nn.note_id = n.note_id
-    WHERE nn.note_nlp_concept_id = 201826
-      AND n.note_date BETWEEN '2023-01-01' AND '2023-12-31'
+SELECT nnlp.note_nlp_id
+FROM note_nlp nnlp
+JOIN note n ON nnlp.note_id = n.note_id
+WHERE n.note_date >= DATE '2023-01-01';
 ```
 
 ```sql
-from notes written in 2023
+SELECT note_nlp_id
+FROM note_nlp
+WHERE nlp_date = (SELECT MAX(nlp_date) FROM note_nlp);
 ```
-
-#### Common scenarios
-
-- WHERE nlp_date BETWEEN '2023-01-01' AND '2023-12-31'
-- WHERE nlp_date > '2023-01-01'
-- Using nlp_date for cohort entry date ranges
 
 #### Suggested fix
 
-Join to note table and filter using note.note_date instead.
+Replace `note_nlp.nlp_date <op> <date>` with `note.note_date <op> <date>` after `JOIN note ON note_nlp.note_id = note.note_id`. `nlp_date` is processing time, not clinical event time.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: NOTE_NLP](https://ohdsi.github.io/CommonDataModel/cdm54.html#note_nlp)
+- [OMOP CDM v5.4 specification: NOTE](https://ohdsi.github.io/CommonDataModel/cdm54.html#note)
 
 ---
 
-### 18. Schema Validation { #data-quality-schema-validation }
+### 8. OMOP Schema Validation { #data-quality-schema-validation }
 
 **Rule ID:** `data_quality.schema_validation`
-**Severity:** ERROR
+**Severity:** ERROR (columns missing from COHORT / COHORT_DEFINITION: WARNING)
 
 #### Intent
 
-OMOP CDM schema validation: Validates that columns referenced in SQL queries exist in the OMOP CDM schema. Catches common errors like using concept_ancestor columns on concept_relationship table.
+Every column a query reads from a CDM table must exist in the OMOP CDM v5.4 specification (the field-level CSV: 39 tables). A column that does not exist makes the statement fail on any conformant CDM. Names that CDM v5.4 renamed (`admitting_source_concept_id` became `admitted_from_concept_id`, `visit_detail_parent_id` became `parent_visit_detail_id`), names that only some event tables carry (`procedure_occurrence` has `procedure_date`, not `procedure_start_date`), and columns that live on a neighbouring table (`episode_event` has no `person_id`; `episode` does) are reported with the v5.4 name. The schema is closed: a table that is neither in the specification nor defined in the same input is an error. This is a declared policy, like the write protection. A database may hold results or staging tables FastSSV cannot see, but a query that reads them cannot be validated against the CDM, and SQL that invents a table (`condition`, `drug_concept`) fails.
 
 #### How it works
 
-This rule analyzes the SQL query to identify schema validation patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Check OMOP CDM documentation for correct column names
-
----
-
-### 19. Standard Concept NULL Handling { #data-quality-standard-concept-null-handling }
-
-**Rule ID:** `data_quality.standard_concept_null_handling`
-**Severity:** WARNING
-
-#### Intent
-
-In OMOP CDM, concept.standard_concept has three possible values:
-    - 'S' = Standard concept
-    - 'C' = Classification concept
-    - NULL = Non-standard concept
-
-#### How it works
-
-This rule analyzes the SQL query to identify standard concept null handling patterns.
+- **Columns.** Each reference is resolved the way the engine resolves it: a qualified name through the alias of its own SELECT, then enclosing SELECTs (correlated subqueries), and through CTEs and derived tables including `SELECT *`; an unqualified name against every source of its SELECT and of the enclosing ones. It is reported only when every source that could supply the name is known not to. When several CDM tables are in scope and none has the column, the finding names all of them. `JOIN ... USING (col)` names must exist on both sides, and `INSERT INTO <cdm table> (col, ...)` lists are checked. An engine's system columns (PostgreSQL's `ctid`, `xmin`, ...) are not CDM columns and are reported like any other, on every dialect.
+- **COHORT and COHORT_DEFINITION.** The field-level CSV places these two tables in a separate schema (`databaseSchema` = cohort), not with the CDM or vocabulary tables, and analytic tools create their own tables under those names with columns of their own. A column missing from their CDM v5.4 definition (`cohort_definition.cohort_name`, `cohort.row_id`) is therefore a WARNING saying the table may be a tool's own and the column was not checked. The set of such tables is read from the CSV's `databaseSchema` column.
+- **Output aliases** of the same SELECT are not base columns: `SELECT measurement_date AS measurement_start_date ... GROUP BY measurement_start_date` is not flagged.
+- **Tables.** A table missing from the specification and not defined in the same input is an ERROR. When its name is one or two edits from a CDM table (one edit for names under seven letters) and it stands where a CDM table is expected (unqualified, or in the schema the statement reads its CDM tables from), the finding names that table; a table removed in v5.4 (`attribute_definition`) is reported as removed. To use a results or scratch table, define it in the same input (CTE, `CREATE TABLE`, `SELECT ... INTO`, temp table).
+- **Not checked:** CTE names, derived tables, tables created earlier in the same batch, T-SQL `#temp` tables, the targets of CREATE / DROP / ALTER / ANALYZE / TRUNCATE, and system catalogues. A REPLACE patch is offered only when one replacement name is known, and never for a write target.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM concept
-    WHERE standard_concept = NULL  -- WRONG: use IS NULL
+SELECT person_id, procedure_concept_id
+FROM procedure_occurrence
+WHERE procedure_start_date >= DATE '2020-01-01';
 ```
 
 ```sql
-SELECT * FROM concept
-    WHERE standard_concept = ''  -- WRONG: empty string invalid
+SELECT visit_occurrence_id
+FROM visit_occurrence
+WHERE admitting_source_concept_id = 8870;
+```
+
+```sql
+SELECT ee.event_id, p.year_of_birth
+FROM episode_event ee
+JOIN person p ON ee.person_id = p.person_id;
+```
+
+```sql
+SELECT person_id
+FROM condition_occurence
+WHERE condition_concept_id = 201826;
+```
+
+```sql
+SELECT attribute_name
+FROM attribute_definition;
+```
+
+```sql
+SELECT analysis_id, count_value
+FROM results.analysis_results
+WHERE analysis_id = 1;
+```
+
+**Warning pattern (column outside the CDM definition of a cohort-schema table, not checked):**
+
+```sql
+SELECT cd.cohort_definition_id, cd.cohort_name
+FROM cohort_definition cd;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM concept
-    WHERE standard_concept IS NULL  -- Non-standard concepts
+SELECT person_id, procedure_concept_id
+FROM procedure_occurrence
+WHERE procedure_date >= DATE '2020-01-01';
 ```
 
 ```sql
-SELECT * FROM concept
-    WHERE standard_concept = 'S'  -- Standard concepts only
+SELECT ee.event_id, p.year_of_birth
+FROM episode_event ee
+JOIN episode e ON ee.episode_id = e.episode_id
+JOIN person p ON e.person_id = p.person_id;
 ```
 
-#### Common scenarios
-
-- Using standard_concept = NULL instead of IS NULL
-- Using standard_concept = '' (empty string - no concepts have this value)
-- Using standard_concept = 'N' (this value doesn't exist - non-standard is NULL)
+```sql
+SELECT measurement_date AS measurement_start_date, COUNT(*)
+FROM measurement
+GROUP BY measurement_start_date;
+```
 
 #### Suggested fix
 
-Use IS NULL for non-standard concepts, IS NOT NULL for standard/classification, or filter explicitly for valid values ('S', 'C').
+Replace the nonexistent column or table with its OMOP CDM v5.4 name; the finding names it when it is known (a v5.4 rename, `<event>_date` for `<event>_start_date`, or the table that holds the column). For a table outside the CDM, no change is needed if it exists in the database.
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: PROCEDURE_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#procedure_occurrence)
+- [OMOP CDM v5.4 specification: EPISODE_EVENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#episode_event)
+- [OMOP CDM: Changes from v5.3 to v5.4, VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54Changes.html#visit_occurrence)
+- [OMOP CDM: Changes from v5.3 to v5.4, VISIT_DETAIL](https://ohdsi.github.io/CommonDataModel/cdm54Changes.html#visit_detail)
+- [OMOP CDM: Changes from v5.3 to v5.4, Summary](https://ohdsi.github.io/CommonDataModel/cdm54Changes.html#summary)
 
 ---
 
-### 20. UNION vs UNION ALL for Clinical Events { #data-quality-union-vs-union-all-clinical-events }
+### 9. UNION vs UNION ALL for Clinical Events { #data-quality-union-vs-union-all-clinical-events }
 
 **Rule ID:** `data_quality.union_vs_union_all_clinical_events`
 **Severity:** WARNING
 
 #### Intent
 
-UNION removes duplicates by sorting and deduplicating results. For clinical
-    event data, this is almost always wrong because:
-
-    1. Legitimate duplicates: Two events that look identical are still separate
-       - Two ER visits on same day (morning: chest pain, evening: injury)
-       - Two drug prescriptions on same day (different physicians/episodes)
-       - Multiple measurements on same day (repeated tests, different encounters)
-       - Two procedures on same day (staged surgeries, emergency + planned)
-
-    2. Silent data loss: UNION drops events without warning or error
-
-    3. Incorrect counts: Event counting becomes inaccurate
-       - Patient had 5 visits, but UNION shows 3
-       - Cost analysis missing events
-
-    4. Performance: UNION is slower (must sort and deduplicate)
-
-    Clinical events have unique primary keys (condition_occurrence_id,
-    drug_exposure_id, etc.) that make them distinct even if other columns
-    appear identical. UNION operates on selected columns only, not primary keys.
+`UNION` removes duplicate rows. Two clinical event rows that look identical on the selected columns can still be separate events (two ER visits on the same day, two prescriptions on the same day), because the primary key that distinguishes them is not selected. `UNION` then drops events silently and event counts come out low. `UNION ALL` keeps every row.
 
 #### How it works
 
-This rule analyzes the SQL query to identify union vs union all for clinical events patterns.
+The rule warns on a `UNION` (without `ALL`) where some arm returns rows taken one-to-one from a person-level CDM table (every CDM v5.4 table that carries `person_id`, including the era tables, `death` and `observation_period`), directly or through CTEs and derived tables. Arms that are each a single aggregate row or a grouped result over that data, but carry no label column that tells them apart, get their own message: two arms with equal values (equal counts) collapse into one row. Not flagged, because de-duplication cannot change the result or is what the query asks for:
+
+- every arm projects only foreign-key columns by lineage (`person_id`, `visit_occurrence_id`, `*_concept_id`, ...), whatever their output names: the rows name other entities, so duplicates are the same entity (a cohort or concept-set union);
+- the UNION feeds only set-style consumers: an enclosing `SELECT DISTINCT`, `IN (…)` / `EXISTS (…)`, or a SELECT whose outputs are `GROUP BY` keys and `COUNT(DISTINCT …)` / `MIN` / `MAX` aggregates;
+- every arm is `SELECT DISTINCT`;
+- the arms carry literal label columns whose values differ between arms, so no row of one arm can equal a row of another, and every arm that returns event-level rows is itself unique (GROUP BY over its outputs, DISTINCT, or a single aggregate row);
+- no arm reads person-level CDM data (vocabulary unions).
 
 #### Examples
 
@@ -4034,166 +3740,362 @@ This rule analyzes the SQL query to identify union vs union all for clinical eve
 
 ```sql
 SELECT person_id, condition_start_date AS event_date
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826
-    UNION
-    SELECT person_id, drug_exposure_start_date
-    FROM drug_exposure
-    WHERE drug_concept_id = 1125315
+FROM condition_occurrence
+UNION
+SELECT person_id, drug_exposure_start_date
+FROM drug_exposure;
 ```
 
 ```sql
-SELECT person_id, visit_start_date
-    FROM visit_occurrence
-    WHERE visit_concept_id = 9203
-    UNION
-    SELECT person_id, visit_start_date
-    FROM visit_detail
-    WHERE visit_detail_concept_id = 9201
+SELECT person_id, condition_start_date AS event_date
+FROM condition_occurrence
+WHERE condition_concept_id = 201826
+UNION
+SELECT person_id, drug_exposure_start_date
+FROM drug_exposure
+WHERE drug_concept_id = 1125315;
+```
+
+```sql
+-- Equal counts collapse into one unlabelled row
+SELECT COUNT(*) AS n FROM condition_occurrence
+UNION
+SELECT COUNT(*) FROM drug_exposure;
 ```
 
 **Correct patterns:**
 
 ```sql
 SELECT person_id, condition_start_date AS event_date
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826
-    UNION ALL
-    SELECT person_id, drug_exposure_start_date
-    FROM drug_exposure
-    WHERE drug_concept_id = 1125315
-```
-
-#### Common scenarios
-
-- Using UNION by default (learned from non-temporal data)
-- Assuming duplicates are data quality issues (they're not for events)
-- Not understanding that identical appearance ≠ same event
-
-#### Suggested fix
-
-Replace UNION with UNION ALL to preserve all clinical events. If deduplication is intentional, document it explicitly.
-
----
-
-### 21. Union Concept ID Domain Indicator { #data-quality-union-concept-id-domain-indicator }
-
-**Rule ID:** `data_quality.union_concept_id_domain_indicator`
-**Severity:** WARNING
-
-#### Intent
-
-Each OMOP domain has its own concept_id column:
-    - condition_occurrence.condition_concept_id
-    - drug_exposure.drug_concept_id
-    - procedure_occurrence.procedure_concept_id
-    - measurement.measurement_concept_id
-    - observation.observation_concept_id
-
-    UNION queries that mix these without domain labels create ambiguous results.
-
-Example impact:
-    SELECT condition_concept_id AS concept_id
-    FROM condition_occurrence
-    UNION ALL
-    SELECT drug_concept_id AS concept_id
-    FROM drug_exposure
-    -- Returns: [201826, 1545958, 313217, ...]
-    -- Which are conditions? Which are drugs? UNKNOWN!
-    -- Results are uninterpretable without domain context
-
-#### How it works
-
-This rule analyzes the SQL query to identify union concept id domain indicator patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT condition_concept_id AS concept_id
-    FROM condition_occurrence
-    UNION ALL
-    SELECT drug_concept_id AS concept_id
-    FROM drug_exposure
-```
-
-**Correct patterns:**
-
-```sql
-SELECT 'Condition' AS domain, condition_concept_id AS concept_id
-    FROM condition_occurrence
-    UNION ALL
-    SELECT 'Drug' AS domain, drug_concept_id AS concept_id
-    FROM drug_exposure
+FROM condition_occurrence
+UNION ALL
+SELECT person_id, drug_exposure_start_date
+FROM drug_exposure;
 ```
 
 ```sql
-from concept table
-    SELECT c.domain_id, co.condition_concept_id AS concept_id
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
-    UNION ALL
-    SELECT c.domain_id, de.drug_concept_id AS concept_id
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
+SELECT person_id, condition_start_date AS event_date
+FROM condition_occurrence
+WHERE condition_concept_id = 201826
+UNION ALL
+SELECT person_id, drug_exposure_start_date
+FROM drug_exposure
+WHERE drug_concept_id = 1125315;
+```
+
+```sql
+-- Labelled single-row arms cannot collide
+SELECT 'condition_occurrence' AS cdm_table, COUNT(*) AS n FROM condition_occurrence
+UNION
+SELECT 'drug_exposure', COUNT(*) FROM drug_exposure;
+```
+
+```sql
+-- Only COUNT(DISTINCT ...) reads the UNION
+SELECT COUNT(DISTINCT person_id)
+FROM (
+  SELECT person_id, condition_start_date AS d FROM condition_occurrence
+  UNION
+  SELECT person_id, drug_exposure_start_date FROM drug_exposure
+) t;
 ```
 
 #### Suggested fix
 
-Add a domain indicator column to each SELECT, e.g.: SELECT 'Condition' AS domain, condition_concept_id FROM ... UNION ...
+Replace `UNION` with `UNION ALL` when combining clinical event rows. If de-duplication is intended, make it explicit (`SELECT DISTINCT` arms or a labelled, grouped result).
+
+#### Sources
+
+- [PostgreSQL documentation: SELECT, UNION clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-UNION)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
 
 ---
 
-### 22. Unmapped Concept Handling { #data-quality-unmapped-concept-handling }
-
-**Rule ID:** `data_quality.unmapped_concept_handling`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP semantic rule: When filtering clinical tables by specific *_concept_id values, warn if concept_id = 0 (unmapped records) is not explicitly handled.
-
-#### How it works
-
-This rule analyzes the SQL query to identify unmapped concept handling patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Add: column > 0 to explicitly exclude unmapped, or handle them separately
-
----
-
-### 24. Vocabulary Table Protection { #data-quality-vocabulary-table-protection }
+### 10. Vocabulary Table Protection { #data-quality-vocabulary-table-protection }
 
 **Rule ID:** `data_quality.vocabulary_table_protection`
-**Severity:** ERROR
+**Severity:** ERROR (table in another schema: WARNING)
 
 #### Intent
 
-Vocabulary tables contain standardized reference data that all analytical queries
-    depend on. Modifying these tables can:
-    - Break all downstream queries that reference affected concepts
-    - Corrupt the vocabulary structure
-    - Require a full vocabulary reload to recover
+The Book of OHDSI (4.2.2) states that "the clinical Event and vocabulary tables are in the 'CDM' schema and are considered read-only to the end user or analytic tool", and the CDM v5.4 specification repeats that "the CDM and Vocabulary tables are all read-only". The vocabulary tables are reloaded from an Athena release and every later query reads them, so an analytical statement must not write to, restructure or remove them.
+
+**Why an ERROR.** This is the rule set's one declared exception to reporting an ERROR only for a query that fails or certainly returns wrong rows. The write may succeed, and the statement is not wrong in itself. The reason for the ERROR is scope: FastSSV validates analytics SQL, and the Book of OHDSI treats the CDM schema, vocabulary tables included, as read-only to the end user, so a write to it is outside what an analytic query may do.
 
 #### How it works
 
-This rule analyzes the SQL query to identify vocabulary table protection patterns.
+Protected tables are those of the specification's vocab schema except `source_to_concept_map`, which the specification recommends "for use in ETL processes to maintain local source codes": `concept`, `concept_ancestor`, `concept_class`, `concept_relationship`, `concept_synonym`, `domain`, `drug_strength`, `relationship`, `vocabulary`. Reported statements are DELETE, UPDATE, INSERT, MERGE, TRUNCATE, DROP TABLE, ALTER TABLE and CREATE OR REPLACE TABLE whose target is one of them.
+
+- ERROR when the name reaches the vocabulary table: unqualified, in the default schema (`public`, `dbo`), or in a schema whose name contains `cdm`, `omop` or `vocab` and does not name a results, scratch or temp schema (the schema logic of `anti_patterns.destructive_operations_on_clinical_tables`).
+- WARNING when the table is in another schema (`scratch.concept`, `vocab_scratch.concept`, `cdm_results.concept_ancestor`): it may be a copy that only shares the name.
+- Not reported: tables only read (INSERT ... SELECT FROM concept), T-SQL `#temp` tables, names an earlier statement of the batch created unqualified or as TEMP, and INSERTs of local concepts (every concept id above 2,000,000,000, the range the conventions reserve for local use).
 
 #### Examples
 
-#### Common scenarios
+**Violation patterns:**
 
-- DELETE FROM concept WHERE concept_id = 0
-- UPDATE concept SET concept_name = 'xyz' WHERE ...
-- INSERT INTO vocabulary VALUES (...)
+```sql
+DELETE FROM concept
+WHERE concept_id = 0;
+```
+
+```sql
+ALTER TABLE concept DROP COLUMN concept_name;
+```
+
+**Warning pattern:**
+
+```sql
+TRUNCATE TABLE scratch.concept_ancestor;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE concept_id = 0;
+```
+
+```sql
+INSERT INTO source_to_concept_map (source_code, source_concept_id, source_vocabulary_id, target_concept_id, target_vocabulary_id, valid_start_date, valid_end_date)
+VALUES ('X1', 0, 'MyLocal', 201826, 'SNOMED', DATE '1970-01-01', DATE '2099-12-31');
+```
 
 #### Suggested fix
 
-Do not modify vocabulary tables. Use them as read-only reference data. Vocabulary updates should be performed via official OHDSI releases.
+Remove the statement and read the vocabulary instead. Load vocabulary changes from an Athena release, keep local source codes in `source_to_concept_map`, and give local concepts ids above 2,000,000,000.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 4: The Common Data Model, General conventions of schemas](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-conventions-of-schemas)
+- [OMOP CDM v5.4 specification: COHORT](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort)
+- [OMOP CDM v5.4 specification: SOURCE_TO_CONCEPT_MAP](https://ohdsi.github.io/CommonDataModel/cdm54.html#source_to_concept_map)
+- [OMOP CDM: Data Model Conventions, Concepts](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concepts)
+
+---
+
+### 11. Canonical Vocabulary String Value Validation { #data-quality-canonical-string-value-validation }
+
+**Rule ID:** `data_quality.canonical_string_value_validation`
+**Severity:** ERROR on every dialect for a wrong case; WARNING for misspelt IDs
+
+#### Intent
+
+`vocabulary_id`, `domain_id` and `concept_class_id` are short case-sensitive IDs defined by the vocabulary (Book of OHDSI, ch. 5; the `VOCABULARY`, `DOMAIN` and `CONCEPT_CLASS` tables). A literal that names one of them with the wrong case is not the ID the vocabulary defines, so it is an ERROR on every dialect, whatever collation an engine would compare it under. Vocabulary IDs generally omit the dashes of the vocabulary's name (`ICD-9-CM` is `ICD9CM`), so a dashed form of a known ID matches no row unless a site has loaded a local ID with that spelling.
+
+#### How it works
+
+The known IDs are every `vocabulary_id`, `domain_id` and `concept_class_id` of one Athena release (named in the generated module `_dq_vocab_ids.py`). The checked columns are the keys of `VOCABULARY`, `DOMAIN` and `CONCEPT_CLASS` and every CDM v5.4 column with a foreign key to one of them (`concept.vocabulary_id`, `concept.domain_id`, `concept.concept_class_id`, `source_to_concept_map.target_vocabulary_id`, `cost.cost_domain_id`). A column is checked when its lineage, through CTEs, derived tables and casts, is one of those columns; a value recomputed on the way (`LOWER(domain_id) AS domain_id`) is not. Comparisons are `=`, `<>`, `IN`, `NOT IN`, `BETWEEN` and `LIKE` without wildcards, in any clause.
+
+- Wrong case of a known ID: ERROR on every dialect.
+- A known ID written with dashes, spaces or underscores it does not have: WARNING.
+- The message follows the operator. With `=`, `IN` or `LIKE` the filter matches no row. With `<>`, `NOT IN` or a negated `=`, no row holds the value, so the filter excludes nothing and keeps every row, including the rows of the ID that was meant (`vocabulary_id <> 'snomed'` keeps the SNOMED concepts).
+- Not flagged: `ILIKE`, comparisons on `LOWER()` / `UPPER()` of the column, and values that are not a variant of any known ID (local vocabularies).
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE vocabulary_id = 'snomed';
+```
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE domain_id IN ('condition', 'Drug');
+```
+
+**Warning pattern:**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE vocabulary_id = 'ICD-10-CM';
+```
+
+**Correct patterns:**
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE vocabulary_id = 'SNOMED';
+```
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE LOWER(vocabulary_id) = 'snomed';
+```
+
+```sql
+SELECT concept_id
+FROM concept
+WHERE concept_class_id = 'Morph Abnormality';
+```
+
+#### Suggested fix
+
+Replace the literal with the ID as the vocabulary spells it (`'snomed'` -> `'SNOMED'`, `'ICD-10-CM'` -> `'ICD10CM'`, `'condition'` -> `'Condition'`); the finding carries a REPLACE patch. To compare case-insensitively on purpose, use `ILIKE` or `LOWER()`.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Vocabularies](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#vocabularies)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Domains](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptDomains)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept classes](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#concept-classes)
+- [OMOP CDM v5.4 specification: VOCABULARY](https://ohdsi.github.io/CommonDataModel/cdm54.html#vocabulary)
+- [OMOP CDM v5.4 specification: DOMAIN](https://ohdsi.github.io/CommonDataModel/cdm54.html#domain)
+- [OMOP CDM v5.4 specification: CONCEPT_CLASS](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept_class)
+
+---
+
+### 12. Free-Text Column Misuse { #data-quality-free-text-column-misuse }
+
+**Rule ID:** `data_quality.free_text_column_misuse`
+**Severity:** WARNING
+
+#### Intent
+
+The CDM v5.4 specification keeps varchar columns that are neither source values nor keys: text copied from the source (`condition_occurrence.stop_reason`, `drug_exposure.sig`, `note.note_text`), identifiers issued outside OMOP (`drug_exposure.lot_number`, `provider.npi`, `specimen.specimen_source_id`), address parts (`location.state`, `location.zip`, "handled as strings of up to 9 characters") and NLP annotations (`note_nlp.term_modifiers`, every modifier concatenated in one string). None of them has a mapping into the vocabulary; the concept of a row is in its `*_concept_id` column. Matching one against `concept_name` or `concept_code` returns rows only where two strings happen to coincide, and casting one to a number fails on the first value that is not a number. The query runs either way, so the findings are warnings.
+
+#### How it works
+
+The column list is generated from the field-level CSV (varchar, not `*_source_value`, neither primary nor foreign key; `note_nlp.snippet` and `lexical_variant` are left to domain_specific.note_nlp_snippet_misuse). Columns are resolved through lineage, through CTEs, derived tables, casts and `LOWER` / `UPPER` / `TRIM`. The rule warns on:
+
+- an equality, in any clause or through `IN (SELECT ...)`, between such a column and a text column of `concept` or `concept_synonym`;
+- `CAST(<column> AS <numeric type>)` (`TRY_CAST` and `SAFE_CAST` are not flagged; `note_nlp.offset` is a character position and is cast on purpose);
+- `note_nlp.term_modifiers` equated with another column.
+
+Text use is not flagged: string equality, `LIKE`, `IS NULL`, joins to non-vocabulary tables. A comparison with a number or with an integer `concept_id` is a type error, reported by data_quality.column_type_validation.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.stop_reason = c.concept_name;
+```
+
+```sql
+SELECT de.person_id
+FROM drug_exposure de
+WHERE CAST(de.lot_number AS INTEGER) > 1000;
+```
+
+```sql
+SELECT a.note_id
+FROM note_nlp a
+JOIN note_nlp b ON a.note_id = b.note_id AND a.term_modifiers = b.term_modifiers;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_concept_id = c.concept_id;
+```
+
+```sql
+SELECT location_id
+FROM location
+WHERE zip = '10001';
+```
+
+```sql
+SELECT note_id
+FROM note_nlp
+WHERE term_modifiers LIKE '%negation=false%';
+```
+
+#### Suggested fix
+
+Remove the match against the vocabulary and join `concept` on the row's `*_concept_id` column; treat free-text columns as text (`LIKE`, `IS NULL`, string equality); guard any numeric conversion (`TRY_CAST`, or a regex test before the cast).
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: CONDITION_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#condition_occurrence)
+- [OMOP CDM v5.4 specification: LOCATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#location)
+- [OMOP CDM v5.4 specification: NOTE_NLP](https://ohdsi.github.io/CommonDataModel/cdm54.html#note_nlp)
+
+---
+
+### 13. Source Value Field Usage { #data-quality-source-value-field-usage }
+
+**Rule ID:** `data_quality.source_value_field_usage`
+**Severity:** WARNING
+
+#### Intent
+
+The CDM conventions define `*_source_value` columns as verbatim information from the source data, "typically used in ETL to map to CONCEPT_ID, and not to be used by any standard analytics"; there is no standardization of their content. One clinical idea arrives as different strings at different sites (`'250.00'`, `'25000'`, `'E11.9'`), so an analysis grouped by the source value splits a concept into site-specific buckets that cannot be compared across data sources. The paired `*_concept_id` holds the standard concept and is the column to group by.
+
+#### How it works
+
+The rule flags a SELECT that groups its rows by a CDM `*_source_value` column with a standardized counterpart in the same table: `condition_source_value` → `condition_concept_id`, `drug_source_value` → `drug_concept_id`, `value_source_value` → `value_as_concept_id`, and so on. Grouping covers `GROUP BY` (by expression, ordinal or output alias), `SELECT DISTINCT` and window `PARTITION BY`; the column may be wrapped in `CAST`, `UPPER` / `LOWER` / `TRIM` or `COALESCE` and is followed through CTEs and derived tables.
+
+Reviewing mappings is what the Book of OHDSI recommends ("We can review both the source codes that map to the concepts used in the study, as well as those that don't"), so these are not flagged:
+
+- the same SELECT also groups by the paired `*_concept_id` or `*_source_concept_id`;
+- the paired `*_concept_id` of the table instance the source value is read from is restricted: to unmapped rows (`= 0`, `IS NULL`) or to the study's concepts (`= 201826`, `IN (...)`, a concept-set subquery), in the SELECT that reads the table or in the grouping SELECT. A filter on another instance of the same table does not count.
+
+Source values with no standardized counterpart (`person_source_value`, `dose_unit_source_value`, …) and columns of non-CDM tables are never flagged.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+SELECT condition_source_value, COUNT(*) AS n
+FROM condition_occurrence
+GROUP BY condition_source_value;
+```
+
+```sql
+SELECT drug_source_value, COUNT(DISTINCT person_id) AS persons
+FROM drug_exposure
+GROUP BY drug_source_value;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT co.condition_concept_id, c.concept_name, COUNT(*) AS n
+FROM condition_occurrence co
+JOIN concept c ON c.concept_id = co.condition_concept_id
+GROUP BY co.condition_concept_id, c.concept_name;
+```
+
+```sql
+-- mapping audit: source code next to the concepts it maps to
+SELECT condition_source_value, condition_source_concept_id, condition_concept_id, COUNT(*) AS n
+FROM condition_occurrence
+GROUP BY condition_source_value, condition_source_concept_id, condition_concept_id;
+```
+
+```sql
+-- unmapped source codes
+SELECT condition_source_value, COUNT(*) AS n
+FROM condition_occurrence
+WHERE condition_concept_id = 0
+GROUP BY condition_source_value;
+```
+
+#### Suggested fix
+
+Replace `GROUP BY <col>_source_value` with `GROUP BY <col>_concept_id` and join `concept` on that id to recover the standard name. If the query audits unmapped source codes, restrict it to `<col>_concept_id = 0`.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [OMOP CDM: Data Model Conventions, Source values, source concept ids, and standard concept ids](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-values-source-concept-ids-and-standard-concept-ids)
+- [The Book of OHDSI, ch. 4: The Common Data Model, Difference between concepts and source values](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#concepts-Sources)
+- [The Book of OHDSI, ch. 15: Data Quality, Checking mappings](https://ohdsi.github.io/TheBookOfOhdsi/DataQuality.html#checking-mappings)
 
 ---
 
@@ -4206,650 +4108,460 @@ These rules detect common SQL anti-patterns and mistakes when working with OMOP 
 ### 1. Ambiguous Column Reference { #anti-patterns-ambiguous-column-reference }
 
 **Rule ID:** `anti_patterns.ambiguous_column_reference`
-**Severity:** WARNING
-
-#### Intent
-
-Unqualified column references in multi-table queries create ambiguity:
-
-    SELECT person_id, condition_concept_id
-    FROM condition_occurrence co
-    JOIN person p ON co.person_id = p.person_id
-    WHERE person_id = 12345
-    -- WRONG: Which person_id? co.person_id or p.person_id?
-
-    Common ambiguous columns in OMOP:
-    - person_id: In nearly every clinical table + person table
-    - provider_id: In clinical event tables + provider table
-    - care_site_id: In clinical events, visit_occurrence, care_site, person
-    - visit_occurrence_id: In clinical events + visit_occurrence
-    - visit_detail_id: In clinical events + visit_detail
-
-    This causes:
-    1. SQL errors: Database rejects query due to ambiguous column
-    2. Unpredictable behavior: Database picks wrong table's column
-    3. Silent bugs: Query executes but returns wrong data
-
-#### How it works
-
-This rule analyzes the SQL query to identify ambiguous column reference patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT person_id, condition_concept_id
-    FROM condition_occurrence co
-    JOIN person p ON co.person_id = p.person_id
-    WHERE person_id = 12345
-```
-
-```sql
-SELECT provider_id, COUNT(*)
-    FROM drug_exposure de
-    JOIN provider pr ON de.provider_id = pr.provider_id
-    GROUP BY provider_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT co.person_id, co.condition_concept_id
-    FROM condition_occurrence co
-    JOIN person p ON co.person_id = p.person_id
-    WHERE co.person_id = 12345
-```
-
-```sql
-with table alias
-```
-
-#### Common scenarios
-
-- Forgetting to add table prefix in WHERE clause
-- Copying column names to SELECT without qualification
-- Using unqualified columns in GROUP BY / ORDER BY
-
-#### Suggested fix
-
-Qualify the column with a table name or alias (e.g., co.person_id). Always use explicit qualifiers in multi-table queries.
-
----
-
-### 2. Attribute Definition Invalid Join { #anti-patterns-attribute-definition-invalid-join }
-
-**Rule ID:** `anti_patterns.attribute_definition_invalid_join`
 **Severity:** ERROR
 
 #### Intent
 
-attribute_definition is a metadata table with:
-    - Single column: attribute_definition_id (primary key)
-    - No foreign keys: edges = {} in CDM schema
-    - No semantic relationships to clinical or vocabulary data
-    - Legacy/optional status: May not be used in modern CDM implementations
-
-    Any JOIN involving attribute_definition is semantically incorrect because there
-    are no valid foreign key relationships. The table cannot be meaningfully joined
-    to person, condition_occurrence, concept, or any other OMOP table.
+PostgreSQL: "The correlation name and separating dot can be omitted if the column name is unique across all the tables being used in the current query." Many CDM tables share column names (`person_id`, `visit_occurrence_id`, `provider_id`), so when two or more CDM tables of a SELECT define the same column, an unqualified reference to it cannot be resolved and the database rejects the query. Knowing which CDM tables share a name needs the CDM specification; a clash between CTEs or derived tables the query defines itself does not, and is left to the database. Engines differ in how they resolve some names (USING-merged columns, select-list aliases), so the rule reports only names that are ambiguous under every engine's scoping, and its verdict is the same on every dialect.
 
 #### How it works
 
-This rule analyzes the SQL query to identify attribute definition invalid join patterns.
+The check is scope-aware. Only the CDM tables of the SELECT that owns the reference are counted as providers, resolved through the CDM v5.4 column catalogue; parenthesised join trees contribute each of their tables. CTEs, derived tables, LATERAL subqueries and table functions are never counted, but the columns they project (including `*` expansion and `AS t(col, ...)` lists) are still read to know which names they expose. A source whose columns cannot be determined is never counted, so every finding is a certain ambiguity.
+
+- `JOIN ... USING (col)` and `NATURAL JOIN` merge the joined columns. A name merged by any visible USING / NATURAL join is not reported, even when a further source exposes it too: DuckDB binds it to the merged column.
+- An ON clause sees only the sources joined so far. This also holds for a correlated subquery inside the ON clause, and for a LATERAL source: the JOIN of the SELECT being judged sets what is visible, not a JOIN inside the subquery.
+- A name that matches an output column (outside the ON clauses) is not reported: ORDER BY / DISTINCT ON resolve it to that column, and engines such as BigQuery, DuckDB and Snowflake accept select-list aliases in GROUP BY, HAVING and WHERE. Within the select list, only an alias defined earlier in the list counts.
+- An unqualified column of a subquery that no source of the subquery can supply is resolved in the enclosing SELECT, as the database does.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM attribute_definition ad
-    JOIN person p ON ad.attribute_definition_id = p.person_id
+SELECT person_id
+FROM condition_occurrence co
+JOIN person p ON co.person_id = p.person_id;
 ```
 
 ```sql
-with clinical tables
-    SELECT * FROM attribute_definition ad, condition_occurrence co
+SELECT person_id
+FROM person p
+CROSS JOIN LATERAL (SELECT person_id FROM death d WHERE d.person_id = p.person_id) x;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM attribute_definition
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN person p ON co.person_id = p.person_id;
 ```
 
 ```sql
-with filter
-    SELECT * FROM attribute_definition
-    WHERE attribute_definition_id = 123
-```
-
-#### Common scenarios
-
-- Assuming attribute_definition_id links to other tables
-- Trying to cross-reference with clinical event IDs
-- Attempting to join to vocabulary tables
-
-#### Suggested fix
-
-Query attribute_definition standalone, or remove it from the query. This table has no valid join paths to clinical or vocabulary tables.
-
----
-
-### 4. Comma-Separated Cross Join { #anti-patterns-comma-separated-cross-join }
-
-**Rule ID:** `anti_patterns.comma_separated_cross_join`
-**Severity:** ERROR
-
-#### Intent
-
-Comma-separated FROM clauses without proper join conditions create
-    Cartesian products (cross joins):
-
-    SELECT * FROM condition_occurrence, drug_exposure
-    WHERE condition_concept_id = 201826
-    -- WRONG: No join condition! Creates 10M × 50M = 500 BILLION rows!
-
-    Each clinical table in OMOP has millions of rows:
-    - condition_occurrence: ~10M rows
-    - drug_exposure: ~50M rows
-    - measurement: ~100M rows
-    - observation: ~50M rows
-
-    Without a join condition (co.person_id = de.person_id), the query
-    creates every possible combination of rows from both tables.
-
-    This causes:
-    - Out of memory errors
-    - Database crashes
-    - Production system locks
-    - Hours of wasted compute time
-
-#### How it works
-
-This rule analyzes the SQL query to identify comma-separated cross join patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT *
-    FROM condition_occurrence, drug_exposure
-    WHERE condition_concept_id = 201826
-```
-
-```sql
-SELECT co.person_id, de.drug_concept_id
-    FROM condition_occurrence co, drug_exposure de, measurement m
-    WHERE co.condition_concept_id = 201826
-      AND de.drug_concept_id = 1545999
-```
-
-**Correct patterns:**
-
-```sql
-SELECT *
-    FROM condition_occurrence co
-    JOIN drug_exposure de ON co.person_id = de.person_id
-    WHERE co.condition_concept_id = 201826
-```
-
-```sql
-SELECT *
-    FROM condition_occurrence co, drug_exposure de
-    WHERE co.person_id = de.person_id
-      AND co.condition_concept_id = 201826
-```
-
-#### Common scenarios
-
-- Forgot to add WHERE join condition
-- Should have used JOIN...ON instead of comma syntax
-- Accidentally omitted join predicate in WHERE clause
-
-#### Suggested fix
-
-Use explicit JOIN...ON syntax, or add a WHERE clause with column-to-column equality to join the tables (e.g., WHERE co.person_id = de.person_id).
-
----
-
-### 5. Concept Ancestor Mixed with Concept Relationship Redundantly { #anti-patterns-concept-ancestor-mixed-with-concept-relationship-redundantly }
-
-**Rule ID:** `anti_patterns.concept_ancestor_mixed_with_concept_relationship_redundantly`
-**Severity:** WARNING
-
-#### Intent
-
-The concept_ancestor table is a pre-computed transitive closure table
-    that contains ALL hierarchical relationships across all levels:
-    - Direct parent-child relationships (1 hop)
-    - Grandparent-grandchild relationships (2 hops)
-    - All deeper ancestor-descendant relationships (N hops)
-
-    This table is automatically built by traversing the concept_relationship
-    table and following all hierarchical relationships where:
-    - relationship_id = 'Is a', 'Subsumes', or other relationships
-    - relationship.defines_ancestry = 1
-
-    When a query already uses concept_ancestor for hierarchy traversal,
-    also joining concept_relationship with hierarchical relationship_id
-    filters is redundant because:
-    1. concept_ancestor already contains this information
-    2. Mixing both tables may cause duplicate rows
-    3. It may produce incorrect counts or aggregations
-    4. It adds unnecessary complexity and performance overhead
-
-#### How it works
-
-This rule analyzes the SQL query to identify concept ancestor mixed with concept relationship redundantly patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT DISTINCT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    JOIN concept_relationship cr
-      ON ca.descendant_concept_id = cr.concept_id_1
-    WHERE ca.ancestor_concept_id = 201820
-      AND cr.relationship_id = 'Is a'
-```
-
-```sql
-SELECT c.concept_name
-    FROM concept c
-    JOIN concept_ancestor ca ON c.concept_id = ca.descendant_concept_id
-    JOIN concept_relationship cr ON c.concept_id = cr.concept_id_1
-    WHERE ca.ancestor_concept_id = 4329847
-      AND cr.relationship_id = 'Subsumes'
-```
-
-**Correct patterns:**
-
-```sql
-SELECT DISTINCT descendant_concept_id
-    FROM concept_ancestor
-    WHERE ancestor_concept_id = 201820
-```
-
-```sql
-SELECT cr.concept_id_2
-    FROM concept_ancestor ca
-    JOIN concept c ON ca.descendant_concept_id = c.concept_id
-    JOIN concept_relationship cr ON c.concept_id = cr.concept_id_1
-    WHERE ca.ancestor_concept_id = 201820
-      AND cr.relationship_id = 'RxNorm has dose form'
+SELECT person_id
+FROM condition_occurrence co
+JOIN person p USING (person_id);
 ```
 
 #### Suggested fix
 
-Use concept_ancestor alone for hierarchical traversal. Only use concept_relationship for non-hierarchical relationships.
+Qualify the column with the alias of the source you mean (e.g. `co.person_id`), or join with `USING (col)` so the joined columns merge into one.
+
+#### Sources
+
+- [PostgreSQL documentation: Value Expressions, column references](https://www.postgresql.org/docs/current/sql-expressions.html#SQL-EXPRESSIONS-COLUMN-REFS)
+- [PostgreSQL documentation: Table Expressions, joined tables](https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN)
 
 ---
 
-### 7. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
+### 2. Concept Code Requires Vocabulary ID { #anti-patterns-concept-code-requires-vocabulary-id }
 
 **Rule ID:** `anti_patterns.concept_code_requires_vocabulary_id`
-**Severity:** ERROR
+**Severity:** WARNING (ERROR in strict mode)
 
 #### Intent
 
-OMOP vocabulary rule: concept_code is unique only within a vocabulary. Any filter on concept_code must also include a vocabulary_id filter in the same scope, otherwise the query may silently match unintended concepts from other vocabularies.
+The CDM v5.4 specification: "Note that concept codes are not unique across vocabularies." The Book of OHDSI adds that the same code can exist in different vocabularies with completely different meanings. A predicate on `concept.concept_code` without a `vocabulary_id` constraint on the same concept row matches every vocabulary that uses the code: 'E11.9' is a code of ICD10, ICD10CM and OPCS4.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept code requires vocabulary id patterns.
+The rule finds predicates on `concept_code`: `=` against a literal or another column (a code join), `IN`, `BETWEEN`, `LIKE` / `ILIKE` / regex / `SIMILAR TO`, and `JOIN concept USING (concept_code)`. They may sit in WHERE, any ON clause or HAVING. The column may be wrapped in a cast, `LOWER` / `UPPER` / `TRIM` or `LEFT` / `SUBSTRING`, and is followed through CTEs, derived tables and renames to the concept table it reads.
+
+The predicate is reported unless the same concept row is constrained by an AND-connected predicate in any SELECT along that lineage. These count as constraints:
+
+- `vocabulary_id =` (a literal or a column), `IN`, or a pattern, through casts, case folding and COALESCE;
+- an equality on the same row's `concept_id`, which pins the row.
+
+A predicate under OR or NOT constrains nothing.
+
+The suggested vocabulary comes from the shape of the code. It is given only when exactly one vocabulary of the embedded release (Athena v5.0 27-AUG-25) uses that shape, which is ICD9CM-style `250.00` today. Otherwise the fix lists the vocabularies that share the shape.
 
 #### Examples
 
+**Violation patterns:**
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE c.concept_code = 'E11.9';
+```
+
+```sql
+SELECT co.condition_occurrence_id, c.concept_id AS source_concept_id
+FROM condition_occurrence co
+JOIN concept c ON co.condition_source_value = c.concept_code;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE c.concept_code = 'E11.9'
+  AND c.vocabulary_id = 'ICD10CM';
+```
+
+```sql
+WITH icd AS (SELECT * FROM concept WHERE vocabulary_id = 'ICD10CM')
+SELECT icd.concept_id FROM icd WHERE icd.concept_code = 'E11.9';
+```
+
 #### Suggested fix
 
-Add a vocabulary_id filter alongside concept_code
+Add `AND <alias>.vocabulary_id = '<vocab>'` (or a join on vocabulary_id) alongside the concept_code predicate. The structured patch inserts it after the predicate, with the vocabulary filled in only when the code shape identifies it.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CONCEPT](https://ohdsi.github.io/CommonDataModel/cdm54.html#concept)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept codes](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#concept-codes)
 
 ---
 
-### 9. Concept Name Lookup Anti-pattern { #anti-patterns-concept-name-lookup }
+### 3. Concept Name Lookup Anti-pattern { #anti-patterns-concept-name-lookup }
 
 **Rule ID:** `anti_patterns.concept_name_lookup`
 **Severity:** WARNING
 
 #### Intent
 
-OMOP vocabulary rule: Filtering by concept_name is an anti-pattern because: 1. Concept names are not guaranteed to be unique (multiple concepts can share a name) 2. Concept names can change across vocabulary versions, breaking queries silently 3. Concept names may have variations (spelling, abbreviations, etc.)
+`concept_name` is display text, not a key. The CDM identifies a concept by `concept_id`, which "stays the same for the same Concept between releases", or by `concept_code` within a `vocabulary_id`. Nothing makes a name unique: 'Type 2 diabetes mellitus' names five concepts in the Athena release. Vocabulary releases also reword names: the v20260227 release renamed ATC classes such as 'mycophenolic acid; systemic'. A name filter can therefore return a different concept set across sites and releases, and a pattern pulls in every concept whose name contains the text. Exact comparison is case-sensitive in PostgreSQL: gender concept 8507 is named 'MALE', not 'Male'. The same applies to `concept_synonym.concept_synonym_name`.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept name lookup anti-pattern patterns.
+The rule reports `concept.concept_name` or `concept_synonym.concept_synonym_name` compared with string literals in these forms:
+
+- `=`, `<>`, `IN` / `NOT IN`;
+- `LIKE`, `ILIKE`, `SIMILAR TO` and regex matches, including `LIKE ANY (ARRAY[...])` and patterns built by concatenating literals;
+- the substring functions `POSITION` / `STRPOS` / `CHARINDEX`, `STARTS_WITH` and `CONTAINS`.
+
+The column is found through case folding, trimming and casts, and resolved through lineage when it is unqualified or renamed in a CTE. Blank literals and match-everything patterns name no concept and are ignored.
 
 #### Examples
 
+**Violation patterns:**
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE c.concept_name = 'Type 2 diabetes mellitus';
+```
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE POSITION('diabetes' IN LOWER(c.concept_name)) > 0;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE c.concept_code = 'E11'
+  AND c.vocabulary_id = 'ICD10CM';
+```
+
+```sql
+SELECT c.concept_name, COUNT(*)
+FROM condition_occurrence co
+JOIN concept c ON c.concept_id = co.condition_concept_id
+GROUP BY c.concept_name;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: Pattern match on concept_name: pulls in every concept whose name contains the text**
+
+```sql
+SELECT c.concept_id
+FROM concept c
+WHERE LOWER(c.concept_name) LIKE '%diabetes%';
+```
+
+<!-- extra-examples:end -->
+
 #### Suggested fix
 
-Use concept_code + vocabulary_id instead: WHERE c.concept_code = '...' AND c.vocabulary_id = '...', or use concept_id directly if known
+Replace `WHERE c.concept_name = '<name>'` with `WHERE c.concept_code = '<code>' AND c.vocabulary_id = '<vocab>'`, or with `WHERE c.concept_id = <id>` if the concept_id is known.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Concepts](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concepts)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Concept names](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#concept-names)
+- [The Book of OHDSI, ch. 9: SQL and R, Case sensitivity in string comparisons](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#case-sensitivity-in-string-comparisons)
+- [OHDSI Vocabulary release notes, v20260227: concept name changes (ATC, CPT4)](https://github.com/OHDSI/Vocabulary-v5.0/releases/tag/v20260227_1772176757.000000)
 
 ---
 
-
-### 11. Concept Relationship Transitive Misuse { #anti-patterns-concept-relationship-transitive-misuse }
+### 4. Concept Relationship Transitive Misuse { #anti-patterns-concept-relationship-transitive-misuse }
 
 **Rule ID:** `anti_patterns.concept_relationship_transitive_misuse`
 **Severity:** WARNING
 
 #### Intent
 
-concept_relationship contains direct relationships only:
-    - Concept A "Subsumes" Concept B (one hop)
-    - Concept B "Subsumes" Concept C (one hop)
-
-    To find all descendants of A (both B and C), users sometimes chain joins:
-    cr1 → cr2 → cr3 (each hop requires another join)
-
-    Issues with manual chaining:
-    1. Incomplete: Only gets descendants at specific depth (e.g., exactly 3 hops)
-    2. Fragile: Misses concepts with multiple inheritance paths
-    3. Performance: Multiple self-joins are slow
-    4. Complexity: Hard to maintain and understand
-
-    The concept_ancestor table pre-computes ALL transitive hierarchical paths
-    and is optimized for hierarchy traversal queries.
+CDM conventions: "Concept Relationships define direct relationships between Concepts. Indirect relationships through 3rd Concepts are not captured in this table. However, the CONCEPT_ANCESTOR table does this for hierarchical relationships." A chain of 'Is a' / 'Subsumes' lookups returns only the concepts reached in exactly that many steps. It skips the levels in between and everything deeper, and concepts with several parents can be reached at different depths. concept_ancestor covers standard and classification concepts. A non-standard vocabulary's hierarchy (ICD10CM, Read, ...) needs a recursive CTE.
 
 #### How it works
 
-This rule analyzes the SQL query to identify concept relationship transitive misuse patterns.
+Each concept_relationship instance restricted to a single hierarchical relationship is a hop with a direction:
+
+- 'Subsumes' read from `concept_id_1` to `concept_id_2`, and 'Is a' read from `concept_id_2` to `concept_id_1`, go down the hierarchy;
+- the reverse readings go up.
+
+Two hops form a chain when the row one leads to is the row the next starts from. They may be joined directly, through CTEs or IN-subqueries, or through a concept row, since `concept.concept_id` carries the id unchanged. A chain of two or more hops walking one direction is reported once, in the direction anchored to an outside value. These are not reported: chains that change direction (siblings), hops through 'Maps to', and hops inside a recursive CTE, which repeats until the closure is complete.
 
 #### Examples
 
-**Violation patterns:**
+**Violation pattern:**
 
 ```sql
-SELECT cr3.concept_id_2
-    FROM concept_relationship cr1
-    JOIN concept_relationship cr2
-      ON cr1.concept_id_2 = cr2.concept_id_1
-    JOIN concept_relationship cr3
-      ON cr2.concept_id_2 = cr3.concept_id_1
-    WHERE cr1.concept_id_1 = 201820
-      AND cr1.relationship_id = 'Subsumes'
-      AND cr2.relationship_id = 'Subsumes'
-      AND cr3.relationship_id = 'Subsumes'
+SELECT cr2.concept_id_2
+FROM concept_relationship cr1
+JOIN concept_relationship cr2 ON cr1.concept_id_2 = cr2.concept_id_1
+WHERE cr1.concept_id_1 = 201820
+  AND cr1.relationship_id = 'Subsumes'
+  AND cr2.relationship_id = 'Subsumes';
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    WHERE ca.ancestor_concept_id = 201820
-      AND ca.min_levels_of_separation >= 1
+SELECT descendant_concept_id
+FROM concept_ancestor
+WHERE ancestor_concept_id = 201820
+  AND min_levels_of_separation BETWEEN 1 AND 2;
 ```
 
 ```sql
-within depth 3
-    SELECT ca.descendant_concept_id
-    FROM concept_ancestor ca
-    WHERE ca.ancestor_concept_id = 201820
-      AND ca.min_levels_of_separation BETWEEN 1 AND 3
+-- siblings: up one level, then down one level
+SELECT cr2.concept_id_2
+FROM concept_relationship cr1
+JOIN concept_relationship cr2 ON cr1.concept_id_2 = cr2.concept_id_1
+WHERE cr1.concept_id_1 = 201826
+  AND cr1.relationship_id = 'Is a'
+  AND cr2.relationship_id = 'Subsumes';
 ```
 
 #### Suggested fix
 
-Use concept_ancestor table instead for transitive hierarchy traversal.
+Use concept_ancestor (`descendant_concept_id` walking down, `ancestor_concept_id` walking up), filtering `min_levels_of_separation` when a depth limit is intended. For a non-standard vocabulary, which concept_ancestor does not cover, use a recursive CTE.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Concept relationships](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-relationships)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Hierarchy](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptAncestor)
+- [OMOP CDM: Data Model Conventions, Concept ancestor](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#concept-ancestor)
 
 ---
 
-### 12. Destructive Operations on Clinical Tables { #anti-patterns-destructive-operations-on-clinical-tables }
+### 5. Destructive Operations on Clinical Tables { #anti-patterns-destructive-operations-on-clinical-tables }
 
 **Rule ID:** `anti_patterns.destructive_operations_on_clinical_tables`
-**Severity:** ERROR
+**Severity:** ERROR (target is the CDM table); WARNING (target in another schema)
 
 #### Intent
 
-Analysts may accidentally run destructive operations on production data:
+The Book of OHDSI: "The clinical Event and vocabulary tables are in the 'CDM' schema and are considered read-only to the end user or analytic tool." Only the Results tables COHORT and COHORT_DEFINITION are meant to be written. An analytical query that deletes, updates, inserts into or restructures a CDM table changes the data for everyone using it.
 
-    DELETE FROM measurement WHERE measurement_date < '2010-01-01'
-    -- Just deleted thousands of historical measurements!
-
-    UPDATE condition_occurrence SET condition_end_date = condition_start_date
-    -- Modified production patient data without governance!
-
-    TRUNCATE TABLE drug_exposure
-    -- Deleted ALL drug exposure records!
-
-    DROP TABLE visit_occurrence
-    -- DISASTER! Lost all visit data!
-
-Protected Tables (patient-level data):
-    - condition_occurrence
-    - drug_exposure
-    - procedure_occurrence
-    - measurement
-    - observation
-    - visit_occurrence
-    - visit_detail
-    - death
-    - person
+**Why an ERROR.** This is the rule set's one declared exception to reporting an ERROR only for a query that fails or certainly returns wrong rows. The write may succeed, and the statement is not wrong in itself. The reason for the ERROR is scope: FastSSV validates analytics SQL, and the Book of OHDSI treats the CDM schema as read-only to the end user, so a write to it is outside what an analytic query may do.
 
 #### How it works
 
-This rule analyzes the SQL query to identify destructive operations on clinical tables patterns.
+The rule looks at DELETE, UPDATE, INSERT, MERGE, TRUNCATE, DROP, ALTER, CREATE OR REPLACE TABLE and SELECT ... INTO, including data-modifying CTEs, and at DROP SCHEMA of a CDM schema. It reports them when the target is a CDM v5.4 table other than COHORT and COHORT_DEFINITION. Vocabulary tables are covered by `data_quality.vocabulary_table_protection`.
+
+- An unqualified target, one in the engine's default schema (`public`, `dbo`), or one in a schema whose name contains `cdm` or `omop` and does not name a results, scratch or temp schema, is taken as the CDM table: ERROR.
+- A target in any other schema (`scratch.person`, `results.death`, `cdm_results.drug_era`, `omop_scratch.condition_era`), or in a templated schema (`@results_schema.metadata`), may be a copy that only shares the name: WARNING.
+- A T-SQL `#temp` table is not reported, because it is session-local.
+- A table the statement itself creates as TEMP (`CREATE OR REPLACE TEMP TABLE death AS …`, `SELECT … INTO TEMP TABLE death …`) is not reported.
+- A name that an earlier statement of the same input (or of the same API batch) created unqualified or as TEMP, including by `SELECT … INTO TEMP`, is not reported either. A temporary table hides a permanent table of the same name.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-DELETE FROM measurement WHERE person_id = 12345
-    UPDATE condition_occurrence SET condition_concept_id = 201826
-    INSERT INTO drug_exposure VALUES (...)
-    TRUNCATE TABLE visit_occurrence
-    DROP TABLE procedure_occurrence
-    ALTER TABLE observation ADD COLUMN custom_field VARCHAR(100)
-```
-
-#### Suggested fix
-
-Use SELECT for analysis. Perform data modifications only via controlled ETL pipelines or governed workflows.
-
----
-
-### 14. Having Without Group By { #anti-patterns-having-without-group-by }
-
-**Rule ID:** `anti_patterns.having_without_group_by`
-**Severity:** ERROR
-
-#### Intent
-
-In SQL, HAVING without GROUP BY treats the entire result set as a single group.
-    While syntactically valid in some databases (MySQL, PostgreSQL), this pattern
-    is almost always a mistake in OMOP queries because:
-
-    - HAVING is meant to filter aggregated groups created by GROUP BY
-    - Without GROUP BY, you should use WHERE instead for filtering
-    - This indicates the developer forgot to add GROUP BY
-    - Results in unexpected behavior where aggregate functions apply to entire table
-
-Why this is wrong:
-    The intent is usually to group by some column and filter those groups,
-    but the developer forgot the GROUP BY clause. This produces incorrect results
-    where the HAVING condition applies to the entire dataset as one group.
-
-#### How it works
-
-This rule analyzes the SQL query to identify having without group by patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM condition_occurrence
-    HAVING COUNT(*) > 5
+DELETE FROM condition_occurrence
+WHERE person_id = 1;
 ```
 
 ```sql
-without GROUP BY - filters entire table as one group
+MERGE INTO person p
+USING staging s ON p.person_id = s.person_id
+WHEN MATCHED THEN UPDATE SET year_of_birth = s.yob;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT condition_concept_id, COUNT(*)
-    FROM condition_occurrence
-    GROUP BY condition_concept_id
-    HAVING COUNT(*) > 5
+SELECT *
+FROM condition_occurrence
+WHERE person_id = 1;
 ```
 
 ```sql
-with GROUP BY to filter aggregated groups
+INSERT INTO results.cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date)
+SELECT 1, person_id, observation_period_start_date, observation_period_end_date
+FROM observation_period;
+```
+
+```sql
+CREATE TEMP TABLE death AS SELECT DISTINCT person_id FROM cdm.death;
+DROP TABLE death;
+```
+
+```sql
+SELECT * INTO TEMP TABLE death FROM cdm.death;
+DELETE FROM death WHERE death_date IS NULL;
 ```
 
 #### Suggested fix
 
-Add GROUP BY clause to aggregate data, or use WHERE clause for non-aggregated filtering.
+Remove the statement that writes to the CDM table. Write results to the Results schema (COHORT, COHORT_DEFINITION) or to a scratch or temporary table; data modifications belong in the ETL.
+
+#### Sources
+
+- [The Book of OHDSI, ch. 4: The Common Data Model, General conventions of schemas](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-conventions-of-schemas)
 
 ---
 
-### 15. Join Key Validation { #anti-patterns-join-key-validation }
+### 6. Join Key Validation { #anti-patterns-join-key-validation }
 
 **Rule ID:** `anti_patterns.join_key_validation`
 **Severity:** ERROR
 
 #### Intent
 
-Joining tables on incompatible keys creates meaningless results:
-
-    SELECT * FROM person p
-    JOIN concept c ON p.person_id = c.concept_id
-    -- WRONG: person_id and concept_id are different entity types!
+The CDM conventions separate two id namespaces. `_ID` columns are "unique identifiers for key entities" (person_id, visit_occurrence_id, provider_id, ...), and `_CONCEPT_ID` columns are foreign keys into the Standardized Vocabularies. An equality between an entity key and a concept id compares numbers from unrelated sequences. Both are integers, so the comparison runs, but every match is a numeric coincidence.
 
 #### How it works
 
-Validates that JOIN conditions use correct foreign key relationships in OMOP queries
+The rule reports `=` and `IN (SELECT ...)` comparisons with an entity key on one side and a concept id on the other. Entity keys are the primary keys of the CDM's non-vocabulary tables and the foreign keys that refer to them. Concept ids are `concept.concept_id` and every column that is a foreign key to CONCEPT. Both lists come from the CDM v5.4 field-level specification. Both sides are traced through casts, CTEs, derived tables and renaming aliases to the base column they read. Columns of tables outside the CDM, and role-named keys such as `cohort.subject_id`, are not judged.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM person p
-    JOIN concept c ON p.person_id = c.concept_id
+SELECT *
+FROM person p
+JOIN concept c ON p.person_id = c.concept_id;
 ```
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN provider pr ON co.person_id = pr.provider_id
+WITH x AS (SELECT visit_occurrence_id AS vid FROM visit_occurrence)
+SELECT * FROM x JOIN concept c ON x.vid = c.concept_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM person p
-    JOIN condition_occurrence co ON p.person_id = co.person_id
+SELECT p.person_id, c.concept_name AS gender
+FROM person p
+JOIN concept c ON p.gender_concept_id = c.concept_id;
 ```
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN concept c ON co.condition_concept_id = c.concept_id
+SELECT * FROM cohort ch JOIN person p ON ch.subject_id = p.person_id;
 ```
-
-#### Common scenarios
-
-- Joining person_id to concept_id (person IDs vs concept IDs)
-- Joining visit_occurrence_id to concept_id (visit IDs vs concept IDs)
-- Joining provider_id to concept_id (provider IDs vs concept IDs)
 
 #### Suggested fix
 
-Ensure JOIN conditions use correct foreign key relationships. For OMOP: person_id ↔ person_id, *_concept_id ↔ concept.concept_id.
+Join on a pair the CDM defines: `person_id = person_id` across clinical tables, `<event>.<x>_concept_id = concept.concept_id`, `<clinical>.visit_occurrence_id = visit_occurrence.visit_occurrence_id`.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Fields](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#fields)
+- [The Book of OHDSI, ch. 4: The Common Data Model, General naming conventions of fields](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-naming-conventions-of-fields)
 
 ---
 
-### 16. Singleton Metadata Joined to Clinical Table { #anti-patterns-singleton-metadata-clinical-join }
+### 7. Instance Metadata Paired With Clinical Rows { #anti-patterns-singleton-metadata-clinical-join }
 
 **Rule ID:** `anti_patterns.singleton_metadata_clinical_join`
-**Severity:** ERROR
+**Severity:** WARNING
 
 #### Intent
 
-The metadata table is a metadata table with no primary key and no foreign key
-    relationships to clinical data. It stores CDM instance metadata such as:
-    - ETL provenance information
-    - Data characterization results
-    - CDM instance-level metrics
+CDM_SOURCE and METADATA describe the CDM instance (source, release dates, CDM and vocabulary versions, dataset metadata), not patients. In CDM v5.4 their only foreign keys point to CONCEPT, and no table refers to them, so nothing relates their rows to clinical rows.
 
-    It has no relationship to patient-level clinical data.
-
-    Joining metadata to clinical tables (person, condition_occurrence, etc.)
-    is semantically incorrect and indicates confusion about the table's purpose.
-
-Why this is wrong:
-    - metadata has no person_id or any FK to clinical tables
-    - metadata_id does NOT link to clinical event IDs
-    - The table stores instance-level metadata, not patient data
-    - Joining creates meaningless results
+When a SELECT reads one of them next to a patient-level table and no predicate ties the two, every clinical row is repeated once per metadata row. That is harmless with a single CDM_SOURCE row, and multiplies counts with more. The specification does not limit either table to one row, so the finding is a WARNING.
 
 #### How it works
 
-This rule analyzes the SQL query to identify metadata clinical join patterns.
+It reports a CDM_SOURCE or METADATA source, read directly or through a CTE or derived table, that shares a SELECT with a patient-level source in either of two cases:
+
+- no predicate ties the two, and the metadata source is not provably one row;
+- an equality ties an identifier column of the metadata source to an identifier column of the clinical source (`m.metadata_id = p.person_id`). No key relates them, so equal values are a coincidence.
+
+Predicates that compare other values are legitimate and not reported, for example events after `cdm_source.cdm_release_date`. Scalar subqueries and one-row derived tables (an aggregate or LIMIT 1) are not reported either.
+
+An identifier equality that a joins key-pair rule reports as an ERROR (`m.metadata_id = p.person_id` is reported by `joins.person_id_join_validation`) is reported once, by that rule; the finding stays for keys no joins rule judges and for the no-predicate case.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM metadata m
-    JOIN person p ON m.metadata_id = p.person_id
-```
-
-```sql
-SELECT * FROM metadata m
-    JOIN condition_occurrence co ON m.metadata_concept_id = co.condition_concept_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT name, value_as_string
-    FROM metadata
-    WHERE metadata_concept_id = 0
+SELECT *
+FROM person p, cdm_source cs;
 ```
 
 ```sql
 SELECT *
-    FROM metadata
-    WHERE name = 'CDM Version'
+FROM metadata m
+JOIN person p ON m.metadata_id = p.person_id;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT *,
+       (SELECT cdm_version FROM cdm_source) AS cdm_version
+FROM person;
+```
+
+```sql
+-- data-quality check: events dated after the CDM release
+SELECT co.condition_occurrence_id
+FROM condition_occurrence co, cdm_source cs
+WHERE co.condition_start_date > cs.cdm_release_date;
 ```
 
 #### Suggested fix
 
-Query the metadata table standalone to retrieve CDM instance information. Do not join it to clinical tables like person, condition_occurrence, or drug_exposure.
+Replace the join with a scalar subquery in the SELECT list, e.g. `(SELECT cdm_version FROM cdm_source) AS cdm_version`. Unlike the join, the subquery raises an error instead of repeating rows if the table holds more than one row.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: CDM_SOURCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#cdm_source)
+- [OMOP CDM v5.4 specification: METADATA](https://ohdsi.github.io/CommonDataModel/cdm54.html#metadata)
 
 ---
 
-### 17. No DISTINCT on Primary Key Column { #anti-patterns-no-distinct-on-primary-key-column }
+### 8. No DISTINCT on Primary Key Column { #anti-patterns-no-distinct-on-primary-key-column }
 
 **Rule ID:** `anti_patterns.no_distinct_on_primary_key_column`
 **Severity:** WARNING
 
 #### Intent
 
-Primary key columns in OMOP CDM tables are unique by definition:
-    - condition_occurrence_id, drug_exposure_id, procedure_occurrence_id, etc.
-
-    Using DISTINCT on these columns is either:
-    1. Redundant: If querying a single table without joins
-    2. Hiding a join problem: If joins introduce duplicates (Cartesian product)
-
-    The presence of DISTINCT on a primary key suggests:
-    - Misunderstanding of data uniqueness
-    - Missing or incorrect join conditions
-    - Unnecessary performance overhead
+A primary key is unique within its table. A SELECT over a single CDM table, with no joins, that projects the table's primary key returns unique rows, so DISTINCT removes nothing and only adds a sort or hash step. A redundant DISTINCT never changes the result, so the rule reports only `SELECT DISTINCT` over the key and stays silent on `COUNT(DISTINCT pk)` and `GROUP BY pk`.
 
 #### How it works
 
-This rule analyzes the SQL query to identify no distinct on primary key column patterns.
+The primary keys are those of the CDM v5.4 field-level specification (29 tables, including `concept`, `observation_period`, the era tables and `death.person_id`). The rule reports a `SELECT DISTINCT` whose columns include the primary key of the SELECT's single source. The key may be projected as is, under a cast, or through `*` / `t.*`. The table may be read directly or through CTEs and derived tables that themselves read one source without joins, grouping or set operations.
+
+Nothing is reported when the query joins another source (a join can repeat the key), or for T-SQL `#temp` tables.
 
 #### Examples
 
@@ -4857,183 +4569,244 @@ This rule analyzes the SQL query to identify no distinct on primary key column p
 
 ```sql
 SELECT DISTINCT condition_occurrence_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
+FROM condition_occurrence
+WHERE condition_concept_id = 201826;
 ```
 
 ```sql
-SELECT DISTINCT de.drug_exposure_id
-    FROM drug_exposure de, person p;  -- Missing join condition
+SELECT DISTINCT I.concept_id
+FROM (SELECT concept_id FROM concept WHERE concept_id IN (192671)) AS I;
 ```
 
 **Correct patterns:**
 
 ```sql
 SELECT condition_occurrence_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
+FROM condition_occurrence
+WHERE condition_concept_id = 201826;
 ```
 
 ```sql
-SELECT DISTINCT person_id
-    FROM condition_occurrence
-    WHERE condition_concept_id = 201826;
+-- DISTINCT needed: one person can have many condition records
+SELECT DISTINCT p.person_id
+FROM person p
+JOIN condition_occurrence co ON p.person_id = co.person_id;
 ```
 
 #### Suggested fix
 
-Remove DISTINCT when selecting only primary key columns. If joins are present, review join conditions for unintended duplicates.
+Remove DISTINCT (the structured patch does this when the statement has one DISTINCT keyword).
+
+#### Sources
+
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [PostgreSQL documentation: SELECT, DISTINCT clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-DISTINCT)
 
 ---
 
-### 18. No String Identification { #anti-patterns-no-string-identification }
+### 9. No String Identification { #anti-patterns-no-string-identification }
 
 **Rule ID:** `anti_patterns.no_string_identification`
-**Severity:** ERROR
-
-#### Intent
-
-OMOP vocabulary rule: Do NOT identify clinical concepts using string matching on *_source_value columns. Use *_concept_id instead.
-
-#### How it works
-
-This rule analyzes the SQL query to identify no string identification patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Use *_concept_id or *_source_concept_id instead of string matching
-
----
-
-### 19. Standard Concept OR with Classification { #anti-patterns-standard-concept-or-with-classification }
-
-**Rule ID:** `anti_patterns.standard_concept_or_with_classification`
 **Severity:** WARNING
 
 #### Intent
 
-The standard_concept column has three values:
-    - 'S': Standard concept (for use in clinical data)
-    - 'C': Classification concept (hierarchical grouping only)
-    - NULL: Non-standard concept (deprecated, source-specific)
-
-    Classification concepts ('C') are high-level groupings and should NOT be used
-    in clinical table *_concept_id fields. They're meant for vocabulary hierarchy
-    and navigation, not patient data.
-
-    Using OR logic to include both 'S' and 'C' dilutes data quality by mixing
-    clinical concepts with non-clinical hierarchy concepts.
-
-Common mistake scenarios:
-    1. Concept set building with overly permissive filters
-       (standard_concept = 'S' OR standard_concept = 'C')
-
-    2. Using IN clause with both values
-       standard_concept IN ('S', 'C')
-
-    3. Misunderstanding that 'C' concepts are not for clinical use
+`*_source_value` columns keep the verbatim code or text of the source data. The CDM conventions say they are "generally not to be used by any standardized analytics" and are "provided for convenience and quality assurance (QA) purposes". The values are not harmonised across data sources, so a string filter on one selects whatever a single site happened to record. The table's concept column holds the same fact in a form that is the same everywhere.
 
 #### How it works
 
-This rule analyzes the SQL query to identify standard concept or with classification patterns.
+The rule looks for a `*_source_value` column compared with a string literal: `=`, `<>`, `IN` / `NOT IN`, `BETWEEN`, `LIKE`, `ILIKE`, `SIMILAR TO` and regex matches. The column may be wrapped in `LOWER`, `UPPER`, `TRIM`, `LEFT`, `SUBSTRING` or a cast, and is followed through CTEs, derived tables and renaming aliases to the base column.
+
+It reports only source-value columns whose table has a concept column for the same fact, taken from the CDM v5.4 field-level specification. Most are `<x>_concept_id` / `<x>_source_concept_id`. The `value_source_value` columns map to `value_as_concept_id`, and `note_source_value` maps to `note_class_concept_id`.
+
+It does not report:
+
+- identifiers with no concept counterpart (`person_source_value`, `provider_source_value`, `care_site_source_value`, `location_source_value`, `family_source_value`, `drug_exposure.dose_unit_source_value`);
+- blank-literal checks (`= ''`);
+- a SELECT that filters the paired concept column to 0, where the source value is the only information an unmapped record carries.
+
+The finding is a WARNING: the sources discourage the practice, they do not make it an error.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT concept_id, concept_name
-    FROM concept
-    WHERE concept_name LIKE '%diabetes%'
-      AND (standard_concept = 'S' OR standard_concept = 'C')
-```
-
-#### Suggested fix
-
-Use standard_concept = 'S' for clinical queries. Use 'C' only for vocabulary hierarchy analysis.
-
----
-
-### 20. Type Concept ID Domain Filter { #anti-patterns-type-concept-id-domain-filter }
-
-**Rule ID:** `anti_patterns.type_concept_id_domain_filter`
-**Severity:** WARNING
-
-#### Intent
-
-Type concept columns (*_type_concept_id) reference concepts that describe the
-    provenance or type of a clinical record:
-    - condition_type_concept_id: EHR record, Insurance claim, etc.
-    - drug_type_concept_id: Prescription written, Dispensed in pharmacy, etc.
-
-    These type concepts have domain_id = 'Type Concept', not clinical domains like
-    'Condition' or 'Drug'. When queries join type_concept_id to concept and filter
-    by clinical domains, they return zero results.
-
-#### How it works
-
-This rule analyzes the SQL query to identify type concept id domain filter patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_type_concept_id = c.concept_id
-    WHERE c.domain_id = 'Condition'
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_source_value LIKE '%diabetes%';
 ```
 
 ```sql
-with Drug domain
-    SELECT c.concept_name
-    FROM drug_exposure de
-    JOIN concept c ON de.drug_type_concept_id = c.concept_id
-    WHERE c.domain_id = 'Drug'
+SELECT person_id
+FROM condition_occurrence
+WHERE LOWER(condition_source_value) IN ('e11.9', 'e11.8');
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_type_concept_id = c.concept_id
-    WHERE c.domain_id = 'Type Concept'
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_concept_id = 201820;
 ```
 
 ```sql
-SELECT c.concept_name
-    FROM condition_occurrence co
-    JOIN concept c ON co.condition_type_concept_id = c.concept_id
+-- linking back to the source record: person_source_value has no concept counterpart
+SELECT person_id FROM person WHERE person_source_value = 'MRN-000123';
+```
+
+```sql
+-- QA of unmapped records
+SELECT condition_source_value, COUNT(*)
+FROM condition_occurrence
+WHERE condition_concept_id = 0 AND condition_source_value LIKE 'E11%'
+GROUP BY condition_source_value;
 ```
 
 #### Suggested fix
 
-Use domain_id = 'Type Concept' or remove the domain_id filter.
+Replace the string filter with a filter on the paired concept column: the standard `<x>_concept_id` for analytics, or `<x>_source_concept_id` when the analysis is specific to the source vocabulary. The structured patch rewrites `col = '<text>'` / `col LIKE '<text>'` to `<concept column> = <expected_concept_id>` when the column is read directly from its table.
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Source values, source concept ids and standard concept ids](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#source-values-source-concept-ids-and-standard-concept-ids)
+- [The Book of OHDSI, ch. 4: The Common Data Model, General naming conventions of fields](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-naming-conventions-of-fields)
 
 ---
 
-### 21. Type Concept ID Not For Clinical Filtering { #anti-patterns-type-concept-id-misuse }
+### 10. Type Concept ID Not For Clinical Filtering { #anti-patterns-type-concept-id-misuse }
 
 **Rule ID:** `anti_patterns.type_concept_id_misuse`
-**Severity:** ERROR
+**Severity:** ERROR (every compared id is a known non-Type concept); WARNING otherwise
 
 #### Intent
 
-OMOP semantic rule (OMOP_014): The *_type_concept_id columns (e.g., condition_type_concept_id, drug_type_concept_id) represent the provenance of the record (e.g., EHR, claim, patient-reported), not clinical categories. Do not use them to filter for clinical subtypes.
+`*_type_concept_id` columns record the provenance of a record (EHR, claim, registry, ...), not its clinical meaning. The CDM v5.4 field-level specification gives them the foreign-key domain 'Type Concept'. A comparison with a concept id outside that domain therefore matches no record of a conformant CDM. Typically a clinical concept was written into the provenance column instead of the primary `*_concept_id` column.
 
 #### How it works
 
-This rule analyzes the SQL query to identify type concept id not for clinical filtering patterns.
+The rule finds `=`, `IN`, `= ANY(ARRAY[...])` and `BETWEEN` comparisons of a type column with integer literals. The column may sit on either side, under a cast or parentheses, or behind a CTE or derived-table rename. The comparison may appear in WHERE, inner or outer join ON clauses, HAVING, CASE or FILTER. Negations exclude nothing and are not reported. Comparisons with a column, a subquery or an expression cannot be judged statically. The type columns are those the specification gives the 'Type Concept' domain, including `period_type_concept_id`, plus `cost_type_concept_id`.
+
+Each compared id is looked up in the embedded vocabulary release (Athena v5.0 27-AUG-25).
+
+- **ERROR**: every id is a concept of that release outside the 'Type Concept' domain. Concept ids are persistent across releases, so the comparison can never hold.
+- **WARNING**:
+  - an IN list that mixes Type Concepts with other ids;
+  - an id the release does not contain (a newer or local concept);
+  - a dead branch of an OR;
+  - `cost_type_concept_id`, whose domain the specification leaves open;
+  - a Type Concept of another table's legacy family, e.g. an 'Observation Type' in `condition_type_concept_id`. The conventions say Type Concepts "have to be chosen correctly" for the target table but nothing enforces it.
 
 #### Examples
 
+**Violation patterns:**
+
+```sql
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_type_concept_id = 201826;
+```
+
+```sql
+-- WARNING: 201826 never matches, 32817 still filters
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_type_concept_id IN (32817, 201826);
+```
+
+```sql
+-- WARNING: 38000280 is an Observation Type
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_concept_id = 201826
+  AND condition_type_concept_id = 38000280;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_concept_id = 201820;
+```
+
+```sql
+-- provenance filter with a Type Concept
+SELECT person_id
+FROM condition_occurrence
+WHERE condition_concept_id = 201826
+  AND condition_type_concept_id = 32817;
+```
+
 #### Suggested fix
 
-Use the primary concept_id column (e.g., condition_concept_id) for clinical filtering. type_concept_id should only be used to understand data source/provenance.
+Move the clinical concept to the primary column: `<x>_type_concept_id = <id>` becomes `<x>_concept_id = <id>`. The structured patch does this when every compared id is a known non-Type concept. For a foreign-family Type Concept, use the table's own family or a standard 'Type Concept' vocabulary id (e.g. 32817 'EHR', 32810 'Claim').
+
+#### Sources
+
+- [OMOP CDM: Data Model Conventions, Type Concepts](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#type-concepts)
+- [The Book of OHDSI, ch. 4: The Common Data Model, General naming conventions of fields](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#general-naming-conventions-of-fields)
+
+---
+
+### 11. CTE Shadows OMOP CDM Table { #anti-patterns-cte-shadows-omop-table }
+
+**Rule ID:** `anti_patterns.cte_shadows_omop_table`
+**Severity:** WARNING
+
+#### Intent
+
+PostgreSQL: "the WITH query hides any real table of the same name for the purposes of the primary query. If necessary, you can refer to a real table of the same name by schema-qualifying the table's name." A CTE named after a CDM table (`WITH concept AS (...)`) changes what every unqualified reference to that table in the statement means. A reader, a later edit, or a fix suggested by another rule (`JOIN concept c ON ...`) reaches the CTE, which lacks the table's columns, instead of the CDM table.
+
+#### How it works
+
+The rule warns once per name for every CTE, at any depth, whose name is one of the 39 tables of the CDM v5.4 specification. Derived-table aliases (`FROM (SELECT ...) AS concept`) are not reported: they are visible only as a qualifier inside their own SELECT and hide no table.
+
+#### Examples
+
+**Violation patterns:**
+
+```sql
+WITH concept AS (
+    SELECT 4112343 AS concept_id UNION ALL SELECT 201826
+)
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN concept ON co.condition_concept_id = concept.concept_id;
+```
+
+```sql
+WITH person AS (SELECT * FROM person WHERE year_of_birth > 1980)
+SELECT COUNT(*) FROM person;
+```
+
+**Correct patterns:**
+
+```sql
+WITH my_concepts AS (
+    SELECT 4112343 AS concept_id UNION ALL SELECT 201826
+)
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN my_concepts ON co.condition_concept_id = my_concepts.concept_id;
+```
+
+```sql
+-- a derived-table alias hides no table
+SELECT co.person_id
+FROM condition_occurrence co
+JOIN (SELECT concept_id FROM concept WHERE vocabulary_id = 'SNOMED') AS snomed
+  ON co.condition_concept_id = snomed.concept_id;
+```
+
+#### Suggested fix
+
+Rename the CTE to a name that is not a CDM table (e.g. `WITH my_concepts AS ...` instead of `concept`). If renaming is impractical, schema-qualify every reference to the real table (`cdm.concept`).
+
+#### Sources
+
+- [PostgreSQL documentation: SELECT, FROM clause (WITH query names)](https://www.postgresql.org/docs/current/sql-select.html#SQL-FROM)
 
 ---
 
@@ -5043,2081 +4816,1527 @@ These rules validate domain-specific constraints for individual OMOP CDM tables 
 
 ---
 
-### COHORT Domain
+### COST Domain
 
-### 1. Cohort Definition Syntax Not Executable SQL { #domain-specific-cohort-definition-syntax-not-executable-sql }
+### 1. Cost Event ID Polymorphic Resolution { #domain-specific-cost-event-id-polymorphic-resolution }
 
-**Rule ID:** `domain_specific.cohort_definition_syntax_not_executable_sql`
-**Severity:** ERROR
+**Rule ID:** `domain_specific.cost_event_id_polymorphic_resolution`
+**Severity:** ERROR (restriction rules out the matched table's domain) / WARNING (no restriction, extra domains)
 
 #### Intent
 
-cohort_definition.cohort_definition_syntax is a VARCHAR column that stores
-    cohort logic metadata, typically in JSON or OHDSI cohort expression format.
+CDM v5.4 defines `cost.cost_event_id` as "a foreign key identifier to the event (e.g. Measurement, Procedure, Visit, Drug Exposure, etc) record for which cost data are recorded" and `cost.cost_domain_id` as the domain "from which the corresponding table can be inferred". The same integer can therefore denote a drug exposure in one cost row and a visit in another; only `cost_domain_id` says which.
 
-    It is NOT executable SQL code.
+| table matched with `cost_event_id` | `cost_domain_id` of its costs |
+|---|---|
+| `drug_exposure.drug_exposure_id` | `'Drug'` |
+| `procedure_occurrence.procedure_occurrence_id` | `'Procedure'` |
+| `visit_occurrence.visit_occurrence_id`, `visit_detail.visit_detail_id` | `'Visit'` |
+| `device_exposure.device_exposure_id` | `'Device'` |
+| `measurement.measurement_id` | `'Measurement'` |
+| `observation.observation_id` | `'Observation'` |
+| `condition_occurrence.condition_occurrence_id` | `'Condition'` |
+| `specimen.specimen_id` | `'Specimen'` |
+
+The domain of each table is the domain its concept field accepts in the CDM v5.4 field-level specification (or the DOMAIN row named after the table).
 
 #### How it works
 
-This rule analyzes the SQL query to identify cohort definition syntax not executable sql patterns.
+For every comparison that matches `cost_event_id` with a column, an `IN` subquery or a literal (in WHERE, JOIN ON, HAVING or USING), the rule collects the `cost_domain_id` restrictions that hold for the same cost row. Both columns are traced through CTEs, derived tables and casts, so a restriction inside a CTE counts for the join outside it. A restriction on another read of `cost` (another alias, another UNION branch, a subquery) does not count; one under an OR counts only inside its own operand; one in a LEFT / RIGHT / FULL join's ON counts only for that join.
+
+- **ERROR**: the key is matched with an event table and the restriction rules out that table's domain (`= 'Procedure'` with `drug_exposure`, `NOT (cost_domain_id = 'Drug')`, `LOWER(cost_domain_id) = 'Drug'`). On any CDM every returned row pairs a cost with an unrelated event that shares its id, or no row is returned.
+- **WARNING**: no restriction. The result is wrong only where the cost table holds costs of several domains.
+- **WARNING**: an `IN` list that admits the right domain and others.
+
+A domain id that differs from the right one only in case (`'drug'`) is reported by [`data_quality.canonical_string_value_validation`](#data-quality-canonical-string-value-validation), and a number compared with `cost_domain_id` by [`data_quality.column_type_validation`](#data-quality-column-type-validation); this rule treats both as restrictions it cannot judge. A restriction whose value the SQL does not show (a parameter, a subquery, a domain chosen through a join to `domain` or `concept`) is accepted. A cast literal (`CAST('Drug' AS TEXT)`) compares as the literal. NULL tests on `cost_event_id` do not interpret the key and are not reported.
 
 #### Examples
 
 **Violation patterns:**
 
-```sql
-SELECT cohort_definition_syntax
-    FROM cohort_definition
-    WHERE cohort_definition_syntax LIKE '%SELECT%condition_occurrence%'
-```
+*the restriction names another domain (ERROR)*
 
 ```sql
-SELECT *
-    FROM cohort_definition
-    WHERE cohort_definition_syntax LIKE '%drug_exposure%'
+SELECT c.cost_id, de.drug_concept_id
+FROM cost c
+JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+WHERE c.cost_domain_id = 'Procedure';
+```
+
+*no restriction (WARNING)*
+
+```sql
+SELECT c.cost_id, de.drug_concept_id
+FROM cost c
+JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT cohort_definition_id, cohort_definition_name
-    FROM cohort_definition
-    WHERE cohort_definition_name LIKE '%diabetes%'
+SELECT c.cost_id, de.drug_concept_id
+FROM cost c
+JOIN drug_exposure de ON c.cost_event_id = de.drug_exposure_id
+WHERE c.cost_domain_id = 'Drug';
 ```
+
+*one LEFT JOIN per domain*
 
 ```sql
-SELECT cohort_definition_syntax
-    FROM cohort_definition
-    WHERE cohort_definition_id = 123
+SELECT c.cost_id, COALESCE(de.person_id, po.person_id) AS person_id
+FROM cost c
+LEFT JOIN drug_exposure de
+  ON c.cost_domain_id = 'Drug' AND c.cost_event_id = de.drug_exposure_id
+LEFT JOIN procedure_occurrence po
+  ON c.cost_domain_id = 'Procedure' AND c.cost_event_id = po.procedure_occurrence_id;
 ```
 
-#### Common scenarios
+*restriction inside the CTE that reads cost*
 
-- Filtering with SQL keywords to identify cohort logic:
-- Filtering with OMOP table names:
-- Attempting to execute it as dynamic SQL (less common in static queries)
+```sql
+WITH drug_costs AS (
+  SELECT cost_id, cost_event_id FROM cost WHERE cost_domain_id = 'Drug'
+)
+SELECT dc.cost_id, de.drug_concept_id
+FROM drug_costs dc
+JOIN drug_exposure de ON dc.cost_event_id = de.drug_exposure_id;
+```
 
 #### Suggested fix
 
-Use cohort_definition_name or cohort_definition_id for filtering. cohort_definition_syntax should only be retrieved, not filtered with string patterns.
+ADD (or correct) a restriction on the same cost row: `c.cost_domain_id = '<Domain>'` with the case-exact domain_id of the table matched with `cost_event_id` ('Drug' for drug_exposure, 'Procedure' for procedure_occurrence, 'Visit' for visit_occurrence and visit_detail, 'Device' for device_exposure, …).
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: COST](https://ohdsi.github.io/CommonDataModel/cdm54.html#cost)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Domains](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptDomains)
+- [PostgreSQL documentation: Nondeterministic Collations](https://www.postgresql.org/docs/current/collation.html#COLLATION-NONDETERMINISTIC)
+- [DuckDB documentation: Collations](https://duckdb.org/docs/stable/sql/expressions/collations)
 
 ---
 
-### CONDITION Domain
+### 2. Cost Currency Concept ID For Multi-Currency { #domain-specific-cost-currency-concept-id }
 
-### 1. Condition Occurrence Cardinality Risk { #domain-specific-condition-occurrence-cardinality-validation }
-
-**Rule ID:** `domain_specific.condition_occurrence_cardinality_validation`
+**Rule ID:** `domain_specific.cost_currency_concept_id`
 **Severity:** WARNING
 
 #### Intent
 
-Joining person to condition_occurrence without aggregation can produce
-    multiple rows per person, leading to incorrect counts or analysis. For example:
+CDM v5.4 defines `cost.currency_concept_id` as "a foreign key identifier to the concept representing the 3-letter code used to delineate international currencies, such as USD for US Dollar". Every amount on a cost row is in that row's currency, so an aggregate that combines amounts of several rows (sum, mean, minimum, maximum, variance, percentile) mixes currencies wherever the rows hold more than one. Whether they do depends on the data, so this is a warning.
 
-    - Patient A has 3 condition_occurrence records for diabetes (across 3 visits)
-    - Query joins person to condition_occurrence: SELECT p.person_id, co.condition_start_date
-    - Result: 3 rows for Patient A instead of 1
-    - Counting rows gives "3 patients" when only 1 patient exists
-
-Detection heuristics:
-    - Query joins person to condition_occurrence on person_id
-    - No GROUP BY clause present
-    - No DISTINCT in SELECT
-    - No aggregation functions (COUNT, MIN, MAX, etc.)
+The amounts are the float fields of COST: `total_charge`, `total_cost`, `total_paid`, `paid_by_payer`, `paid_by_patient`, `paid_patient_copay`, `paid_patient_coinsurance`, `paid_patient_deductible`, `paid_by_primary`, `paid_ingredient_cost`, `paid_dispensing_fee`, `amount_allowed`.
 
 #### How it works
 
-This rule analyzes the SQL query to identify condition occurrence cardinality risk patterns.
+An aggregate over an amount, or over a value computed from one in a CTE or derived table, in the projection, HAVING or ORDER BY, is reported unless the cost row it reads has its currency fixed or grouped, in the aggregating SELECT or in a CTE / derived table it reads from:
+
+- `currency_concept_id` equal to one literal, parameter or scalar subquery, or `IN` a one-element list, as a condition that holds for every row (not under OR or NOT);
+- `currency_concept_id` in GROUP BY (also by position, `GROUP BY 1`) or in the window's PARTITION BY;
+- the same applied to a column of the concept row equi-joined with `currency_concept_id` (`cur.concept_code = 'USD'`, `GROUP BY cur.concept_name`).
+
+COUNT, ARRAY_AGG and STRING_AGG keep values apart and are not reported. A multi-value `IN`, `<>` and two currencies joined by OR do not fix the currency. Aggregates fed by the same cost read are reported once.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT p.person_id, co.condition_start_date
-    FROM person p
-    JOIN condition_occurrence co ON p.person_id = co.person_id
-    WHERE co.condition_concept_id = 201826
+SELECT SUM(total_paid) AS paid_total
+FROM cost;
 ```
 
+*aggregated outside the CTE that reads cost*
+
 ```sql
-without aggregation
+WITH drug_costs AS (
+  SELECT c.cost_event_id, c.total_paid
+  FROM cost c
+  WHERE c.cost_domain_id = 'Drug'
+)
+SELECT AVG(total_paid) AS mean_paid
+FROM drug_costs;
+```
+
+*two currencies*
+
+```sql
+SELECT SUM(total_paid) FROM cost
+WHERE currency_concept_id = 44818668 OR currency_concept_id = 44818568;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT co.person_id, MIN(co.condition_start_date) AS first_diagnosis
-    FROM condition_occurrence co
-    WHERE co.condition_concept_id = 201826
-    GROUP BY co.person_id
+SELECT currency_concept_id, SUM(total_paid) AS paid_total
+FROM cost
+GROUP BY currency_concept_id;
 ```
 
+*one currency, chosen through the concept table*
+
 ```sql
-SELECT DISTINCT p.person_id
-    FROM person p
-    JOIN condition_occurrence co ON p.person_id = co.person_id
+SELECT SUM(c.total_paid) AS paid_usd
+FROM cost c
+JOIN concept cur ON cur.concept_id = c.currency_concept_id
+WHERE cur.vocabulary_id = 'Currency' AND cur.concept_code = 'USD';
 ```
 
 #### Suggested fix
 
-Use GROUP BY person_id, DISTINCT, or condition_era to avoid duplicate rows per person.
+ADD: `GROUP BY c.currency_concept_id` (each result row is then in one currency; rows without a currency form their own group) OR a filter to one currency, `c.currency_concept_id = <currency concept_id>` (44818668 is the US dollar), on the cost rows being aggregated.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: COST](https://ohdsi.github.io/CommonDataModel/cdm54.html#cost)
 
 ---
 
-### 2. Condition Occurrence Visit Hierarchy Validation { #domain-specific-condition-visit-hierarchy-validation }
+### CROSS-DOMAIN
 
-**Rule ID:** `domain_specific.condition_visit_hierarchy_validation`
-**Severity:** ERROR
+### 3. Event Rows Counted as Persons { #domain-specific-event-rows-counted-as-persons }
 
-#### Intent
-
-visit_detail records are nested within visit_occurrence records. A condition can
-    be linked to a visit_detail, and that visit_detail belongs to a visit_occurrence.
-
-    If a query joins condition_occurrence to visit_detail but then tries to access
-    visit_occurrence columns without properly joining to visit_occurrence, it will
-    either fail (if the table isn't in FROM/JOIN) or produce incorrect results.
-
-Example violation:
-    -- BAD: References vo.visit_start_date without joining visit_occurrence
-    SELECT co.*, vo.visit_start_date
-    FROM condition_occurrence co
-    JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id
-    -- ERROR: vo referenced but not joined
-
-Correct pattern:
-    -- GOOD: Properly joins through visit_occurrence
-    SELECT co.*, vo.visit_start_date
-    FROM condition_occurrence co
-    JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-
-#### How it works
-
-This rule analyzes the SQL query to identify condition occurrence visit hierarchy validation patterns.
-
-#### Examples
-
-**Correct patterns:**
-
-```sql
-SELECT co.*, vo.visit_start_date
-    FROM condition_occurrence co
-    JOIN visit_detail vd ON co.visit_detail_id = vd.visit_detail_id
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-```
-
-#### Suggested fix
-
-Add: JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-
----
-
-### COST Domain
-
-### 1. Cost Payer Plan Period ID Join { #domain-specific-cost-payer-plan-period-id-join }
-
-**Rule ID:** `domain_specific.cost_payer_plan_period_id_join`
-**Severity:** ERROR
+**Rule ID:** `domain_specific.event_rows_counted_as_persons`
+**Severity:** WARNING
 
 #### Intent
 
-The cost table has a payer_plan_period_id column (INTEGER FK) that references
-    payer_plan_period.payer_plan_period_id (INTEGER PK). This is the correct join key.
+The CDM is person-centric: every clinical event table links to PERSON, and a person can have many rows in it. CDM v5.4 says so explicitly for periods ("one or more OBSERVATION_PERIOD records may be present", "a Person can have multiple, overlapping, Payer_Plan_Periods") and for cohorts (a subject "can have multiple, discrete records in the cohort table per cohort_definition_id"). `COUNT(*)` over such rows counts rows; presented as a count of people it overstates the number of people whenever someone has several rows. Whether anyone does depends on the data, so this is a warning.
+
+The tables covered are those whose person key (`person_id`, or `subject_id` in COHORT) is not their primary key in the CDM v5.4 field-level specification: the event, era, period, episode and cohort tables.
 
 #### How it works
 
-This rule analyzes the SQL query to identify cost payer plan period id join patterns.
+A SELECT is reported when all of these hold:
+
+1. it counts rows: `COUNT(*)`, `COUNT(col)`, `SUM(1)`, a windowed count not partitioned by a person key, or `COUNT(DISTINCT …)` of anything but a person key;
+2. the count is presented as a count of people: the head noun of its alias is a person noun (`num_persons`, `patients_with_drug`, `overall_patients`, `patients_exposed`), or it counts the person key itself (`COUNT(person_id)`) and the alias does not name something else;
+3. its rows are event rows: its FROM / JOIN list reads one of those tables directly, or through a CTE or derived table that neither aggregates, groups, deduplicates nor limits its rows;
+4. it does not group by a person key.
+
+The head noun is the alias's last word once counter words (`n`, `num`, `count`, `total`) are dropped, trailing participles are dropped and the phrase is cut at its first preposition: `patient_visits` names visits and `person_days` names days, so both are left alone. A count labelled outside the derived table that computes it (`SELECT t.c AS num_patients FROM (SELECT COUNT(*) AS c FROM …) t`) is followed.
+
+Two reads do not raise the grain. An observation_period confined to the one period containing a date (start `<=` date `<=` end, `BETWEEN`, or non-negative date differences) is one row per person, because a person's observation periods "will not overlap". payer_plan_period is never treated this way, since its periods may overlap. A table filtered to `<primary key> IN (SELECT MIN(<primary key>) … GROUP BY person_id)` keeps one row per person.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM cost c
-    JOIN payer_plan_period pp ON c.cost_event_id = pp.payer_plan_period_id
+SELECT drug_concept_id, COUNT(person_id) AS num_persons
+FROM drug_exposure
+GROUP BY drug_concept_id;
 ```
 
+*the alias names patients; the rows are exposures*
+
 ```sql
-SELECT * FROM cost c
-    JOIN payer_plan_period pp ON c.person_id = pp.person_id
+SELECT drug_concept_id, COUNT(*) AS patients_with_drug
+FROM drug_exposure
+GROUP BY drug_concept_id;
+```
+
+*a subject can have several records per cohort*
+
+```sql
+SELECT COUNT(*) AS num_subjects FROM cohort WHERE cohort_definition_id = 1;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM cost c
-    JOIN payer_plan_period pp ON c.payer_plan_period_id = pp.payer_plan_period_id
+SELECT drug_concept_id, COUNT(DISTINCT person_id) AS num_persons
+FROM drug_exposure
+GROUP BY drug_concept_id;
 ```
+
+*one row per person before counting*
 
 ```sql
-SELECT * FROM cost c
-    JOIN payer_plan_period pp
-      ON c.payer_plan_period_id = pp.payer_plan_period_id
-      AND c.person_id = pp.person_id
+WITH f AS (
+  SELECT person_id, MIN(drug_exposure_start_date) AS first_date
+  FROM drug_exposure GROUP BY person_id
+)
+SELECT COUNT(*) AS persons FROM f;
 ```
 
-#### Common scenarios
+*the observation period that contains the index date*
 
-- Joining cost.person_id = payer_plan_period.person_id
-- Both tables have person_id, but this will match ALL payer periods for that person
-- A person can have multiple insurance periods over time
+```sql
+WITH su AS (
+  SELECT person_id, MIN(drug_exposure_start_date) AS index_date
+  FROM drug_exposure GROUP BY person_id
+)
+SELECT COUNT(*) AS persons
+FROM su
+JOIN observation_period op ON su.person_id = op.person_id
+WHERE su.index_date BETWEEN op.observation_period_start_date AND op.observation_period_end_date;
+```
+
+*counting records on purpose*
+
+```sql
+SELECT person_id, COUNT(*) AS patient_visits FROM visit_occurrence GROUP BY person_id;
+```
 
 #### Suggested fix
 
-Use: cost.payer_plan_period_id = payer_plan_period.payer_plan_period_id
+REPLACE: `COUNT(*)` / `COUNT(person_id)` WITH `COUNT(DISTINCT person_id)` (`subject_id` for cohort), or first reduce the rows to one per person (GROUP BY person_id in a subquery) before counting.
+
+#### Sources
+
+- [PostgreSQL: Value Expressions, aggregate expressions (count(*) vs count(distinct ...))](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-AGGREGATES)
+- [The Book of OHDSI, ch. 4: The Common Data Model, General conventions of the model (person-centric event tables)](https://ohdsi.github.io/TheBookOfOhdsi/CommonDataModel.html#model-Conv)
+- [OMOP CDM v5.4 specification: OBSERVATION_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation_period)
+- [OMOP CDM v5.4 specification: PAYER_PLAN_PERIOD](https://ohdsi.github.io/CommonDataModel/cdm54.html#payer_plan_period)
+- [OMOP CDM v5.4 specification: COHORT](https://ohdsi.github.io/CommonDataModel/cdm54.html#cohort)
 
 ---
 
-### DEATH Domain
+### 4. Numeric Value Without Unit Constraint { #domain-specific-numeric-value-without-unit-constraint }
 
-### 1. Death Cause Source Concept Not For Analytical Filtering { #domain-specific-death-cause-source-concept-validation }
-
-**Rule ID:** `domain_specific.death_cause_source_concept_validation`
-**Severity:** ERROR
+**Rule ID:** `domain_specific.numeric_value_without_unit_constraint`
+**Severity:** WARNING
 
 #### Intent
 
-Using death_cause_source_concept_id in WHERE clauses or JOINs is incorrect for
-    analytical work because:
-    - It represents source/local vocabulary codes, not standardized OMOP concepts
-    - Analytical queries should use standardized concepts for reproducibility
-    - Source concepts are intended for ETL validation, mapping verification, or provenance tracking
+CDM v5.4: "At present, there isn't a prescribed unit for individual measurements" and "There is currently no recommended unit for individual observation concepts". The same concept can therefore carry values in different units (HbA1c in % or mmol/mol, glucose in mg/dL or mmol/L), and an aggregate or a fixed cut-off computed across them mixes scales. `dose_era.dose_value` has the same structure.
 
 #### How it works
 
-OMOP semantic rule CLIN_052:
-Validates that death.cause_source_concept_id is not used for analytical filtering
+The rule reports an aggregate (AVG, SUM, MIN, MAX, STDDEV, VARIANCE, MEDIAN, percentiles) of `measurement.value_as_number`, `observation.value_as_number` or `dose_era.dose_value`, or a comparison of the value with a non-zero numeric literal (in a filter or a CASE condition), unless the unit of the same row is constrained. A constraint is `unit_concept_id = <id>`, an `IN` list or subquery (the Unit domain has several concepts for one scale), `unit_concept_id IS NULL` (no unit), `GROUP BY` / `PARTITION BY unit_concept_id`, a join to a `concept` row that is filtered or grouped, or a unit test in the same CASE condition or aggregate. Rows are followed through casts, CTEs and derived tables, so a constraint on another alias, another UNION branch or another table's unit does not count, and equating two rows' units fixes neither. Comparisons with 0 are not reported. At most one finding per table and statement.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM death WHERE cause_source_concept_id = 123
+SELECT AVG(m.value_as_number) FROM measurement m
+WHERE m.measurement_concept_id = 3004410;
 ```
 
+*threshold with no unit*
+
 ```sql
-SELECT d.* FROM death d
-    WHERE d.cause_source_concept_id IN (456, 789)
+SELECT DISTINCT m.person_id FROM measurement m
+WHERE m.measurement_concept_id = 3004410
+  AND m.value_as_number > 7;
+```
+
+*the unit is constrained on another row*
+
+```sql
+SELECT a.person_id
+FROM measurement a JOIN measurement b ON a.person_id = b.person_id
+WHERE a.value_as_number > 7 AND b.unit_concept_id = 8554;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM death WHERE cause_concept_id = 123
-    SELECT d.* FROM death d
-    WHERE d.cause_concept_id IN (456, 789)
+SELECT AVG(m.value_as_number) FROM measurement m
+WHERE m.measurement_concept_id = 3004410
+  AND m.unit_concept_id = 8554;
+```
+
+*one aggregate per unit*
+
+```sql
+SELECT unit_concept_id, AVG(value_as_number)
+FROM measurement
+WHERE measurement_concept_id = 3004410
+GROUP BY unit_concept_id;
+```
+
+*a quantity without unit*
+
+```sql
+SELECT person_id FROM measurement
+WHERE measurement_concept_id = 3022217
+  AND value_as_number > 3.0
+  AND unit_concept_id IS NULL;
 ```
 
 #### Suggested fix
 
-Replace with death.cause_concept_id
+ADD: `AND m.unit_concept_id = <unit_concept_id>` (or IN (...) of concepts for the same scale), or `AND m.unit_concept_id IS NULL` when the quantity has no unit; OR GROUP BY m.unit_concept_id so each aggregate is in one unit; OR convert explicitly with CASE WHEN m.unit_concept_id = ... THEN ... END before aggregating.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
+- [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
+- [OMOP CDM v5.4 specification: DOSE_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#dose_era)
 
 ---
 
-### 2. Death Join to Person Not to Clinical Event { #domain-specific-death-join-to-person-not-to-clinical-event }
+### 5. Value-As Columns Combined With AND { #domain-specific-value-as-columns-conjunction }
 
-**Rule ID:** `domain_specific.death_join_to_person_not_to_clinical_event`
-**Severity:** ERROR
+**Rule ID:** `domain_specific.value_as_columns_conjunction`
+**Severity:** WARNING
 
 #### Intent
 
-The death table has a minimal schema:
-    - person_id (FK to person)
-    - death_date
-    - death_datetime
-    - death_type_concept_id
-    - death_cause_concept_id
-    - death_cause_source_value
-    - death_cause_source_concept_id
-
-    It does NOT have foreign keys to clinical event tables like:
-    - visit_occurrence_id
-    - condition_occurrence_id
-    - drug_exposure_id
-    - procedure_occurrence_id
-
-    The only valid join from death to other tables is via person_id.
-
-Why this is wrong:
-    Developers sometimes mistakenly try to join death directly to clinical event
-    tables using incorrect column mappings, such as:
-    - death.person_id = visit_occurrence.visit_occurrence_id (wrong types)
-    - death.death_type_concept_id = condition_occurrence.condition_concept_id (semantically wrong)
-
-    This produces incorrect results or errors.
+`measurement` and `observation` store a result in the `value_as_*` column matching its type: `value_as_number`, `value_as_concept_id` and, on observation, `value_as_string`. CDM v5.4 allows both `value_as_number` and `value_as_concept_id` to be filled when the source gives both, but many ETLs store one value per result. AND-ing value conditions on two of these columns of the same row keeps only rows where both are populated, which on many databases is few or none.
 
 #### How it works
 
-This rule analyzes the SQL query to identify death join to person not to clinical event patterns.
+The rule collects value conditions (comparisons, `IN`, `BETWEEN`, `LIKE`) on the `value_as_*` columns from the WHERE, HAVING and JOIN ON clauses of every SELECT, follows each column to the table row it reads (through casts, CTEs and derived tables), and reports a row with conditions on two different value columns. Two rows of a self-join stay apart. Not value conditions: a conjunct that tests several value columns (an OR, a CASE), a conjunct that also accepts the column being NULL, NULL tests, conditions under NOT, and joins of `value_as_concept_id` to `concept.concept_id`.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM death d
-    JOIN visit_occurrence vo ON d.person_id = vo.visit_occurrence_id
+SELECT person_id FROM measurement
+WHERE value_as_number > 140 AND value_as_concept_id = 4126681;
 ```
 
+*split between JOIN ON and WHERE*
+
 ```sql
-SELECT * FROM death d
-    JOIN condition_occurrence co ON d.death_cause_concept_id = co.condition_occurrence_id
+SELECT m.person_id FROM person p
+JOIN measurement m ON m.person_id = p.person_id AND m.value_as_number > 140
+WHERE m.value_as_concept_id = 4126681;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM death d
-    JOIN visit_occurrence vo ON d.person_id = vo.person_id
+SELECT person_id FROM measurement
+WHERE value_as_number > 140 OR value_as_concept_id = 4126681;
 ```
 
+*the coded value may be absent*
+
 ```sql
-SELECT * FROM death d
-    JOIN person p ON d.person_id = p.person_id
-    JOIN condition_occurrence co ON p.person_id = co.person_id
+SELECT person_id FROM measurement
+WHERE value_as_number > 140
+  AND (value_as_concept_id IS NULL OR value_as_concept_id = 0);
+```
+
+*two different rows*
+
+```sql
+SELECT a.person_id
+FROM measurement a JOIN measurement b ON a.person_id = b.person_id
+WHERE a.value_as_number > 140 AND b.value_as_concept_id = 4126681;
 ```
 
 #### Suggested fix
 
-Ensure JOIN includes: death.person_id = <clinical_table>.person_id
+REPLACE: `value_as_number <op> <n> AND value_as_concept_id = <id>` WITH the single value_as_* column that matches how the result is recorded, OR use `OR` (in parentheses) to accept either representation.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
+- [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
+
+---
+
+### 6. Event-Field Polymorphic Resolution { #domain-specific-event-field-polymorphic-resolution }
+
+**Rule ID:** `domain_specific.event_field_polymorphic_resolution`
+**Severity:** ERROR (field concept names another table) / WARNING (no restriction, unknown or extra field concepts)
+
+#### Intent
+
+CDM v5.4 has four keys that hold "the primary key of the linked record" in whichever table a sibling field concept names ("the CONCEPT_ID that identifies which table the primary key of the linked record came from"):
+
+| key | field concept column |
+|---|---|
+| `measurement.measurement_event_id` | `meas_event_field_concept_id` |
+| `observation.observation_event_id` | `obs_event_field_concept_id` |
+| `note.note_event_id` | `note_event_field_concept_id` |
+| `episode_event.event_id` | `episode_event_field_concept_id` |
+
+The field concepts are the CDM vocabulary's 'Field' concepts named `<table>.<primary key>`: `condition_occurrence.condition_occurrence_id` is 1147127 (and 1147663), `visit_occurrence.visit_occurrence_id` 1147070, `drug_exposure.drug_exposure_id` 1147094. A measurement linked to visit 5 and the condition_occurrence with id 5 are unrelated.
+
+#### How it works
+
+For every comparison that matches one of the keys with a column, an `IN` subquery or a literal (in WHERE, JOIN ON, HAVING or USING), the rule collects the restrictions of the field concept that hold for the same row. Both columns are traced through CTEs, derived tables and casts; a restriction on another read of the table does not count, one under an OR counts only inside its own operand, and one in an outer join's ON counts only for that join. The restriction parser is shared with `domain_specific.cost_event_id_polymorphic_resolution`.
+
+- **ERROR**: the key is matched with a table's primary key and the field concept is restricted to the field concept of another table's primary key, or excludes every field concept of the matched table. Every returned row pairs a record with an unrelated row that shares its id.
+- **WARNING**: no restriction (wrong only where the column links records of several tables); `IS [NOT] NULL` on the field concept is not a restriction, because it does not say which table the key points into.
+- **WARNING**: a restriction to an id that is not the CDM field concept of any primary key, or a list that also admits other tables.
+
+A restriction in either operand order, through a cast, as an `IN` list, a parameter, a scalar subquery, or a field concept chosen by name through a join to `concept`, is recognised. NULL tests on the key itself are not reported.
+
+#### Examples
+
+**Violation patterns:**
+
+*the field concept names visit_occurrence (ERROR)*
+
+```sql
+SELECT m.measurement_concept_id, m.value_as_number, co.condition_concept_id
+FROM measurement m
+JOIN condition_occurrence co
+  ON m.measurement_event_id = co.condition_occurrence_id
+ AND m.meas_event_field_concept_id = 1147070  -- visit_occurrence.visit_occurrence_id
+;
+```
+
+*no restriction (WARNING)*
+
+```sql
+SELECT e.episode_id, co.condition_concept_id
+FROM episode_event ee
+JOIN episode e ON ee.episode_id = e.episode_id
+JOIN condition_occurrence co ON ee.event_id = co.condition_occurrence_id;
+```
+
+*IS NOT NULL does not choose a table (WARNING)*
+
+```sql
+SELECT m.measurement_id, co.condition_concept_id
+FROM measurement m
+JOIN condition_occurrence co ON m.measurement_event_id = co.condition_occurrence_id
+WHERE m.meas_event_field_concept_id IS NOT NULL;
+```
+
+**Correct patterns:**
+
+```sql
+SELECT m.measurement_concept_id, m.value_as_number, co.condition_concept_id
+FROM measurement m
+JOIN condition_occurrence co
+  ON m.measurement_event_id = co.condition_occurrence_id
+ AND m.meas_event_field_concept_id = 1147127  -- condition_occurrence.condition_occurrence_id
+;
+```
+
+```sql
+SELECT m.measurement_concept_id, m.value_as_number, co.condition_concept_id
+FROM measurement m
+JOIN condition_occurrence co
+  ON m.measurement_event_id = co.condition_occurrence_id
+ AND 1147127 = m.meas_event_field_concept_id;
+```
+
+*field concept chosen by name*
+
+```sql
+SELECT m.value_as_number
+FROM measurement m
+JOIN concept f ON f.concept_id = m.meas_event_field_concept_id
+JOIN condition_occurrence co ON m.measurement_event_id = co.condition_occurrence_id
+WHERE f.concept_name = 'condition_occurrence.condition_occurrence_id';
+```
+
+*profiling the link column*
+
+```sql
+SELECT COUNT(*) FROM measurement WHERE measurement_event_id IS NOT NULL;
+```
+
+#### Suggested fix
+
+ADD (or correct) a restriction on the same row: `<x>_event_field_concept_id = <id>`, where `<id>` is the CDM 'Field' concept named `<table>.<primary key>` of the table matched with the key (condition_occurrence: 1147127, visit_occurrence: 1147070, drug_exposure: 1147094, procedure_occurrence: 1147082, measurement: 1147138). Look it up with `SELECT concept_id FROM concept WHERE vocabulary_id = 'CDM' AND concept_class_id = 'Field' AND concept_name = '<table>.<primary key>'`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
+- [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
+- [OMOP CDM v5.4 specification: NOTE](https://ohdsi.github.io/CommonDataModel/cdm54.html#note)
+- [OMOP CDM v5.4 specification: EPISODE_EVENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#episode_event)
 
 ---
 
 ### DRUG Domain
 
-### 1. Drug Days Supply Validation { #domain-specific-drug-days-supply-validation }
-
-**Rule ID:** `domain_specific.drug_days_supply_validation`
-**Severity:** WARNING
-
-#### Intent
-
-days_supply in the drug_exposure table should contain plausible values.
-    Values <= 0 or > 365 indicate data quality issues or query logic errors.
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug days supply validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM drug_exposure WHERE days_supply = -30
-```
-
-```sql
-SELECT * FROM drug_exposure WHERE days_supply = 0
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM drug_exposure WHERE days_supply = 30
-    SELECT * FROM drug_exposure WHERE days_supply BETWEEN 1 AND 90
-    SELECT * FROM drug_exposure WHERE days_supply IN (7, 14, 30, 90)
-```
-
-#### Common scenarios
-
-- days_supply = -30 (negative value)
-- days_supply = 0 (zero value)
-- days_supply = 500 (unrealistically long supply)
-
-#### Suggested fix
-
-None
-
----
-
-### 2. Drug Era Concept Class Validation { #domain-specific-drug-era-concept-class-validation }
+### 7. Drug Era Concept Class Validation { #domain-specific-drug-era-concept-class-validation }
 
 **Rule ID:** `domain_specific.drug_era_concept_class_validation`
-**Severity:** ERROR
+**Severity:** ERROR (filter admits no Ingredient) / WARNING (filter excludes Ingredient, sits in an outer join's ON, or reaches the era through an OR branch)
 
 #### Intent
 
-drug_era is a derived table that aggregates drug exposures at the Ingredient level.
-    It only contains concepts where concept_class_id = 'Ingredient'.
-
-    Filtering for other RxNorm concept classes will return no data:
-    - 'Clinical Drug Form' (e.g., "Acetaminophen 500 MG Oral Tablet")
-    - 'Clinical Drug' (e.g., "Acetaminophen 500 MG")
-    - 'Branded Drug' (e.g., "Tylenol 500 MG")
+CDM v5.4 says of `drug_era.drug_concept_id`: "The drug_concept_id should conform to the concept class 'ingredient' as the drug_era is an era of time where a person is exposed to a particular drug ingredient." The CDM v5.4 field-level specification sets fkClass = Ingredient for `drug_era.drug_concept_id` and `dose_era.drug_concept_id`, and the Data Quality Dashboard checks it with threshold 0. On a conformant CDM a filter on the concept of these fields that keeps only Clinical Drug, Branded Drug or another product class returns nothing. `drug_strength.ingredient_concept_id` is not checked: the specification leaves its fkClass empty, and the vocabulary's drug_strength rows also point at Precise Ingredient concepts.
 
 #### How it works
 
-This rule analyzes the SQL query to identify drug era concept class validation patterns.
+The rule follows the `concept` row that is matched with one of those fields: a join, a comma join, an `IN` subquery, an `EXISTS`, a CTE or a derived table, through casts. It then judges the `concept_class_id` restrictions that hold for that same concept row (an `=`, `IN`, `LIKE` / `ILIKE`, `<>` or `NOT IN`).
+
+- **ERROR**: the restriction admits no Ingredient (`= 'Clinical Drug'`, `IN ('Branded Drug', 'Clinical Drug')`, `LIKE 'Branded%'`). The query returns no row of the era table.
+- **WARNING**: the restriction excludes Ingredient (`<> 'Ingredient'`, `NOT IN ('Ingredient')`). Nothing is left on a conformant CDM, so the shape is useful only as a conformance check.
+- **WARNING**: a restriction that admits no Ingredient in a LEFT / RIGHT / FULL join's ON: the concept is never attached and its columns are always NULL.
+- **WARNING**: a restriction that admits no Ingredient on a concept matched with the era field only in one branch of an OR (`de.drug_concept_id IN (SELECT concept_id FROM concept WHERE concept_class_id = 'Clinical Drug') OR de.drug_concept_id = 1`, or `ON c.concept_id = de.drug_concept_id OR ...`): that branch selects nothing, but the other branches still return rows.
+
+A list that contains 'Ingredient' is accepted. A class filter on another concept read (a reused alias in another scope, the concept of a drug_exposure row, descendants reached through `concept_ancestor`) or under an OR does not count. A literal that differs from 'Ingredient' only in case is reported by `data_quality.canonical_string_value_validation`, which checks the casing of every vocabulary id.
 
 #### Examples
 
 **Violation patterns:**
 
+*product class on the era's concept (ERROR)*
+
 ```sql
-SELECT de.*
-    FROM drug_era de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Clinical Drug'
+SELECT de.person_id FROM drug_era de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.concept_class_id = 'Branded Drug';
+```
+
+*through an IN subquery (ERROR)*
+
+```sql
+SELECT person_id FROM drug_era
+WHERE drug_concept_id IN (
+  SELECT concept_id FROM concept WHERE concept_class_id = 'Clinical Drug'
+);
+```
+
+*excluding Ingredient (WARNING)*
+
+```sql
+SELECT de.person_id FROM drug_era de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.concept_class_id <> 'Ingredient';
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT de.*
-    FROM drug_era de
-    JOIN concept c ON de.drug_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Ingredient'
+SELECT de.person_id FROM drug_era de
+JOIN concept c ON de.drug_concept_id = c.concept_id
+WHERE c.concept_class_id = 'Ingredient';
+```
+
+*eras of the ingredients of a product*
+
+```sql
+SELECT DISTINCT de.person_id
+FROM drug_era de
+JOIN concept_ancestor ca ON ca.ancestor_concept_id = de.drug_concept_id
+JOIN concept c ON c.concept_id = ca.descendant_concept_id
+WHERE c.concept_class_id = 'Clinical Drug';
 ```
 
 #### Suggested fix
 
-Use concept_class_id = 'Ingredient' or remove the filter.
+drug_era holds ingredient concepts only. For product-level classes (Clinical Drug, Branded Drug, Clinical Drug Form, …) query drug_exposure instead; to keep the eras of a product's ingredients, map the product to its ingredient through concept_ancestor (ancestor_concept_id = drug_era.drug_concept_id). Drop a `concept_class_id <> 'Ingredient'` filter unless the query is a conformance check.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: DRUG_ERA](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_era)
+- [The Book of OHDSI, ch. 9: SQL and R, Exposure cohort](https://ohdsi.github.io/TheBookOfOhdsi/SqlAndR.html#exposure-cohort)
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 3. Drug Exposure Cardinality Awareness { #domain-specific-drug-exposure-cardinality-validation }
+### 8. Drug Exposure Implausible Value Filter { #domain-specific-drug-exposure-implausible-value-filter }
 
-**Rule ID:** `domain_specific.drug_exposure_cardinality_validation`
+**Rule ID:** `domain_specific.drug_exposure_implausible_value_filter`
 **Severity:** WARNING
 
 #### Intent
 
-Counting rows in drug_exposure without awareness of multiple records per person
-    per drug can produce misleading statistics. For example:
-
-    - Patient A has 3 drug_exposure records for metformin (3 refills)
-    - Query: SELECT drug_concept_id, COUNT(*) FROM drug_exposure GROUP BY drug_concept_id
-    - Result: exposure_count = 3 for metformin
-    - Misleading: This counts prescription fills, not unique patients
-
-    Common mistake: Using COUNT(*) when you want to count unique patients.
-
-Detection patterns:
-    - Query uses COUNT(*) or COUNT(column) on drug_exposure table
-    - COUNT does NOT use DISTINCT person_id
-    - Suggests using COUNT(DISTINCT person_id) or drug_era table
+CDM v5.4 says of `drug_exposure.days_supply`: "Negative values are not allowed" and "High values (>365 days) should be investigated." The OHDSI Data Quality Dashboard thresholds in the CDM v5.4 field-level specification go further: they flag a `days_supply` outside 1 to 365 and a `quantity` below 0.0000001 as implausible. A filter that admits only such values keeps only the rows those checks flag. The result is typically empty or made of data-quality outliers, which is exactly what a deliberate data-quality query wants, so this is a warning.
 
 #### How it works
 
-This rule analyzes the SQL query to identify drug exposure cardinality awareness patterns.
+The rule evaluates every WHERE, HAVING and inner JOIN ON condition as a whole, with three-valued logic, so NOT, AND and OR are honoured. It reports a condition that admits no value in the plausible range of `days_supply` or `quantity`. The column is followed through casts, CTEs and derived tables and may carry a constant offset (`days_supply - 1 < 0`). Predicates on other columns are unknown, which can only make the rule fire less.
+
+A condition that still admits a plausible value (`days_supply > 0`, `quantity >= 1`, `NOT (quantity <= 0)`, `days_supply IN (0, 30)`) is not reported. Neither is a condition that removes rows instead of selecting them: under `NOT EXISTS` / `NOT IN`, in the right branch of EXCEPT, or in an outer join's ON.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT drug_concept_id, COUNT(*) AS exposure_count
-    FROM drug_exposure
-    GROUP BY drug_concept_id
+SELECT person_id FROM drug_exposure
+WHERE days_supply = 0;
+```
+
+```sql
+SELECT person_id FROM drug_exposure
+WHERE quantity <= 0;
+```
+
+```sql
+SELECT person_id FROM drug_exposure
+WHERE days_supply NOT BETWEEN 1 AND 365;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT drug_concept_id, COUNT(DISTINCT person_id) AS patient_count
-    FROM drug_exposure
-    WHERE drug_concept_id != 0
-    GROUP BY drug_concept_id
+SELECT person_id FROM drug_exposure
+WHERE days_supply > 0;
 ```
 
+*excluding the persons who have an implausible record*
+
 ```sql
-SELECT drug_concept_id, COUNT(*) AS era_count
-    FROM drug_era
-    GROUP BY drug_concept_id
+SELECT p.person_id FROM person p
+WHERE NOT EXISTS (
+  SELECT 1 FROM drug_exposure de
+  WHERE de.person_id = p.person_id AND de.days_supply > 365
+);
 ```
 
 #### Suggested fix
 
-Use COUNT(DISTINCT person_id) for patient counts or use drug_era for consolidated exposure periods.
+REPLACE: a filter such as `days_supply = 0`, `days_supply > 365` or `quantity <= 0` WITH one that keeps plausible rows (`days_supply BETWEEN 1 AND 365`, `quantity > 0`). If the query is a deliberate data-quality check for out-of-range values, this warning can be ignored.
+
+#### Sources
+
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
+- [OMOP CDM v5.4 specification: DRUG_EXPOSURE](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_exposure)
 
 ---
 
-### 4. Drug Exposure Quantity Misuse { #domain-specific-drug-exposure-quantity-misuse }
+### 9. Drug Exposure Quantity Misuse { #domain-specific-drug-exposure-quantity-misuse }
 
 **Rule ID:** `domain_specific.drug_exposure_quantity_misuse`
 **Severity:** WARNING
 
 #### Intent
 
-Quantity is the NUMBER of units dispensed (pills, ml, etc.), not days.
-    Using it in date arithmetic leads to incorrect duration calculations.
+CDM v5.4 defines `drug_exposure.quantity` as an amount, not a duration: "For clinical drugs with fixed dose forms (tablets etc.) the quantity is the number of units/tablets/capsules prescribed or dispensed", and for liquids and injections it is an amount of ingredient. The drug-dose page uses it the same way ("Ingredient dose = quantity x amount_value"). Adding it to a date as a number of days produces an end date that has nothing to do with the exposure: 30 tablets taken twice a day last 15 days, and 160 mg of an injection is not 160 days.
 
 #### How it works
 
-This rule analyzes the SQL query to identify drug exposure quantity misuse patterns.
+The rule reports `drug_exposure.quantity` used as a number of days: an argument of DATEADD / DATE_ADD / DATEDIFF / DATE_SUB / TIMESTAMPDIFF and similar functions, an operand of `+` / `-` together with a `*_date` / `*_datetime` column, or the value of an INTERVAL. The column is followed through casts, CTEs and derived tables, so a renamed `quantity` is still recognised. Dividing quantity by a duration (units per day) and multiplying it by a strength (dose) are not reported.
 
 #### Examples
 
 **Violation patterns:**
+
+*PostgreSQL / DuckDB (quantity is a float, so the date arithmetic needs a cast)*
+
+```sql
+SELECT person_id,
+       drug_exposure_start_date + CAST(quantity AS INTEGER) AS end_date
+FROM drug_exposure;
+```
+
+*SQL Server*
 
 ```sql
 SELECT DATEADD(day, quantity, drug_exposure_start_date) AS end_date
-    FROM drug_exposure
+FROM drug_exposure;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT DATEADD(day, days_supply, drug_exposure_start_date) AS end_date
-    FROM drug_exposure
+SELECT person_id,
+       drug_exposure_start_date + days_supply AS end_date
+FROM drug_exposure;
 ```
 
-#### Common scenarios
+*units per day of the exposure*
 
-- DATEADD(day, quantity, start_date) -- 30 tablets ≠ 30 days
-- DATEDIFF(day, quantity, end_date)
-- start_date + INTERVAL quantity DAY
+```sql
+SELECT quantity / NULLIF(drug_exposure_end_date - drug_exposure_start_date + 1, 0) AS units_per_day
+FROM drug_exposure;
+```
 
 #### Suggested fix
 
-Use days_supply or date differences instead of quantity.
+REPLACE: `<start_date> + de.quantity` (or quantity-as-duration arithmetic) WITH `de.drug_exposure_start_date + de.days_supply`, OR use date_diff(de.drug_exposure_end_date, de.drug_exposure_start_date).
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: DRUG_EXPOSURE](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_exposure)
+- [OMOP CDM: Drug Dose Calculation](https://ohdsi.github.io/CommonDataModel/drug_dose.html)
 
 ---
 
-### 5. Drug Exposure Sig Parsing { #domain-specific-drug-exposure-sig-parsing }
-
-**Rule ID:** `domain_specific.drug_exposure_sig_parsing`
-**Severity:** WARNING
-
-#### Intent
-
-The sig field contains unstructured free-text that varies widely across sites:
-    - "1 tab bid"
-    - "take one tablet twice daily"
-    - "Take 1-2 tablets by mouth every 4-6 hours as needed"
-
-    Parsing this for structured dosing data is unreliable and error-prone.
-    The drug_strength table provides standardized, structured dosing information.
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug exposure sig parsing patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT CAST(SUBSTRING(sig, 1, CHARINDEX(' ', sig)) AS INT) AS dose
-    FROM drug_exposure
-```
-
-**Correct patterns:**
-
-```sql
-SELECT ds.amount_value, ds.amount_unit_concept_id
-    FROM drug_exposure de
-    JOIN drug_strength ds ON de.drug_concept_id = ds.drug_concept_id
-    WHERE ds.invalid_reason IS NULL
-```
-
-#### Common scenarios
-
-- SUBSTRING(sig, 1, CHARINDEX(' ', sig)) to extract dose
-- REGEXP_SUBSTR(sig, '[0-9]+') to extract numbers
-- PATINDEX('%[0-9]%', sig) to find numeric positions
-
-#### Suggested fix
-
-Join drug_strength to obtain standardized dose fields (amount_value, numerator_value, denominator_value) instead of parsing sig.
-
----
-
-### 6. Drug Quantity Validation { #domain-specific-drug-quantity-validation }
-
-**Rule ID:** `domain_specific.drug_quantity_validation`
-**Severity:** WARNING
-
-#### Intent
-
-quantity in the drug_exposure table represents the amount dispensed (e.g., 30 tablets).
-    Negative values are never valid and indicate data quality issues or query logic errors.
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug quantity validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM drug_exposure WHERE quantity = -10
-```
-
-```sql
-SELECT * FROM drug_exposure WHERE quantity < 0
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM drug_exposure WHERE quantity = 30
-    SELECT * FROM drug_exposure WHERE quantity > 0
-    SELECT * FROM drug_exposure WHERE quantity BETWEEN 1 AND 100
-```
-
-#### Common scenarios
-
-- quantity = -10 (negative value)
-- quantity < 0 (filtering for negatives)
-- Using negative as sentinel/null value
-
-#### Suggested fix
-
-Ensure quantity >= 0
-
----
-
-### 7. Drug Strength Completeness (Amount vs Concentration) { #domain-specific-drug-strength-numerator-denominator-for-concentration }
+### 10. Drug Strength Completeness (Amount vs Concentration) { #domain-specific-drug-strength-numerator-denominator-for-concentration }
 
 **Rule ID:** `domain_specific.drug_strength_numerator_denominator_for_concentration`
 **Severity:** WARNING
 
 #### Intent
 
-The drug_strength table has two different models for representing strength:
-
-    1. Simple amount model (solid formulations):
-       - amount_value + amount_unit_concept_id
-       - Example: 500mg tablet → amount_value = 500, amount_unit_concept_id = mg
-
-    2. Concentration model (liquid/injectable formulations):
-       - numerator_value + numerator_unit_concept_id (active ingredient)
-       - denominator_value + denominator_unit_concept_id (solution volume)
-       - Example: 500mg/5mL injection → numerator_value = 500, denominator_value = 5
-       - **amount_value is NULL** for these drugs
-
-    Critical issue: Queries that only check amount_value completely miss
-    liquid/injectable formulations, which use the numerator/denominator model.
+The CDM v5.4 conventions say: "Ingredient strength information is provided either as absolute amount (usually for solid formulations) or as concentration (usually for liquid formulations)." An absolute amount is stored in `amount_value` / `amount_unit_concept_id`; a concentration in `numerator_value` / `numerator_unit_concept_id` over `denominator_unit_concept_id`, with `amount_value` empty. The drug-dose page adds that an inhaler's strength may be in the numerator, and the vocabulary stores rates (transdermal systems, some extended-release forms) the same way. A query that reads only `amount_value` misses all of these drugs. An analysis may be meant for fixed-dose forms only, so this is a warning.
 
 #### How it works
 
-This rule analyzes the SQL query to identify drug strength completeness (amount vs concentration) patterns.
+Each read of `drug_strength` (one FROM / JOIN entry, followed through CTEs, derived tables and casts) is judged on its own:
+
+- `amount_value` used (projected, computed with, aggregated, grouped or ordered on) while `numerator_value` of the same read is never used: the value is NULL for concentration and rate rows.
+- `amount_value` filtered (a comparison, `IN`, `BETWEEN`, `LIKE` or `IS NOT NULL` in WHERE, JOIN ON or HAVING) while no condition on the same read uses `numerator_value`: the filter drops those rows, whatever is projected.
+
+A read restricted to the amount model (`numerator_value IS NULL`, `numerator_unit_concept_id IS NULL` or `denominator_unit_concept_id IS NULL`) states that intent and is not reported, nor is `amount_value IS NULL`, which selects the concentration rows. `numerator_value` used on another read of the table (another UNION branch, another alias) does not count.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT ds.amount_value, ds.amount_unit_concept_id
-    FROM drug_strength ds
-    WHERE ds.drug_concept_id = 19078461
+SELECT drug_concept_id, amount_value FROM drug_strength
+WHERE amount_value > 500;
+```
+
+*a dose total: concentration rows add nothing*
+
+```sql
+SELECT de.person_id, SUM(de.quantity * ds.amount_value) AS total_dose
+FROM drug_exposure de
+JOIN drug_strength ds ON ds.drug_concept_id = de.drug_concept_id
+GROUP BY de.person_id;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT
-      COALESCE(ds.amount_value, ds.numerator_value) AS dose_value,
-      COALESCE(ds.amount_unit_concept_id, ds.numerator_unit_concept_id) AS dose_unit,
-      ds.denominator_value,
-      ds.denominator_unit_concept_id
-    FROM drug_strength ds
-    WHERE ds.drug_concept_id = 19078461
+SELECT drug_concept_id,
+       COALESCE(amount_value, numerator_value) AS strength_value,
+       COALESCE(amount_unit_concept_id, numerator_unit_concept_id) AS strength_unit_concept_id,
+       denominator_value, denominator_unit_concept_id
+FROM drug_strength;
 ```
 
-#### Common scenarios
-
-- SELECT amount_value without numerator_value
-- WHERE amount_value > X (excludes all concentration drugs)
-- WHERE amount_value IS NOT NULL (excludes all concentration drugs)
-
-#### Suggested fix
-
-Use COALESCE(amount_value, numerator_value) to include both formulations. Include denominator_value for concentration context when relevant.
-
----
-
-### 8. Drug Strength Validity Filter { #domain-specific-drug-strength-validity-filter }
-
-**Rule ID:** `domain_specific.drug_strength_validity_filter`
-**Severity:** WARNING
-
-#### Intent
-
-drug_strength is a vocabulary table with temporal validity:
-    - Same drug_concept_id may have multiple strength records over time
-    - Formulations change (new strengths, discontinued strengths)
-    - invalid_reason IS NULL indicates currently valid records
-
-    Querying without validity filters returns BOTH current AND historical strengths
-    → incorrect calculations, duplicate results
-
-Example impact:
-    -- Returns 3 rows: old formulation (100mg), current (150mg), deprecated (200mg)
-    SELECT drug_concept_id, amount_value, amount_unit_concept_id
-    FROM drug_strength
-    WHERE drug_concept_id = 19078461
-    -- Which strength is correct? Calculation uses wrong value!
-
-#### How it works
-
-This rule analyzes the SQL query to identify drug strength validity filter patterns.
-
-#### Examples
-
-**Violation patterns:**
+*fixed-dose forms only, stated*
 
 ```sql
-SELECT amount_value
-    FROM drug_strength
-    WHERE drug_concept_id = 123
+SELECT ds.drug_concept_id FROM drug_strength ds
+WHERE ds.amount_value = 500 AND ds.numerator_value IS NULL;
 ```
 
 #### Suggested fix
 
-Add 'invalid_reason IS NULL' OR 'CURRENT_DATE BETWEEN valid_start_date AND valid_end_date'.
+REPLACE: `amount_value` WITH `COALESCE(amount_value, numerator_value)` and carry its unit, `COALESCE(amount_unit_concept_id, numerator_unit_concept_id)`, together with denominator_value / denominator_unit_concept_id: a concentration's numerator is per denominator unit (e.g. 125 mg per 5 mL), so compare or compute with the units in view. If only fixed-dose forms are meant, say so with `numerator_value IS NULL`.
 
----
+#### Sources
 
-### EPISODE Domain
-
-### 1. Episode Parent ID Self Join { #domain-specific-episode-parent-id-self-join }
-
-**Rule ID:** `domain_specific.episode_parent_id_self_join`
-**Severity:** ERROR
-
-#### Intent
-
-The episode table supports hierarchical nesting where an episode can have a
-    parent episode. For example:
-    - Parent episode: "Hospital admission" (episode_id = 100)
-    - Child episode: "ICU stay" (episode_id = 101, episode_parent_id = 100)
-    - Child episode: "Surgery during admission" (episode_id = 102, episode_parent_id = 100)
-
-    The episode_parent_id column (INTEGER) is a self-referential foreign key that
-    should ONLY join to episode.episode_id in the same table.
-
-#### How it works
-
-This rule analyzes the SQL query to identify episode parent id self join patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM episode e
-    JOIN condition_occurrence co ON e.episode_parent_id = co.condition_occurrence_id
-```
-
-```sql
-SELECT * FROM episode e
-    JOIN visit_occurrence vo ON e.episode_parent_id = vo.visit_occurrence_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT child.*, parent.episode_concept_id AS parent_type
-    FROM episode child
-    JOIN episode parent ON child.episode_parent_id = parent.episode_id
-```
-
-```sql
-SELECT e1.*, e2.*, e3.*
-    FROM episode e1
-    LEFT JOIN episode e2 ON e1.episode_parent_id = e2.episode_id
-    LEFT JOIN episode e3 ON e2.episode_parent_id = e3.episode_id
-```
-
-#### Common scenarios
-
-- Joining episode_parent_id to other clinical tables
-- episode.episode_parent_id = condition_occurrence.condition_occurrence_id
-- episode.episode_parent_id = visit_occurrence.visit_occurrence_id
-
-#### Suggested fix
-
-Use: FROM episode child JOIN episode parent ON child.episode_parent_id = parent.episode_id
-
----
-
-### LOCATION Domain
-
-### 1. Location History Entity ID Requires Domain ID { #domain-specific-location-history-entity-id-requires-domain-id }
-
-**Rule ID:** `domain_specific.location_history_entity_id_requires_domain_id`
-**Severity:** ERROR
-
-#### Intent
-
-The location_history table tracks location changes for different entity types
-    using a polymorphic foreign key pattern:
-
-    - entity_id: Polymorphic FK to person_id, provider_id, or care_site_id
-    - domain_id: Discriminator identifying which table entity_id refers to
-      - 'Person' → entity_id refers to person.person_id
-      - 'Provider' → entity_id refers to provider.provider_id
-      - 'Care Site' → entity_id refers to care_site.care_site_id
-
-    Without filtering on domain_id, joins on entity_id are ambiguous because:
-    - Integer IDs can collide across tables (person_id=123, provider_id=123)
-    - Query may incorrectly match entities from wrong domain
-    - Results will include mixed entity types
-
-#### How it works
-
-This rule analyzes the SQL query to identify location history entity id requires domain id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM location_history lh
-    JOIN person p ON lh.entity_id = p.person_id
-```
-
-```sql
-SELECT * FROM location_history lh
-    JOIN provider pr ON lh.entity_id = pr.provider_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM location_history lh
-    JOIN person p ON lh.entity_id = p.person_id
-    WHERE lh.domain_id = 'Person'
-```
-
-```sql
-SELECT * FROM location_history lh
-    JOIN person p ON lh.entity_id = p.person_id
-      AND lh.domain_id = 'Person'
-```
-
-#### Common scenarios
-
-- Joining location_history.entity_id to person.person_id without domain_id filter
-- Joining location_history.entity_id to provider.provider_id without domain_id filter
-- Joining location_history.entity_id to care_site.care_site_id without domain_id filter
-
-#### Suggested fix
-
-Add WHERE location_history.domain_id = '<Domain>' matching the joined table.
+- [OMOP CDM: Data Model Conventions, Drug strength](https://ohdsi.github.io/CommonDataModel/dataModelConventions.html#drug-strength)
+- [OMOP CDM: Drug Dose Calculation](https://ohdsi.github.io/CommonDataModel/drug_dose.html)
+- [OMOP CDM v5.4 specification: DRUG_STRENGTH](https://ohdsi.github.io/CommonDataModel/cdm54.html#drug_strength)
 
 ---
 
 ### MEASUREMENT Domain
 
-### 1. Measurement Cross-Unit Comparison { #domain-specific-measurement-cross-unit-comparison }
-
-**Rule ID:** `domain_specific.measurement_cross_unit_comparison`
-**Severity:** WARNING
-
-#### Intent
-
-The measurement table can store the same clinical concept (e.g., blood glucose,
-    HbA1c) in different units across sites or time periods:
-
-    Blood glucose: 5.5 (mmol/L) vs 100 (mg/dL)
-    HbA1c: 7.0 (%) vs 53 (mmol/mol)
-
-    Performing aggregations (AVG, SUM, MIN, MAX) or arithmetic operations across
-    measurements with different units produces meaningless results:
-
-    AVG(5.5 mmol/L, 100 mg/dL) = 52.75 (meaningless!)
-
-#### How it works
-
-This rule analyzes the SQL query to identify measurement cross-unit comparison patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-without constraining unit
-    SELECT AVG(value_as_number) AS avg_glucose
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-```
-
-```sql
-SELECT person_id, AVG(value_as_number)
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-      AND unit_concept_id IN (8753, 8840)  -- mmol/L and mg/dL
-    GROUP BY person_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT AVG(value_as_number) AS avg_glucose_mmol
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-      AND unit_concept_id = 8753  -- mmol/L only
-```
-
-```sql
-SELECT
-      unit_concept_id,
-      AVG(value_as_number) AS avg_value
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-    GROUP BY unit_concept_id
-```
-
-#### Suggested fix
-
-Add unit_concept_id constraint (e.g., = <unit>) or group by unit. Alternatively, convert values to a common unit before aggregation.
-
----
-
-### 2. Measurement Duplicate Detection { #domain-specific-measurement-duplicate-detection }
-
-**Rule ID:** `domain_specific.measurement_duplicate_detection`
-**Severity:** WARNING
-
-#### Intent
-
-The measurement table can contain duplicate records with the same:
-    - person_id
-    - measurement_concept_id
-    - measurement_date
-
-    These duplicates can occur from:
-    - ETL processing errors (same source record loaded multiple times)
-    - Data quality issues (duplicate submissions from source systems)
-    - Integration artifacts (same measurement from different data feeds)
-    - Multiple precision levels (e.g., 5.5 and 5.52 for same measurement)
-
-    Unlike drug_exposure (where refills are expected) or condition_occurrence
-    (where recurring diagnoses are expected), duplicate measurements at the
-    same date typically indicate data quality issues rather than clinical reality.
-
-Detection patterns:
-    Query performs aggregations or counts on measurement table without:
-    - Grouping by natural key (person_id, measurement_concept_id, measurement_date)
-    - Using DISTINCT
-    - Using deduplication logic (ROW_NUMBER, etc.)
-
-Violation example:
-    -- BAD: Counts may include duplicates
-    SELECT person_id, AVG(value_as_number) AS avg_glucose
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-    GROUP BY person_id
-    -- If person has 2 identical measurements on same date, average is skewed
-
-Correct patterns:
-    -- GOOD: Group by natural key to handle duplicates
-    SELECT person_id, measurement_date, measurement_concept_id,
-           AVG(value_as_number) AS avg_value
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-    GROUP BY person_id, measurement_date, measurement_concept_id
-
-    -- GOOD: Use ROW_NUMBER to deduplicate
-    WITH ranked AS (
-      SELECT *,
-        ROW_NUMBER() OVER (
-          PARTITION BY person_id, measurement_concept_id, measurement_date
-          ORDER BY measurement_datetime NULLS LAST
-        ) AS rn
-      FROM measurement
-    )
-    SELECT * FROM ranked WHERE rn = 1
-
-    -- GOOD: Use DISTINCT
-    SELECT DISTINCT person_id, measurement_concept_id, measurement_date
-    FROM measurement
-
-#### How it works
-
-This rule analyzes the SQL query to identify measurement duplicate detection patterns.
-
-#### Examples
-
-**Correct patterns:**
-
-```sql
-SELECT person_id, measurement_date, measurement_concept_id,
-           AVG(value_as_number) AS avg_value
-    FROM measurement
-    WHERE measurement_concept_id = 3004410
-    GROUP BY person_id, measurement_date, measurement_concept_id
-```
-
-```sql
-WITH ranked AS (
-      SELECT *,
-        ROW_NUMBER() OVER (
-          PARTITION BY person_id, measurement_concept_id, measurement_date
-          ORDER BY measurement_datetime NULLS LAST
-        ) AS rn
-      FROM measurement
-    )
-    SELECT * FROM ranked WHERE rn = 1
-```
-
-#### Suggested fix
-
-Group by natural key (person_id, measurement_concept_id, measurement_date), use DISTINCT, or apply explicit deduplication logic like ROW_NUMBER() OVER (PARTITION BY person_id, measurement_concept_id, measurement_date).
-
----
-
-### 3. Measurement Operator Concept Validation { #domain-specific-measurement-operator-concept-validation }
+### 11. Measurement Operator Concept Validation { #domain-specific-measurement-operator-concept-validation }
 
 **Rule ID:** `domain_specific.measurement_operator_concept_validation`
-**Severity:** ERROR
+**Severity:** ERROR (row filter) / WARNING (CASE, OR or outer-join branch)
 
 #### Intent
 
-operator_concept_id indicates the comparison operator for value_as_number.
-    Only 5 specific concept_ids are valid operators in OMOP CDM.
-    Using any other concept_id is incorrect and will cause data integrity issues.
+CDM v5.4 restricts `measurement.operator_concept_id` to the 'Meas Value Operator' domain: "Operators are <, <=, =, >=, > and these concepts belong to the 'Meas Value Operator' domain." A test for a concept id outside that domain can never be true on a conformant CDM.
 
 #### How it works
 
-This rule analyzes the SQL query to identify measurement operator concept validation patterns.
+The rule judges `operator_concept_id = <id>` and `operator_concept_id IN (<ids>)`, with the column followed through casts, CTEs and derived tables to `measurement`. It reports a test whose ids are all outside the domain (the domain's seven standard concepts, generated from the vocabulary, are accepted).
+
+- As a row filter (a conjunct of WHERE, HAVING or an inner join's ON) the query returns no rows: **ERROR**.
+- In a CASE, under OR or in an outer join's ON, that branch is dead: **WARNING**.
+
+0 (an unmapped source operator), a list that contains a valid operator or 0, `<>`, `NOT IN` and ordering tests such as `> 0` are satisfiable and are not reported.
 
 #### Examples
 
 **Violation patterns:**
 
-```sql
-SELECT * FROM measurement WHERE operator_concept_id = 201826
-```
+*8554 is the unit 'percent', not an operator (ERROR)*
 
 ```sql
-SELECT * FROM measurement WHERE operator_concept_id = 999999
+SELECT person_id, value_as_number FROM measurement
+WHERE measurement_concept_id = 3004410
+  AND operator_concept_id = 8554;
+```
+
+*through a derived table (ERROR)*
+
+```sql
+SELECT d.person_id
+FROM (SELECT person_id, operator_concept_id FROM measurement) d
+WHERE d.operator_concept_id IN (8554, 201826);
+```
+
+*the CASE branch is never taken (WARNING)*
+
+```sql
+SELECT SUM(CASE WHEN operator_concept_id = 8554 THEN 1 ELSE 0 END) AS n_below_limit
+FROM measurement;
 ```
 
 **Correct patterns:**
 
+*4171756 is '<'*
+
 ```sql
-SELECT * FROM measurement WHERE operator_concept_id = 4172704  -- >
-    SELECT * FROM measurement WHERE operator_concept_id = 4171756  -- <
-    SELECT * FROM measurement WHERE operator_concept_id = 4171755  -- =
-    SELECT * FROM measurement WHERE operator_concept_id IN (4171754, 4172703)  -- <=, >=
+SELECT person_id, value_as_number FROM measurement
+WHERE measurement_concept_id = 3004410
+  AND operator_concept_id = 4171756;
 ```
 
-#### Common scenarios
+*exact results: no operator, unmapped, or '='*
 
-- Using random concept_ids as operators
-- Using measurement concept_ids instead of operator concept_ids
-- Hardcoding invalid operator values
+```sql
+SELECT person_id FROM measurement
+WHERE value_as_number > 7
+  AND (operator_concept_id IS NULL OR operator_concept_id IN (0, 4172703));
+```
+
+*an exclusion*
+
+```sql
+SELECT person_id FROM measurement
+WHERE operator_concept_id NOT IN (4171756, 4171754);
+```
 
 #### Suggested fix
 
-Use one of the valid operator concept_ids
+REPLACE: the concept id WITH an operator concept: 4171756 (<), 4171754 (<=), 4172703 (=), 4171755 (>=), 4172704 (>). Use `operator_concept_id IS NULL OR operator_concept_id IN (0, 4172703)` for results recorded as an exact value.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
-### 4. Measurement Range Low/High Validation { #domain-specific-measurement-range-low-high-validation }
+### 12. Measurement Range Low/High Validation { #domain-specific-measurement-range-low-high-validation }
 
 **Rule ID:** `domain_specific.measurement_range_low_high_validation`
-**Severity:** ERROR
+**Severity:** WARNING
 
 #### Intent
 
-In the measurement table, range_low and range_high represent the normal
-    reference range for a measurement. By definition, range_low must be ≤ range_high.
-    A query that filters for range_low > range_high is logically impossible
-    unless it's a data quality check.
+CDM v5.4 stores the lower and upper limit of normal provided by the source in `measurement.range_low` and `range_high`. A row whose lower limit is above its upper limit is a data error. A filter that holds only for such rows returns exactly those rows: what a data-quality audit wants, and not a clinical criterion. The CDM does not forbid the rows, so the rule is a warning.
 
 #### How it works
 
-OMOP semantic rule CLIN_027:
-Detects logically impossible range constraints where range_low > range_high
+The rule reports a row filter (a conjunct of WHERE, HAVING or an inner join's ON, outside NOT / NOT EXISTS / EXCEPT) that can hold only when `range_low > range_high` on one measurement row:
+
+- a strict comparison of the two columns of the same row, in either operand order or as `range_low - range_high > 0`;
+- literal bounds on the two columns of the same row that leave no room, such as `range_low >= 150 AND range_high < 100`.
+
+Columns are followed through casts, CTEs and derived tables, and bounds are collected per row, so a self-join, UNION branches or a subquery that constrain different rows are not combined. `range_low >= range_high` is not reported, because a source may give one reference value as both limits.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM measurement
-    WHERE range_low > range_high
-      AND value_as_number > range_high
+SELECT person_id, value_as_number FROM measurement
+WHERE measurement_concept_id = 3004410
+  AND range_low > range_high;
 ```
 
+*literal bounds that require an inverted range*
+
 ```sql
-SELECT * FROM measurement
-    WHERE range_low >= 150
-      AND range_high < 100
+SELECT person_id FROM measurement
+WHERE range_low >= 150
+  AND range_high < 100;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM measurement
-    WHERE range_low > range_high
+SELECT person_id, value_as_number FROM measurement
+WHERE measurement_concept_id = 3004410
+  AND value_as_number > range_high;
 ```
+
+*out-of-range results*
 
 ```sql
 SELECT * FROM measurement
-    WHERE value_as_number < range_low
-       OR value_as_number > range_high
+WHERE value_as_number < range_low
+   OR value_as_number > range_high;
 ```
 
-#### Common scenarios
+*overlapping bounds*
 
-- Direct comparison: WHERE range_low > range_high (as business logic filter)
-- Static contradictions: WHERE range_low > 100 AND range_high < 50
-- Swapped column usage in filters
+```sql
+SELECT * FROM measurement
+WHERE range_low >= 50
+  AND range_high <= 200;
+```
+
+*bounds on two different rows*
+
+```sql
+SELECT a.person_id
+FROM measurement a JOIN measurement b ON a.person_id = b.person_id
+WHERE a.range_low > 100 AND b.range_high < 50;
+```
 
 #### Suggested fix
 
-Ensure range_low <= range_high
+REMOVE: the filter, unless the query audits reference ranges on purpose. To find abnormal results compare the value with the range: `value_as_number < range_low OR value_as_number > range_high`.
 
----
+#### Sources
 
-### 5. Measurement Unit Validation { #domain-specific-measurement-unit-validation }
-
-**Rule ID:** `domain_specific.measurement_unit_validation`
-**Severity:** WARNING
-
-#### Intent
-
-OMOP semantic rule: When a query filters measurement.value_as_number against a numeric threshold, it must also constrain unit_concept_id.
-
-#### How it works
-
-This rule analyzes the SQL query to identify measurement unit validation patterns.
-
-#### Examples
-
-#### Suggested fix
-
-Add a unit_concept_id constraint alongside the numeric threshold: AND m.unit_concept_id = <unit_concept_id>. Look up the correct UCUM unit concept ID in the OMOP vocabulary (e.g. SELECT concept_id FROM concept WHERE concept_code = '%' AND vocabulary_id = 'UCUM').
-
----
-
-### 6. Measurement Value Representation Consistency { #domain-specific-measurement-value-as-number-and-concept-validation }
-
-**Rule ID:** `domain_specific.measurement_value_as_number_and_concept_validation`
-**Severity:** WARNING
-
-#### Intent
-
-value_as_number stores quantitative results (e.g., 6.5 mg/dL)
-    value_as_concept_id stores qualitative results (e.g., "Positive", "Negative")
-
-    Both CAN be populated simultaneously for the same measurement, but they typically
-    represent different aspects of the result. Filtering both with AND is usually
-    a logic error that will be overly restrictive.
-
-#### How it works
-
-OMOP semantic rule CLIN_028:
-Detects when both value_as_number and value_as_concept_id are filtered with AND
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM measurement
-    WHERE value_as_number > 6.5
-      AND value_as_concept_id = 45884084
-```
-
-```sql
-with AND (overly restrictive)
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM measurement
-    WHERE value_as_number > 6.5
-       OR value_as_concept_id = 45884084
-```
-
-```sql
-SELECT * FROM measurement
-    WHERE value_as_number IS NOT NULL
-      AND value_as_concept_id IS NOT NULL
-```
-
-#### Common scenarios
-
-- Filtering both columns with AND: WHERE value_as_number > 6.5 AND value_as_concept_id = 45884084
-- Not understanding that measurements usually have EITHER a numeric OR concept value
-- Overly restrictive filters that return no results
-
-#### Suggested fix
-
-Use OR or separate logic depending on measurement type
+- [OMOP CDM v5.4 specification: MEASUREMENT](https://ohdsi.github.io/CommonDataModel/cdm54.html#measurement)
 
 ---
 
 ### NOTE Domain
 
-### 1. Note NLP Snippet Misuse { #domain-specific-note-nlp-snippet-misuse }
+### 13. Note NLP Snippet Misuse { #domain-specific-note-nlp-snippet-misuse }
 
 **Rule ID:** `domain_specific.note_nlp_snippet_misuse`
 **Severity:** WARNING
 
 #### Intent
 
-note_nlp columns and their purposes:
-    - snippet: Short text excerpt around the NLP-extracted term (for context)
-    - lexical_variant: The exact text string found in the note
-    - note_nlp_concept_id: Standardized OMOP concept_id for the extracted entity
+CDM v5.4 defines `note_nlp.snippet` as "a small window of text surrounding the term" and `note_nlp.lexical_variant` as "raw text extracted from the NLP tool". Both are free text kept for context; the coded result of the extraction is `note_nlp_concept_id`. Selecting findings by matching the strings misses spelling, abbreviation and casing variants and catches substrings.
 
 #### How it works
 
-This rule analyzes the SQL query to identify note nlp snippet misuse patterns.
+In WHERE or JOIN ON, the rule reports a snippet / lexical_variant column (through casts, LOWER / UPPER / TRIM, CTEs and derived tables) that is compared with `=` / `IN` to non-empty text, matched with LIKE / ILIKE (also `LIKE ANY`), a regular expression or SIMILAR TO against a real pattern, searched with POSITION / STRPOS / CHARINDEX, or equated to `concept.concept_name` / `concept_synonym.concept_synonym_name`, unless the same note_nlp row is also selected by `note_nlp_concept_id`. Matching the text of rows already selected by concept (a negation or context cue) or of unmapped rows (`note_nlp_concept_id = 0`) is not reported. Projections, presence checks (`IS NOT NULL`, `<> ''`, `LIKE '%'`), lengths and CASE logic are not reported.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM note_nlp WHERE snippet = 'diabetes'
+SELECT note_nlp_id FROM note_nlp
+WHERE snippet LIKE '%diabetes%';
 ```
 
+*text joined to concept names*
+
 ```sql
-SELECT * FROM note_nlp WHERE lexical_variant = 'DM'
+SELECT n.note_id, c.concept_id
+FROM note_nlp n
+JOIN concept c ON LOWER(n.lexical_variant) = LOWER(c.concept_name);
+```
+
+*substring search*
+
+```sql
+SELECT note_nlp_id FROM note_nlp
+WHERE POSITION('diabetes' IN snippet) > 0;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM note_nlp WHERE note_nlp_concept_id = 201826
+SELECT note_nlp_id, snippet FROM note_nlp
+WHERE note_nlp_concept_id = 201820;
 ```
+
+*a context cue on rows selected by concept*
 
 ```sql
-SELECT snippet, note_nlp_concept_id FROM note_nlp
-    WHERE note_nlp_concept_id IN (201826, 443238)
+SELECT note_id FROM note_nlp
+WHERE note_nlp_concept_id = 201820
+  AND snippet NOT ILIKE '%family history%';
 ```
 
-#### Common scenarios
+*unmapped rows*
 
-- Text matching on snippet/lexical_variant instead of using concept_id
-- Joining to concept table on text columns instead of concept_id
-- Filtering by exact text matches that miss lexical variations
+```sql
+SELECT lexical_variant, COUNT(*) FROM note_nlp
+WHERE note_nlp_concept_id = 0
+  AND lexical_variant ILIKE '%covid%'
+GROUP BY lexical_variant;
+```
 
 #### Suggested fix
 
-Use note_nlp_concept_id instead of text matching.
+REPLACE: text matches on note_nlp.snippet / note_nlp.lexical_variant WITH `WHERE note_nlp.note_nlp_concept_id = <id>` (or IN (...)). Keep the text columns in SELECT for context, or as an extra filter on rows already selected by concept.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: NOTE_NLP](https://ohdsi.github.io/CommonDataModel/cdm54.html#note_nlp)
 
 ---
 
 ### OBSERVATION Domain
 
-### 1. Observation Value As Columns Mutually Contextual { #domain-specific-observation-value-as-columns-mutually-contextual }
+### 14. Observation Value As Concept Confusion { #domain-specific-observation-value-as-concept-confusion }
 
-**Rule ID:** `domain_specific.observation_value_as_columns_mutually_contextual`
+**Rule ID:** `domain_specific.observation_value_as_concept_confusion`
 **Severity:** WARNING
 
 #### Intent
 
-The observation table stores observation results in multiple format columns:
-    - value_as_number: for numeric results (e.g., 98.6, 120, 7.2)
-    - value_as_string: for text results (e.g., "Positive", "Negative", "High")
-    - value_as_concept_id: for coded results (e.g., concept_id for "Normal")
-
-    For a given observation row, typically only ONE of these columns is populated;
-    the others are NULL. They represent alternative formats for the same result,
-    not complementary data points.
+In CDM v5.4 a source code that carries two clinical ideas is split into `observation_concept_id` (its 'Maps to' target, the question) and `value_as_concept_id` (its 'Maps to value' target, the answer). A filter that requires the same concept in both columns of one row matches only rows where question and answer coincide, which usually means the concept was put in the wrong column. The CDM allows such rows, so the rule is a warning.
 
 #### How it works
 
-This rule analyzes the SQL query to identify observation value as columns mutually contextual patterns.
+For each observation row (followed through casts, CTEs and derived tables), the rule combines the row filters (conjuncts of WHERE, HAVING or an inner join's ON, outside NOT). It reports when both columns are restricted to the same set of literal concept ids, or when the two columns are equated. Overlapping but different lists, conditions on two different rows, OR branches and 0 (unmapped) are not reported. Concepts that some source concept maps to with both 'Maps to' and 'Maps to value' in the vocabulary (for example 903657 'Cigarette smoker') are not reported either, because a conformant ETL writes them to both columns.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM observation
-    WHERE value_as_number > 100 AND value_as_string = 'High'
+SELECT person_id FROM observation
+WHERE observation_concept_id = 134057
+  AND value_as_concept_id = 134057;
 ```
 
+*the two columns of one row equated*
+
 ```sql
-SELECT * FROM observation
-    WHERE value_as_number BETWEEN 90 AND 120
-      AND value_as_concept_id = 45884084
+SELECT person_id FROM observation
+WHERE observation_concept_id = value_as_concept_id;
 ```
 
 **Correct patterns:**
 
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 4058286
-      AND value_as_concept_id = 45884084
-```
+*Z82.4: 'Family history of clinical finding' with value 'Disorder of cardiovascular system'*
 
 ```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 3004249
-      AND value_as_number > 6.5
+SELECT person_id FROM observation
+WHERE observation_concept_id = 4167217
+  AND value_as_concept_id = 134057;
 ```
 
-#### Common scenarios
+*two different rows*
 
-- Using AND between multiple value_as_* columns
-- Assumes multiple columns can be populated simultaneously
-- Results in queries that match almost zero rows
+```sql
+SELECT o1.person_id
+FROM observation o1 JOIN observation o2 ON o1.person_id = o2.person_id
+WHERE o1.observation_concept_id = 134057
+  AND o2.value_as_concept_id = 134057;
+```
+
+*a concept the vocabulary maps to as question and as answer*
+
+```sql
+SELECT person_id FROM observation
+WHERE observation_concept_id = 903657
+  AND value_as_concept_id = 903657;
+```
 
 #### Suggested fix
 
-Use a single value_as_* column or OR conditions for alternatives.
+REPLACE: one of the two concept ids, so that observation_concept_id holds what was observed (the 'Maps to' target) and value_as_concept_id holds its value (the 'Maps to value' target); keep the filter only when auditing rows where the two coincide.
 
----
+#### Sources
 
-### 2. Observation Value As Concept Confusion { #domain-specific-observation-value-as-concept-confusion }
-
-**Rule ID:** `domain_specific.observation_value_as_concept_confusion`
-**Severity:** ERROR
-
-#### Intent
-
-observation_concept_id = "What are you measuring?" (e.g., "Blood pressure")
-    value_as_concept_id = "What is the answer?" (e.g., "High", "Low", "Normal")
-
-    Using the same concept_id for both means you're saying:
-    "I'm measuring Blood Pressure, and the answer is Blood Pressure" - which is nonsensical.
-
-#### How it works
-
-OMOP semantic rule CLIN_034 (partial):
-Detects when the same concept_id is used for both observation_concept_id and value_as_concept_id
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 4058286
-      AND value_as_concept_id = 4058286
-```
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id IN (4058286, 3004249)
-      AND value_as_concept_id IN (4058286, 3016502)
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 4058286
-      AND value_as_concept_id = 45877994
-```
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 4058286
-      AND value_as_number > 120
-```
-
-#### Common scenarios
-
-- Copying the same concept_id to both columns
-- Not understanding the difference between observation type and observation result
-- Using observation concepts as answers instead of answer-set concepts
-
-#### Suggested fix
-
-Use different concepts for observation_concept_id (question) and value_as_concept_id (answer)
-
----
-
-### 3. Observation Value As String Numeric Comparison { #domain-specific-observation-value-as-string-numeric-comparison }
-
-**Rule ID:** `domain_specific.observation_value_as_string_numeric_comparison`
-**Severity:** ERROR
-
-#### Intent
-
-value_as_string is a VARCHAR field. Applying numeric comparison
-    operators directly is semantically incorrect:
-    - The database may silently coerce strings to numbers, returning
-      wrong results or errors when non-numeric strings are encountered.
-    - The proper column for numeric comparisons is value_as_number.
-
-#### How it works
-
-This rule analyzes the SQL query to identify observation value as string numeric comparison patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 3038553
-      AND value_as_string > 100
-```
-
-```sql
-SELECT * FROM observation
-    WHERE value_as_string BETWEEN 50 AND 200
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM observation
-    WHERE observation_concept_id = 3038553
-      AND value_as_number > 100
-```
-
-```sql
-SELECT * FROM observation
-    WHERE CAST(value_as_string AS FLOAT) > 100
-```
-
-#### Common scenarios
-
-- WHERE value_as_string > 100
-- WHERE value_as_string <= 7.5
-- WHERE value_as_string BETWEEN 50 AND 200
-
-#### Suggested fix
-
-Replace with value_as_number or explicitly CAST(value_as_string AS NUMERIC).
+- [OMOP CDM v5.4 specification: OBSERVATION](https://ohdsi.github.io/CommonDataModel/cdm54.html#observation)
+- [The Book of OHDSI, ch. 5: Standardized Vocabularies, Mapping relationships ('Maps to value')](https://ohdsi.github.io/TheBookOfOhdsi/StandardizedVocabularies.html#conceptMapping)
 
 ---
 
 ### PERSON Domain
 
-### 1. Episode Event No Person ID { #domain-specific-episode-event-no-person-id }
-
-**Rule ID:** `domain_specific.episode_event_no_person_id`
-**Severity:** ERROR
-
-#### Intent
-
-The episode_event table is a linking table that connects episodes to their
-    constituent clinical events. The table schema is:
-    - episode_id (FK to episode.episode_id)
-    - event_id (polymorphic ID to clinical event)
-    - episode_event_field_concept_id (indicates which domain event_id refers to)
-
-    The episode_event table does NOT have a person_id column.
-
-    Developers sometimes mistakenly try to:
-    1. Join episode_event directly to person on person_id (column doesn't exist)
-    2. Filter episode_event by person_id (column doesn't exist)
-    3. Select episode_event.person_id (column doesn't exist)
-    4. Use person_id in WHERE/ORDER BY/GROUP BY with episode_event
-
-Why this is wrong:
-    The episode_event table is intentionally designed without person_id to avoid
-    denormalization. Person information is accessed through the episode table:
-    - episode_event contains the event linkages
-    - episode contains the person_id and episode metadata
-    - This ensures data consistency and proper normalization
-
-    Attempting to use person_id on episode_event:
-    - Causes SQL errors (column does not exist)
-    - Indicates misunderstanding of episode_event table structure
-    - Breaks query execution
-
-#### How it works
-
-This rule analyzes the SQL query to identify episode event no person id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM episode_event ee
-    JOIN person p ON ee.person_id = p.person_id
-```
-
-```sql
-SELECT * FROM episode_event
-    WHERE person_id = 12345
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM episode_event ee
-    JOIN episode e ON ee.episode_id = e.episode_id
-    JOIN person p ON e.person_id = p.person_id
-```
-
-```sql
-SELECT ee.*, e.person_id
-    FROM episode_event ee
-    JOIN episode e ON ee.episode_id = e.episode_id
-    WHERE e.person_id = 12345
-```
-
-#### Suggested fix
-
-Use: FROM episode_event ee JOIN episode e ON ee.episode_id = e.episode_id JOIN person p ON e.person_id = p.person_id
-
----
-
-### 2. Person Birth Field Validation { #domain-specific-person-birth-field-validation }
+### 15. Person Birth Field Validation { #domain-specific-person-birth-field-validation }
 
 **Rule ID:** `domain_specific.person_birth_field_validation`
-**Severity:** ERROR
+**Severity:** ERROR (inverted BETWEEN) / WARNING (month or day out of range, impossible month/day pair, year before 1850)
 
 #### Intent
 
-Birth fields in the person table should contain plausible values.
-    Values outside valid ranges indicate data quality issues or query logic errors.
+CDM v5.4 fills `month_of_birth` and `day_of_birth` from a precise date of birth, and the OHDSI Data Quality Dashboard (DQD) checks the birth fields against plausible ranges: month 1-12, day 1-31, year from 1850. A row filter that admits no value in those ranges can match rows only in non-conformant data. The DQD thresholds tolerate a share of violating rows, so the CDM does not guarantee that none exist, and DQD's own check query selects exactly those rows: such a filter is a WARNING. An inverted `BETWEEN` is empty for any data and is an ERROR.
 
 #### How it works
 
-This rule analyzes the SQL query to identify person birth field validation patterns.
+The rule computes the values a row filter admits (`=`, `IN`, `BETWEEN`, or a one-sided comparison; any literal, quoted or cast) on `person.year_of_birth`, `month_of_birth`, `day_of_birth`, or a year, month or day extracted from `birth_datetime` (`EXTRACT`, `DATE_PART`, `YEAR()`, `MONTH()`, `DAY()`). Columns are followed through CTEs and derived tables. Only conjuncts of WHERE, HAVING or an inner join's ON count, outside NOT / NOT EXISTS / EXCEPT.
+
+- an inverted `BETWEEN` on any birth field (lower bound above upper bound): **ERROR**, empty for any data.
+- month or day with no value in 1-12 / 1-31, or a month/day pair that never occurs (30 February): **WARNING**, rows can match only in non-conformant data.
+- year_of_birth only before 1850: **WARNING**, DQD treats such years as implausible, not impossible.
+
+There is no upper bound on year_of_birth: DQD derives it from the current date, and date-shifted databases store later years.
 
 #### Examples
 
 **Violation patterns:**
 
+*inverted BETWEEN (ERROR)*
+
 ```sql
-SELECT * FROM person WHERE year_of_birth = 1850
+SELECT person_id FROM person
+WHERE year_of_birth BETWEEN 2000 AND 1990;
 ```
 
+*month out of range: only non-conformant rows match (WARNING)*
+
 ```sql
-SELECT * FROM person WHERE month_of_birth = 13
+SELECT person_id FROM person
+WHERE month_of_birth = 13;
 ```
 
-**Correct patterns:**
+*one-sided, same set (WARNING)*
 
 ```sql
-SELECT * FROM person WHERE year_of_birth BETWEEN 1950 AND 2000
-    SELECT * FROM person WHERE month_of_birth = 6
-    SELECT * FROM person WHERE day_of_birth = 15
+SELECT person_id FROM person
+WHERE month_of_birth > 12;
 ```
 
-#### Common scenarios
-
-- year_of_birth = 1850 (too far in the past)
-- year_of_birth = 2050 (in the future)
-- month_of_birth = 13 (invalid month)
-
-#### Suggested fix
-
-Use valid birth field values within plausible ranges
-
----
-
-### PROCEDURE Domain
-
-### 2. Procedure Occurrence Quantity Semantics { #domain-specific-procedure-occurrence-quantity-semantics }
-
-**Rule ID:** `domain_specific.procedure_occurrence_quantity_semantics`
-**Severity:** WARNING
-
-#### Intent
-
-quantity is the number of units performed in ONE procedure event.
-    It is NOT equivalent to COUNT(*) for counting procedure records.
-
-#### How it works
-
-This rule analyzes the SQL query to identify procedure occurrence quantity semantics patterns.
-
-#### Examples
-
-**Violation patterns:**
+*day extracted from birth_datetime (WARNING)*
 
 ```sql
-SELECT person_id, SUM(quantity) AS procedure_count
-    FROM procedure_occurrence
-    GROUP BY person_id
+SELECT person_id FROM person
+WHERE EXTRACT(DAY FROM birth_datetime) = 32;
 ```
 
+*a date that does not exist (WARNING)*
+
 ```sql
-SELECT SUM(quantity) AS num_procedures
-    FROM procedure_occurrence
+SELECT person_id FROM person
+WHERE month_of_birth = 2 AND day_of_birth = 30;
+```
+
+*only years before 1850 (WARNING)*
+
+```sql
+SELECT person_id FROM person
+WHERE year_of_birth < 1800;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT person_id, COUNT(*) AS procedure_count
-    FROM procedure_occurrence
-    GROUP BY person_id
+SELECT person_id FROM person
+WHERE month_of_birth = 12;
 ```
 
 ```sql
-with clear alias):
-    SELECT person_id, SUM(quantity) AS total_procedure_units
-    FROM procedure_occurrence
-    GROUP BY person_id
+SELECT person_id FROM person
+WHERE year_of_birth BETWEEN 1950 AND 2000;
 ```
 
-#### Common scenarios
+*a future year on a date-shifted CDM*
 
-- SUM(quantity) aliased as "procedure_count" (suggests counting records)
-- SUM(quantity) AS "number_of_procedures" (implies record count)
-- Using SUM(quantity) when COUNT(*) is intended
+```sql
+SELECT COUNT(*) FROM person
+WHERE year_of_birth = 2092;
+```
+
+*a value audit under OR*
+
+```sql
+SELECT COUNT(*) FROM person
+WHERE month_of_birth = 0 OR month_of_birth IS NULL;
+```
+
+<!-- extra-examples:start -->
+**Warning variant: month 0 is outside 1-12 like any other non-month: only non-conformant rows match**
+
+```sql
+SELECT person_id FROM person
+WHERE month_of_birth = 0;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Use COUNT(*) to count records, or use clearer aliases like 'total_units'
+REPLACE: the literal WITH a value in range: month_of_birth 1-12, day_of_birth 1-31, year_of_birth from 1850; for an inverted BETWEEN, put the lower bound first.
 
----
+#### Sources
 
-### SPECIMEN Domain
-
-### 1. Specimen Source ID Not Specimen ID { #domain-specific-specimen-source-id-not-specimen-id }
-
-**Rule ID:** `domain_specific.specimen_source_id_not_specimen_id`
-**Severity:** ERROR
-
-#### Intent
-
-The specimen table has a confusing naming pattern:
-    - specimen_id (INTEGER): OMOP primary key
-    - specimen_source_id (VARCHAR): Source system identifier (free-text)
-
-    The naming confusion:
-    - Most OMOP *_id columns are INTEGER foreign keys or primary keys
-    - Most source identifiers use *_source_value (VARCHAR)
-    - But specimen_source_id breaks this pattern - it LOOKS like a FK but is VARCHAR
-
-    This is the ONLY column in OMOP CDM that ends with _source_id as a free-text field.
-    All other *_source_id columns would be *_source_concept_id (INTEGER FKs to concept).
-
-Common mistake:
-    Developers see "specimen_source_id" and assume it's a numeric foreign key
-    that can be joined to other tables. This is incorrect.
-
-#### How it works
-
-This rule analyzes the SQL query to identify specimen source id not specimen id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM specimen s
-    JOIN measurement m ON s.specimen_source_id = m.measurement_id
-```
-
-```sql
-SELECT * FROM specimen s
-    JOIN person p ON s.specimen_source_id = p.person_id
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM specimen s
-    JOIN measurement m ON s.specimen_id = m.specimen_id
-```
-
-```sql
-SELECT * FROM specimen WHERE specimen_source_id = 'LAB-2024-001'
-```
-
-#### Suggested fix
-
-Replace specimen_source_id with specimen.specimen_id in JOIN conditions. Use specimen_source_id only for filtering.
+- [OMOP CDM v5.4 specification: PERSON](https://ohdsi.github.io/CommonDataModel/cdm54.html#person)
+- [OHDSI Data Quality Dashboard: CDM v5.4 field-level checks and thresholds (CSV)](https://raw.githubusercontent.com/OHDSI/DataQualityDashboard/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---
 
 ### VISIT Domain
 
-### 1. Visit Detail Admitted/Discharged Domain Validation { #domain-specific-visit-detail-admitted-discharged-domain }
-
-**Rule ID:** `domain_specific.visit_detail_admitted_discharged_domain`
-**Severity:** WARNING
-
-#### Intent
-
-The admission source and discharge destination columns represent WHERE the
-    patient came from and WHERE they went, not WHAT condition they had or WHAT
-    was done to them.
-
-    Correct domains:
-    - Visit: Emergency Room Visit, Inpatient Visit, Outpatient Visit
-    - Place of Service: Home, Skilled Nursing Facility, Hospice, Rehabilitation
-
-    Incorrect domains:
-    - Condition: Diabetes, Myocardial Infarction (these are clinical diagnoses)
-    - Drug: Aspirin, Metformin (these are medications)
-    - Procedure: Appendectomy, Chemotherapy (these are treatments)
-
-    When queries use hardcoded concept IDs in these columns without verifying
-    the domain, they risk using clinical concepts as location concepts.
-
-#### How it works
-
-This rule analyzes the SQL query to identify visit detail admitted/discharged domain validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-without domain verification
-    SELECT * FROM visit_detail
-    WHERE admitted_from_concept_id = 201826
-```
-
-```sql
-SELECT * FROM visit_detail
-    WHERE discharged_to_concept_id IN (12345, 67890)
-```
-
-**Correct patterns:**
-
-```sql
-with domain validation
-    SELECT vd.*
-    FROM visit_detail vd
-    JOIN concept c ON vd.admitted_from_concept_id = c.concept_id
-    WHERE c.domain_id IN ('Visit', 'Place of Service')
-```
-
-```sql
-with comment
-    SELECT * FROM visit_detail
-    WHERE admitted_from_concept_id = 8870  -- Emergency Room (Visit domain)
-```
-
-#### Common scenarios
-
-- Using condition concept IDs for admission source
-- Using procedure concept IDs for discharge destination
-- Hardcoding concept IDs without domain validation
-
-#### Suggested fix
-
-Join to the concept table and add: c.domain_id IN ('Visit', 'Place of Service').
-
----
-
-### 2. Visit Detail Dates Within Parent Visit { #domain-specific-visit-detail-dates-within-parent-visit }
+### 16. Visit Detail Dates Within Parent Visit { #domain-specific-visit-detail-dates-within-parent-visit }
 
 **Rule ID:** `domain_specific.visit_detail_dates_within_parent_visit`
 **Severity:** WARNING
 
 #### Intent
 
-Queries that filter for visit_detail dates OUTSIDE the parent visit range
-    indicate a logic error or misunderstanding of the visit hierarchy:
-    - visit_detail_start_date should be >= visit_start_date
-    - visit_detail_end_date should be <= visit_end_date
+CDM v5.4 puts in `visit_detail.visit_occurrence_id` the visit that subsumes the detail, so a visit_detail is expected to lie inside its parent visit, and it may share the visit's dates. A filter that keeps only visit_detail rows dated strictly outside the visit they are linked to selects misnested records: ETL defects, or an audit of them.
 
 #### How it works
 
-This rule analyzes the SQL query to identify visit detail dates within parent visit patterns.
+The rule reports a row filter (a conjunct of WHERE or an inner join's ON, outside NOT / NOT EXISTS / EXCEPT) that can hold only when a visit_detail starts or ends before its parent visit starts, or after it ends. The visit_detail and visit_occurrence rows must be linked on `visit_occurrence_id` (directly, through another table, or by `USING` / NATURAL joins), followed through casts, CTEs and derived tables. Strict `<` / `>` count, as do differences (`vd.visit_detail_start_date - vo.visit_start_date < 0`) and offsets that widen the gap; `<=` / `>=` count only with a widening offset, since equal dates are allowed. Dates are compared with dates and datetimes with datetimes.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vd.visit_detail_start_date < vo.visit_start_date
+SELECT vd.visit_detail_id FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vd.visit_detail_start_date < vo.visit_start_date;
 ```
 
+*datetimes*
+
 ```sql
-SELECT * FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vd.visit_detail_end_date > vo.visit_end_date
+SELECT vd.visit_detail_id FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vd.visit_detail_end_datetime > vo.visit_end_datetime;
 ```
 
 **Correct patterns:**
 
 ```sql
-within parent range
-    SELECT * FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vd.visit_detail_start_date >= vo.visit_start_date
-      AND vd.visit_detail_end_date <= vo.visit_end_date
+SELECT vd.visit_detail_id FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vd.visit_detail_start_date = vo.visit_start_date;
 ```
 
+*same-day admission*
+
 ```sql
-SELECT * FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vo.visit_start_date <= vd.visit_detail_start_date
-      AND vd.visit_detail_end_date <= vo.visit_end_date
+SELECT vd.visit_detail_id FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vd.visit_detail_start_date <= vo.visit_start_date;
+```
+
+*an audit that counts both kinds under OR*
+
+```sql
+SELECT COUNT(*) FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
+WHERE vd.visit_detail_start_date < vo.visit_start_date
+   OR vd.visit_detail_end_date > vo.visit_end_date;
 ```
 
 #### Suggested fix
 
-Ensure visit_detail dates are within visit_start_date and visit_end_date
+REPLACE: the outside-the-visit comparison WITH the nesting it violates, `vd.visit_detail_start_date >= vo.visit_start_date AND vd.visit_detail_end_date <= vo.visit_end_date`, or remove it. Keep it only when auditing misnested records on purpose.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: VISIT_DETAIL](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_detail)
 
 ---
 
-### 3. Visit Detail Has No Preceding Visit Occurrence ID { #domain-specific-visit-detail-has-no-preceding-visit-occurrence-id }
-
-**Rule ID:** `domain_specific.visit_detail_has_no_preceding_visit_occurrence_id`
-**Severity:** ERROR
-
-#### Intent
-
-The OMOP CDM has two separate temporal chains for visits:
-
-    1. visit_occurrence temporal chain:
-       - Uses preceding_visit_occurrence_id to link to previous visits
-       - visit_occurrence.preceding_visit_occurrence_id → visit_occurrence.visit_occurrence_id
-
-    2. visit_detail temporal chain:
-       - Uses preceding_visit_detail_id to link to previous visit details
-       - visit_detail.preceding_visit_detail_id → visit_detail.visit_detail_id
-
-    The visit_detail table does NOT have a preceding_visit_occurrence_id column.
-
-#### How it works
-
-This rule analyzes the SQL query to identify visit detail has no preceding visit occurrence id patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT preceding_visit_occurrence_id FROM visit_detail
-```
-
-```sql
-SELECT vd.preceding_visit_occurrence_id FROM visit_detail vd
-```
-
-**Correct patterns:**
-
-```sql
-SELECT preceding_visit_detail_id FROM visit_detail
-```
-
-```sql
-SELECT vd.preceding_visit_detail_id
-    FROM visit_detail vd
-    WHERE preceding_visit_detail_id IS NOT NULL
-```
-
-#### Common scenarios
-
-- Referencing visit_detail.preceding_visit_occurrence_id (column doesn't exist)
-- Confusing the two temporal chains
-- Trying to join visit_detail to visit_occurrence via preceding_visit_occurrence_id
-
-#### Suggested fix
-
-Use preceding_visit_detail_id for visit_detail temporal chain. Use preceding_visit_occurrence_id only with visit_occurrence table.
-
----
-
-### 4. Visit Detail Visit Occurrence Reference { #domain-specific-visit-detail-visit-occurrence-reference }
+### 17. Visit Detail Visit Occurrence Linkage { #domain-specific-visit-detail-visit-occurrence-reference }
 
 **Rule ID:** `domain_specific.visit_detail_visit_occurrence_reference`
 **Severity:** WARNING
 
 #### Intent
 
-visit_detail provides granular sub-visit information (ICU stay, ward transfer,
-    operating room), but critical context is stored in visit_occurrence:
-    - Overall visit type (inpatient, outpatient, ER)
-    - Visit-level dates (visit_start_date, visit_end_date)
-    - Visit-level provider and care site
-    - Admission source and discharge destination
-
-    Analyzing visit_detail without referencing visit_occurrence loses this context.
+CDM v5.4 links every `visit_detail` row to the visit that subsumes it through the required foreign key `visit_detail.visit_occurrence_id`. A SELECT that combines `visit_detail` and `visit_occurrence` rows of one person without equating `visit_occurrence_id` pairs each detail with every visit of the person. That is a mistake unless the query is about the person's other visits, so the rule is a warning.
 
 #### How it works
 
-This rule analyzes the SQL query to identify visit detail visit occurrence reference patterns.
+Each SELECT is judged on its own. Rows are identified by lineage (through casts, CTEs, derived tables and correlated references), and equalities are followed through other tables' columns (`vd.person_id = c.subject_id = vo.person_id`). The rule fires when the two rows are tied by `person_id` and their `visit_occurrence_id` values are never equated. It is silent when:
+
+- the visit ids are equated, directly, through `CAST`, `USING` or another table;
+- both rows are fixed by an event row's `visit_detail_id` and `visit_occurrence_id`;
+- the visit_detail is also joined to its own parent visit;
+- a row filter excludes the parent visit: `<>` on the visit ids, `preceding_visit_occurrence_id = vd.visit_occurrence_id`, or a date comparison that places the visit after the detail ends or before it starts (`vo.visit_start_date > vd.visit_detail_end_date`, `vo.visit_start_date BETWEEN vd.visit_detail_end_date AND …`), which the parent satisfies at most on a shared boundary day;
+- duplicated rows cannot change the result (`IN` / `EXISTS`, `DISTINCT`, only `COUNT(DISTINCT …)` / `MIN` / `MAX`, or one row kept per `ROW_NUMBER()` partition) and only one of the two rows is read beyond `person_id`;
+- both rows are independent outer-joined look-ups of a third row and the query keeps one row per partition (`ROW_NUMBER() … = 1`).
+
+Joins on a non-person key cross persons and are left to the person-linkage and primary-key join rules.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT person_id, visit_detail_start_date
-    FROM visit_detail
-    WHERE visit_detail_concept_id = 32037  -- ICU
+SELECT vd.visit_detail_id, vd.visit_detail_concept_id, vo.visit_concept_id
+FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.person_id = vo.person_id;
+```
+
+*details of any person with an inpatient visit, not details inside one*
+
+```sql
+SELECT DISTINCT vd.visit_detail_id
+FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.person_id = vo.person_id
+WHERE vo.visit_concept_id = 9201;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT vd.*, vo.visit_concept_id, vo.visit_start_date
-    FROM visit_detail vd
-    JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE vd.visit_detail_concept_id = 32037
+SELECT vd.visit_detail_id, vd.visit_detail_concept_id, vo.visit_concept_id
+FROM visit_detail vd
+JOIN visit_occurrence vo ON vd.visit_occurrence_id = vo.visit_occurrence_id;
 ```
 
+*later visits of the person (readmission)*
+
 ```sql
-with visit_occurrence
-    SELECT * FROM visit_detail
-    WHERE visit_occurrence_id IN (
-        SELECT visit_occurrence_id FROM visit_occurrence
-        WHERE visit_concept_id = 9201  -- Inpatient visits
-    )
+SELECT vd.visit_detail_id, vo.visit_occurrence_id
+FROM visit_detail vd
+JOIN visit_occurrence vo
+  ON vd.person_id = vo.person_id
+ AND vo.visit_start_date > vd.visit_detail_end_date;
+```
+
+*existence only*
+
+```sql
+SELECT vd.visit_detail_id
+FROM visit_detail vd
+WHERE EXISTS (SELECT 1 FROM visit_occurrence vo WHERE vo.person_id = vd.person_id);
 ```
 
 #### Suggested fix
 
-Ensure visit_detail is correctly linked to visit_occurrence via visit_occurrence_id when visit-level context is needed
+ADD: `vd.visit_occurrence_id = vo.visit_occurrence_id` to the join, or exclude the parent visit explicitly (`vd.visit_occurrence_id <> vo.visit_occurrence_id`) when the other visits of the person are intended.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: VISIT_DETAIL](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_detail)
 
 ---
 
-### 5. Visit Event Temporal Validation { #domain-specific-visit-event-temporal-validation }
+### 18. Visit Length-of-Stay Arithmetic { #domain-specific-visit-length-of-stay-arithmetic }
 
-**Rule ID:** `domain_specific.visit_event_temporal_validation`
+**Rule ID:** `domain_specific.visit_length_of_stay_arithmetic`
 **Severity:** WARNING
 
 #### Intent
 
-Clinical events are linked to visits via visit_occurrence_id. These events
-    should occur during the visit:
-    - event_date >= visit_start_date
-    - event_date <= visit_end_date (if not NULL)
-
-    If a query filters for event_date < visit_start_date, this suggests:
-    1. Wrong visit_occurrence_id (join error)
-    2. Data quality issue in the source data
-    3. Logic error in the query
+CDM v5.4: "The Visit duration, or 'length of stay', is defined as VISIT_END_DATE - VISIT_START_DATE. For all Visits this is <1 day, except Inpatient Visits and Non-hospital institution Visits." Averaging length of stay over all visit types mixes many same-day zeros into the result, and requiring two or more days of stay on outpatient or ER visits keeps only records that break the convention.
 
 #### How it works
 
-This rule analyzes the SQL query to identify visit event temporal validation patterns.
+Length of stay is `visit_end_date - visit_start_date`, `DATEDIFF(day, …)` or `DATE_DIFF(…)` of one visit row, followed through casts, CTEs and derived tables.
+
+- **Diluted average:** LOS aggregated with AVG, MEDIAN, percentiles, STDDEV, VARIANCE or MIN (inside the aggregate, or projected by a CTE / derived table and aggregated outside) over visit types that mix multi-day and same-day visits. Not reported when the visit row is restricted to the inpatient hierarchy (9201, 262, 42898160 and descendants), restricted in a way that cannot be read statically (a subquery, a join to concept, `<>`, a care_site place-of-service filter), restricted to visits that end after they start, or when the aggregate is grouped or partitioned by the row's visit_concept_id. SUM is not checked.
+- **Multi-day threshold on same-day visits:** the visit row is restricted to the outpatient / ER hierarchy and a row filter requires two or more days of stay on dates (`>= 2`, `> 1`, `BETWEEN 5 AND 10`, `visit_end_date > visit_start_date + 1`). A one-day difference is not reported.
+
+Restrictions and filters count only for the visit row the LOS is computed from; a filter on another row (a subquery, another alias) does not. The concept sets are generated from the vocabulary.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE co.condition_start_date < vo.visit_start_date
+SELECT AVG(visit_end_date - visit_start_date) AS avg_los
+FROM visit_occurrence;
+```
+
+*LOS computed in a derived table*
+
+```sql
+SELECT AVG(los)
+FROM (SELECT visit_end_date - visit_start_date AS los FROM visit_occurrence) t;
+```
+
+*multi-day filter on outpatient visits*
+
+```sql
+SELECT visit_occurrence_id FROM visit_occurrence
+WHERE visit_concept_id = 9202
+  AND visit_end_date - visit_start_date >= 2;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
-    WHERE co.condition_start_date >= vo.visit_start_date
-      AND co.condition_start_date <= COALESCE(vo.visit_end_date, CURRENT_DATE)
+SELECT AVG(visit_end_date - visit_start_date) AS avg_los
+FROM visit_occurrence
+WHERE visit_concept_id = 9201;
 ```
 
+*stratified by visit type*
+
 ```sql
-SELECT * FROM condition_occurrence co
-    JOIN visit_occurrence vo ON co.visit_occurrence_id = vo.visit_occurrence_id
+SELECT visit_concept_id, AVG(visit_end_date - visit_start_date)
+FROM visit_occurrence
+GROUP BY visit_concept_id;
+```
+
+*an ER visit crossing midnight*
+
+```sql
+SELECT visit_occurrence_id FROM visit_occurrence
+WHERE visit_concept_id = 9203
+  AND visit_end_date - visit_start_date >= 1;
 ```
 
 #### Suggested fix
 
-Use event_date >= visit_start_date or review join logic
+ADD: a visit_concept_id restriction to inpatient-like visits before aggregating LOS, e.g. `vo.visit_concept_id IN (SELECT descendant_concept_id FROM concept_ancestor WHERE ancestor_concept_id IN (9201, 262, 42898160))`, OR GROUP BY visit_concept_id; for a multi-day LOS filter, REPLACE the outpatient / ER visit_concept_id with the inpatient one.
 
----
+#### Sources
 
-### 6. Visit Outpatient Same-Day Validation { #domain-specific-visit-outpatient-same-day-validation }
-
-**Rule ID:** `domain_specific.visit_outpatient_same_day_validation`
-**Severity:** WARNING
-
-#### Intent
-
-- Outpatient visits: same-day (9202)
-    - Inpatient visits: multi-day stays (9201)
-    - Emergency Room: same-day (9203)
-    - ER+Inpatient: multi-day (262)
-
-#### How it works
-
-This rule analyzes the SQL query to identify visit outpatient same-day validation patterns.
-
-#### Examples
-
-**Violation patterns:**
-
-```sql
-SELECT * FROM visit_occurrence
-    WHERE visit_concept_id = 9202
-      AND DATEDIFF(day, visit_start_date, visit_end_date) > 30
-```
-
-**Correct patterns:**
-
-```sql
-SELECT * FROM visit_occurrence
-    WHERE visit_concept_id = 9201
-      AND DATEDIFF(day, visit_start_date, visit_end_date) > 30
-```
-
-```sql
-SELECT * FROM visit_occurrence
-    WHERE visit_concept_id = 9202
-      AND DATEDIFF(day, visit_start_date, visit_end_date) <= 1
-```
-
-#### Suggested fix
-
-Use visit_concept_id = 9201 (inpatient) for multi-day stays, or adjust date range for outpatient visits
+- [OMOP CDM v5.4 specification: VISIT_OCCURRENCE](https://ohdsi.github.io/CommonDataModel/cdm54.html#visit_occurrence)
 
 ---
 
 ### VOCABULARY Domain
 
-### 1. Relationship Boolean Comparison { #domain-specific-vocabulary-relationship-boolean-comparison }
+### 19. Relationship Flag Comparison { #domain-specific-vocabulary-relationship-boolean-comparison }
 
 **Rule ID:** `domain_specific.vocabulary_relationship_boolean_comparison`
 **Severity:** ERROR
 
 #### Intent
 
-The relationship vocabulary table uses boolean flags to indicate:
-    - is_hierarchical: Whether the relationship represents a hierarchy
-    - defines_ancestry: Whether the relationship defines ancestry paths
-
-    When filtering these columns, developers sometimes use incorrect value types:
-    - String literals: 'true', 'false', '1', '0'
-    - Invalid integers: 2, -1, or any value other than 0 or 1
-
-    This causes issues:
-    1. Type mismatch errors in strongly-typed databases
-    2. Incorrect comparisons (boolean vs string comparison semantics differ)
-    3. Performance problems (prevents index usage)
-    4. Silent failures or unexpected results
-
-Why this is wrong:
-    Boolean columns should be compared with boolean-compatible values:
-    - In most SQL dialects, booleans are represented as 1 (TRUE) or 0 (FALSE)
-    - Comparing with strings requires implicit conversion that may fail
-    - Using invalid integers (2, -1, etc.) is semantically meaningless
-    - String comparisons have different semantics than boolean comparisons
+`relationship.is_hierarchical` and `relationship.defines_ancestry` are `varchar(1)` columns holding `'1'` or `'0'` (OMOP CDM v5.4). Despite their yes/no meaning they are strings, not booleans. Any other value never matches a row, and an integer or boolean operand treats the column as a type the CDM does not define it as. Both are ERRORs on every dialect.
 
 #### How it works
 
-This rule analyzes the SQL query to identify relationship boolean comparison patterns.
+The rule checks comparisons on the two flag columns, resolved through lineage so a derived column that reuses the name is not checked; `LOWER`, `UPPER` and `TRIM` around the column are looked through. A CTE or derived table that projects the flag through a cast (`is_hierarchical::int AS is_hierarchical`) ends the check.
+
+- In every dialect: a string other than `'1'` / `'0'` (`'true'`, `'Y'`, `'yes'`, `''`), an integer other than 1 / 0, or a `LIKE` pattern that neither `'1'` nor `'0'` matches is reported, since the flag never holds it: `=` / `IN` / `LIKE` match no rows, `<>` / `NOT IN` filter nothing.
+- In every dialect as well: an integer (`= 1`) or boolean (`= TRUE`, `IS TRUE`) operand, or the column used by itself as a condition (`WHERE is_hierarchical`), is reported. The CDM defines the column as `varchar(1)`; whether an engine would coerce `= 1` is not the question.
 
 #### Examples
 
 **Violation patterns:**
 
 ```sql
-SELECT * FROM relationship WHERE is_hierarchical = 'true'
+SELECT relationship_id FROM relationship
+WHERE is_hierarchical = 'yes';
 ```
 
+*no row holds 'true'*
+
 ```sql
-SELECT * FROM relationship WHERE defines_ancestry = '1'
+SELECT relationship_id FROM relationship WHERE LOWER(is_hierarchical) = 'true';
+```
+
+*no such value*
+
+```sql
+SELECT relationship_id FROM relationship WHERE defines_ancestry = 2;
+```
+
+*an integer against the varchar(1) column*
+
+```sql
+SELECT relationship_id FROM relationship WHERE is_hierarchical = 1;
+```
+
+*a boolean test on the varchar(1) column*
+
+```sql
+SELECT relationship_id FROM relationship WHERE is_hierarchical IS TRUE;
+```
+
+*the varchar flag used directly as a condition*
+
+```sql
+SELECT relationship_id FROM relationship
+WHERE is_hierarchical;
 ```
 
 **Correct patterns:**
 
 ```sql
-SELECT * FROM relationship WHERE is_hierarchical = 1
+SELECT relationship_id FROM relationship WHERE is_hierarchical = '1';
 ```
 
 ```sql
-SELECT * FROM relationship WHERE is_hierarchical = TRUE
+SELECT relationship_id FROM relationship WHERE defines_ancestry IN ('0', '1');
 ```
+
+*an explicit cast*
+
+```sql
+SELECT relationship_id FROM relationship WHERE CAST(is_hierarchical AS INTEGER) = 1;
+```
+
+<!-- extra-examples:start -->
+**Error variant: integer operand: the CDM defines the column as varchar(1) holding '0' / '1'**
+
+```sql
+SELECT relationship_id FROM relationship
+WHERE defines_ancestry = 1;
+```
+
+<!-- extra-examples:end -->
 
 #### Suggested fix
 
-Use 0/1 or TRUE/FALSE instead of strings.
+REPLACE: the comparison value WITH the string '1' (true) or '0' (false), e.g. `is_hierarchical = '1'`.
+
+#### Sources
+
+- [OMOP CDM v5.4 specification: RELATIONSHIP](https://ohdsi.github.io/CommonDataModel/cdm54.html#relationship)
+- [OMOP CDM v5.4 field-level specification (CSV)](https://raw.githubusercontent.com/OHDSI/CommonDataModel/main/inst/csv/OMOP_CDMv5.4_Field_Level.csv)
 
 ---

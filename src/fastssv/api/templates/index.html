@@ -53,7 +53,7 @@
   <div class="examples" role="group" aria-label="Example queries">
     <span class="examples-label">Try:</span>
     <button type="button" class="chip" data-action="example" data-example="valid">Clean query</button>
-    <button type="button" class="chip" data-action="example" data-example="missing_standard">Missing standard concept</button>
+    <button type="button" class="chip" data-action="example" data-example="missing_standard">Source concept in hierarchy</button>
     <button type="button" class="chip" data-action="example" data-example="unknown_table">Unknown table</button>
     <button type="button" class="chip" data-action="example" data-example="multi_statement">Multiple statements</button>
   </div>
@@ -181,8 +181,8 @@
     <div class="faq-body">
       <p>
         FastSSV runs {{ rules_loaded }} static rules against your SQL, targeting
-        the silent failures you can't catch with a linter: missing
-        <code>standard_concept = 'S'</code> enforcement, wrong
+        the silent failures you can't catch with a linter: unmapped
+        <code>*_source_concept_id</code> filters, wrong
         <code>concept_ancestor</code> rollup direction, temporal logic outside
         observation periods, joins that don't align with OMOP CDM v5.4 foreign
         keys, type mismatches, and more.

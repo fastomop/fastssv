@@ -1,276 +1,53 @@
 """Source to Concept Map Validation Rule.
 
-OMOP semantic rule OMOP_058:
-When using source_to_concept_map, always filter by source_vocabulary_id.
-Without it, the same source_code from different vocabularies may return incorrect mappings.
+CDM v5.4 conventions, Source to Concept Map: "The source_concept_id, or the combination of the fields source_code and
+the source_vocabulary_id uniquely identifies the source information." A source code alone is not unique: the Book of
+OHDSI notes that "the same code can exist in different vocabularies with completely different meanings", and a site
+that loads several local code lists (lab and pharmacy, say) can hold 'GLU' in both. A lookup that restricts
+``source_code`` without restricting ``source_vocabulary_id`` can therefore return mappings from unrelated vocabularies.
+Whether it does depends on what the site loaded, so the rule is a WARNING.
 
-The Problem:
-    source_to_concept_map contains mappings from many source vocabularies.
-    The same source_code can exist in multiple vocabularies with different meanings.
-
-    Example: Code "250" exists in:
-    - ICD-9-CM: Diabetes mellitus
-    - ICD-10-CM: Different condition
-    - Local hospital codes: Something else entirely
-
-    Without source_vocabulary_id filter, you get ALL mappings for "250",
-    leading to incorrect concept assignments.
-
-Violation pattern:
-    SELECT target_concept_id
-    FROM source_to_concept_map
-    WHERE source_code = '250.00'
-    -- Returns mappings from ALL vocabularies!
-
-Correct pattern:
-    SELECT target_concept_id
-    FROM source_to_concept_map
-    WHERE source_code = '250.00'
-      AND source_vocabulary_id = 'ICD9CM'
-    -- Returns only ICD-9-CM mapping
+The restriction may be a literal, a list, a pattern, a join to another table's column (``USING (source_code)``
+included) or an IN-subquery, followed to the source_to_concept_map table through CTEs, derived tables and casts. A
+``source_vocabulary_id`` restriction counts in any of the same forms except a negation (``<> 'OLD'`` admits every
+other vocabulary).
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from sqlglot import exp
 
 from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.helpers import _select_sources, normalize_name, parse_sql
 from fastssv.core.patch import add as patch_add, locate
+from fastssv.core.references import BOOK_VOCABULARIES, CDM_CONVENTIONS, cdm_table, section
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from ._cs_scope import ColumnFilter, InstanceKey, instance_filters
 
 SOURCE_TO_CONCEPT_MAP = "source_to_concept_map"
 SOURCE_CODE = "source_code"
 SOURCE_VOCABULARY_ID = "source_vocabulary_id"
+_NOT_A_RESTRICTION = {"neq", "not_in", "is_not_null", "is_null"}
 
 
-# --- Helpers ---------------------------------------------------------------
+def _restricting(flts: List[ColumnFilter]) -> List[ColumnFilter]:
+    return [f for f in flts if f.op not in _NOT_A_RESTRICTION]
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_stcm(table: Optional[str]) -> bool:
-    return _norm(table) == SOURCE_TO_CONCEPT_MAP
-
-
-def _is_literal(node: exp.Expression) -> bool:
-    return isinstance(node, exp.Literal)
-
-
-def _extract_filter_columns(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> Dict[str, Set[str]]:
-    """
-    Collect filtered columns per table.
-
-    Returns:
-        Dict[table_name -> set(column_names)]
-    """
-    result: Dict[str, Set[str]] = {}
-
-    # Check both WHERE and JOIN clauses
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.In, exp.Like, exp.ILike)):
+def _using_code_instances(tree: exp.Expression) -> Dict[InstanceKey, exp.Join]:
+    """source_to_concept_map instances joined ``USING (source_code)``."""
+    out: Dict[InstanceKey, exp.Join] = {}
+    for join in tree.find_all(exp.Join):
+        if not any(normalize_name(u.name) == SOURCE_CODE for u in join.args.get("using") or []):
             continue
-
-        # --- Equality ---
-        if isinstance(node, exp.EQ):
-            left, right = node.this, node.expression
-
-            # Check for column-to-column (JOIN conditions)
-            if isinstance(left, exp.Column) and isinstance(right, exp.Column):
-                # Check both sides - either could be source_code
-                for col_node in [left, right]:
-                    table, col = resolve_table_col(col_node, aliases)
-                    if _norm(col) == SOURCE_CODE:
-                        # This column is source_code, track it
-                        if not table:
-                            unique_tables = set(aliases.values())
-                            if len(unique_tables) == 1:
-                                table = list(unique_tables)[0]
-
-                        if table:
-                            table = _norm(table)
-                            result.setdefault(table, set()).add(SOURCE_CODE)
-                continue  # Done processing this column-to-column comparison
-
-            # Check for literal comparisons
-            if isinstance(left, exp.Column) and _is_literal(right):
-                table, col = resolve_table_col(left, aliases)
-            elif isinstance(right, exp.Column) and _is_literal(left):
-                table, col = resolve_table_col(right, aliases)
-            else:
-                continue
-
-            # Handle unqualified columns - assign to the only table if there's just one
-            if not table:
-                # Get unique table names (excluding aliases)
-                unique_tables = set(aliases.values())
-                if len(unique_tables) == 1:
-                    table = list(unique_tables)[0]
-                else:
-                    continue  # ambiguous, skip
-
-            table = _norm(table)
-            col = _norm(col)
-            if table and col:
-                result.setdefault(table, set()).add(col)
-
-        # --- IN ---
-        elif isinstance(node, exp.In):
-            col_node = node.this
-
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            # Only consider literal IN lists
-            if not all(isinstance(v, exp.Literal) for v in (node.expressions or [])):
-                continue
-
-            table, col = resolve_table_col(col_node, aliases)
-
-            # Handle unqualified
-            if not table:
-                unique_tables = set(aliases.values())
-                if len(unique_tables) == 1:
-                    table = list(unique_tables)[0]
-                else:
-                    continue
-
-            table = _norm(table)
-            col = _norm(col)
-            if table and col:
-                result.setdefault(table, set()).add(col)
-
-        # --- LIKE / ILIKE ---
-        elif isinstance(node, (exp.Like, exp.ILike)):
-            left = node.this
-            right = node.expression
-
-            if not (isinstance(left, exp.Column) and _is_literal(right)):
-                continue
-
-            table, col = resolve_table_col(left, aliases)
-
-            # Handle unqualified
-            if not table:
-                unique_tables = set(aliases.values())
-                if len(unique_tables) == 1:
-                    table = list(unique_tables)[0]
-                else:
-                    continue
-
-            table = _norm(table)
-            col = _norm(col)
-            if table and col:
-                result.setdefault(table, set()).add(col)
-
-    return result
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _find_source_code_predicate(tree: exp.Expression, aliases: Dict[str, str]) -> Optional[tuple]:
-    """Return (predicate_sql, qualifier) for the first source_code filter
-    on source_to_concept_map. Qualifier is the alias/table prefix (or None
-    when unqualified).
-    """
-    for node in tree.walk():
-        if not isinstance(node, (exp.EQ, exp.In, exp.Like, exp.ILike)):
+        select = join.find_ancestor(exp.Select)
+        if select is None:
             continue
-
-        col_node = None
-        if isinstance(node, exp.EQ):
-            for cand in (node.this, node.expression):
-                if isinstance(cand, exp.Column):
-                    table, col = resolve_table_col(cand, aliases)
-                    if _norm(col) == SOURCE_CODE and _is_stcm(table or ""):
-                        col_node = cand
-                        break
-        elif isinstance(node, exp.In):
-            cand = node.this
-            if isinstance(cand, exp.Column):
-                table, col = resolve_table_col(cand, aliases)
-                if _norm(col) == SOURCE_CODE and _is_stcm(table or ""):
-                    col_node = cand
-        elif isinstance(node, (exp.Like, exp.ILike)):
-            cand = node.this
-            if isinstance(cand, exp.Column):
-                table, col = resolve_table_col(cand, aliases)
-                if _norm(col) == SOURCE_CODE and _is_stcm(table or ""):
-                    col_node = cand
-
-        if col_node is None:
-            continue
-
-        qualifier = col_node.table if col_node.table else None
-        return node.sql(), qualifier
-
-    return None
-
-
-def _find_violations(sql: str, tree: exp.Expression, aliases: Dict[str, str]) -> List[tuple]:
-    """Return list of (message, patch_or_none) tuples."""
-    issues: List[tuple] = []
-    seen: Set[str] = set()
-
-    filters_by_table = _extract_filter_columns(tree, aliases)
-
-    for table_name, cols in filters_by_table.items():
-        if not _is_stcm(table_name):
-            continue
-
-        has_code = SOURCE_CODE in cols
-        has_vocab = SOURCE_VOCABULARY_ID in cols
-
-        if has_code and not has_vocab:
-            key = f"{table_name}:source_code"
-            if key in seen:
-                continue
-            seen.add(key)
-
-            message = (
-                f"Filtering source_to_concept_map.{SOURCE_CODE} without "
-                f"{SOURCE_VOCABULARY_ID}. "
-                f"Source codes are not unique across vocabularies. "
-                f"Add source_vocabulary_id to disambiguate."
-            )
-
-            # Build a structured ADD patch right after the source_code
-            # predicate. The vocabulary_id value is unknown at static-analysis
-            # time, so emit a `<vocab>` placeholder for the outer LLM /
-            # operator to fill in.
-            patch = None
-            pred = _find_source_code_predicate(tree, aliases)
-            if pred is not None:
-                predicate_sql, qualifier = pred
-                span = locate(sql, predicate_sql)
-                if span is not None:
-                    qual = f"{qualifier}." if qualifier else ""
-                    patch = patch_add(
-                        span[1],
-                        f" AND {qual}source_vocabulary_id = '<vocab>'",
-                    )
-
-            issues.append((message, patch))
-
-    return issues
-
-
-# --- Rule ------------------------------------------------------------------
+        for src in _select_sources(select):
+            if isinstance(src, exp.Table) and normalize_name(src.name) == SOURCE_TO_CONCEPT_MAP:
+                out[(id(select), normalize_name(src.alias_or_name))] = join
+    return out
 
 
 @register
@@ -284,49 +61,67 @@ class SourceToConceptMapValidationRule(Rule):
     suggested_fix = "ADD: `AND source_vocabulary_id = '<vocab>'` alongside any source_code filter. source_code is unique only within a source_vocabulary_id."
     long_description = (
         "source_to_concept_map is the per-site translation table from "
-        "source codes to OMOP standard concepts. Source codes are not "
-        "globally unique: 'R51' can exist in ICD10CM (headache), ICD9CM, "
-        "and some local billing vocabularies. Filtering on source_code "
+        "local source codes to OMOP standard concepts. Source codes are not "
+        "unique across vocabularies: a site that loads local lab and pharmacy "
+        "code lists can hold 'GLU' in both. Filtering on source_code "
         "alone can pick up matches from unrelated vocabularies, returning "
         "incorrect target_concept_ids. Always pair source_code with "
         "source_vocabulary_id so the match is unambiguous."
     )
-    example_bad = "SELECT target_concept_id\nFROM source_to_concept_map\nWHERE source_code = 'R51';"
+    example_bad = "SELECT target_concept_id\nFROM source_to_concept_map\nWHERE source_code = 'GLU';"
     example_good = (
         "SELECT target_concept_id\n"
         "FROM source_to_concept_map\n"
-        "WHERE source_code = 'R51'\n"
-        "  AND source_vocabulary_id = 'ICD10CM';"
+        "WHERE source_code = 'GLU'\n"
+        "  AND source_vocabulary_id = 'HOSP_LAB';"
+    )
+    references = (
+        section(CDM_CONVENTIONS, "source-to-concept-map", "Source to concept map"),
+        cdm_table("source_to_concept_map"),
+        section(BOOK_VOCABULARIES, "concept-codes", "Concept codes"),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
-        if "source_to_concept_map" not in sql.lower():
+        if SOURCE_TO_CONCEPT_MAP not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
 
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, SOURCE_TO_CONCEPT_MAP):
-                continue
-
-            aliases = extract_aliases(tree)
-            issues = _find_violations(sql, tree, aliases)
-
-            for msg, patch in issues:
+            codes = {k: _restricting(v) for k, v in instance_filters(tree, SOURCE_TO_CONCEPT_MAP, SOURCE_CODE).items()}
+            for key in _using_code_instances(tree):
+                codes.setdefault(key, [])
+            vocabularies = {
+                k
+                for k, v in instance_filters(tree, SOURCE_TO_CONCEPT_MAP, SOURCE_VOCABULARY_ID).items()
+                if _restricting(v)
+            }
+            using = _using_code_instances(tree)
+            reported: Set[InstanceKey] = set()
+            for key, flts in codes.items():
+                if key in vocabularies or key in reported or not (flts or key in using):
+                    continue
+                reported.add(key)
+                patch = None
+                if flts:
+                    span = locate(sql, flts[0].sql)
+                    if span is not None:
+                        qualifier = f"{flts[0].column.table}." if flts[0].column.table else ""
+                        patch = patch_add(span[1], f" AND {qualifier}source_vocabulary_id = '<vocab>'")
                 violations.append(
                     self.create_violation(
-                        message=msg,
+                        message=(
+                            f"Filtering source_to_concept_map.{SOURCE_CODE} without {SOURCE_VOCABULARY_ID}. "
+                            "Source codes are not unique across vocabularies: the lookup can return mappings of the "
+                            "same code from other source vocabularies. Add source_vocabulary_id to disambiguate."
+                        ),
                         suggested_fix_patch=patch,
                     )
                 )
-
         return violations
 
 

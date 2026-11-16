@@ -1,246 +1,162 @@
 """Measurement Operator Concept Validation Rule.
 
-OMOP semantic rule CLIN_026:
-Validates that measurement.operator_concept_id uses only valid operator concepts.
+CDM v5.4 defines ``measurement.operator_concept_id`` as a foreign key to CONCEPT restricted to the
+'Meas Value Operator' domain: "Operators are <, <=, =, >=, > and these concepts belong to the 'Meas Value
+Operator' domain." An equality or ``IN`` test of the column against concept ids that are all outside that domain
+can therefore never be true on a conformant CDM.
 
-CLIN_026 (operator_concept_id constraint):
-operator_concept_id must reference one of the 5 standard operator concepts:
-- 4171756 (<)
-- 4172704 (>)
-- 4171755 (=)
-- 4171754 (<=)
-- 4172703 (>=)
+Judged: ``operator_concept_id = <id>`` and ``operator_concept_id IN (<ids>)``, with the column followed through
+casts, CTEs and derived tables to ``measurement``.
 
-The Problem:
-    operator_concept_id indicates the comparison operator for value_as_number.
-    Only 5 specific concept_ids are valid operators in OMOP CDM.
-    Using any other concept_id is incorrect and will cause data integrity issues.
+* ERROR when the test must hold for every returned row (a conjunct of WHERE, HAVING or an inner join's ON): the
+  query returns no rows.
+* WARNING anywhere else (under OR, in CASE, in an outer join's ON): that branch is dead, the rest of the query
+  still runs.
 
-    Common mistakes:
-    - Using random concept_ids as operators
-    - Using measurement concept_ids instead of operator concept_ids
-    - Hardcoding invalid operator values
+Not judged, because they are satisfiable or filter nothing:
 
-Violation patterns:
-    SELECT * FROM measurement WHERE operator_concept_id = 201826
-    -- 201826 is not a valid operator concept
+* 0, the "no matching concept" value an unmapped source operator is stored as;
+* an ``IN`` list with at least one value of the domain (or 0);
+* exclusions and ordering tests (``<>``, ``NOT IN``, ``> 0``).
 
-    SELECT * FROM measurement WHERE operator_concept_id = 999999
-    -- 999999 is not in the whitelist
+Violation:
+    SELECT * FROM measurement WHERE operator_concept_id = 8554        -- 8554 is the unit 'percent'
 
-Correct patterns:
-    SELECT * FROM measurement WHERE operator_concept_id = 4172704  -- >
-    SELECT * FROM measurement WHERE operator_concept_id = 4171756  -- <
-    SELECT * FROM measurement WHERE operator_concept_id = 4171755  -- =
-    SELECT * FROM measurement WHERE operator_concept_id IN (4171754, 4172703)  -- <=, >=
+Correct:
+    SELECT * FROM measurement WHERE operator_concept_id = 4172704     -- >
+    SELECT * FROM measurement WHERE operator_concept_id IS NULL OR operator_concept_id IN (0, 4172703)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import DQD_FIELD_THRESHOLDS, cdm_table
 from fastssv.core.registry import register
+from fastssv.rules.domain_specific._rows import in_negated_scope, int_literal, read_of, restricts_rows
 
-
-# --- Constants -------------------------------------------------------------
+from ._operator_concept_ids import COMPARISON_OPERATOR_CONCEPTS, MEAS_VALUE_OPERATOR_CONCEPTS
 
 TABLE_NAME = "measurement"
 COLUMN_NAME = "operator_concept_id"
 
-VALID_OPERATORS = {
-    4171756,  # <
-    4172704,  # >
-    4171755,  # =
-    4171754,  # <=
-    4172703,  # >=
-}
-
-OPERATOR_NAMES = {
-    4171756: "<",
-    4172704: ">",
-    4171755: "=",
-    4171754: "<=",
-    4172703: ">=",
-}
+# 0 is CDM's "no matching concept": the value of a source operator that could not be mapped.
+_SATISFIABLE = frozenset(MEAS_VALUE_OPERATOR_CONCEPTS) | {0}
+_OPERATORS_TEXT = ", ".join(f"{cid} ({name})" for cid, name in COMPARISON_OPERATOR_CONCEPTS.items())
 
 
-# --- Helpers ---------------------------------------------------------------
+def _is_operator_column(node: Optional[exp.Expression]) -> bool:
+    read = read_of(node)
+    return read is not None and read[1:] == (TABLE_NAME, COLUMN_NAME)
 
 
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_operator_concept_id_column(col: exp.Column, aliases: Dict[str, str]) -> bool:
-    table, col_name = resolve_table_col(col, aliases)
-
-    if _norm(col_name) != COLUMN_NAME:
-        return False
-
-    if table:
-        return _norm(table) == TABLE_NAME
-
-    return TABLE_NAME in {_norm(t) for t in aliases.values()}
-
-
-def _extract_int(node: exp.Expression) -> Optional[int]:
-    """Extract integer from literal, including negatives."""
-    if isinstance(node, exp.Neg):
-        inner = node.this
-        if isinstance(inner, exp.Literal) and inner.is_int:
-            try:
-                return -int(inner.this)
-            except Exception:
-                return None
-        return None
-
-    if isinstance(node, exp.Literal) and node.is_int:
-        try:
-            return int(node.this)
-        except Exception:
-            return None
-
-    return None
-
-
-def _get_valid_operators_string() -> str:
-    return ", ".join(f"{cid} ({OPERATOR_NAMES[cid]})" for cid in sorted(VALID_OPERATORS))
-
-
-# --- Detection -------------------------------------------------------------
-
-
-def _find_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[int, str]]:
-    issues: List[Tuple[int, str]] = []
-    seen: Set[Tuple[int, str]] = set()
-
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
+def _find_violations(tree: exp.Expression) -> List[Tuple[List[int], str, Severity]]:
+    """``(ids, predicate text, severity)`` for each equality / IN test that no conformant row satisfies."""
+    found: List[Tuple[List[int], str, Severity]] = []
+    seen: Set[str] = set()
+    for node in tree.find_all(exp.EQ, exp.In):
+        if isinstance(node, exp.EQ):
+            if _is_operator_column(node.this):
+                values = [int_literal(node.expression)]
+            elif _is_operator_column(node.expression):
+                values = [int_literal(node.this)]
+            else:
+                continue
+        else:
+            # NOT IN is an exclusion; a subquery is not a literal list.
+            if isinstance(node.parent, exp.Not) or node.args.get("query") is not None:
+                continue
+            if not _is_operator_column(node.this) or not node.expressions:
+                continue
+            values = [int_literal(v) for v in node.expressions]
+        if any(v is None or v in _SATISFIABLE for v in values):
             continue
-
-        # --- Binary comparisons ---
-        if isinstance(node, (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)):
-            pairs = [(node.this, node.expression), (node.expression, node.this)]
-
-            for col_node, val_node in pairs:
-                if not isinstance(col_node, exp.Column):
-                    continue
-
-                if not _is_operator_concept_id_column(col_node, aliases):
-                    continue
-
-                concept_id = _extract_int(val_node)
-                if concept_id is None:
-                    continue
-
-                key = (concept_id, "comparison")
-                if key in seen:
-                    continue
-
-                if concept_id not in VALID_OPERATORS:
-                    seen.add(key)
-                    issues.append(
-                        (
-                            concept_id,
-                            f"operator_concept_id compared to invalid value {concept_id}. "
-                            f"Valid operators are: {_get_valid_operators_string()}.",
-                        )
-                    )
-
-        # --- IN ---
-        elif isinstance(node, exp.In):
-            col_node = node.this
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            if not _is_operator_concept_id_column(col_node, aliases):
-                continue
-
-            invalid_values = []
-
-            for val in node.expressions or []:
-                concept_id = _extract_int(val)
-                if concept_id is None:
-                    continue
-
-                key = (concept_id, "in")
-                if concept_id not in VALID_OPERATORS and key not in seen:
-                    seen.add(key)
-                    invalid_values.append(concept_id)
-
-            if invalid_values:
-                issues.append(
-                    (
-                        -1,
-                        f"operator_concept_id IN clause contains invalid values: {invalid_values}. "
-                        f"Valid operators are: {_get_valid_operators_string()}.",
-                    )
-                )
-
-    return issues
-
-
-# --- Rule ------------------------------------------------------------------
+        text = node.sql()
+        if text in seen:
+            continue
+        seen.add(text)
+        certain = restricts_rows(node) and not in_negated_scope(node)
+        found.append((values, text, Severity.ERROR if certain else Severity.WARNING))
+    return found
 
 
 @register
 class MeasurementOperatorConceptValidationRule(Rule):
-    """Validate measurement.operator_concept_id uses valid operator concepts."""
+    """measurement.operator_concept_id tested against concept ids outside the 'Meas Value Operator' domain."""
 
     rule_id = "domain_specific.measurement_operator_concept_validation"
     name = "Measurement Operator Concept Validation"
-
-    description = "Ensures measurement.operator_concept_id uses only valid operator concepts."
-
+    description = (
+        "measurement.operator_concept_id holds concepts of the 'Meas Value Operator' domain (<, <=, =, >=, >). "
+        "An equality or IN test against ids outside that domain never matches on a conformant CDM."
+    )
     severity = Severity.ERROR
-    suggested_fix = "REPLACE: the invalid operator concept_id WITH one of: 4172703 (>=), 4172704 (>), 4171754 (<=), 4171755 (=), 4171756 (<). These are the only valid measurement operator concepts in OMOP."
-    example_bad = "SELECT person_id FROM measurement\nWHERE operator_concept_id = 99999;"
+    suggested_fix = (
+        f"REPLACE: the concept id WITH an operator concept: {_OPERATORS_TEXT}. Use `operator_concept_id IS NULL OR "
+        "operator_concept_id IN (0, 4172703)` for results recorded as an exact value."
+    )
+    long_description = (
+        "CDM v5.4 restricts measurement.operator_concept_id to the 'Meas Value Operator' domain, whose comparison "
+        "operators are <, <=, =, >= and >. A test for any other concept id cannot be true on a conformant CDM: as a "
+        "row filter it empties the result (error), and in a CASE or OR branch it is dead code (warning). 0 (unmapped), "
+        "lists that contain a valid operator, and exclusions such as `<>` or NOT IN are not reported."
+    )
+    example_bad = (
+        "SELECT person_id, value_as_number FROM measurement\n"
+        "WHERE measurement_concept_id = 3004410\n"
+        "  AND operator_concept_id = 8554;"
+    )
     example_good = (
-        "SELECT person_id FROM measurement\nWHERE operator_concept_id IN (4172703, 4172704, 4171756, 4171754, 4171755);"
+        "SELECT person_id, value_as_number FROM measurement\n"
+        "WHERE measurement_concept_id = 3004410\n"
+        "  AND operator_concept_id = 4171756;"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT SUM(CASE WHEN operator_concept_id = 8554 THEN 1 ELSE 0 END) AS n_below_limit\nFROM measurement;"
+            ),
+            severity=Severity.WARNING,
+            note="the test is not a row filter: the CASE branch can never be taken",
+        ),
+    )
+    references = (
+        cdm_table("measurement"),
+        DQD_FIELD_THRESHOLDS,
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if not sql or COLUMN_NAME not in sql.lower():
+            return []
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
 
+        violations: List[RuleViolation] = []
         for tree in trees:
             if not tree:
                 continue
-
-            if not has_table_reference(tree, TABLE_NAME):
-                continue
-
-            aliases = extract_aliases(tree)
-            issues = _find_violations(tree, aliases)
-
-            for concept_id, message in issues:
+            for values, text, severity in _find_violations(tree):
+                listed = ", ".join(str(v) for v in values)
+                effect = (
+                    "so the query returns no rows on a conformant CDM"
+                    if severity == Severity.ERROR
+                    else "so this branch is never taken on a conformant CDM"
+                )
                 violations.append(
                     self.create_violation(
-                        message=message,
-                        severity=self.severity,
-                        details={
-                            "invalid_value": concept_id,
-                            "valid_operators": list(VALID_OPERATORS),
-                            "operator_names": OPERATOR_NAMES,
-                        },
+                        message=(
+                            f"`{text}` can never match: {listed} "
+                            f"{'is' if len(values) == 1 else 'are'} not in the 'Meas Value Operator' domain that "
+                            f"measurement.operator_concept_id is restricted to, {effect}. "
+                            f"The valid operator concepts are {_OPERATORS_TEXT}."
+                        ),
+                        severity=severity,
+                        details={"invalid_values": values, "valid_operators": sorted(MEAS_VALUE_OPERATOR_CONCEPTS)},
                     )
                 )
-
         return violations
 
 

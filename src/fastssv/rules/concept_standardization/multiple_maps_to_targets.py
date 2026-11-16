@@ -1,199 +1,215 @@
-"""Multiple Maps To Targets Not Handled Validation Rule.
+"""Multiple Maps To Targets Rule.
 
 OMOP semantic rule VOCAB_013:
-A single source concept can map to multiple standard concepts via 'Maps to'.
-Queries that assume a 1:1 mapping may silently duplicate records or miss mappings.
+``concept_relationship`` with ``relationship_id = 'Maps to'`` is one-to-many.
+One ICD-10 code can split into several SNOMED concepts and one NDC can fan
+out to several RxNorm ingredients. SQL that *assumes* a single target is
+wrong whenever such a fan-out exists:
 
-The Problem:
-    The concept_relationship table with relationship_id = 'Maps to' is a
-    one-to-many relationship:
-    - A source concept can map to multiple standard concepts
-    - Assuming only one mapping exists leads to:
-      * Duplicate rows (when joining without DISTINCT)
-      * Arbitrary/incomplete results (when using scalar subqueries)
-      * Missing mappings (when using LIMIT 1)
+* a **scalar subquery** returning the target fails at execution on
+  PostgreSQL, SQL Server, DuckDB and most other engines ("more than one
+  row returned by a subquery used as an expression");
+* ``LIMIT 1`` / ``TOP 1`` on the mapping lookup silently keeps an
+  arbitrary target and drops the rest.
 
-    Common mistakes:
-    1. Scalar subquery assuming single result
-    2. JOIN without DISTINCT or GROUP BY
-    3. Using LIMIT 1 to force single result
+Retaining every target through a JOIN or ``IN (SELECT …)`` is correct: it
+is the only way to keep the mapping complete; the duplicate intermediate
+rows it creates are collapsed by ``COUNT(DISTINCT …)`` or by the set-valued
+consumer. A scalar subquery that aggregates without GROUP BY
+(``SELECT MIN(concept_id_2) …``) returns one row by construction and makes
+the choice deterministic, so it is not flagged.
 
 Violation patterns:
-    -- WRONG: Scalar subquery (returns arbitrary value if multiple)
-    SELECT (
-      SELECT concept_id_2
-      FROM concept_relationship
-      WHERE concept_id_1 = c.concept_id
-        AND relationship_id = 'Maps to'
-    ) AS standard_id
+    -- WRONG: scalar subquery assumes one mapping
+    SELECT c.concept_id,
+           (SELECT cr.concept_id_2 FROM concept_relationship cr
+            WHERE cr.concept_id_1 = c.concept_id
+              AND cr.relationship_id = 'Maps to') AS standard_id
     FROM concept c
 
-    -- WRONG: JOIN without DISTINCT (duplicates rows)
-    SELECT de.*, cr.concept_id_2
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
-
-    -- WRONG: LIMIT 1 (arbitrary selection)
-    SELECT concept_id_2
-    FROM concept_relationship
-    WHERE concept_id_1 = 12345
-      AND relationship_id = 'Maps to'
+    -- WRONG: LIMIT 1 picks an arbitrary target
+    SELECT concept_id_2 FROM concept_relationship
+    WHERE concept_id_1 = 12345 AND relationship_id = 'Maps to'
     LIMIT 1
 
 Correct patterns:
-    -- CORRECT: Use DISTINCT
-    SELECT DISTINCT de.drug_exposure_id, cr.concept_id_2
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
+    -- JOIN keeps every target
+    SELECT c.concept_id, cr.concept_id_2
+    FROM concept c
+    JOIN concept_relationship cr ON cr.concept_id_1 = c.concept_id
     WHERE cr.relationship_id = 'Maps to'
 
-    -- CORRECT: Use aggregation
-    SELECT de.drug_exposure_id,
-           ARRAY_AGG(cr.concept_id_2) AS mapped_concepts
-    FROM drug_exposure de
-    JOIN concept_relationship cr ON de.drug_concept_id = cr.concept_id_1
-    WHERE cr.relationship_id = 'Maps to'
-    GROUP BY de.drug_exposure_id
+    -- IN (…) is set-valued
+    SELECT * FROM condition_occurrence
+    WHERE condition_concept_id IN (
+        SELECT concept_id_2 FROM concept_relationship
+        WHERE concept_id_1 = 12345 AND relationship_id = 'Maps to')
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-    is_in_where_or_join_clause,
-)
+from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.references import BOOK_VOCABULARIES, section
+from fastssv.core.helpers import has_table_reference, normalize_name, parse_sql, relationship_filters, side_reads
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from ._cs_scope import int_value
 
 CONCEPT_RELATIONSHIP = "concept_relationship"
 RELATIONSHIP_ID = "relationship_id"
-
 MAPS_TO_VALUES = {"maps to", "mapped from"}
 
-
-# --- Helpers ---------------------------------------------------------------
+# Positions where a subquery is set-valued: membership and existence tests.
+_SET_VALUED_PARENTS = (exp.In, exp.Exists, exp.Any, exp.All)
+_MAPPING_TARGETS = {"concept_id_1", "concept_id_2"}
 
 
 def _norm(x: Optional[str]) -> Optional[str]:
     return normalize_name(x) if x else None
 
 
-def _extract_string_literal(node: exp.Expression) -> Optional[str]:
-    if isinstance(node, exp.Literal) and node.is_string:
-        return str(node.this)
-    return None
-
-
-def _is_maps_to_filter(node: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Check if expression filters relationship_id to Maps to / Mapped from."""
-    if not isinstance(node, exp.EQ):
+def _projects_mapping_target(select: exp.Expression, maps_to: Dict[Tuple[int, str], Set[Optional[str]]]) -> bool:
+    """Some output column of ``select`` carries a concept_relationship id from an instance restricted to 'Maps to' /
+    'Mapped from' (followed through CTEs and derived tables by lineage, and through a concept row joined in the same
+    SELECT)."""
+    if not isinstance(select, exp.Select):
         return False
 
-    if not is_in_where_or_join_clause(node):
-        return False
+    def is_target(read) -> bool:
+        reads_select, alias, table, column = read
+        if table != CONCEPT_RELATIONSHIP or column not in _MAPPING_TARGETS:
+            return False
+        return bool(maps_to.get((id(reads_select), alias), set()) & MAPS_TO_VALUES)
 
-    pairs = [(node.this, node.expression), (node.expression, node.this)]
-
-    for col_node, val_node in pairs:
-        if not isinstance(col_node, exp.Column):
+    for projection in select.expressions or []:
+        expr = projection.this if isinstance(projection, exp.Alias) else projection
+        if expr.find(exp.AggFunc) is not None:
             continue
-
-        table, col_name = resolve_table_col(col_node, aliases)
-
-        # relationship_id is unique to concept_relationship, so table check is optional
-        if _norm(table) and _norm(table) != CONCEPT_RELATIONSHIP:
-            continue
-
-        if _norm(col_name) != RELATIONSHIP_ID:
-            continue
-
-        value = _extract_string_literal(val_node)
-        if value and value.strip().lower() in MAPS_TO_VALUES:
-            return True
-
+        for col in expr.find_all(exp.Column):
+            if any(is_target(r) for r in side_reads(col, relay=False)):
+                return True
+            # a concept row joined to cr.concept_id_2 in this SELECT carries the target; a concept row looked up by
+            # a scalar subquery does not (that subquery is judged on its own)
+            if any(is_target(r) and r[0] is select for r in side_reads(col, relay=True)):
+                return True
     return False
 
 
-def _uses_maps_to(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    return any(_is_maps_to_filter(node, aliases) for node in tree.find_all(exp.EQ))
+def _is_scalar_position(subquery: exp.Subquery) -> bool:
+    """True when the subquery's value is consumed as a single scalar (SELECT list, comparison, arithmetic)."""
+    if isinstance(subquery.parent, (exp.From, exp.Join)):
+        return False  # a row source, not a value
+    parent = subquery.parent
+    while parent is not None and not isinstance(parent, exp.Select):
+        if isinstance(parent, _SET_VALUED_PARENTS):
+            return False
+        parent = parent.parent
+    return True
 
 
-def _has_distinct(tree: exp.Expression) -> bool:
-    return any(sel.args.get("distinct") for sel in tree.find_all(exp.Select))
+def _single_row_aggregate(query: exp.Expression) -> bool:
+    """An aggregate without GROUP BY (``SELECT MIN(concept_id_2) ...``) returns exactly one row."""
+    return (
+        isinstance(query, exp.Select)
+        and query.args.get("group") is None
+        and bool(query.expressions)
+        and all(e.find(exp.AggFunc) is not None for e in query.expressions)
+    )
 
 
-def _has_group_by(tree: exp.Expression) -> bool:
-    return any(sel.args.get("group") for sel in tree.find_all(exp.Select))
+def _row_cap_is_one(select: exp.Select) -> bool:
+    """``LIMIT 1``, ``TOP 1`` or ``FETCH FIRST 1 ROW ONLY``."""
+    limit = select.args.get("limit")
+    if isinstance(limit, exp.Limit):
+        value = int_value(limit.expression)
+    elif isinstance(limit, exp.Fetch):
+        value = int_value(limit.args.get("count"))
+    else:
+        value = None
+    return value == 1
 
 
-def _has_limit_one(tree: exp.Expression) -> bool:
-    for sel in tree.find_all(exp.Select):
-        limit = sel.args.get("limit")
-        if not limit:
-            continue
-
-        expr = limit.expression
-        if isinstance(expr, exp.Literal):
-            try:
-                if int(expr.this) == 1:
-                    return True
-            except Exception:
-                continue
-    return False
-
-
-# --- Rule ------------------------------------------------------------------
+def _distinct_on_without_order(select: exp.Select) -> bool:
+    distinct = select.args.get("distinct")
+    return (
+        isinstance(distinct, exp.Distinct) and distinct.args.get("on") is not None and select.args.get("order") is None
+    )
 
 
 @register
 class MultipleMapsToTargetsRule(Rule):
-    """Detect incorrect assumptions of 1:1 mapping in concept_relationship."""
+    """Detect SQL that assumes a 'Maps to' lookup returns exactly one target."""
 
     rule_id = "concept_standardization.multiple_maps_to_targets"
     name = "Multiple Maps To Targets Not Handled"
-
     description = (
-        "A source concept can map to multiple standard concepts via 'Maps to'. "
-        "Queries assuming 1:1 mapping may produce incorrect results."
+        "A source concept can map to several standard concepts via 'Maps to'. "
+        "A scalar subquery or LIMIT 1 on the mapping lookup assumes exactly one target: "
+        "the scalar form fails at execution on a fan-out, LIMIT 1 silently drops targets."
     )
-
     severity = Severity.WARNING
-
-    suggested_fix = "REPLACE: implicit 1:1 assumption WITH explicit handling: GROUP BY cr.concept_id_1 with ARRAY_AGG(cr.concept_id_2), OR DISTINCT, OR pick one target deterministically (e.g. MIN(concept_id_2))."
+    suggested_fix = (
+        "REPLACE: the scalar subquery or `LIMIT 1` WITH a `JOIN concept_relationship cr ON … "
+        "AND cr.relationship_id = 'Maps to'` (or `IN (SELECT concept_id_2 …)`) so every target is kept."
+    )
     long_description = (
-        "Not every source concept maps 1:1 to a standard concept: one "
-        "ICD-10 code can split into multiple SNOMED concepts, and one NDC "
-        "can fan out to several RxNorm ingredients. Querying "
-        "concept_relationship for 'Maps to' without DISTINCT (or a GROUP "
-        "BY / aggregate handling the fan-out) duplicates source rows "
-        "whenever a one-to-many mapping exists, inflating downstream "
-        "counts. Decide deliberately: DISTINCT to collapse, GROUP BY with "
-        "ARRAY_AGG to preserve all targets, or a subquery that picks one "
-        "target per source."
+        "Not every source concept maps 1:1 to a standard concept: one ICD-10 "
+        "code can split into multiple SNOMED concepts, and one NDC can fan out "
+        "to several RxNorm ingredients. A scalar subquery that returns "
+        "concept_id_2 raises 'more than one row returned' on most engines as "
+        "soon as such a code is encountered; LIMIT 1 keeps an arbitrary target "
+        "and silently discards the others. Joins and IN-subqueries retain every "
+        "target and are the correct shape; duplicate intermediate rows they "
+        "create are harmless under COUNT(DISTINCT …) or set-valued consumers "
+        "and are not flagged. Neither is a scalar subquery that aggregates "
+        "without GROUP BY (e.g. MIN(concept_id_2)): it returns one row and "
+        "picks the target deterministically."
     )
     example_bad = (
-        "SELECT cr.concept_id_1, cr.concept_id_2\nFROM concept_relationship cr\nWHERE cr.relationship_id = 'Maps to';"
+        "SELECT c.concept_id,\n"
+        "       (SELECT cr.concept_id_2 FROM concept_relationship cr\n"
+        "        WHERE cr.concept_id_1 = c.concept_id\n"
+        "          AND cr.relationship_id = 'Maps to') AS standard_id\n"
+        "FROM concept c;"
     )
     example_good = (
-        "SELECT DISTINCT cr.concept_id_1, cr.concept_id_2\n"
-        "FROM concept_relationship cr\n"
+        "SELECT c.concept_id, cr.concept_id_2 AS standard_id\n"
+        "FROM concept c\n"
+        "JOIN concept_relationship cr ON cr.concept_id_1 = c.concept_id\n"
         "WHERE cr.relationship_id = 'Maps to';"
+    )
+    references = (
+        section(BOOK_VOCABULARIES, "conceptMapping", "Mapping relationships"),
+        Reference(
+            "PostgreSQL documentation: Value Expressions, Scalar Subqueries",
+            "https://www.postgresql.org/docs/current/sql-expressions.html#SQL-SYNTAX-SCALAR-SUBQUERIES",
+        ),
+        Reference(
+            "PostgreSQL documentation: SELECT, LIMIT clause",
+            "https://www.postgresql.org/docs/current/sql-select.html#SQL-LIMIT",
+        ),
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT cr.concept_id_2 AS standard_concept_id\n"
+                "FROM concept c\n"
+                "JOIN concept_relationship cr ON cr.concept_id_1 = c.concept_id\n"
+                "WHERE c.vocabulary_id = 'ICD9CM'\n"
+                "  AND c.concept_code = '070.43'\n"
+                "  AND cr.relationship_id = 'Maps to'\n"
+                "LIMIT 1;"
+            ),
+            severity=Severity.WARNING,
+            note="LIMIT 1 keeps one arbitrary target (ICD9CM 070.43 maps to two SNOMED concepts)",
+        ),
     )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         if "concept_relationship" not in sql.lower():
             return []
-
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
@@ -202,106 +218,74 @@ class MultipleMapsToTargetsRule(Rule):
         seen: Set[str] = set()
 
         for tree in trees:
-            if not tree:
+            if not tree or not has_table_reference(tree, CONCEPT_RELATIONSHIP):
                 continue
+            maps_to = relationship_filters(tree)
+            scalar_bodies: Set[int] = set()
 
-            if not has_table_reference(tree, CONCEPT_RELATIONSHIP):
-                continue
-
-            aliases = extract_aliases(tree)
-
-            if not _uses_maps_to(tree, aliases):
-                continue
-
-            # --- Scalar subqueries ---
             for subquery in tree.find_all(exp.Subquery):
                 sub_tree = subquery.this
-                if not sub_tree:
+                if not sub_tree or not _is_scalar_position(subquery):
                     continue
-
-                sub_aliases = extract_aliases(sub_tree)
-
-                if not (has_table_reference(sub_tree, CONCEPT_RELATIONSHIP) and _uses_maps_to(sub_tree, sub_aliases)):
+                branches = [sub_tree] if isinstance(sub_tree, exp.Select) else list(sub_tree.find_all(exp.Select))
+                # a LIMIT 1 body returns at most one row, so it cannot fail; the LIMIT finding below covers it
+                if not any(
+                    _projects_mapping_target(b, maps_to) and not _single_row_aggregate(b) and not _row_cap_is_one(b)
+                    for b in branches
+                ):
                     continue
-
-                # Skip derived tables in FROM/JOIN — they're not scalar misuse.
-                parent = subquery.parent
-                in_from_or_join = False
-                while parent is not None:
-                    if isinstance(parent, (exp.From, exp.Join)):
-                        in_from_or_join = True
-                        break
-                    if isinstance(parent, exp.Select):
-                        break
-                    parent = parent.parent
-                if in_from_or_join:
-                    continue
-
-                # Skip if the subquery already handles one-to-many explicitly
-                # via DISTINCT or GROUP BY at its top level.
-                if isinstance(sub_tree, exp.Select):
-                    if sub_tree.args.get("distinct") or sub_tree.args.get("group"):
-                        continue
-
                 key = f"scalar_{subquery.sql()}"
                 if key in seen:
                     continue
                 seen.add(key)
-
+                scalar_bodies.update(id(b) for b in branches)
                 violations.append(
                     self.create_violation(
                         message=(
-                            "Scalar subquery with 'Maps to' assumes a single mapping. "
-                            "Multiple mappings may exist, causing incomplete results."
+                            "Scalar subquery returns a 'Maps to' target as a single value. A source "
+                            "concept can map to several standard concepts, and the subquery fails at "
+                            "execution ('more than one row returned') whenever one does."
                         ),
                         severity=Severity.WARNING,
                         suggested_fix=(
-                            "REWRITE: the scalar subquery as `JOIN concept_relationship cr ON ... AND cr.relationship_id = 'Maps to'` followed by `DISTINCT` or explicit aggregation."
+                            "REWRITE: the scalar subquery as `JOIN concept_relationship cr ON … AND "
+                            "cr.relationship_id = 'Maps to'` so every target is kept."
                         ),
                         details={"context": subquery.sql()},
                     )
                 )
 
-            # --- JOIN without dedup ---
-            if not (_has_distinct(tree) or _has_group_by(tree)):
-                key = "join_no_dedup"
-                if key not in seen:
-                    seen.add(key)
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                "Query uses 'Maps to' relationships without DISTINCT or GROUP BY. "
-                                "A single source concept can map to multiple standard concepts, "
-                                "which may cause duplicate rows or incomplete results."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                "ADD: `DISTINCT` to the SELECT, OR ADD `GROUP BY <key_cols>` "
-                                "with explicit aggregation. Some source codes map to multiple "
-                                "standard concepts and produce duplicate rows otherwise."
-                            ),
-                        )
+            for select in tree.find_all(exp.Select):
+                if id(select) in scalar_bodies or not _projects_mapping_target(select, maps_to):
+                    continue
+                capped = _row_cap_is_one(select)
+                if not capped and not _distinct_on_without_order(select):
+                    continue
+                key = f"one_target_{select.sql()}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                what = "LIMIT 1" if capped else "DISTINCT ON without ORDER BY"
+                holder = select.parent
+                while isinstance(holder, (exp.Paren, exp.SetOperation)):
+                    holder = holder.parent
+                where = (
+                    " in a scalar subquery" if isinstance(holder, exp.Subquery) and _is_scalar_position(holder) else ""
+                )
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"{what} on a 'Maps to' lookup{where} keeps one arbitrary target and silently "
+                            "drops the others when a source concept maps to several standard concepts."
+                        ),
+                        severity=Severity.WARNING,
+                        suggested_fix=(
+                            f"REMOVE: `{what.split(' without')[0]}` and keep every target, OR REPLACE WITH explicit "
+                            "aggregation (e.g. `MIN(concept_id_2)`) so the choice is deterministic."
+                        ),
+                        details={"context": select.sql()},
                     )
-
-            # --- LIMIT 1 misuse ---
-            if _has_limit_one(tree):
-                key = "limit_one"
-                if key not in seen:
-                    seen.add(key)
-
-                    violations.append(
-                        self.create_violation(
-                            message=(
-                                "LIMIT 1 with 'Maps to' assumes a single mapping. This may return arbitrary results."
-                            ),
-                            severity=Severity.WARNING,
-                            suggested_fix=(
-                                "REMOVE: `LIMIT 1`, OR REPLACE WITH explicit aggregation "
-                                "(e.g. `MIN(concept_id_2)`) so the chosen mapping is deterministic."
-                            ),
-                            details={"context": tree.sql()},
-                        )
-                    )
+                )
 
         return violations
 

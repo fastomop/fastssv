@@ -1,190 +1,97 @@
-"""Datetime BETWEEN with Date Literal Rule.
+"""Datetime Column With a Date-Only Inclusive Upper Bound.
 
-GAP_005: between_inclusive_both_ends_with_datetime
+``a BETWEEN x AND y`` is ``a >= x AND a <= y`` (PostgreSQL comparison predicates), and when a date is compared with a
+timestamp, PostgreSQL takes the date as midnight of that day. So an inclusive upper bound written as a date on a
+timestamp column stops at 00:00:00 of the last day:
 
-SQL BETWEEN is inclusive on both ends. When used with datetime columns and date
-literals (without time component), it creates a subtle data loss bug.
+    WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-12-31'
+    WHERE measurement_datetime >= '2023-01-01' AND measurement_datetime <= '2023-12-31'
+    -- both drop measurements taken on 2023-12-31 after midnight
 
-The Problem:
-    BETWEEN with datetime columns and date literals excludes non-midnight times
-    on the end date:
+Whether rows are lost depends on the data: the CDM conventions set an unknown time to 00:00:00, so a source without
+times loses nothing. The finding is therefore a WARNING.
 
-    WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
-    -- '2023-01-31' is interpreted as '2023-01-31 00:00:00'
-    -- Excludes: '2023-01-31 08:30:00', '2023-01-31 23:59:59', etc.
-    -- SILENT DATA LOSS!
-
-    This is a common mistake that's hard to catch because:
-    - Query executes without error
-    - Returns results (just incomplete)
-    - Easy to miss in testing
-
-OMOP Context:
-    OMOP CDM has parallel DATE and DATETIME columns:
-
-    Datetime columns (affected):
-    - condition_start_datetime, condition_end_datetime
-    - drug_exposure_start_datetime, drug_exposure_end_datetime
-    - measurement_datetime
-    - observation_datetime
-    - visit_start_datetime, visit_end_datetime
-    - procedure_datetime
-    - device_exposure_start_datetime, device_exposure_end_datetime
-
-    Date columns (safe with BETWEEN):
-    - condition_start_date, drug_exposure_start_date, etc.
-
-Violation patterns:
-    WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31'
-    WHERE condition_start_datetime BETWEEN '2020-01-01' AND '2020-12-31'
-    WHERE visit_start_datetime BETWEEN '2022-06-01' AND '2022-06-30'
-
-Correct patterns:
-    -- Option 1: Use >= and < (RECOMMENDED)
-    WHERE measurement_datetime >= '2023-01-01'
-      AND measurement_datetime < '2023-02-01'
-
-    -- Option 2: Include time component in end literal
-    WHERE measurement_datetime BETWEEN '2023-01-01' AND '2023-01-31 23:59:59.999'
-
-    -- Option 3: Use corresponding DATE column
-    WHERE measurement_date BETWEEN '2023-01-01' AND '2023-01-31'
+The bounded value must be a TIMESTAMP by lineage: a CDM ``*_datetime`` column (typed by the CDM v5.4 field-level
+specification) followed through CTEs, derived tables and renames, optionally under MIN / MAX or a cast to
+TIMESTAMP. A value truncated to a day (``CAST(x AS DATE)``, ``x::date``, ``DATE(x)``, ``CONVERT(date, x)``,
+``DATE_TRUNC('day', x)``) or turned into text (``TO_CHAR``) loses nothing and is not reported. The bound is
+date-only when it is a date literal without a time of day: ``'2023-12-31'``, ``'20231231'``, ``DATE '...'``,
+``CAST('...' AS DATE)``, ``TIMESTAMP '2023-12-31'``, ``TO_DATE(...)``, ``MAKE_DATE(...)``.
 """
 
-from typing import Dict, List, Optional, Set
-import re
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    parse_sql,
-    resolve_table_col,
-    is_in_where_or_join_clause,
-)
+from fastssv.core.base import Reference, Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import parse_sql
+from fastssv.core.references import CDM_CONVENTIONS, section
 from fastssv.core.registry import register
+from fastssv.rules.temporal._typing import TIMESTAMP, literal_datetime, sql_type, unwrap
 
 
-# --- Constants -------------------------------------------------------------
-
-DATETIME_COLUMNS: Set[str] = {
-    "condition_start_datetime",
-    "condition_end_datetime",
-    "drug_exposure_start_datetime",
-    "drug_exposure_end_datetime",
-    "measurement_datetime",
-    "observation_datetime",
-    "visit_start_datetime",
-    "visit_end_datetime",
-    "procedure_datetime",
-    "device_exposure_start_datetime",
-    "device_exposure_end_datetime",
-    "specimen_datetime",
-    "note_datetime",
-}
-
-
-DATE_PATTERNS = [
-    re.compile(r"^\d{4}-\d{2}-\d{2}$"),
-    re.compile(r"^\d{4}/\d{2}/\d{2}$"),
-    re.compile(r"^\d{8}$"),
-]
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return x.lower() if x else None
-
-
-def _is_datetime_column(col_name: Optional[str]) -> bool:
-    if not col_name:
-        return False
-    col = _norm(col_name)
-    return col in DATETIME_COLUMNS or col.endswith("_datetime")
-
-
-def _is_date_only(val: str) -> bool:
-    return any(p.match(val) for p in DATE_PATTERNS)
-
-
-def _extract_date_literal(node: exp.Expression) -> Optional[str]:
-    """Extract date literal WITHOUT time component."""
-
-    # Literal: '2023-01-31'
-    if isinstance(node, exp.Literal):
-        val = str(node.this).strip("'\"")
-        return val if _is_date_only(val) else None
-
-    # DATE '2023-01-31'
-    if isinstance(node, exp.Date):
-        lit = next(node.find_all(exp.Literal), None)
-        if lit:
-            val = str(lit.this)
-            return val if _is_date_only(val) else None
-
-    # TIMESTAMP '...' → reject if contains time
-    if isinstance(node, exp.Timestamp):
-        lit = next(node.find_all(exp.Literal), None)
-        if lit:
-            val = str(lit.this)
-            return val if _is_date_only(val) else None
-
-    # CAST(...)
-    if isinstance(node, exp.Cast):
-        return _extract_date_literal(node.this)
-
+def _timestamp_column(node: Optional[exp.Expression]) -> Optional[exp.Column]:
+    """The column when ``node`` is a TIMESTAMP-typed column, MIN / MAX of one, or one cast to TIMESTAMP."""
+    node = unwrap(node)
+    if isinstance(node, (exp.Min, exp.Max)):
+        node = unwrap(node.this)
+    if isinstance(node, (exp.Cast, exp.TryCast)) and sql_type(node) == TIMESTAMP:
+        node = unwrap(node.this)
+    if isinstance(node, exp.Column) and sql_type(node) == TIMESTAMP:
+        return node
     return None
 
 
-def _extract_column_name(node: exp.Expression, aliases: Dict[str, str]) -> Optional[str]:
-    """Extract underlying column name from expression."""
-    for col in node.find_all(exp.Column):
-        _, col_name = resolve_table_col(col, aliases)
-        if col_name:
-            return col_name
-    return None
+def _date_only(node: Optional[exp.Expression]) -> Optional[str]:
+    value = literal_datetime(node)
+    if value is None or not value[1]:
+        return None
+    return value[0].date().isoformat()
 
 
-def _build_aliases(tree: exp.Expression) -> Dict[str, str]:
-    aliases: Dict[str, str] = {}
-
-    for table in tree.find_all(exp.Table):
-        alias_expr = table.args.get("alias")
-        alias_name = alias_expr.name if alias_expr else table.name
-        aliases[alias_name] = table.name
-
-    return aliases
-
-
-# --- Rule ------------------------------------------------------------------
+def _upper_bounds(tree: exp.Expression) -> List[Tuple[exp.Expression, exp.Column, str]]:
+    """(predicate, timestamp column, date) for every inclusive upper bound given as a date-only literal."""
+    found = []
+    for node in tree.find_all(exp.Between, exp.LTE, exp.GTE):
+        if isinstance(node, exp.Between):
+            if node.args.get("symmetric"):
+                continue
+            col, bound = _timestamp_column(node.this), node.args.get("high")
+        elif isinstance(node, exp.LTE):
+            col, bound = _timestamp_column(node.this), node.expression
+        else:
+            col, bound = _timestamp_column(node.expression), node.this
+        day = _date_only(bound) if col is not None else None
+        if day is not None:
+            found.append((node, col, day))
+    return found
 
 
 @register
 class DatetimeBetweenDateLiteralRule(Rule):
-    """Detect BETWEEN on datetime columns with date-only literals."""
+    """Inclusive upper bound written as a date on a timestamp column."""
 
     rule_id = "temporal.datetime_between_date_literal"
-    name = "Datetime BETWEEN with Date Literal"
-
+    name = "Datetime Column With a Date-Only Inclusive Upper Bound"
     description = (
-        "BETWEEN on datetime columns using date-only literals causes data loss "
-        "because the end date excludes non-midnight times."
+        "A timestamp column bounded inclusively above by a date without a time (BETWEEN ... AND '2023-12-31', "
+        "<= '2023-12-31') stops at midnight of that day, dropping later records from the last day."
     )
-
     severity = Severity.WARNING
-
-    suggested_fix = "REPLACE: `<datetime_col> BETWEEN '<date>' AND '<date>'` WITH `<datetime_col> >= '<start_date>' AND <datetime_col> < '<end_date_plus_one>'` (half-open interval), OR cast both sides to DATE: `CAST(<datetime_col> AS DATE) BETWEEN '<date>' AND '<date>'`."
+    suggested_fix = (
+        "REPLACE: `<datetime_col> BETWEEN '<start>' AND '<end>'` WITH `<datetime_col> >= '<start>' AND "
+        "<datetime_col> < '<end_plus_one_day>'` (half-open), OR compare the day: `CAST(<datetime_col> AS DATE) "
+        "BETWEEN '<start>' AND '<end>'`."
+    )
     long_description = (
-        "BETWEEN '2023-01-01' AND '2023-12-31' on a *_datetime column quietly "
-        "drops every record from 2023-12-31 after 00:00:00, because the date "
-        "literal is cast to midnight on that day. The problem is silent: the "
-        "query returns a superset of 2023 data minus the last day's non-midnight "
-        "measurements, which rarely shows up in spot-checks. Use half-open "
-        "intervals (>= '2023-01-01' AND < '2024-01-01'), cast both sides to "
-        "timestamps, or switch to the *_date column when sub-day precision "
-        "is not needed."
+        "BETWEEN includes both ends, and PostgreSQL compares a date with a timestamp as midnight of that day. "
+        "measurement_datetime BETWEEN '2023-01-01' AND '2023-12-31' (or <= '2023-12-31') therefore keeps "
+        "2023-12-31 00:00:00 but drops every later time on 2023-12-31. The same holds for any inclusive upper bound "
+        "written as a date: <=, a literal on the left with >=, TO_DATE, MAKE_DATE, CAST(... AS DATE). The bounded "
+        "value is typed by lineage (a CDM *_datetime column through CTEs and renames), so a value already cast to "
+        "DATE, truncated to the day or formatted as text is not reported. The finding is a WARNING: the CDM "
+        "conventions set unknown times to 00:00:00, so a source without times loses nothing. Use a half-open "
+        "interval (>= start AND < the day after the end) or compare CAST(column AS DATE)."
     )
     example_bad = (
         "SELECT *\nFROM measurement\nWHERE measurement_datetime BETWEEN DATE '2023-01-01' AND DATE '2023-12-31';"
@@ -195,76 +102,62 @@ class DatetimeBetweenDateLiteralRule(Rule):
         "WHERE measurement_datetime >= TIMESTAMP '2023-01-01 00:00:00'\n"
         "  AND measurement_datetime <  TIMESTAMP '2024-01-01 00:00:00';"
     )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT *\nFROM measurement\n"
+                "WHERE measurement_datetime >= '2023-01-01'\n  AND measurement_datetime <= '2023-12-31';"
+            ),
+            severity=Severity.WARNING,
+            note="The same range written with >= and <=",
+        ),
+    )
+    references = (
+        Reference(
+            "PostgreSQL documentation: Comparison Functions and Operators, comparison predicates (BETWEEN)",
+            "https://www.postgresql.org/docs/current/functions-comparison.html#FUNCTIONS-COMPARISON-PRED-TABLE",
+        ),
+        Reference(
+            "PostgreSQL documentation: Date/Time Functions and Operators",
+            "https://www.postgresql.org/docs/current/functions-datetime.html",
+        ),
+        section(CDM_CONVENTIONS, "time-span-of-available-data", "Time span of available data"),
+    )
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
         trees, err = parse_sql(sql, dialect)
         if err:
             return []
-
         violations: List[RuleViolation] = []
         seen: Set[str] = set()
-
         for tree in trees:
             if not tree:
                 continue
-
-            aliases = _build_aliases(tree)
-
-            # Collect BETWEEN nodes (including root safety)
-            betweens = list(tree.find_all(exp.Between))
-            if isinstance(tree, exp.Between):
-                betweens.append(tree)
-
-            for between in betweens:
-                # Optional: restrict to WHERE/JOIN context
-                if not is_in_where_or_join_clause(between):
-                    continue
-
-                col_name = _extract_column_name(between.this, aliases)
-
-                if not _is_datetime_column(col_name):
-                    continue
-
-                low = between.args.get("low")
-                high = between.args.get("high")
-
-                if not low or not high:
-                    continue
-
-                low_val = _extract_date_literal(low)
-                high_val = _extract_date_literal(high)
-
-                if not (low_val and high_val):
-                    continue
-
-                key = f"{col_name}|{low_val}|{high_val}"
+            for predicate, col, day in _upper_bounds(tree):
+                key = predicate.sql()
                 if key in seen:
                     continue
                 seen.add(key)
-
+                name = col.sql()
+                details = {"column": name, "end": day, "issue": "datetime_inclusive_date_upper_bound"}
+                if isinstance(predicate, exp.Between):
+                    low = literal_datetime(predicate.args.get("low"))
+                    if low is not None:
+                        details["start"] = low[0].date().isoformat() if low[1] else low[0].isoformat(sep=" ")
                 violations.append(
                     self.create_violation(
                         message=(
-                            f"BETWEEN on datetime column '{col_name}' uses date-only "
-                            f"literals ('{low_val}' AND '{high_val}'), excluding "
-                            f"non-midnight times on the end date."
+                            f"`{predicate.sql()[:120]}` bounds the timestamp `{name}` inclusively by "
+                            f"the date {day}, which compares as {day} 00:00:00: records later on {day} are "
+                            "excluded. If the data carries times of day, use a half-open bound or compare the day."
                         ),
-                        severity=self.severity,
                         suggested_fix=(
-                            f"REPLACE: `{col_name} BETWEEN '{low_val}' AND '{high_val}'` "
-                            f"WITH `{col_name} >= '{low_val}' AND {col_name} < '<end_date_plus_one>'` "
-                            f"(half-open interval — BETWEEN is inclusive, so non-midnight "
-                            f"times on the end date are silently excluded)."
+                            f"REPLACE: the upper bound WITH `{name} < '<{day} plus one day>'`, OR compare "
+                            f"`CAST({name} AS DATE)` with the date."
                         ),
-                        details={
-                            "column": col_name,
-                            "start": low_val,
-                            "end": high_val,
-                            "issue": "datetime_between_date_literal",
-                        },
+                        details=details,
                     )
                 )
-
         return violations
 
 

@@ -9,30 +9,26 @@ organisational only and does not appear in `rule_id`s, which stay flat as
 """
 
 from . import (  # noqa: F401  -- side-effect imports trigger @register
-    cohort,
-    condition,
     cost,
-    death,
-    dose_era,
     drug,
-    episode,
-    location,
     measurement,
     note,
     observation,
     person,
-    procedure,
-    specimen,
     visit,
     visit_detail,
     vocabulary,
 )
 
 # Cross-cutting rules (genuinely domain-agnostic) stay flat.
-from .event_cardinality_validation import EventCardinalityValidationRule
 from .event_field_polymorphic_resolution import EventFieldPolymorphicResolutionRule
+from .event_rows_counted_as_persons import EventRowsCountedAsPersonsRule
+from .numeric_value_without_unit_constraint import NumericValueWithoutUnitConstraintRule
+from .value_as_columns_conjunction import ValueAsColumnsConjunctionRule
 
 __all__ = [
-    "EventCardinalityValidationRule",
     "EventFieldPolymorphicResolutionRule",
+    "EventRowsCountedAsPersonsRule",
+    "NumericValueWithoutUnitConstraintRule",
+    "ValueAsColumnsConjunctionRule",
 ]

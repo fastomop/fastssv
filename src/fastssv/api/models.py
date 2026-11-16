@@ -70,12 +70,34 @@ class ValidationResponse(BaseModel):
     strict: bool = False
 
 
+class RuleReference(BaseModel):
+    title: str
+    url: str
+
+
+class RuleExampleInfo(BaseModel):
+    sql: str
+    severity: str
+    note: str
+    strict: bool = Field(default=False, description="The finding only appears in strict mode.")
+
+
 class RuleInfo(BaseModel):
     rule_id: str
     name: str
     description: str
     severity: str
     category: str
+    example_bad: Optional[str] = Field(default=None, description="SQL that triggers the rule.")
+    example_good: Optional[str] = Field(default=None, description="Corrected version of example_bad.")
+    extra_examples: List[RuleExampleInfo] = Field(
+        default_factory=list,
+        description="Further triggering examples, one per additional severity or variant the rule emits.",
+    )
+    references: List[RuleReference] = Field(
+        default_factory=list,
+        description="Published sources the rule's claim is derived from.",
+    )
 
 
 class RulesResponse(BaseModel):

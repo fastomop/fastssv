@@ -54,6 +54,7 @@
 <section class="rules-list" id="rules-list">
   {% for r in rules %}
     <details class="rule-block sev-block-{{ r.severity }}"
+             id="rule-{{ r.rule_id }}"
              data-rule-id="{{ r.rule_id|lower }}"
              data-name="{{ r.name|lower }}"
              data-desc="{{ r.description|lower }}"
@@ -124,10 +125,36 @@
           </div>
         {% endif %}
 
-        {% if not r.long_description and not r.example_bad %}
-          <p class="rule-block-empty muted">
-            A longer write-up and example for this rule are still being authored.
-          </p>
+        {% for ex in r.extra_examples %}
+          <div class="rule-block-section">
+            <span class="rule-block-label rule-block-label-{{ 'bad' if ex.severity == 'error' else 'warn' }}">{{ ex.severity }}{{ ' (strict mode)' if ex.strict }}: {{ ex.note }}</span>
+            <div class="rule-example">
+              <pre class="query-sql"><code class="language-sql">{{ ex.sql }}</code></pre>
+              <button type="button"
+                      class="rule-block-play"
+                      data-action="send-to-validator"
+                      data-sql="{{ ex.sql }}"
+                      title="Open this example in the validator"
+                      aria-label="Open this example in the validator">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+                     stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        {% endfor %}
+
+        {% if r.references %}
+          <div class="rule-block-section">
+            <span class="rule-block-label">Sources</span>
+            <ul class="rule-block-sources">
+              {% for ref in r.references %}
+                <li><a href="{{ ref.url }}" target="_blank" rel="noopener noreferrer">{{ ref.title }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
         {% endif %}
       </div>
     </details>
@@ -169,8 +196,19 @@
     params.set('autorun', '1');
     window.location.href = '/?' + params.toString();
   });
+  // A link from a validator finding lands on /rules#rule-<id>: open that entry.
+  function openLinkedRule() {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    const card = id && document.getElementById(id);
+    if (card && card.classList.contains('rule-block')) {
+      card.open = true;
+      card.scrollIntoView({ block: 'start' });
+    }
+  }
+  window.addEventListener('hashchange', openLinkedRule);
   window.addEventListener('load', function () {
     if (window.Prism && Prism.highlightAll) Prism.highlightAll();
+    openLinkedRule();
   });
 </script>
 {% endblock %}

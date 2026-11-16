@@ -1,273 +1,107 @@
 """Episode Requires Concept Filter Rule.
 
-OMOP semantic rules OMOP_240, OMOP_505:
-Episode queries should filter by episode_concept_id to ensure semantic clarity
-and optimal query performance. Additionally, episode_event records must be linked
-to episode using episode_event.episode_id = episode.episode_id.
+OMOP semantic rules OMOP_240, OMOP_505.
 
-The Problem:
-    The episode table in OMOP CDM represents aggregated clinical events spanning
-    multiple dates (e.g., treatment regimens, disease episodes, hospitalizations).
-    The episode_concept_id column defines the TYPE of episode being tracked.
+CDM v5.4 ``episode`` holds every kind of episode in one table: disease episodes, treatment regimens, disease
+extent, and so on, told apart by ``episode_concept_id``. A query that reads episode rows without restricting that
+column, and without returning it, mixes all episode types in one result. Whether that is wrong depends on the data
+and the question, so the finding is a WARNING: the CDM specification defines the column but does not require a
+filter on it.
 
-    Querying the episode or episode_event tables without filtering by
-    episode_concept_id can lead to:
-    - Poor query performance (scanning all episode types)
-    - Semantic ambiguity (unclear query intent)
-    - Logical errors (mixing incompatible episode types)
+Flagged, per ``episode`` instance in a SELECT:
+    * ``episode_concept_id`` is neither restricted nor shown.
 
-Common episode types include:
-    - Disease Episode (concept_id 32533)
-    - Treatment Episode
-    - Hospitalization Episode
-    - Drug Era Episode
+Flagged, per ``episode_event`` instance:
+    * ``episode_id`` is not used at all, so the linked events cannot be tied to an episode type.
 
-Violation patterns:
-    -- WRONG: No episode_concept_id filter
-    SELECT p.person_id, e.episode_start_date
+``episode_concept_id`` counts as restricted by any non-negated WHERE / ON / HAVING predicate on it (``=``, ``IN``,
+``BETWEEN``, a join to a concept-set table), by a filter on a ``concept`` row joined to it, or by a restriction
+downstream on a projected copy. ``<>``, ``NOT IN`` and ``IS [NOT] NULL`` let every type through and do not count.
+It counts as shown when the SELECT projects or groups by it, or projects a column of the joined ``concept`` row.
+``SELECT *`` does not count: the column is there but nothing says the reader looks at it.
+
+Not flagged: a lookup of known rows by primary key (``episode_id = 42``), a read that analyses nothing (episode as
+the only source, no WHERE / GROUP BY, and a ``LIMIT`` peek or a whole-table ``COUNT(*)``), constant-false schema
+probes (``WHERE 0 = 1``), and DML / DDL targets. Any other aggregate (episodes per person, persons with an episode)
+mixes the types like a row-level read and is flagged.
+
+Violation:
+    SELECT e.person_id, e.episode_start_date
     FROM episode e
-    JOIN person p ON e.person_id = p.person_id;
+    WHERE e.episode_start_date >= DATE '2020-01-01'
 
-    -- WRONG: Filtering on other columns but not episode_concept_id
-    SELECT *
-    FROM episode e
-    WHERE e.episode_start_date > '2020-01-01';
-
-    -- WRONG: episode_event without concept filter (OMOP_505)
-    SELECT ee.*
-    FROM episode_event ee
-    JOIN condition_occurrence co ON ee.event_id = co.condition_occurrence_id;
-
-Correct patterns:
-    -- CORRECT: Filter by specific episode type
-    SELECT p.person_id, e.episode_start_date
-    FROM episode e
-    JOIN person p ON e.person_id = p.person_id
-    WHERE e.episode_concept_id = 32533;  -- Disease Episode
-
-    -- CORRECT: Filter by multiple episode types
-    SELECT *
-    FROM episode e
-    WHERE e.episode_concept_id IN (32533, 32534, 32535)
-      AND e.episode_start_date > '2020-01-01';
-
-    -- CORRECT: Using concept table for dynamic filtering
-    SELECT e.*
-    FROM episode e
-    JOIN concept c ON e.episode_concept_id = c.concept_id
-    WHERE c.concept_class_id = 'Episode'
-      AND c.standard_concept = 'S';
-
-    -- CORRECT: episode_event with concept filter via join (OMOP_505)
-    SELECT ee.*
-    FROM episode_event ee
-    JOIN episode e ON ee.episode_id = e.episode_id
-    WHERE e.episode_concept_id = 32533;
+Correct:
+    ... AND e.episode_concept_id = 32533   -- Disease Episode
 """
 
-from typing import Dict, List, Optional, Set
+from typing import List
 
-from sqlglot import exp
-
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-    has_table_reference,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.references import cdm_table
+from fastssv.core.helpers import parse_sql
 from fastssv.core.registry import register
 
-
-# --- Constants -------------------------------------------------------------
+from ._type_column import instances_pinned_by_key, instances_using, unused_instances
 
 EPISODE = "episode"
 EPISODE_EVENT = "episode_event"
-CONCEPT = "concept"
-
 EPISODE_CONCEPT_ID = "episode_concept_id"
-CONCEPT_ID = "concept_id"
-
-NORM_EPISODE = normalize_name(EPISODE)
-NORM_EPISODE_CONCEPT_ID = normalize_name(EPISODE_CONCEPT_ID)
-NORM_CONCEPT = normalize_name(CONCEPT)
-NORM_CONCEPT_ID = normalize_name(CONCEPT_ID)
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_episode_column(
-    col: exp.Column,
-    aliases: Dict[str, str],
-) -> bool:
-    table, col_name = resolve_table_col(col, aliases)
-
-    if _norm(col_name) != NORM_EPISODE_CONCEPT_ID:
-        return False
-
-    if table:
-        return _norm(table) == NORM_EPISODE
-
-    # Unqualified column → only valid if episode exists in query
-    return any(_norm(t) == NORM_EPISODE for t in aliases.values())
-
-
-def _has_direct_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """Detect direct filters on episode_concept_id."""
-
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        # Equality / inequality
-        if isinstance(node, (exp.EQ, exp.NEQ)):
-            for side in [node.this, node.expression]:
-                if isinstance(side, exp.Column) and _is_episode_column(side, aliases):
-                    return True
-
-        # IN clause
-        if isinstance(node, exp.In):
-            if isinstance(node.this, exp.Column) and _is_episode_column(node.this, aliases):
-                return True
-
-        # IS NOT NULL
-        if isinstance(node, exp.Is):
-            if isinstance(node.this, exp.Column) and _is_episode_column(node.this, aliases):
-                return True
-
-    return False
-
-
-def _has_concept_filtered_join(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    """
-    Require BOTH:
-    - join on episode_concept_id = concept.concept_id
-    - AND a filter on concept table
-    """
-
-    has_join = False
-    concept_aliases: Set[str] = set()
-
-    for join in tree.find_all(exp.Join):
-        if not isinstance(join.this, exp.Table):
-            continue
-
-        if _norm(join.this.name) != NORM_CONCEPT:
-            continue
-
-        concept_alias = join.this.alias_or_name
-        if concept_alias:
-            concept_aliases.add(_norm(concept_alias))
-
-        on_clause = join.args.get("on")
-        if not on_clause:
-            continue
-
-        for eq in on_clause.find_all(exp.EQ):
-            cols = [c for c in (eq.this, eq.expression) if isinstance(c, exp.Column)]
-
-            if len(cols) != 2:
-                continue
-
-            _, left_col = resolve_table_col(cols[0], aliases)
-            _, right_col = resolve_table_col(cols[1], aliases)
-
-            if (_norm(left_col) == NORM_EPISODE_CONCEPT_ID and _norm(right_col) == NORM_CONCEPT_ID) or (
-                _norm(right_col) == NORM_EPISODE_CONCEPT_ID and _norm(left_col) == NORM_CONCEPT_ID
-            ):
-                has_join = True
-
-    if not has_join:
-        return False
-
-    # Now require filtering on concept table
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
-            continue
-
-        if isinstance(node, (exp.EQ, exp.In)):
-            for col in node.find_all(exp.Column):
-                table, _ = resolve_table_col(col, aliases)
-                if table and _norm(table) in concept_aliases:
-                    return True
-
-    return False
-
-
-def _has_subquery_filter(tree: exp.Expression) -> bool:
-    """Recursively check subqueries."""
-    for sub in tree.find_all(exp.Subquery):
-        inner = sub.this
-        if isinstance(inner, exp.Expression):
-            aliases = extract_aliases(inner)
-            if (
-                _has_direct_filter(inner, aliases)
-                or _has_concept_filtered_join(inner, aliases)
-                or _has_subquery_filter(inner)
-            ):
-                return True
-    return False
-
-
-def _has_episode_filter(tree: exp.Expression, aliases: Dict[str, str]) -> bool:
-    return _has_direct_filter(tree, aliases) or _has_concept_filtered_join(tree, aliases) or _has_subquery_filter(tree)
-
-
-def _episode_event_has_valid_path(tree: exp.Expression) -> bool:
-    """
-    episode_event is valid if:
-    - joins to episode with filter
-    - OR subquery provides filter
-    """
-
-    for sub in tree.walk():
-        if isinstance(sub, exp.Expression):
-            aliases = extract_aliases(sub)
-
-            if has_table_reference(sub, EPISODE) and _has_episode_filter(sub, aliases):
-                return True
-
-    return False
-
-
-# --- Rule ------------------------------------------------------------------
+EPISODE_ID = "episode_id"
 
 
 @register
 class EpisodeRequiresConceptFilterRule(Rule):
+    """Flag episode reads that mix every episode type."""
+
     rule_id = "data_quality.episode_requires_concept_filter"
     name = "Episode Requires Concept Filter"
 
     description = (
-        "Episode queries should filter by episode_concept_id to ensure semantic clarity and optimal query performance."
+        "An episode read that neither restricts nor returns episode_concept_id mixes every episode type (disease "
+        "episodes, treatment regimens, ...) in one result."
     )
 
-    severity = Severity.ERROR
+    severity = Severity.WARNING
 
     suggested_fix = (
-        "ADD: `WHERE episode_concept_id = <id>` (or IN(...)) to scope the episode query to a specific clinical concept."
+        "ADD: `episode_concept_id = <id>` (or IN (...)) to select one episode type, or add episode_concept_id to "
+        "the SELECT list / GROUP BY if every type is wanted."
     )
     long_description = (
-        "The episode table aggregates care over time (disease episodes, "
-        "treatment episodes) across many episode types identified by "
-        "episode_concept_id. Querying episode without a concept filter "
-        "returns a mixed bag of unrelated episode types, which is rarely "
-        "the intent. Add an episode_concept_id predicate or join to "
-        "concept with an explicit filter to select a single episode type."
+        "The episode table stores disease episodes, treatment regimens and other abstractions side by side; "
+        "episode_concept_id says which kind a row is. Reading episode without restricting or returning that "
+        "column puts all kinds in one result, so a count of 'episodes per person' adds disease phases to "
+        "treatment lines. The CDM specification does not require the filter, so this is a warning: restrict "
+        "episode_concept_id, or project or group by it when the mix is intended. A lookup by episode_id, a LIMIT "
+        "peek and a whole-table COUNT(*) are not flagged; an aggregate such as episodes per person is. "
+        "episode_event is flagged when its episode_id is never used, because its "
+        "events then cannot be tied to an episode type."
     )
-    example_bad = "SELECT person_id\nFROM episode;"
-    example_good = "SELECT person_id\nFROM episode\nWHERE episode_concept_id = 32528;"
+    example_bad = (
+        "SELECT e.person_id, e.episode_start_date\nFROM episode e\nWHERE e.episode_start_date >= DATE '2020-01-01';"
+    )
+    example_good = (
+        "SELECT e.person_id, e.episode_start_date\n"
+        "FROM episode e\n"
+        "WHERE e.episode_concept_id = 32533\n"
+        "  AND e.episode_start_date >= DATE '2020-01-01';"
+    )
+    extra_examples = (
+        RuleExample(
+            sql=(
+                "SELECT po.person_id, po.procedure_concept_id\n"
+                "FROM episode_event ee\n"
+                "JOIN procedure_occurrence po ON ee.event_id = po.procedure_occurrence_id\n"
+                "WHERE ee.episode_event_field_concept_id = 1147082;"
+            ),
+            severity=Severity.WARNING,
+            note="episode_event read without using episode_id: procedures linked to episodes of every type.",
+        ),
+    )
+    references = (cdm_table("episode"), cdm_table("episode_event"))
 
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        sql_lower = sql.lower()
-        if "episode" not in sql_lower and "episode_event" not in sql_lower:
+        if EPISODE not in sql.lower():
             return []
 
         trees, err = parse_sql(sql, dialect)
@@ -275,48 +109,42 @@ class EpisodeRequiresConceptFilterRule(Rule):
             return []
 
         violations: List[RuleViolation] = []
-        seen: Set[str] = set()
-
         for tree in trees:
             if not tree:
                 continue
 
-            aliases = extract_aliases(tree)
-
-            uses_episode = has_table_reference(tree, EPISODE)
-            uses_episode_event = has_table_reference(tree, EPISODE_EVENT)
-
-            if not uses_episode and not uses_episode_event:
-                continue
-
-            has_filter = _has_episode_filter(tree, aliases)
-
-            if uses_episode_event and not uses_episode:
-                if not _episode_event_has_valid_path(tree):
-                    key = "episode_event_no_filter"
-                    if key not in seen:
-                        seen.add(key)
-                        violations.append(
-                            self.create_violation(
-                                message=("episode_event used without a valid episode_concept_id filter path."),
-                                suggested_fix=(
-                                    "JOIN episode e ON ee.episode_id = e.episode_id AND filter e.episode_concept_id"
-                                ),
-                                details={"table": "episode_event"},
-                            )
-                        )
-
-            elif uses_episode and not has_filter:
-                key = "episode_no_filter"
-                if key not in seen:
-                    seen.add(key)
-                    violations.append(
-                        self.create_violation(
-                            message=("episode table used without filtering by episode_concept_id."),
-                            suggested_fix=self.suggested_fix,
-                            details={"table": "episode"},
-                        )
+            typed = instances_using(tree, EPISODE, EPISODE_CONCEPT_ID) | instances_pinned_by_key(
+                tree, EPISODE, EPISODE_ID
+            )
+            for _, alias in unused_instances(tree, EPISODE, typed, {EPISODE_CONCEPT_ID, "episode_type_concept_id"}):
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"episode '{alias}' is read without restricting episode_concept_id, so rows of every "
+                            "episode type (disease episodes, treatment regimens, ...) are mixed. Restrict "
+                            "episode_concept_id, or select it if every type is wanted."
+                        ),
+                        details={"table": EPISODE, "alias": alias},
                     )
+                )
+
+            linked = instances_using(tree, EPISODE_EVENT, EPISODE_ID, restrict_only=False)
+            for _, alias in unused_instances(
+                tree, EPISODE_EVENT, linked, {EPISODE_ID, "episode_event_field_concept_id"}
+            ):
+                violations.append(
+                    self.create_violation(
+                        message=(
+                            f"episode_event '{alias}' is read without using episode_id, so events linked to "
+                            "episodes of every type are mixed. Join episode on episode_id and restrict "
+                            "episode_concept_id."
+                        ),
+                        suggested_fix=(
+                            "ADD: `JOIN episode e ON ee.episode_id = e.episode_id` and restrict `e.episode_concept_id`."
+                        ),
+                        details={"table": EPISODE_EVENT, "alias": alias},
+                    )
+                )
 
         return violations
 

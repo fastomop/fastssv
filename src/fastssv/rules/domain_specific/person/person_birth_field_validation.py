@@ -1,342 +1,295 @@
 """Person Birth Field Validation Rule.
 
-OMOP semantic rules CLIN_006, CLIN_007, CLIN_008:
-Validates that person birth-related fields contain plausible values.
+A row filter on a person birth field whose admitted values cannot overlap the field's range. The ranges are the
+plausibleValueLow / plausibleValueHigh thresholds of the OHDSI Data Quality Dashboard (DQD) for CDM v5.4
+(``_ds2_birth_bounds.py``):
 
-CLIN_006 (year_of_birth): Should be between 1900 and current year
-CLIN_007 (month_of_birth): Must be between 1 and 12
-CLIN_008 (day_of_birth): Must be between 1 and 31
+* ``month_of_birth`` 1-12 and ``day_of_birth`` 1-31. CDM v5.4 fills them by extracting the month and day of a
+  precise date of birth, so no other value is a month or a day: a filter that admits none of them (``= 13``,
+  ``> 12``, ``IN (0, 13)``, ``BETWEEN 13 AND 20``) matches rows only in non-conformant data. WARNING: DQD checks
+  these ranges with thresholds that tolerate a share of violating rows, so the CDM does not guarantee that none
+  exist, and DQD's own check query selects exactly those rows. A month and day that never occur together
+  (``month_of_birth = 2 AND day_of_birth = 30``) are reported the same way.
+* ``year_of_birth`` from 1850. DQD flags earlier years as implausible, not impossible, so a filter that admits only
+  earlier years is a WARNING. DQD's upper bound is the current year plus one; it depends on the day the check runs
+  and does not hold on date-shifted databases, so years are never judged against an upper bound.
+* A ``BETWEEN`` whose lower bound exceeds its upper bound is empty for any data: ERROR (``BETWEEN SYMMETRIC``
+  sorts its bounds and is judged as a range).
 
-The Problem:
-    Birth fields in the person table should contain plausible values.
-    Values outside valid ranges indicate data quality issues or query logic errors.
+``EXTRACT(YEAR | MONTH | DAY FROM birth_datetime)``, ``DATE_PART(...)`` and ``YEAR() / MONTH() / DAY()`` are judged
+like the matching field. Columns are followed through casts, CTEs and derived tables; quoted integers are read.
 
-    Common mistakes:
-    - year_of_birth = 1850 (too far in the past)
-    - year_of_birth = 2050 (in the future)
-    - month_of_birth = 13 (invalid month)
-    - day_of_birth = 32 (invalid day)
+Only row filters are judged: a conjunct of WHERE, HAVING or an inner join's ON, outside NOT / NOT EXISTS / EXCEPT.
+Under OR, in CASE or in an outer join's ON the predicate does not restrict the returned rows.
 
 Violation patterns:
-    SELECT * FROM person WHERE year_of_birth = 1850
-    -- Year before 1900 is implausible
-
-    SELECT * FROM person WHERE month_of_birth = 13
-    -- Months must be 1-12
-
-    SELECT * FROM person WHERE day_of_birth = 32
-    -- Days must be 1-31
+    SELECT * FROM person WHERE month_of_birth = 13            -- WARNING
+    SELECT * FROM person WHERE day_of_birth IN (32, 33)       -- WARNING
+    SELECT * FROM person WHERE month_of_birth > 12            -- WARNING
+    SELECT * FROM person WHERE year_of_birth < 1800           -- WARNING
+    SELECT * FROM person WHERE year_of_birth BETWEEN 2000 AND 1990
 
 Correct patterns:
-    SELECT * FROM person WHERE year_of_birth BETWEEN 1950 AND 2000
     SELECT * FROM person WHERE month_of_birth = 6
-    SELECT * FROM person WHERE day_of_birth = 15
+    SELECT * FROM person WHERE year_of_birth BETWEEN 1950 AND 2000
+    SELECT * FROM person WHERE year_of_birth = 2092           -- a date-shifted CDM
 """
 
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlglot import exp
 
-from fastssv.core.base import Rule, RuleViolation, Severity
-from fastssv.core.helpers import (
-    extract_aliases,
-    is_in_where_or_join_clause,
-    normalize_name,
-    parse_sql,
-    resolve_table_col,
-)
+from fastssv.core.base import Rule, RuleExample, RuleViolation, Severity
+from fastssv.core.helpers import normalize_name, parse_sql
+from fastssv.core.references import DQD_FIELD_THRESHOLDS, cdm_table
 from fastssv.core.registry import register
+from fastssv.rules.domain_specific._rows import (
+    RowPath,
+    group_by_row,
+    in_negated_scope,
+    int_literal,
+    peel,
+    read_of,
+    restricts_rows,
+)
+
+from ._ds2_birth_bounds import BIRTH_FIELD_BOUNDS
+
+PERSON = "person"
+BIRTH_DATETIME = "birth_datetime"
+_PART_TO_FIELD = {"year": "year_of_birth", "month": "month_of_birth", "day": "day_of_birth"}
+_PART_FUNCTIONS = {exp.Year: "year", exp.Month: "month", exp.Day: "day"}
+# Longest day of each month in any year (29 February included).
+_DAYS_IN_MONTH = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+_MIRROR = {exp.GT: exp.LT, exp.GTE: exp.LTE, exp.LT: exp.GT, exp.LTE: exp.GTE, exp.EQ: exp.EQ}
+
+# Admitted values: an inclusive interval (None = unbounded) or a finite set.
+Interval = Tuple[Optional[int], Optional[int]]
 
 
-# --- Field Configuration ---------------------------------------------------
-
-
-class FieldConfig:
-    """Configuration for birth field validation."""
-
-    def __init__(self, min_val: int, max_val, severity: Severity, field_name: str):
-        self.min_val = min_val
-        self.max_val = max_val  # int or callable
-        self.severity = severity
-        self.field_name = field_name
-
-    def get_max_val(self) -> int:
-        if callable(self.max_val):
-            return self.max_val()
-        return self.max_val
-
-    def validate_value(self, value: int) -> Optional[str]:
-        max_val = self.get_max_val()
-
-        if value < self.min_val:
-            return f"{self.field_name} = {value} is below minimum value {self.min_val}"
-        if value > max_val:
-            return f"{self.field_name} = {value} is above maximum value {max_val}"
+def _birth_field(node: Optional[exp.Expression]) -> Optional[Tuple[RowPath, str, str]]:
+    """``(row, field, text)`` when ``node`` is a person birth field, or a date part of person.birth_datetime."""
+    node = peel(node)
+    part: Optional[str] = None
+    target: Optional[exp.Expression] = None
+    if isinstance(node, exp.Extract):
+        part, target = normalize_name(node.this.name), node.expression
+    elif type(node) in _PART_FUNCTIONS:
+        part, target = _PART_FUNCTIONS[type(node)], node.this
+    elif isinstance(node, exp.Anonymous) and normalize_name(node.name) == "date_part" and len(node.expressions) == 2:
+        first = node.expressions[0]
+        part, target = (
+            (normalize_name(str(first.this)) if isinstance(first, exp.Literal) else None),
+            node.expressions[1],
+        )
+    if part is not None:
+        field = _PART_TO_FIELD.get(part.strip("'\""))
+        read = read_of(target)
+        if field and read is not None and read[1:] == (PERSON, BIRTH_DATETIME):
+            return read[0], field, node.sql()
         return None
-
-
-BIRTH_FIELD_CONFIGS = {
-    "year_of_birth": FieldConfig(
-        min_val=1900,
-        max_val=lambda: datetime.now().year,
-        severity=Severity.WARNING,
-        field_name="year_of_birth",
-    ),
-    "month_of_birth": FieldConfig(
-        min_val=1,
-        max_val=12,
-        severity=Severity.ERROR,
-        field_name="month_of_birth",
-    ),
-    "day_of_birth": FieldConfig(
-        min_val=1,
-        max_val=31,
-        severity=Severity.ERROR,
-        field_name="day_of_birth",
-    ),
-}
-
-
-# --- Helpers ---------------------------------------------------------------
-
-
-def _norm(x: Optional[str]) -> Optional[str]:
-    return normalize_name(x) if x else None
-
-
-def _is_birth_field(col: exp.Column, aliases: Dict[str, str]) -> Optional[str]:
-    """Return birth field name if column belongs to person table."""
-    table, col_name = resolve_table_col(col, aliases)
-    col_norm = _norm(col_name)
-
-    if col_norm not in BIRTH_FIELD_CONFIGS:
-        return None
-
-    if table:
-        if _norm(table) != "person":
-            return None
-    else:
-        # Allow unqualified column only if person table exists in query
-        if "person" not in {_norm(t) for t in aliases.values()}:
-            return None
-
-    return col_norm
-
-
-def _extract_int(node: exp.Expression) -> Optional[int]:
-    """Extract integer value from literal (including negative numbers)."""
-    if isinstance(node, exp.Neg):
-        inner = node.this
-        if isinstance(inner, exp.Literal) and inner.is_int:
-            try:
-                return -int(inner.this)
-            except Exception:
-                return None
-        return None
-
-    if isinstance(node, exp.Literal) and node.is_int:
-        try:
-            return int(node.this)
-        except Exception:
-            return None
-
+    read = read_of(node)
+    if read is not None and read[1] == PERSON and read[2] in BIRTH_FIELD_BOUNDS:
+        return read[0], read[2], node.sql()
     return None
 
 
-def _safe_sql(node: exp.Expression, max_len: int = 50) -> str:
-    """Safely stringify SQL node with length cap."""
-    try:
-        return str(node)[:max_len]
-    except Exception:
-        return "<expr>"
+def _admitted(node: exp.Expression) -> Optional[Tuple[Tuple[RowPath, str, str], object]]:
+    """The birth field ``node`` restricts and the values it admits (an Interval or a set of ints)."""
+    if isinstance(node, exp.In):
+        field = _birth_field(node.this)
+        if field is None or isinstance(node.parent, exp.Not) or node.args.get("query") is not None:
+            return None
+        values = [int_literal(v) for v in node.expressions or []]
+        return (field, set(values)) if values and all(v is not None for v in values) else None
+    if isinstance(node, exp.Between):
+        field = _birth_field(node.this)
+        low, high = int_literal(node.args.get("low")), int_literal(node.args.get("high"))
+        if field is None or low is None or high is None:
+            return None
+        if node.args.get("symmetric"):
+            low, high = min(low, high), max(low, high)
+        return field, (low, high)
+    for field_side, value_side, op in ((node.this, node.expression, type(node)), (node.expression, node.this, None)):
+        field = _birth_field(field_side)
+        if field is None:
+            continue
+        value = int_literal(value_side)
+        if value is None:
+            return None
+        op = op or _MIRROR[type(node)]
+        interval: Interval = {
+            exp.EQ: (value, value),
+            exp.GT: (value + 1, None),
+            exp.GTE: (value, None),
+            exp.LT: (None, value - 1),
+            exp.LTE: (None, value),
+        }[op]
+        return field, interval
+    return None
 
 
-# --- Detection -------------------------------------------------------------
+def _overlaps(admitted: object, low: int, high: Optional[int]) -> bool:
+    if isinstance(admitted, set):
+        return any(v >= low and (high is None or v <= high) for v in admitted)
+    a_low, a_high = admitted
+    return (a_high is None or a_high >= low) and (high is None or a_low is None or a_low <= high)
 
 
-def _find_violations(
-    tree: exp.Expression,
-    aliases: Dict[str, str],
-) -> List[Tuple[str, str, Severity]]:
+def _as_set(admitted: object, low: int, high: int) -> Set[int]:
+    if isinstance(admitted, set):
+        return {v for v in admitted if low <= v <= high}
+    a_low, a_high = admitted
+    return set(
+        range(max(low, a_low if a_low is not None else low), min(high, a_high if a_high is not None else high) + 1)
+    )
+
+
+def _range_text(field: str) -> str:
+    low, high = BIRTH_FIELD_BOUNDS[field]
+    return f"{low} to {high}" if high is not None else f"from {low}"
+
+
+def _find_violations(tree: exp.Expression) -> List[Tuple[str, str, Severity]]:
+    """``(field, message, severity)`` per filter whose admitted values miss the field's range."""
     issues: List[Tuple[str, str, Severity]] = []
     seen: Set[str] = set()
+    per_row: List[Tuple[RowPath, Tuple[str, Set[int]]]] = []
 
-    for node in tree.walk():
-        if not is_in_where_or_join_clause(node):
+    def add(field: str, message: str, severity: Severity) -> None:
+        if message not in seen:
+            seen.add(message)
+            issues.append((field, message, severity))
+
+    for node in tree.find_all(exp.EQ, exp.In, exp.Between, exp.GT, exp.GTE, exp.LT, exp.LTE):
+        if not restricts_rows(node) or in_negated_scope(node):
             continue
-
-        # --- Binary comparisons ---
-        if isinstance(node, (exp.EQ, exp.NEQ, exp.LT, exp.LTE, exp.GT, exp.GTE)):
-            pairs = [(node.this, node.expression), (node.expression, node.this)]
-
-            for col_node, val_node in pairs:
-                if not isinstance(col_node, exp.Column):
-                    continue
-
-                field_name = _is_birth_field(col_node, aliases)
-                if not field_name:
-                    continue
-
-                value = _extract_int(val_node)
-                if value is None:
-                    continue
-
-                config = BIRTH_FIELD_CONFIGS[field_name]
-                error_msg = config.validate_value(value)
-
-                if error_msg:
-                    key = f"{field_name}|{value}|{type(node).__name__}"
-                    if key in seen:
-                        continue
-                    seen.add(key)
-
-                    issues.append((field_name, error_msg, config.severity))
-
-        # --- BETWEEN ---
-        elif isinstance(node, exp.Between):
-            col_node = node.this
-            if not isinstance(col_node, exp.Column):
+        found = _admitted(node)
+        if found is None:
+            continue
+        (row, field, _), admitted = found
+        predicate = node.sql()
+        if isinstance(admitted, tuple) and admitted[0] is not None and admitted[1] is not None:
+            if admitted[0] > admitted[1]:
+                add(field, f"`{predicate}` is empty: its lower bound is above its upper bound.", Severity.ERROR)
                 continue
-
-            field_name = _is_birth_field(col_node, aliases)
-            if not field_name:
-                continue
-
-            low = _extract_int(node.args.get("low"))
-            high = _extract_int(node.args.get("high"))
-
-            config = BIRTH_FIELD_CONFIGS[field_name]
-
-            # Invalid range check
-            if low is not None and high is not None and low > high:
-                key = f"{field_name}|between_invalid_range|{low}|{high}"
-                if key not in seen:
-                    seen.add(key)
-                    issues.append(
-                        (
-                            field_name,
-                            f"{field_name} BETWEEN {low} AND {high} has invalid range (low > high)",
-                            config.severity,
-                        )
-                    )
-
-            for bound_val in [low, high]:
-                if bound_val is None:
-                    continue
-
-                error_msg = config.validate_value(bound_val)
-                if error_msg:
-                    key = f"{field_name}|between|{bound_val}"
-                    if key in seen:
-                        continue
-                    seen.add(key)
-
-                    issues.append((field_name, error_msg, config.severity))
-
-        # --- IN ---
-        elif isinstance(node, exp.In):
-            col_node = node.this
-            if not isinstance(col_node, exp.Column):
-                continue
-
-            field_name = _is_birth_field(col_node, aliases)
-            if not field_name:
-                continue
-
-            config = BIRTH_FIELD_CONFIGS[field_name]
-
-            invalid_values = []
-            non_int_values = []
-
-            for val in node.expressions or []:
-                v = _extract_int(val)
-                if v is None:
-                    non_int_values.append(_safe_sql(val))
-                    continue
-
-                error_msg = config.validate_value(v)
-                if error_msg:
-                    invalid_values.append(v)
-
-            if invalid_values or non_int_values:
-                key = f"{field_name}|in|{tuple(sorted(invalid_values))}|{tuple(non_int_values)}"
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                max_val = config.get_max_val()
-
-                parts = []
-                if invalid_values:
-                    parts.append(f"invalid values: {invalid_values}")
-                if non_int_values:
-                    parts.append(f"non-integer values: {non_int_values}")
-
-                error_msg = (
-                    f"{field_name} IN clause contains {', '.join(parts)}. Valid range is {config.min_val} to {max_val}."
+        low, high = BIRTH_FIELD_BOUNDS[field]
+        if not _overlaps(admitted, low, high):
+            if field == "year_of_birth":
+                add(
+                    field,
+                    f"`{predicate}` admits only year_of_birth values before {low}, the earliest year of birth the "
+                    "OHDSI Data Quality Dashboard treats as plausible; such persons are implausible, so the filter "
+                    "probably selects nobody or only data errors.",
+                    Severity.WARNING,
                 )
+            else:
+                add(
+                    field,
+                    f"`{predicate}` admits no {field} from {low} to {high}. {field} holds the "
+                    f"{field.split('_')[0]} of a date of birth, so rows can match only in non-conformant data: the "
+                    "OHDSI Data Quality Dashboard flags such values but tolerates a share of them.",
+                    Severity.WARNING,
+                )
+            continue
+        if high is not None and field in ("month_of_birth", "day_of_birth"):
+            values = _as_set(admitted, low, high)
+            per_row.append((row, (field, values)))
 
-                issues.append((field_name, error_msg, config.severity))
-
+    for _, restrictions in group_by_row(per_row):
+        months: Optional[Set[int]] = None
+        days: Optional[Set[int]] = None
+        for field, values in restrictions:
+            if field == "month_of_birth":
+                months = values if months is None else months & values
+            else:
+                days = values if days is None else days & values
+        if months is None or days is None or not months or not days:
+            continue
+        if not any(d <= _DAYS_IN_MONTH[m] for m in months for d in days):
+            add(
+                "day_of_birth",
+                f"month_of_birth in {sorted(months)} and day_of_birth in {sorted(days)} never occur together in a "
+                "real date: no month has that many days, so rows can match only in non-conformant data.",
+                Severity.WARNING,
+            )
     return issues
-
-
-# --- Rule ------------------------------------------------------------------
 
 
 @register
 class PersonBirthFieldValidationRule(Rule):
-    """Validate person birth fields for plausible values."""
+    """A row filter on a person birth field that admits no value in the field's range."""
 
     rule_id = "domain_specific.person_birth_field_validation"
     name = "Person Birth Field Validation"
-
     description = (
-        "Ensures person birth fields (year_of_birth, month_of_birth, day_of_birth) "
-        "use plausible values within accepted ranges."
+        "Flags row filters on person birth fields: an inverted BETWEEN is empty for any data (error); month_of_birth "
+        "outside 1-12, day_of_birth outside 1-31, an impossible month/day pair, or year_of_birth only before 1850 "
+        "match only non-conformant rows (warning). Years have no upper bound."
+    )
+    severity = Severity.ERROR
+    suggested_fix = (
+        "REPLACE: the literal WITH a value in range: month_of_birth 1-12, day_of_birth 1-31, year_of_birth from 1850; "
+        "for an inverted BETWEEN, put the lower bound first."
+    )
+    long_description = (
+        "CDM v5.4 fills month_of_birth and day_of_birth from a precise date of birth, and the OHDSI Data Quality "
+        "Dashboard checks them against 1-12 and 1-31; a filter that admits no such value (=, IN, BETWEEN or a "
+        "one-sided comparison, any literal) matches rows only in non-conformant data. It is a warning, because the "
+        "DQD thresholds tolerate a share of violating rows, so the CDM does not guarantee none exist (DQD's own "
+        "check query selects them). An inverted BETWEEN on any birth field is empty for any data and is an error. "
+        "A year_of_birth before 1850 is implausible by the same checks, so a filter that admits only such years "
+        "is a warning too. The rule sets no upper bound on "
+        "year_of_birth: DQD derives it from the current date, and date-shifted databases store later years."
+    )
+    example_bad = "SELECT person_id FROM person\nWHERE year_of_birth BETWEEN 2000 AND 1990;"
+    example_good = "SELECT person_id FROM person\nWHERE month_of_birth = 12;"
+    extra_examples = (
+        RuleExample(
+            sql="SELECT person_id FROM person\nWHERE year_of_birth < 1800;",
+            severity=Severity.WARNING,
+            note="year_of_birth only before 1850, the DQD plausibility bound",
+        ),
+        RuleExample(
+            sql="SELECT person_id FROM person\nWHERE month_of_birth = 13;",
+            severity=Severity.WARNING,
+            note="month 13 is outside 1-12: only non-conformant rows match",
+        ),
+        RuleExample(
+            sql="SELECT person_id FROM person\nWHERE month_of_birth = 0;",
+            severity=Severity.WARNING,
+            note="month 0 is outside 1-12 like any other non-month: only non-conformant rows match",
+        ),
+    )
+    references = (
+        cdm_table("person"),
+        DQD_FIELD_THRESHOLDS,
     )
 
-    severity = Severity.ERROR
-
-    suggested_fix = "REPLACE: implausible birth-field literals WITH valid ranges: year_of_birth BETWEEN 1900 AND <current_year>, month_of_birth BETWEEN 1 AND 12, day_of_birth BETWEEN 1 AND 31."
-    example_bad = "SELECT person_id FROM person\nWHERE year_of_birth = 1800;"
-    example_good = "SELECT person_id FROM person\nWHERE year_of_birth BETWEEN 1900 AND 2024;"
-
     def validate(self, sql: str, dialect: str = "postgres") -> List[RuleViolation]:
-        violations: List[RuleViolation] = []
-
+        if not sql or "birth" not in sql.lower():
+            return []
         trees, parse_error = parse_sql(sql, dialect)
         if parse_error:
             return []
 
+        violations: List[RuleViolation] = []
         for tree in trees:
             if tree is None:
                 continue
-
-            aliases = extract_aliases(tree)
-            issues = _find_violations(tree, aliases)
-
-            for field_name, error_msg, severity in issues:
-                config = BIRTH_FIELD_CONFIGS[field_name]
-                max_val = config.get_max_val()
-
+            for field, message, severity in _find_violations(tree):
+                low, high = BIRTH_FIELD_BOUNDS[field]
                 violations.append(
                     self.create_violation(
                         severity=severity,
-                        message=error_msg,
+                        message=message,
                         suggested_fix=(
-                            f"REPLACE: implausible `{field_name}` filter literals "
-                            f"WITH `{field_name} BETWEEN {config.min_val} AND {max_val}`."
+                            f"REPLACE: the `{field}` literal WITH a value {_range_text(field)}; for an inverted "
+                            "BETWEEN, put the lower bound first."
                         ),
-                        details={
-                            "field": field_name,
-                            "min_value": config.min_val,
-                            "max_value": max_val,
-                        },
+                        details={"field": field, "min_value": low, "max_value": high},
                     )
                 )
-
         return violations
 
 

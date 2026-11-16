@@ -16,7 +16,23 @@ class Settings(BaseSettings):
 
     max_sql_bytes: int = Field(default=100_000, ge=1, le=10_000_000)
     parse_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    # A timed-out validation still runs to completion on its worker thread
+    # (CPU-bound sqlglot parses can't be cancelled), so bound how many
+    # validations may occupy threads at once. When the bound is hit the API
+    # fails fast with 503 instead of quietly pinning the whole thread pool.
+    max_concurrent_validations: int = Field(default=8, ge=1, le=128)
     rate_limit: str = Field(default="60/minute")
+    # slowapi storage backend. Default in-memory storage is PER-PROCESS: with
+    # N gunicorn workers the effective limit is N x rate_limit and counters
+    # reset on restart. Point this at a shared backend (e.g.
+    # "redis://host:6379") for a real cross-worker limit.
+    rate_limit_storage_uri: str = Field(default="")
+    # Hosts whose X-Forwarded-For/-Proto headers are trusted when
+    # behind_proxy=true (comma-separated IPs/CIDRs, or "*" for any peer).
+    # Leave "*" ONLY when the app is reachable exclusively through the
+    # proxy — a directly-reachable app would let clients spoof their IP
+    # (and thereby rotate rate-limit buckets) by forging X-Forwarded-For.
+    trusted_proxy_hosts: str = Field(default="*")
     # NoDecode skips pydantic-settings' built-in JSON parsing for these
     # complex fields so an empty string from the env doesn't blow up before
     # the validators below run.

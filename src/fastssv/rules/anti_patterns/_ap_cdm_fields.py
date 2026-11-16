@@ -1,0 +1,173 @@
+"""Table and column facts of the OMOP CDM v5.4, generated from the field-level specification CSV
+(OHDSI/CommonDataModel, inst/csv/OMOP_CDMv5.4_Field_Level.csv). Regenerate, do not edit by hand."""
+
+# fmt: off
+# Every table of the specification.
+CDM_TABLES = frozenset(['care_site', 'cdm_source', 'cohort', 'cohort_definition', 'concept', 'concept_ancestor', 'concept_class',
+ 'concept_relationship', 'concept_synonym', 'condition_era', 'condition_occurrence', 'cost', 'death',
+ 'device_exposure', 'domain', 'dose_era', 'drug_era', 'drug_exposure', 'drug_strength', 'episode',
+ 'episode_event', 'fact_relationship', 'location', 'measurement', 'metadata', 'note', 'note_nlp', 'observation',
+ 'observation_period', 'payer_plan_period', 'person', 'procedure_occurrence', 'provider', 'relationship',
+ 'source_to_concept_map', 'specimen', 'visit_detail', 'visit_occurrence', 'vocabulary'])
+
+# Tables that carry no vocabulary content of their own: the Standardized Vocabularies.
+VOCABULARY_TABLES = frozenset(['concept', 'concept_ancestor', 'concept_class', 'concept_relationship', 'concept_synonym', 'domain',
+ 'drug_strength', 'relationship', 'source_to_concept_map', 'vocabulary'])
+
+# table -> primary-key column (isPrimaryKey = Yes).
+PRIMARY_KEYS = {'care_site': 'care_site_id',
+ 'concept': 'concept_id',
+ 'concept_class': 'concept_class_id',
+ 'condition_era': 'condition_era_id',
+ 'condition_occurrence': 'condition_occurrence_id',
+ 'cost': 'cost_id',
+ 'death': 'person_id',
+ 'device_exposure': 'device_exposure_id',
+ 'domain': 'domain_id',
+ 'dose_era': 'dose_era_id',
+ 'drug_era': 'drug_era_id',
+ 'drug_exposure': 'drug_exposure_id',
+ 'episode': 'episode_id',
+ 'location': 'location_id',
+ 'measurement': 'measurement_id',
+ 'metadata': 'metadata_id',
+ 'note': 'note_id',
+ 'note_nlp': 'note_nlp_id',
+ 'observation': 'observation_id',
+ 'observation_period': 'observation_period_id',
+ 'payer_plan_period': 'payer_plan_period_id',
+ 'person': 'person_id',
+ 'procedure_occurrence': 'procedure_occurrence_id',
+ 'provider': 'provider_id',
+ 'relationship': 'relationship_id',
+ 'specimen': 'specimen_id',
+ 'visit_detail': 'visit_detail_id',
+ 'visit_occurrence': 'visit_occurrence_id',
+ 'vocabulary': 'vocabulary_id'}
+
+# Tables with a person_id column.
+PERSON_LEVEL_TABLES = frozenset(['condition_era', 'condition_occurrence', 'death', 'device_exposure', 'dose_era', 'drug_era', 'drug_exposure',
+ 'episode', 'measurement', 'note', 'observation', 'observation_period', 'payer_plan_period', 'person',
+ 'procedure_occurrence', 'specimen', 'visit_detail', 'visit_occurrence'])
+
+# Tables whose rows are patient-level records: a person_id column, or a reference to a table that has one
+# (a foreign key, or a column named after that table's primary key).
+PATIENT_LEVEL_TABLES = frozenset(['condition_era', 'condition_occurrence', 'cost', 'death', 'device_exposure', 'dose_era', 'drug_era',
+ 'drug_exposure', 'episode', 'episode_event', 'measurement', 'note', 'note_nlp', 'observation',
+ 'observation_period', 'payer_plan_period', 'person', 'procedure_occurrence', 'specimen', 'visit_detail',
+ 'visit_occurrence'])
+
+# (table, *_source_value column) -> (standard concept column, source concept column) of the same table.
+# Source-value columns with neither counterpart (person_source_value, provider_source_value, ...) are absent.
+SOURCE_VALUE_PAIRS = {('care_site', 'place_of_service_source_value'): ('place_of_service_concept_id', None),
+ ('condition_occurrence', 'condition_source_value'): ('condition_concept_id', 'condition_source_concept_id'),
+ ('condition_occurrence', 'condition_status_source_value'): ('condition_status_concept_id', None),
+ ('cost', 'drg_source_value'): ('drg_concept_id', None),
+ ('cost', 'revenue_code_source_value'): ('revenue_code_concept_id', None),
+ ('death', 'cause_source_value'): ('cause_concept_id', 'cause_source_concept_id'),
+ ('device_exposure', 'device_source_value'): ('device_concept_id', 'device_source_concept_id'),
+ ('device_exposure', 'unit_source_value'): ('unit_concept_id', 'unit_source_concept_id'),
+ ('drug_exposure', 'drug_source_value'): ('drug_concept_id', 'drug_source_concept_id'),
+ ('drug_exposure', 'route_source_value'): ('route_concept_id', None),
+ ('episode', 'episode_source_value'): ('episode_concept_id', 'episode_source_concept_id'),
+ ('location', 'country_source_value'): ('country_concept_id', None),
+ ('measurement', 'measurement_source_value'): ('measurement_concept_id', 'measurement_source_concept_id'),
+ ('measurement', 'unit_source_value'): ('unit_concept_id', 'unit_source_concept_id'),
+ ('measurement', 'value_source_value'): ('value_as_concept_id', None),
+ ('note', 'note_source_value'): ('note_class_concept_id', None),
+ ('observation', 'observation_source_value'): ('observation_concept_id', 'observation_source_concept_id'),
+ ('observation', 'qualifier_source_value'): ('qualifier_concept_id', None),
+ ('observation', 'unit_source_value'): ('unit_concept_id', None),
+ ('observation', 'value_source_value'): ('value_as_concept_id', None),
+ ('payer_plan_period', 'payer_source_value'): ('payer_concept_id', 'payer_source_concept_id'),
+ ('payer_plan_period', 'plan_source_value'): ('plan_concept_id', 'plan_source_concept_id'),
+ ('payer_plan_period', 'sponsor_source_value'): ('sponsor_concept_id', 'sponsor_source_concept_id'),
+ ('payer_plan_period', 'stop_reason_source_value'): ('stop_reason_concept_id', 'stop_reason_source_concept_id'),
+ ('person', 'ethnicity_source_value'): ('ethnicity_concept_id', 'ethnicity_source_concept_id'),
+ ('person', 'gender_source_value'): ('gender_concept_id', 'gender_source_concept_id'),
+ ('person', 'race_source_value'): ('race_concept_id', 'race_source_concept_id'),
+ ('procedure_occurrence', 'modifier_source_value'): ('modifier_concept_id', None),
+ ('procedure_occurrence', 'procedure_source_value'): ('procedure_concept_id', 'procedure_source_concept_id'),
+ ('provider', 'gender_source_value'): ('gender_concept_id', 'gender_source_concept_id'),
+ ('provider', 'specialty_source_value'): ('specialty_concept_id', 'specialty_source_concept_id'),
+ ('specimen', 'anatomic_site_source_value'): ('anatomic_site_concept_id', None),
+ ('specimen', 'disease_status_source_value'): ('disease_status_concept_id', None),
+ ('specimen', 'specimen_source_value'): ('specimen_concept_id', None),
+ ('specimen', 'unit_source_value'): ('unit_concept_id', None),
+ ('visit_detail', 'admitted_from_source_value'): ('admitted_from_concept_id', None),
+ ('visit_detail', 'discharged_to_source_value'): ('discharged_to_concept_id', None),
+ ('visit_detail', 'visit_detail_source_value'): ('visit_detail_concept_id', 'visit_detail_source_concept_id'),
+ ('visit_occurrence', 'admitted_from_source_value'): ('admitted_from_concept_id', None),
+ ('visit_occurrence', 'discharged_to_source_value'): ('discharged_to_concept_id', None),
+ ('visit_occurrence', 'visit_source_value'): ('visit_concept_id', 'visit_source_concept_id')}
+
+# *_type_concept_id column -> table, for the columns whose foreign-key domain is 'Type Concept'.
+TYPE_CONCEPT_COLUMNS = {'condition_type_concept_id': 'condition_occurrence',
+ 'death_type_concept_id': 'death',
+ 'device_type_concept_id': 'device_exposure',
+ 'drug_type_concept_id': 'drug_exposure',
+ 'episode_type_concept_id': 'episode',
+ 'measurement_type_concept_id': 'measurement',
+ 'note_type_concept_id': 'note',
+ 'observation_type_concept_id': 'observation',
+ 'period_type_concept_id': 'observation_period',
+ 'procedure_type_concept_id': 'procedure_occurrence',
+ 'specimen_type_concept_id': 'specimen',
+ 'visit_detail_type_concept_id': 'visit_detail',
+ 'visit_type_concept_id': 'visit_occurrence'}
+
+# Columns that are a foreign key to CONCEPT (plus concept.concept_id itself).
+CONCEPT_ID_COLUMNS = frozenset(['admitted_from_concept_id', 'amount_unit_concept_id', 'anatomic_site_concept_id', 'ancestor_concept_id',
+ 'cause_concept_id', 'cause_source_concept_id', 'cdm_version_concept_id', 'concept_class_concept_id',
+ 'concept_id', 'concept_id_1', 'concept_id_2', 'condition_concept_id', 'condition_source_concept_id',
+ 'condition_status_concept_id', 'condition_type_concept_id', 'cost_type_concept_id', 'country_concept_id',
+ 'currency_concept_id', 'death_type_concept_id', 'definition_type_concept_id', 'denominator_unit_concept_id',
+ 'descendant_concept_id', 'device_concept_id', 'device_source_concept_id', 'device_type_concept_id',
+ 'discharged_to_concept_id', 'disease_status_concept_id', 'domain_concept_id', 'domain_concept_id_1',
+ 'domain_concept_id_2', 'drg_concept_id', 'drug_concept_id', 'drug_source_concept_id', 'drug_type_concept_id',
+ 'encoding_concept_id', 'episode_concept_id', 'episode_event_field_concept_id', 'episode_object_concept_id',
+ 'episode_source_concept_id', 'episode_type_concept_id', 'ethnicity_concept_id', 'ethnicity_source_concept_id',
+ 'gender_concept_id', 'gender_source_concept_id', 'ingredient_concept_id', 'language_concept_id',
+ 'meas_event_field_concept_id', 'measurement_concept_id', 'measurement_source_concept_id',
+ 'measurement_type_concept_id', 'metadata_concept_id', 'metadata_type_concept_id', 'modifier_concept_id',
+ 'note_class_concept_id', 'note_event_field_concept_id', 'note_nlp_concept_id', 'note_nlp_source_concept_id',
+ 'note_type_concept_id', 'numerator_unit_concept_id', 'obs_event_field_concept_id', 'observation_concept_id',
+ 'observation_source_concept_id', 'observation_type_concept_id', 'operator_concept_id', 'payer_concept_id',
+ 'payer_source_concept_id', 'period_type_concept_id', 'place_of_service_concept_id', 'plan_concept_id',
+ 'plan_source_concept_id', 'procedure_concept_id', 'procedure_source_concept_id', 'procedure_type_concept_id',
+ 'qualifier_concept_id', 'race_concept_id', 'race_source_concept_id', 'relationship_concept_id',
+ 'revenue_code_concept_id', 'route_concept_id', 'section_concept_id', 'source_concept_id',
+ 'specialty_concept_id', 'specialty_source_concept_id', 'specimen_concept_id', 'specimen_type_concept_id',
+ 'sponsor_concept_id', 'sponsor_source_concept_id', 'stop_reason_concept_id', 'stop_reason_source_concept_id',
+ 'subject_concept_id', 'target_concept_id', 'unit_concept_id', 'unit_source_concept_id', 'value_as_concept_id',
+ 'visit_concept_id', 'visit_detail_concept_id', 'visit_detail_source_concept_id',
+ 'visit_detail_type_concept_id', 'visit_source_concept_id', 'visit_type_concept_id', 'vocabulary_concept_id'])
+
+# Key column -> the non-vocabulary table whose rows it identifies (foreign key target, else own primary key).
+ENTITY_KEY_COLUMNS = {'care_site_id': 'care_site',
+ 'condition_era_id': 'condition_era',
+ 'condition_occurrence_id': 'condition_occurrence',
+ 'cost_id': 'cost',
+ 'device_exposure_id': 'device_exposure',
+ 'dose_era_id': 'dose_era',
+ 'drug_era_id': 'drug_era',
+ 'drug_exposure_id': 'drug_exposure',
+ 'episode_id': 'episode',
+ 'location_id': 'location',
+ 'measurement_id': 'measurement',
+ 'metadata_id': 'metadata',
+ 'note_id': 'note',
+ 'note_nlp_id': 'note_nlp',
+ 'observation_id': 'observation',
+ 'observation_period_id': 'observation_period',
+ 'parent_visit_detail_id': 'visit_detail',
+ 'payer_plan_period_id': 'payer_plan_period',
+ 'person_id': 'person',
+ 'preceding_visit_detail_id': 'visit_detail',
+ 'preceding_visit_occurrence_id': 'visit_occurrence',
+ 'procedure_occurrence_id': 'procedure_occurrence',
+ 'provider_id': 'provider',
+ 'specimen_id': 'specimen',
+ 'visit_detail_id': 'visit_detail',
+ 'visit_occurrence_id': 'visit_occurrence'}
+# fmt: on

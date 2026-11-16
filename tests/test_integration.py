@@ -164,3 +164,66 @@ class TestParseErrorSurface:
             f"(small={small * 1000:.1f}ms, large={large * 1000:.1f}ms); "
             "expected ~2x for linear, ~4x for quadratic."
         )
+
+
+class TestRuleExceptionIsolation:
+    """A rule that raises must be skipped and reported, not abort the batch.
+
+    Regression guard for the per-rule isolation added in
+    ``fastssv._run_rule``: one misbehaving rule out of 150+ used to crash
+    the whole validate_sql/validate_sql_structured call (or 500 the API).
+    """
+
+    # Reliably draws a schema violation from data_quality.schema_validation,
+    # so "other rules still ran" is observable.
+    SQL = "SELECT * FROM nonexistent_table;"
+
+    @staticmethod
+    def _break_one_rule(monkeypatch):
+        # Break an anti_patterns rule, NOT the data_quality schema rule the
+        # assertions below rely on.
+        from fastssv.core.registry import get_rules_by_category
+
+        victim = get_rules_by_category("anti_patterns")[0]
+
+        def _boom(self, sql, dialect):
+            raise RuntimeError("synthetic rule crash")
+
+        monkeypatch.setattr(victim, "validate", _boom)
+        return victim
+
+    def test_structured_api_survives_and_reports(self, monkeypatch) -> None:
+        from fastssv import RULE_EXECUTION_ERROR_RULE_ID, validate_sql_structured
+        from fastssv.core.base import Severity
+
+        victim = self._break_one_rule(monkeypatch)
+        violations = validate_sql_structured(self.SQL, dialect="postgres")
+
+        internal = [v for v in violations if v.rule_id == RULE_EXECUTION_ERROR_RULE_ID]
+        assert len(internal) == 1, "the crashed rule must surface exactly one internal-error violation"
+        assert internal[0].severity == Severity.WARNING
+        assert internal[0].details["failed_rule_id"] == victim.rule_id
+        assert "synthetic rule crash" in internal[0].message
+        # Other rules still ran: gender_concept_id = 0 without a > 0 guard
+        # normally draws violations from healthy rules.
+        assert any(v.rule_id != RULE_EXECUTION_ERROR_RULE_ID for v in violations)
+
+    def test_dict_api_survives(self, monkeypatch) -> None:
+        from fastssv import RULE_EXECUTION_ERROR_RULE_ID, validate_sql
+
+        self._break_one_rule(monkeypatch)
+        results = validate_sql(self.SQL, dialect="postgres")
+        assert any(v.rule_id == RULE_EXECUTION_ERROR_RULE_ID for v in results["violations"])
+
+    def test_legacy_category_helper_survives(self, monkeypatch) -> None:
+        from fastssv import validate_anti_patterns
+        from fastssv.core.registry import get_rules_by_category
+
+        victim = get_rules_by_category("anti_patterns")[0]
+
+        def _boom(self, sql, dialect):
+            raise RuntimeError("synthetic rule crash")
+
+        monkeypatch.setattr(victim, "validate", _boom)
+        messages = validate_anti_patterns(self.SQL, dialect="postgres")
+        assert any("synthetic rule crash" in m for m in messages)
