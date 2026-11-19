@@ -2706,6 +2706,11 @@ between minor versions.
 
 ### Fixed
 
+- **`test_validate_sql_all_validators` can now fail on an ERROR.** It kept
+  the `all_errors` strings that start with `"Error:"`, but `validate_sql`
+  never adds that prefix (only warnings get `"Warning: "`), so the check
+  always passed. It now filters `violations` by `Severity.ERROR`.
+
 - **A comment after the final semicolon no longer makes valid SQL a parse
   error.** sqlglot parses a comment that follows a `;` (`SELECT … = 8507;
   -- Male`, or a `/* … */` between statements) into a standalone `Semicolon`

@@ -2,7 +2,7 @@
 
 import pytest
 
-from fastssv import validate_sql
+from fastssv import Severity, validate_sql
 
 
 class TestUnifiedAPI:
@@ -47,8 +47,9 @@ class TestUnifiedAPI:
         results = validate_sql(sql, validators="all")
 
         assert results["category_errors"]["concept_standardization"] == []
-        # Only check for errors, not warnings (join key validation may produce warnings)
-        errors_only = [e for e in results["all_errors"] if e.startswith("Error:")]
+        # Only check for errors, not warnings (join key validation may produce warnings).
+        # Filter on severity: all_errors strings carry no "Error:" prefix.
+        errors_only = [v for v in results["violations"] if v.severity == Severity.ERROR]
         assert errors_only == []
 
     def test_validate_sql_list_of_validators(self) -> None:
